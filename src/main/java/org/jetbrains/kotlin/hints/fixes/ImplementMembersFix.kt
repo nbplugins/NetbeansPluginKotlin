@@ -68,7 +68,6 @@ class ImplementMembersFix(kotlinError: KotlinError,
     }
 
     private val OVERRIDE_RENDERER = DescriptorRenderer.withOptions {
-        renderDefaultValues = false
         modifiers = setOf(DescriptorRendererModifier.OVERRIDE)
         withDefinedIn = false
         classifierNamePolicy = ClassifierNamePolicy.SHORT
@@ -117,7 +116,7 @@ class ImplementMembersFix(kotlinError: KotlinError,
                 ?.let { it + 1 }
     }
 
-    private fun DeclarationDescriptor.escapedName() = DescriptorRenderer.COMPACT.renderName(name)
+    private fun DeclarationDescriptor.escapedName() = DescriptorRenderer.COMPACT.renderName(name, false)
 
     private fun collectMethodsToGenerate(classOrObject: KtClassOrObject): Set<CallableMemberDescriptor> {
         val descriptor = classOrObject.resolveToDescriptor()

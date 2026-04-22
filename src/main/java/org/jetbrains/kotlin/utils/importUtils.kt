@@ -23,7 +23,7 @@ import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
 import org.jetbrains.kotlin.resolve.ImportPath
 import java.util.Comparator
 import org.jetbrains.kotlin.idea.imports.ImportPathComparator
-import org.jetbrains.kotlin.resolve.jvm.platform.JvmPlatform
+import org.jetbrains.kotlin.resolve.jvm.platform.JvmPlatformAnalyzerServices
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.config.LanguageVersionSettingsImpl
 
@@ -35,7 +35,7 @@ class KotlinImportInserterHelper : ImportInsertHelper() {
     }
     
     override fun isImportedWithDefault(importPath: ImportPath, contextFile: KtFile): Boolean {
-        val defaultImports = JvmPlatform.getDefaultImports(LanguageVersionSettingsImpl.DEFAULT)
+        val defaultImports = JvmPlatformAnalyzerServices.getDefaultImports(LanguageVersionSettingsImpl.DEFAULT, true)
         return importPath.isImported(defaultImports)
     }
     
@@ -44,11 +44,12 @@ class KotlinImportInserterHelper : ImportInsertHelper() {
 
 fun FqName.isImported(importPath: ImportPath, skipAliasedImports: Boolean = true): Boolean = when {
     skipAliasedImports && importPath.hasAlias() -> false
-    importPath.isAllUnder && !isRoot -> importPath.fqnPart() == this.parent()
-    else -> importPath.fqnPart() == this
+    importPath.isAllUnder && !isRoot -> importPath.fqName == this.parent()
+    else -> importPath.fqName == this
+
 }
 
 fun ImportPath.isImported(alreadyImported: ImportPath): Boolean =
-        if (isAllUnder || hasAlias()) this == alreadyImported else fqnPart().isImported(alreadyImported)
+        if (isAllUnder || hasAlias()) this == alreadyImported else fqName.isImported(alreadyImported)
 
 fun ImportPath.isImported(imports: Iterable<ImportPath>): Boolean = imports.any { isImported(it) }

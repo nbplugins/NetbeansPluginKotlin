@@ -16,18 +16,10 @@
  *******************************************************************************/
 package org.jetbrains.kotlin.resolve.lang.java.resolver
 
-import org.jetbrains.kotlin.load.java.components.ExternalAnnotationResolver
-import org.jetbrains.kotlin.load.java.structure.JavaAnnotationOwner
-import org.jetbrains.kotlin.name.FqName
-
 /*
 
   @author Alexander.Baratynski
   Created on Aug 26, 2016
 */
 
-class NetBeansExternalAnnotationResolver : ExternalAnnotationResolver {
-
-    override fun findExternalAnnotation(owner: JavaAnnotationOwner, fqName: FqName) = null
-    
-}
+class NetBeansExternalAnnotationResolver

@@ -45,9 +45,8 @@ class NetBeansJavaClassFinder : JavaClassFinder {
     }
     
     
-    override fun findClass(classId: ClassId): JavaClass? {
-        val element = project.findType(classId.asSingleFqName().asString()) ?: return null
-        
+    override fun findClass(request: JavaClassFinder.Request): JavaClass? {
+        val element = project.findType(request.classId.asSingleFqName().asString()) ?: return null
         return NetBeansJavaClass(element, project)
     }
     

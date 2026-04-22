@@ -16,7 +16,6 @@
  *******************************************************************************/
 package org.jetbrains.kotlin.resolve.lang.java
 
-import com.sun.javadoc.Doc
 import javax.lang.model.element.ElementKind
 import javax.lang.model.element.PackageElement
 import javax.lang.model.element.TypeElement
@@ -144,15 +143,15 @@ class IsDeprecatedSearcher(val element: ElemHandle<*>?) : Task<CompilationContro
 }
 
 class JavaDocSearcher(val element: ElemHandle<*>?) : Task<CompilationController> {
-    
-    var javaDoc: Doc? = null
-    
+
+    var javaDoc: String? = null
+
     override fun run(info: CompilationController) {
         info.toResolvedPhase()
-        
+
         if (element == null) return
         val elem = element.resolve(info) ?: return
-        
-        javaDoc = info.elementUtilities.javaDocFor(elem)
+
+        javaDoc = info.elements.getDocComment(elem)
     }
 }

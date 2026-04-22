@@ -39,29 +39,22 @@ object KotlinLightClassGeneration {
                                   ktFiles: List<KtFile>, requestedClassName: String): GenerationState? {
         val generateDeclaredClassFilter = object : GenerationState.GenerateClassFilter() {
             override fun shouldAnnotateClass(processingClassOrObject: KtClassOrObject) = true
-
             override fun shouldGenerateClass(processingClassOrObject: KtClassOrObject) = true
-
             override fun shouldGeneratePackagePart(jetFile: KtFile) = true
-
             override fun shouldGenerateScript(script: KtScript) = false
-
+            override fun shouldGenerateCodeFragment(script: org.jetbrains.kotlin.psi.KtCodeFragment) = false
         }
 
-        val state = GenerationState(
+        val state = GenerationState.Builder(
                 KotlinEnvironment.getEnvironment(project).project,
                 LightClassBuilderFactory(),
                 analysisResult.moduleDescriptor,
                 analysisResult.bindingContext,
                 ktFiles,
-                CompilerConfiguration.EMPTY,
-                generateDeclaredClassFilter)
+                CompilerConfiguration.EMPTY
+        ).generateDeclaredClassFilter(generateDeclaredClassFilter).build()
 
-        ktFiles.forEach {
-            state.bindingContext[BindingContext.FILE_TO_PACKAGE_FRAGMENT, it] ?: return null
-        }
-
-        KotlinCodegenFacade.compileCorrectFiles(state, { _, _ -> Unit })
+        KotlinCodegenFacade.compileCorrectFiles(state)
 
         return state
     }

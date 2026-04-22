@@ -18,6 +18,7 @@ package org.jetbrains.kotlin.resolve.lang.java.structure
 
 import java.util.Collections
 import javax.lang.model.element.PackageElement
+import org.jetbrains.kotlin.load.java.structure.JavaAnnotation
 import org.jetbrains.kotlin.load.java.structure.JavaElement
 import org.jetbrains.kotlin.load.java.structure.JavaPackage
 import org.jetbrains.kotlin.name.FqName
@@ -44,5 +45,11 @@ class NetBeansJavaPackage(private val packages: List<ElemHandle<PackageElement>>
 
     override fun getClasses(nameFilter: (Name) -> Boolean) =
             packages.getClasses(project, nameFilter)
+
+    override val annotations: Collection<JavaAnnotation>
+        get() = emptyList()
+    override fun findAnnotation(fqName: FqName): JavaAnnotation? = null
+    override val isDeprecatedInJavaDoc: Boolean
+        get() = false
 
 }

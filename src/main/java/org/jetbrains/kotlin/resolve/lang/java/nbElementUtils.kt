@@ -153,7 +153,7 @@ fun searchKinds() = setOf(ClassIndex.SearchKind.FIELD_REFERENCES,
         ClassIndex.SearchKind.METHOD_REFERENCES, 
         ClassIndex.SearchKind.TYPE_REFERENCES)
 
-fun ElemHandle<*>.getJavaDoc(project: Project) =
+fun ElemHandle<*>.getJavaDoc(project: Project): String? =
         JavaDocSearcher(this).execute(project).javaDoc
                                                
 fun ElementHandle<TypeElement>.findMember(descriptor: DeclarationDescriptor, 

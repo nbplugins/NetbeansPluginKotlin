@@ -42,6 +42,8 @@ class NetBeansJavaMethod(elementHandle: ElemHandle<ExecutableElement>, containin
 
     override val hasAnnotationParameterDefaultValue: Boolean
         get() = elementHandle.hasAnnotationParameterDefaultValue(project)
+    override val annotationParameterDefaultValue: org.jetbrains.kotlin.load.java.structure.JavaAnnotationArgument?
+        get() = null
 
     override val typeParameters: List<JavaTypeParameter>
         get() = elementHandle.getTypeParameters(project)

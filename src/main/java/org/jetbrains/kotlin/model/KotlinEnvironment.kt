@@ -74,15 +74,13 @@ import org.jetbrains.kotlin.config.CommonConfigurationKeys
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.idea.util.ImportInsertHelper
 import org.jetbrains.kotlin.js.resolve.diagnostics.DefaultErrorMessagesJs
-import org.jetbrains.kotlin.load.kotlin.JvmVirtualFileFinderFactory
+import org.jetbrains.kotlin.load.kotlin.VirtualFileFinderFactory
+import org.jetbrains.kotlin.cli.jvm.compiler.CliTraceHolder
 import org.jetbrains.kotlin.load.kotlin.ModuleVisibilityManager
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.resolve.diagnostics.DiagnosticSuppressor
-import org.jetbrains.kotlin.resolve.diagnostics.SuppressStringProvider
 import org.jetbrains.kotlin.resolve.jvm.diagnostics.DefaultErrorMessagesJvm
 import org.jetbrains.kotlin.resolve.jvm.extensions.PackageFragmentProviderExtension
-import org.jetbrains.kotlin.script.KotlinScriptDefinitionProvider
-import org.jetbrains.kotlin.script.KotlinScriptExternalImportsProvider
 import org.netbeans.api.project.Project as NBProject
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCliJavaFileManagerImpl
 import com.intellij.openapi.util.SystemInfo
@@ -142,28 +140,21 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
         project = projectEnvironment.project
         
         with (project) {
-            val scriptDefinitionProvider = KotlinScriptDefinitionProvider()
-            registerService(KotlinScriptDefinitionProvider::class.java, scriptDefinitionProvider)
-            registerService(
-                    KotlinScriptExternalImportsProvider::class.java,
-                    KotlinScriptExternalImportsProvider(project, scriptDefinitionProvider))
-            
-            registerService(ModuleVisibilityManager::class.java, CliModuleVisibilityManagerImpl())
+            registerService(ModuleVisibilityManager::class.java, CliModuleVisibilityManagerImpl(true))
             registerService(NullableNotNullManager::class.java, KotlinNullableNotNullManager(kotlinProject))
             registerService(CoreJavaFileManager::class.java,
                 ServiceManager.getService(project, JavaFileManager::class.java) as CoreJavaFileManager)
             
-            val cliLightClassGenerationSupport = CliLightClassGenerationSupport(project)
+            val cliTraceHolder = CliTraceHolder()
+            val cliLightClassGenerationSupport = CliLightClassGenerationSupport(cliTraceHolder)
             registerService(LightClassGenerationSupport::class.java, cliLightClassGenerationSupport)
             registerService(CliLightClassGenerationSupport::class.java, cliLightClassGenerationSupport)
-            registerService(CodeAnalyzerInitializer::class.java, cliLightClassGenerationSupport)
-            
-            registerService(KtLightClassForFacade.FacadeStubCache::class.java, KtLightClassForFacade.FacadeStubCache(project))
+            registerService(CodeAnalyzerInitializer::class.java, cliTraceHolder)
             registerService(KotlinLightClassManager::class.java, KotlinLightClassManager(kotlinProject))
             registerService(BuiltInsReferenceResolver::class.java, BuiltInsReferenceResolver(project))
             registerService(KotlinSourceIndex::class.java, KotlinSourceIndex())
             registerService(KotlinCacheService::class.java, KotlinCacheServiceImpl(project, kotlinProject))
-            registerService(JvmVirtualFileFinderFactory::class.java, NetBeansVirtualFileFinderFactory(kotlinProject))
+            registerService(VirtualFileFinderFactory::class.java, NetBeansVirtualFileFinderFactory(kotlinProject))
             registerService(ImportInsertHelper::class.java, KotlinImportInserterHelper())
             
             registerService(ExternalAnnotationsManager::class.java, MockExternalAnnotationsManager())
@@ -196,8 +187,6 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
         CoreApplicationEnvironment.registerApplicationExtensionPoint(
                 ExtensionPointName("org.jetbrains.kotlin.defaultErrorMessages"), DefaultErrorMessages.Extension::class.java)
         CoreApplicationEnvironment.registerApplicationExtensionPoint(
-                ExtensionPointName("org.jetbrains.kotlin.suppressStringProvider"), SuppressStringProvider::class.java)
-        CoreApplicationEnvironment.registerApplicationExtensionPoint(
                 ExtensionPointName(("org.jetbrains.kotlin.expressionCodegenExtension")), ExpressionCodegenExtension::class.java)
         CoreApplicationEnvironment.registerApplicationExtensionPoint(
                 ExtensionPointName(("org.jetbrains.kotlin.classBuilderFactoryInterceptorExtension")), ClassBuilderInterceptorExtension::class.java)
@@ -209,8 +198,6 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
         with (Extensions.getRootArea()) {
             getExtensionPoint(CodeStyleSettingsProvider.EXTENSION_POINT_NAME).registerExtension(KotlinSettingsProvider())
             getExtensionPoint(LanguageCodeStyleSettingsProvider.EP_NAME).registerExtension(KotlinLanguageCodeStyleSettingsProvider())
-            getExtensionPoint(DefaultErrorMessages.Extension.EP_NAME).registerExtension(DefaultErrorMessagesJvm())
-            getExtensionPoint(DefaultErrorMessages.Extension.EP_NAME).registerExtension(DefaultErrorMessagesJs())
         }
     }
     

@@ -138,7 +138,7 @@ private fun getImplClassName(memberDescriptor: DeserializedCallableMemberDescrip
         return null
     }
     
-    return memberDescriptor.nameResolver.getName(nameIndex)
+    return org.jetbrains.kotlin.name.Name.identifier(memberDescriptor.nameResolver.getString(nameIndex))
 }
 
 private fun gotoKotlinDeclaration(psi: PsiElement, fromElement: KtElement,
