@@ -52,12 +52,12 @@ object JavaEnvironment {
     }
 
     fun updateClasspathInfo(project: Project) {
-        JAVA_SOURCE.put(project, JavaSource.create(getClasspathInfo(project)))
+        JavaSource.create(getClasspathInfo(project))?.let { JAVA_SOURCE.put(project, it) }
     }
 
     fun checkJavaSource(project: Project) {
         if (!JAVA_SOURCE.containsKey(project)) {
-            JAVA_SOURCE.put(project, JavaSource.create(getClasspathInfo(project)))
+            JavaSource.create(getClasspathInfo(project))?.let { JAVA_SOURCE.put(project, it) }
         }
     }
 
@@ -85,8 +85,9 @@ fun ElementHandle<*>.getFileObject(project: Project): FileObject? =
 
 fun String.getPackages(project: Project): Set<String> {
     JavaEnvironment.checkJavaSource(project)
-    return JavaEnvironment.JAVA_SOURCE[project]!!.classpathInfo.classIndex.
+    return JavaEnvironment.JAVA_SOURCE[project]?.classpathInfo?.classIndex?.
             getPackageNames(this, false, hashSetOf(ClassIndex.SearchScope.SOURCE, ClassIndex.SearchScope.DEPENDENCIES))
+            ?: emptySet()
 }
 
 fun Project.findType(fqName: String) = TypeElementSearcher(fqName, this).execute(this).element
@@ -95,8 +96,8 @@ fun Project.findTypeElementHandle(fqName: String) = TypeElementHandleSearcher(fq
 
 fun <T : Task<CompilationController>> T.execute(project: Project): T {
     JavaEnvironment.checkJavaSource(project)
-    JavaEnvironment.JAVA_SOURCE[project]!!.runUserActionTask(this, true)
-    
+    JavaEnvironment.JAVA_SOURCE[project]?.runUserActionTask(this, true)
+
     return this
 }
 
@@ -120,20 +121,20 @@ fun TypeMirrorHandle<*>.isEqual(handle: TypeMirrorHandle<*>, project: Project) =
 fun Project.findFQName(name: String): List<String> {
     JavaEnvironment.checkJavaSource(this)
 
-    return JavaEnvironment.JAVA_SOURCE[this]!!.classpathInfo.classIndex.
+    return JavaEnvironment.JAVA_SOURCE[this]?.classpathInfo?.classIndex?.
             getDeclaredTypes(name, ClassIndex.NameKind.SIMPLE_NAME,
                     setOf(ClassIndex.SearchScope.SOURCE,
                             ClassIndex.SearchScope.DEPENDENCIES))
-            .map { it.qualifiedName }
+            ?.map { it.qualifiedName } ?: emptyList()
 }
 
 fun Project.findTypes(prefix: String): List<ElementHandle<TypeElement>> {
     JavaEnvironment.checkJavaSource(this)
     
-    return JavaEnvironment.JAVA_SOURCE[this]!!.classpathInfo.classIndex.
+    return JavaEnvironment.JAVA_SOURCE[this]?.classpathInfo?.classIndex?.
             getDeclaredTypes(prefix, ClassIndex.NameKind.CASE_INSENSITIVE_PREFIX,
                     setOf(ClassIndex.SearchScope.SOURCE,
-                            ClassIndex.SearchScope.DEPENDENCIES)).toList()
+                            ClassIndex.SearchScope.DEPENDENCIES))?.toList() ?: emptyList()
 }
 
 fun ElementHandle<*>.openInEditor(project: Project) =
