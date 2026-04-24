@@ -49,8 +49,59 @@ The plugin integrates with NetBeans via the **CSL (Colored Syntax Language) API*
 ### Bundled JARs (`lib/`)
 Several capabilities depend on bundled custom JARs (not from Maven Central):
 - `kotlin-ide-common.jar`, `kotlin-formatter.jar`, `kotlin-converter.jar` — JetBrains IDE tooling
-- `intellij-core.jar` (16 MB) — IntelliJ platform core used for Kotlin analysis
+- `intellij-core.jar` — IntelliJ platform core used for Kotlin analysis
 - `openapi-formatter.jar`, `idea-formatter.jar` — Formatting infrastructure
+
+These JARs are installed into the local Maven repository (`repo/`) via `setup-local-repo.sh`.
+Run it after modifying any JAR in `lib/`.
+
+### JAR Patches (`patches-src/`)
+
+The bundled JARs were compiled against older library versions and require bytecode patches to
+work with Kotlin 1.3.72 and Java 17+. Patches are written using ASM and live in `patches-src/`.
+
+| Patch | Input JAR | Problem fixed |
+|-------|-----------|---------------|
+| `InjectGetGreenStub.java` | `lib/intellij-core.jar` | Adds `getGreenStub()` to `SubstrateRef` and `StubBasedPsiElementBase` — method missing from the bundled IntelliJ version but called by kotlin-compiler 1.3.72 |
+| `PatchKtNodeTypes.java` | `kotlin-compiler-1.3.72.jar` (Maven) | Fixes `KtNodeTypes.BODY` field declared as `KtNodeType` but accessed as `IElementType` — Java 17+ enforces strict descriptor matching |
+| `PatchJvmPlatform.java` | `kotlin-compiler-1.3.72.jar` (Maven) | Converts `JvmPlatform` from interface to abstract class and adds `getDefaultImports()` — needed by `kotlin-converter.jar` compiled against Kotlin 1.1.1 |
+| `PatchImportConversionKt.java` | `lib/kotlin-converter.jar` | Rewrites `ImportConversionKt` static initializer to use `JvmPlatformAnalyzerServices` instead of the removed `JvmPlatform.getDefaultImports()` |
+| `PatchFqnPart.java` | `lib/kotlin-converter.jar` | Renames `ImportPath.fqnPart()` → `getFqName()` (renamed in 1.3.72); redirects `AddToStdlibKt.singletonList()` → `Collections.singletonList()` (removed in 1.3.72) |
+| `PatchKotlinIdeCommon.java` | `lib/kotlin-ide-common.jar` | Removes `setShowInternalKeyword` call (property removed in 1.3.72); renames `KotlinTypeFactory.simpleType(5-arg)` → `simpleTypeWithNonTrivialMemberScope`; redirects `KotlinType.isError()` → static `KotlinTypeKt.isError(KotlinType)` |
+
+**Applying patches** (run with Java 17):
+
+```bash
+cd /path/to/KotlinNetbeans
+CP="patches-src:/usr/share/java/objectweb-asm/asm.jar"
+
+# 1. Patch intellij-core.jar (input = .bak = original)
+java -cp $CP InjectGetGreenStub lib/intellij-core.jar.bak lib/intellij-core.jar
+
+# 2. Patch kotlin-converter.jar (chain: PatchImportConversionKt -> PatchFqnPart)
+java -cp $CP PatchImportConversionKt lib/kotlin-converter.jar.bak /tmp/kc-step1.jar
+java -cp $CP PatchFqnPart /tmp/kc-step1.jar lib/kotlin-converter.jar
+
+# 3. Patch kotlin-ide-common.jar (input = original, from lib/)
+java -cp $CP PatchKotlinIdeCommon lib/kotlin-ide-common.jar.bak lib/kotlin-ide-common.jar
+
+# 4. Patch kotlin-compiler-1.3.72.jar from Maven (chain PatchKtNodeTypes -> PatchJvmPlatform)
+KCJ=~/.m2/repository/org/jetbrains/kotlin/kotlin-compiler/1.3.72/kotlin-compiler-1.3.72.jar
+java -cp $CP PatchKtNodeTypes $KCJ /tmp/kc-step1.jar
+java -cp $CP PatchJvmPlatform  /tmp/kc-step1.jar /tmp/kc-patched.jar
+cp /tmp/kc-patched.jar $KCJ   # overwrite in-place
+
+# 5. Reinstall lib/ JARs to local Maven repo (also copies to ~/.m2)
+bash setup-local-repo.sh
+# If ~/.m2 copy differs, manually copy:
+cp lib/kotlin-converter.jar ~/.m2/repository/org/jetbrains/kotlin/kotlin-converter/1.0/kotlin-converter-1.0.jar
+```
+
+**Running tests** (must use Java 17 — Java 25 breaks the Kotlin Maven plugin; must use xvfb-run — tests require a display):
+
+```bash
+JAVA_HOME=/usr/lib/jvm/java-17-temurin-jdk xvfb-run mvn clean test
+```
 
 ### Plugin Registration
 - `src/main/resources/META-INF/layer.xml` — Registers language services, file actions, project integrations
@@ -63,6 +114,8 @@ Tests live in `src/test/java/` mirroring feature packages: `completion/`, `diagn
 Test resource files (sample `.kt` files) are in `src/test/resources/projForTest/src/`, organized by feature. Tests extend `KotlinTestCase` (a custom NetBeans test base class) which sets up a mock NetBeans environment.
 
 ## Key Versions
-- Kotlin: 1.1.1
+- Kotlin compiler (Maven): 1.3.72
+- Bundled JARs compiled against: Kotlin 1.1.1 (hence the patches)
 - NetBeans target: RELEASE230 (23.0)
-- Java target: 1.7
+- Java source/target: 17
+- Java runtime for tests: must use Java 17 (Java 25 breaks the Kotlin Maven plugin's `JavaVersion.parse()`)

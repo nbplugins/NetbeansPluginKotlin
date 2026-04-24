@@ -38,6 +38,7 @@ class KotlinParserResult(snapshot: Snapshot?,
         if (analysisResult != null) {
             addAll(
                     analysisResult.analysisResult.bindingContext.diagnostics.all()
+                            .filter { it.psiFile == ktFile }
                             .filter { it.factory != Errors.DEPRECATION }
                             .map { KotlinError(it, file) }
             )
