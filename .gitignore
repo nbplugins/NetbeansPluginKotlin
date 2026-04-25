@@ -3,3 +3,24 @@
 nb-configuration.xml
 nbactions.xml
 .DS_Store
+
+# Extracted JAR artifacts (root-level class/resource dirs)
+/com/
+/org/
+/net/
+/one/
+/javax/
+/javaslang/
+/kotlin/
+/kotlinx/
+/META-INF/
+/messages/
+/misc/
+/kotlinManifest.properties
+
+# JAR backups from patching process
+lib/*.bak
+lib/*.bak2
+
+# Test output
+test-output.txt
