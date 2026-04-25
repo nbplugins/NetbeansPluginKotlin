@@ -106,10 +106,10 @@ bash setup-local-repo.sh
 cp lib/kotlin-converter.jar ~/.m2/repository/org/jetbrains/kotlin/kotlin-converter/1.0/kotlin-converter-1.0.jar
 ```
 
-**Running tests** (must use Java 17 — Java 25 breaks the Kotlin Maven plugin; must use xvfb-run — tests require a display):
+**Running tests** (must use Java 17 — Java 25 breaks the Kotlin Maven plugin; Xvfb is started automatically by Maven on display :99):
 
 ```bash
-JAVA_HOME=/usr/lib/jvm/java-17-temurin-jdk xvfb-run mvn clean test
+JAVA_HOME=/usr/lib/jvm/java-17-temurin-jdk mvn clean test
 ```
 
 ### Plugin Registration
