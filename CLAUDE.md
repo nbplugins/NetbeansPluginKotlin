@@ -122,6 +122,39 @@ Tests live in `src/test/java/` mirroring feature packages: `completion/`, `diagn
 
 Test resource files (sample `.kt` files) are in `src/test/resources/projForTest/src/`, organized by feature. Tests extend `KotlinTestCase` (a custom NetBeans test base class) which sets up a mock NetBeans environment.
 
+## NetBeans Runtime Configuration (NB 28+)
+
+The plugin uses the IntelliJ platform's `JavaCoreApplicationEnvironment`, which requires reflective access to `java.lang.reflect` — not opened by default in NB 28. Without this, "Loading Kotlin environment" hangs indefinitely.
+
+**Required JVM flag:** `-J--add-opens=java.base/java.lang.reflect=ALL-UNNAMED`
+
+### Option A — пользовательский конфиг (без sudo, рекомендуется)
+
+NB launcher читает `~/.netbeans/28/etc/netbeans.conf` после системного и позволяет дополнять настройки:
+
+```bash
+mkdir -p ~/.netbeans/28/etc
+echo 'netbeans_default_options="$netbeans_default_options -J--add-opens=java.base/java.lang.reflect=ALL-UNNAMED"' \
+    >> ~/.netbeans/28/etc/netbeans.conf
+```
+
+### Option B — системный конфиг (требует sudo)
+
+```bash
+sudo sed -i 's|-J--add-opens=java.base/java.lang=ALL-UNNAMED|-J--add-opens=java.base/java.lang=ALL-UNNAMED -J--add-opens=java.base/java.lang.reflect=ALL-UNNAMED|' \
+    /usr/lib/apache-netbeans/etc/netbeans.conf
+```
+
+### Проверка
+
+```bash
+# пользовательский конфиг
+grep "java.lang.reflect" ~/.netbeans/28/etc/netbeans.conf
+
+# системный конфиг
+grep "java.lang.reflect" /usr/lib/apache-netbeans/etc/netbeans.conf
+```
+
 ## Key Versions
 - Kotlin compiler (Maven): 1.3.72
 - Bundled JARs compiled against: Kotlin 1.1.1 (hence the patches)

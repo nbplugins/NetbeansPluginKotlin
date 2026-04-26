@@ -83,31 +83,27 @@ public class J2SEExtendedClassPathProvider implements ClassPathProvider, Propert
     }
     
     private SourceRoots getTestSourceRoots(Class clazz, Project project) {
-        SourceRoots roots = null;
-        
         try {
             Method ev = clazz.getMethod("getTestSourceRoots");
-            roots = (SourceRoots) ev.invoke(project);
+            return (SourceRoots) ev.invoke(project);
         } catch (ReflectiveOperationException ex) {
             Exceptions.printStackTrace(ex);
-        } 
-        
-        return roots;
-    }
-    
-    private SourceRoots getSourceRoots(Class clazz, Project project) {
-        SourceRoots roots = null;
-        
-        try {
-            Method ev = clazz.getMethod("getSourceRoots");
-            roots = (SourceRoots) ev.invoke(project);
-        } catch (ReflectiveOperationException ex) {
+        } catch (NoClassDefFoundError ex) {
             Exceptions.printStackTrace(ex);
         }
-        
-        assert roots != null : "SourceRoots NPE";
-        
-        return roots;
+        return null;
+    }
+
+    private SourceRoots getSourceRoots(Class clazz, Project project) {
+        try {
+            Method ev = clazz.getMethod("getSourceRoots");
+            return (SourceRoots) ev.invoke(project);
+        } catch (ReflectiveOperationException ex) {
+            Exceptions.printStackTrace(ex);
+        } catch (NoClassDefFoundError ex) {
+            Exceptions.printStackTrace(ex);
+        }
+        return null;
     }
     
     private PropertyEvaluator getEvaluator(Class clazz, Project project) {
@@ -161,11 +157,11 @@ public class J2SEExtendedClassPathProvider implements ClassPathProvider, Propert
     }
 
     private FileObject[] getPrimarySrcPath() {
-        return this.sourceRoots.getRoots();
+        return this.sourceRoots != null ? this.sourceRoots.getRoots() : new FileObject[0];
     }
 
     private FileObject[] getTestSrcDir() {
-        return this.testSourceRoots.getRoots();
+        return this.testSourceRoots != null ? this.testSourceRoots.getRoots() : new FileObject[0];
     }
 
     private FileObject getBuildClassesDir() {
@@ -330,9 +326,11 @@ public class J2SEExtendedClassPathProvider implements ClassPathProvider, Propert
         if (cp == null) {
             switch (type) {
                 case 0:
+                    if (this.sourceRoots == null) return null;
                     cp = ClassPathFactory.createClassPath(new SourcePathImplementation(this.sourceRoots, helper, evaluator));
                     break;
                 case 1:
+                    if (this.testSourceRoots == null) return null;
                     cp = ClassPathFactory.createClassPath(new SourcePathImplementation(this.testSourceRoots, helper, evaluator));
                     break;
             }
