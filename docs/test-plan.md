@@ -46,7 +46,17 @@ Prerequisites:
 
 ## 5. Навигация
 
-- [ ] **Ctrl+Click** на имени функции/класса/свойства переходит к декларации
+> Примечание: тестировать навигацию только на `.kt`-файлах проекта, используя ссылки на типы и функции,
+> объявленные в `.kt`-файлах (не в JDK/stdlib). Причины — см. раздел «Известные ограничения».
+> Тестовый файл: `MultiRangeSequence.kt`.
+>
+> **ВАЖНО:** использовать **Left Ctrl** — Right Ctrl не привязан к hyperlink-action в NB.
+
+- [x] **Ctrl+Click** на имени функции/класса/свойства переходит к декларации
+  - `putInitialSegment(rangeSelector, ...)` → декларация в `IRangeStore`
+  - `RangeSelector(destination, rangeCode)` → `data class RangeSelector`
+  - `StoredSegmentRange(rangeStart, rangeEnd)` → `data class StoredSegmentRange`
+  - `SetStartResult.SET_START_NEXT_OK` → enum-константа в `SetStartResult`
 - [ ] Ctrl+Click на элементе из stdlib открывает декларацию в stdlib-sources (или показывает декомпилированный байткод)
 - [ ] **Alt+F7** (Find Usages) находит все использования символа
 - [ ] **Ctrl+B** (Go to Declaration) работает аналогично Ctrl+Click
@@ -120,3 +130,4 @@ Prerequisites:
 - `SourceRoots` недоступен из classloader плагина → classpath J2SE-проектов не расширяется (ошибка поймана, не вызывает краш)
 - `DependencyResolutionRequiredException` из Maven API недоступен → compile-classpath Maven-проекта может быть неполным
 - Навигация в декларации stdlib требует наличия sources-артефакта в локальном Maven-репозитории
+- **JDK-классы недоступны при анализе** (`java.io.Serializable`, `ConcurrentHashMap` и др.) — Kotlin 1.3.72 компилятор не может правильно настроить classpath для JDK модульной системы (JPMS). Следствие: (а) навигация на JDK-классы не работает; (б) навигация на свойства/методы объектов, чьи типы транзитивно зависят от JDK-типов, не работает. Для тестирования навигации использовать только ссылки на типы и функции, объявленные в `.kt`-файлах проекта.

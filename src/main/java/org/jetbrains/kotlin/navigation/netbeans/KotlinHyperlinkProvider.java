@@ -44,10 +44,9 @@ public class KotlinHyperlinkProvider implements HyperlinkProviderExt {
     public boolean isHyperlinkPoint(Document doc, int offset, HyperlinkType type) {
         psi = NavigationUtilKt.getReferenceExpression(doc, offset);
         if (psi == null) return false;
-        
+
         referenceExpression = ReferenceUtilsKt.getReferenceExpression(psi);
         return referenceExpression != null;
-        
     }
 
     @Override

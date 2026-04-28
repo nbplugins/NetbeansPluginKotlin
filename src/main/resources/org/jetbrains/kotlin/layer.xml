@@ -159,8 +159,44 @@
                     <file name="JavaIndexer.shadow">
                         <attr name="originalFile" stringvalue="Editors/text/x-java/JavaIndexer.instance"/>
                     </file>
+                    <!-- @MimeRegistration annotations not processed (-proc:none), registered manually -->
+                    <folder name="HyperlinkProviders">
+                        <file name="org-jetbrains-kotlin-navigation-netbeans-KotlinHyperlinkProvider.instance">
+                            <attr name="instanceClass" stringvalue="org.jetbrains.kotlin.navigation.netbeans.KotlinHyperlinkProvider"/>
+                        </file>
+                    </folder>
+                    <folder name="BracesMatchers">
+                        <file name="org-jetbrains-kotlin-diagnostics-netbeans-bracesmatcher-KotlinBracesMatcherFactory.instance">
+                            <attr name="instanceClass" stringvalue="org.jetbrains.kotlin.diagnostics.netbeans.bracesmatcher.KotlinBracesMatcherFactory"/>
+                            <attr name="instanceOf" stringvalue="org.netbeans.spi.editor.bracesmatching.BracesMatcherFactory"/>
+                            <attr name="position" intvalue="0"/>
+                        </file>
+                    </folder>
+                    <file name="org-jetbrains-kotlin-reformatting-KotlinReformatTaskFactory.instance">
+                        <attr name="instanceClass" stringvalue="org.jetbrains.kotlin.reformatting.KotlinReformatTaskFactory"/>
+                        <attr name="instanceOf" stringvalue="org.netbeans.modules.editor.indent.spi.ReformatTask$Factory"/>
+                    </file>
+                    <file name="org-jetbrains-kotlin-indentation-KotlinIndentTaskFactory.instance">
+                        <attr name="instanceClass" stringvalue="org.jetbrains.kotlin.indentation.KotlinIndentTaskFactory"/>
+                        <attr name="instanceOf" stringvalue="org.netbeans.modules.editor.indent.spi.IndentTask$Factory"/>
+                    </file>
                 </folder>
             </folder>
+    </folder>
+
+    <!-- JavaHyperlinkProvider for text/x-java: navigates from Java to Kotlin declarations -->
+    <folder name="Editors">
+        <folder name="text">
+            <folder name="x-java">
+                <folder name="HyperlinkProviders">
+                    <file name="org-jetbrains-kotlin-navigation-netbeans-JavaHyperlinkProvider.instance">
+                        <attr name="instanceClass" stringvalue="org.jetbrains.kotlin.navigation.netbeans.JavaHyperlinkProvider"/>
+                        <attr name="instanceOf" stringvalue="org.netbeans.lib.editor.hyperlink.spi.HyperlinkProviderExt"/>
+                        <attr name="position" intvalue="1000"/>
+                    </file>
+                </folder>
+            </folder>
+        </folder>
     </folder>
 
     <folder name="OptionsDialog">
