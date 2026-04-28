@@ -57,6 +57,7 @@ public class KotlinLanguage extends DefaultLanguageConfig {
 
     @Override
     public Parser getParser(){
+        org.jetbrains.kotlin.log.KotlinLogger.INSTANCE.logInfo("KotlinLanguage.getParser() called");
         return new KotlinParser();
     }
 

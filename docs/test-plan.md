@@ -10,18 +10,18 @@ Prerequisites:
 
 ## 1. Установка и загрузка
 
-- [ ] Плагин отображается в Tools → Plugins → Installed как «Kotlin»
-- [ ] При открытии Maven Kotlin-проекта прогресс-бар «Loading Kotlin environment» появляется и **завершается** (не зависает)
-- [ ] В `messages.log` нет `ExceptionInInitializerError` от `KotlinEnvironment`
+- [x] Плагин отображается в Tools → Plugins → Installed как «Kotlin»
+- [x] При открытии Maven Kotlin-проекта прогресс-бар «Loading Kotlin environment» появляется и **завершается** (не зависает)
+- [x] В `messages.log` нет `ExceptionInInitializerError` от `KotlinEnvironment`
 
 ---
 
 ## 2. Подсветка синтаксиса
 
-- [ ] `.kt` файл открывается с подсветкой ключевых слов (`fun`, `class`, `val`, `var`, `if`, `when`, …)
-- [ ] Строки, числа, комментарии подсвечены отдельными цветами
-- [ ] Аннотации (`@Override`, `@JvmStatic`) подсвечены
-- [ ] Семантическая подсветка: локальные переменные, поля, параметры различаются цветом
+- [x] `.kt` файл открывается с подсветкой ключевых слов (`fun`, `class`, `val`, `var`, `if`, `when`, …)
+- [x] Строки и комментарии подсвечены отдельными цветами
+- [x] Аннотации (`@Override`, `@JvmStatic`) подсвечены
+- [x] Семантическая подсветка: локальные переменные, поля, параметры различаются цветом
 
 ---
 
@@ -86,6 +86,11 @@ Prerequisites:
 ---
 
 ## 10. Отладка
+
+> **Внимание:** регистрация debugger-провайдеров (`KotlinToggleBreakpointActionProvider`, `KotlinSourcePathProvider`, `GlyphGutterActions/KotlinToggleBreakpointAction`) временно отключена в `layer.xml` (с версии 0.3.19), потому что `org.netbeans.modules.debugger.jpda.EditorContextBridge` находится в Friend-restricted модуле и недоступен из нашего classloader-а. Перед прогоном этого раздела:
+> 1. Переписать `KotlinToggleBreakpointActionProvider` (и связанные debugger-классы) на reflection-доступ к `EditorContextBridge`, по аналогии с `MavenHelper`.
+> 2. Восстановить блок `<folder name="Debugger">` и `<folder name="GlyphGutterActions">` в `src/main/resources/org/jetbrains/kotlin/layer.xml`.
+> 3. Только после этого имеет смысл проверять пункты ниже.
 
 - [ ] Точка останова на строке `.kt` файла устанавливается (красный кружок в gutter)
 - [ ] Запуск проекта в Debug-режиме останавливается на точке останова

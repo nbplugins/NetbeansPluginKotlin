@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>  
   <groupId>Kotlin</groupId>  
   <artifactId>kotlin.netbeans.plugin</artifactId>  
-  <version>0.3.4-SNAPSHOT</version>
+  <version>0.3.27-SNAPSHOT</version>
   <packaging>nbm</packaging>  
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -66,11 +66,11 @@
         <artifactId>nbm-maven-plugin</artifactId>
         <version>14.3</version>
         <extensions>true</extensions>  
-        <configuration> 
-          <licenseFile>license.txt</licenseFile>  
-          <licenseName>Apache License, Version 2.0</licenseName>  
-          <verifyRuntime>warn</verifyRuntime> 
-        </configuration> 
+        <configuration>
+          <licenseFile>license.txt</licenseFile>
+          <licenseName>Apache License, Version 2.0</licenseName>
+          <verifyRuntime>warn</verifyRuntime>
+        </configuration>
       </plugin>  
       <plugin> 
         <groupId>org.apache.maven.plugins</groupId>  
@@ -404,10 +404,15 @@
     </dependency>  
     <dependency> 
       <groupId>org.netbeans.api</groupId>  
-      <artifactId>org-netbeans-modules-editor-mimelookup</artifactId>  
-      <version>${netbeans.version}</version>  
-      <type>jar</type> 
-    </dependency>  
+      <artifactId>org-netbeans-modules-editor-mimelookup</artifactId>
+      <version>${netbeans.version}</version>
+      <type>jar</type>
+    </dependency>
+    <dependency>
+      <groupId>org.netbeans.api</groupId>
+      <artifactId>org-netbeans-modules-editor-settings</artifactId>
+      <version>${netbeans.version}</version>
+    </dependency>
     <dependency> 
       <groupId>org.netbeans.api</groupId>  
       <artifactId>org-netbeans-api-templates</artifactId>  

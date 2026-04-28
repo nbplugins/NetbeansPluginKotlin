@@ -132,10 +132,13 @@ public class ProjectUtils {
     
     private static Set<String> getProjectClassPath(Project project) {
         ClassPathExtender extendedProvider = KotlinProjectHelper.INSTANCE.getExtendedClassPath(project);
+        if (extendedProvider == null) {
+            return Collections.emptySet();
+        }
         ClassPath boot = extendedProvider.getProjectSourcesClassPath(ClassPath.BOOT);
         ClassPath src = extendedProvider.getProjectSourcesClassPath(ClassPath.SOURCE);
         ClassPath compile = extendedProvider.getProjectSourcesClassPath(ClassPath.COMPILE);
-        
+
         return createListOfClassPaths(boot, src, compile);
     }
     

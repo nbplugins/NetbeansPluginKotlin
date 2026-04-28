@@ -60,7 +60,10 @@ public class MavenProjectOpenedHook extends ProjectOpenedHook{
                                 try {
                                     KotlinEnvironment.Companion.getEnvironment(project);
                                 } catch (Throwable ex) {
-                                    KotlinLogger.INSTANCE.logWarning("KotlinEnvironment init failed: " + ex);
+                                    KotlinLogger.INSTANCE.logWarning("KotlinEnvironment init failed: " + ex
+                                            + (ex.getCause() != null ? "\n  Caused by: " + ex.getCause() : ""));
+                                    java.util.logging.Logger.getLogger(MavenProjectOpenedHook.class.getName())
+                                            .log(java.util.logging.Level.WARNING, "KotlinEnvironment init failed", ex);
                                 } finally {
                                     progressBar.finish();
                                     progressHandleRun = false;
