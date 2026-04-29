@@ -23,41 +23,43 @@ import java.awt.event.ActionListener;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import javax.swing.ImageIcon;
-import org.apache.maven.artifact.Artifact;
-import org.apache.maven.model.Dependency;
-import org.apache.maven.project.MavenProject;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.kotlin.log.KotlinLogger;
 import org.jetbrains.kotlin.projectsextensions.maven.buildextender.PomXmlModifier;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ProjectManager;
-import org.netbeans.modules.maven.api.NbMavenProject;
 import org.openide.awt.NotificationDisplayer;
 import org.openide.filesystems.FileObject;
 import org.openide.util.Exceptions;
 import org.openide.util.ImageUtilities;
 
 /**
+ * Helper for accessing Maven project information.
  *
- * @author Alexander.Baratynski
+ * Note: classes from {@code org.apache.maven.*} (MavenProject, Artifact, Dependency)
+ * and {@code org.netbeans.modules.maven.api.NbMavenProject} are accessed via reflection
+ * because the maven-embedder/maven NetBeans modules use {@code OpenIDE-Module-Friends}
+ * to restrict public-package access to a fixed list of friend modules. Direct imports
+ * would cause NoClassDefFoundError at runtime.
  */
 public class MavenHelper {
-    
+
     private static final Map<Project, List<? extends Project>> depProjects = new HashMap<>();
-    
+
     private static final List<Project> askedToConfigure = new ArrayList<>();
-    
+
     public static void configure(Project project) {
         if (askedToConfigure.contains(project)) {
             return;
         }
-        
-        MavenProject mavenProject = getOriginalMavenProject(project);
+
+        Object mavenProject = getOriginalMavenProject(project);
         if (mavenProject == null) return;
         if (!kotlinPluginConfigured(mavenProject)) {
             final PomXmlModifier pomModifier = new PomXmlModifier(project);
@@ -67,78 +69,90 @@ public class MavenHelper {
                     pomModifier.checkPom();
                 }
             };
-            NotificationDisplayer.getDefault().notify("Kotlin is not configured", 
-                    new ImageIcon(ImageUtilities.loadImage("org/jetbrains/kotlin/kotlin.png")), 
+            NotificationDisplayer.getDefault().notify("Kotlin is not configured",
+                    new ImageIcon(ImageUtilities.loadImage("org/jetbrains/kotlin/kotlin.png")),
                     "Configure Kotlin", listener);
         }
-        
+
         askedToConfigure.add(project);
     }
 
-    private static boolean kotlinPluginConfigured(MavenProject mavenProject) {
-        Set<Artifact> pluginArtifacts = mavenProject.getPluginArtifacts();
-        if (pluginArtifacts == null) return false;
-        
-        for (Artifact plugin : pluginArtifacts) {
-            String groupId = plugin.getGroupId();
-            String artifactId = plugin.getArtifactId();
-            
-            if (groupId.equals("org.jetbrains.kotlin") 
-                    && artifactId.equals("kotlin-maven-plugin")) return true;
+    private static boolean kotlinPluginConfigured(Object mavenProject) {
+        try {
+            Object pluginArtifacts = mavenProject.getClass().getMethod("getPluginArtifacts").invoke(mavenProject);
+            if (!(pluginArtifacts instanceof Collection)) return false;
+
+            for (Object plugin : (Collection<?>) pluginArtifacts) {
+                String groupId = (String) plugin.getClass().getMethod("getGroupId").invoke(plugin);
+                String artifactId = (String) plugin.getClass().getMethod("getArtifactId").invoke(plugin);
+
+                if ("org.jetbrains.kotlin".equals(groupId)
+                        && "kotlin-maven-plugin".equals(artifactId)) return true;
+            }
+        } catch (ReflectiveOperationException ex) {
+            KotlinLogger.INSTANCE.logException("kotlinPluginConfigured failed", ex);
         }
-        
+
         return false;
     }
-    
+
     public static boolean hasParent(Project project) {
         return getParentProjectDirectory(project.getProjectDirectory()) != null;
     }
-    
-    public static MavenProject getOriginalMavenProject(Project proj) {
-        Class clazz = proj.getClass();
+
+    /** Returns an {@code org.apache.maven.project.MavenProject} instance, or null. */
+    public static Object getOriginalMavenProject(Project proj) {
+        Class<?> clazz = proj.getClass();
         try {
             Method getOriginalProject = clazz.getMethod("getOriginalMavenProject");
-            return (MavenProject) getOriginalProject.invoke(proj);
+            return getOriginalProject.invoke(proj);
         } catch (ReflectiveOperationException ex) {
             Exceptions.printStackTrace(ex);
         }
-        
+
         return null;
     }
-    
-    public static NbMavenProject getProjectWatcher(Project proj) {
-        Class clazz = proj.getClass();
+
+    /** Returns an {@code org.netbeans.modules.maven.api.NbMavenProject} instance, or null. */
+    public static Object getProjectWatcher(Project proj) {
+        Class<?> clazz = proj.getClass();
         try {
             Method getProjectWatcher = clazz.getMethod("getProjectWatcher");
-            return (NbMavenProject) getProjectWatcher.invoke(proj);
+            return getProjectWatcher.invoke(proj);
         } catch (ReflectiveOperationException ex) {
             Exceptions.printStackTrace(ex);
         }
-        
+
         return null;
     }
-    
+
     @Nullable
     public static Project getMavenProject(FileObject dir) throws IOException {
         if (dir == null) {
             return null;
         }
-        
+
         if (ProjectManager.getDefault().isProject(dir)){
             return ProjectManager.getDefault().findProject(dir);
         }
-        
+
         return null;
     }
-    
+
     public static boolean isModuled(Project project) {
-        MavenProject originalProject = getOriginalMavenProject(project);
+        Object originalProject = getOriginalMavenProject(project);
         if (originalProject == null) {
             return false;
         }
-        return !originalProject.getModules().isEmpty();
+        try {
+            Object modules = originalProject.getClass().getMethod("getModules").invoke(originalProject);
+            return (modules instanceof Collection) && !((Collection<?>) modules).isEmpty();
+        } catch (ReflectiveOperationException ex) {
+            KotlinLogger.INSTANCE.logException("isModuled failed", ex);
+            return false;
+        }
     }
-    
+
     public static boolean isMavenMainModuledProject(Project project) {
         if (isModuled(project)) {
             try {
@@ -151,20 +165,20 @@ public class MavenHelper {
         }
         return false;
     }
-    
+
     private static FileObject getParentProjectDirectory(FileObject proj) {
         if (ProjectManager.getDefault().isProject(proj.getParent())) {
             FileObject parent = getParentProjectDirectory(proj.getParent());
-            
+
             if (parent != null) {
                 return parent;
             }
             return proj.getParent();
         }
-        
+
         return null;
     }
-    
+
     private static FileObject getMainParentFolder(Project proj) {
         FileObject projDir = proj.getProjectDirectory();
         FileObject parent = projDir;
@@ -174,59 +188,66 @@ public class MavenHelper {
                 parent = projDir;
             }
         }
-        
+
         return parent;
     }
-    
+
     public static Project getMainParent(Project proj) throws IOException {
         Project parent = getMavenProject(getParentProjectDirectory(proj.getProjectDirectory()));
         return parent != null ? parent : proj;
     }
-    
+
     private static Set<FileObject> allModules(FileObject parent) {
         Set<FileObject> modules = Sets.newHashSet();
         modules.add(parent);
-        
+
         for (FileObject fo : parent.getChildren()) {
             if (fo.isFolder() && fo.getFileObject("pom.xml") != null) {
                 modules.addAll(allModules(fo));
             }
         }
-        
+
         return modules;
     }
-    
+
     public static List<? extends Project> getDependencyProjects(Project project){
         if (depProjects.get(project) == null) {
             depProjects.put(project, findDependencyProjects(project));
         }
-        
+
         return depProjects.get(project);
     }
-    
+
     private static List<? extends Project> findDependencyProjects(Project project){
         List<Project> dependencyProjects = new ArrayList<>();
-        MavenProject originalProject = getOriginalMavenProject(project);
+        Object originalProject = getOriginalMavenProject(project);
         if (originalProject == null) {
             return dependencyProjects;
         }
-        List compileDependencies = originalProject.getCompileDependencies();
         List<String> dependencies = Lists.newArrayList();
-        
-        for (Object dependency : compileDependencies) {
-            dependencies.add(((Dependency) dependency).getArtifactId());
+        try {
+            Object compileDependencies = originalProject.getClass().getMethod("getCompileDependencies").invoke(originalProject);
+            if (compileDependencies instanceof Collection) {
+                for (Object dependency : (Collection<?>) compileDependencies) {
+                    String artifactId = (String) dependency.getClass().getMethod("getArtifactId").invoke(dependency);
+                    dependencies.add(artifactId);
+                }
+            }
+        } catch (ReflectiveOperationException ex) {
+            KotlinLogger.INSTANCE.logException("findDependencyProjects: getCompileDependencies failed", ex);
+            return dependencyProjects;
         }
-        
+
         FileObject mainParentFolder = getMainParentFolder(project);
         Set<FileObject> allModules = allModules(mainParentFolder);
         Set<FileObject> moduleDependencies = Sets.newHashSet();
-        
+
         for (FileObject module : allModules) {
             if (dependencies.contains(module.getName())) {
                 moduleDependencies.add(module);
             }
         }
-        
+
         for (FileObject module : moduleDependencies) {
             try {
                 Project dep = getMavenProject(module);
@@ -237,8 +258,8 @@ public class MavenHelper {
                 KotlinLogger.INSTANCE.logException("Can't find module " + module.getName(), ex);
             }
         }
-       
+
         return dependencyProjects;
     }
-    
+
 }

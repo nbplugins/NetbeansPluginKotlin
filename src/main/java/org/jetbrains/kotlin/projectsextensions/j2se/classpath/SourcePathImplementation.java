@@ -18,6 +18,7 @@ package org.jetbrains.kotlin.projectsextensions.j2se.classpath;
 
 import java.beans.PropertyChangeEvent;
 import java.io.File;
+import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.util.List;
 import java.util.ArrayList;
@@ -28,8 +29,6 @@ import java.net.URI;
 import java.net.URL;
 import java.util.Iterator;
 import java.util.StringTokenizer;
-import org.netbeans.modules.java.api.common.SourceRoots;
-import org.netbeans.modules.java.api.common.project.ProjectProperties;
 import org.netbeans.spi.java.classpath.ClassPathImplementation;
 import org.netbeans.spi.java.classpath.PathResourceImplementation;
 import org.netbeans.spi.java.classpath.support.ClassPathSupport;
@@ -48,31 +47,56 @@ import org.openide.util.WeakListeners;
 
 /**
  * Implementation of a single classpath that is derived from one Ant property.
+ * SourceRoots is accessed via reflection to avoid a static bytecode dependency
+ * on org.netbeans.modules.java.api.common which is not visible to the Kotlin
+ * plugin module classloader at class-load time.
  */
 final class SourcePathImplementation implements ClassPathImplementation, PropertyChangeListener {
+
+    // SourceRoots.PROP_ROOTS constant value
+    private static final String PROP_ROOTS = "roots"; // NOI18N
+    // ProjectProperties constants
+    private static final String INCLUDES = "includes"; // NOI18N
+    private static final String EXCLUDES = "excludes"; // NOI18N
 
     private static final String PROP_BUILD_DIR = "build.dir";   //NOI18N
     private static final String DIR_GEN_BINDINGS = "generated/addons"; // NOI18N
     private static RequestProcessor REQ_PROCESSOR = new RequestProcessor(); // No I18N
     private final PropertyChangeSupport support = new PropertyChangeSupport(this);
     private List<PathResourceImplementation> resources;
-    private final SourceRoots sourceRoots;
+    // Object instead of SourceRoots to avoid static bytecode dep on java.api.common
+    private final Object sourceRoots;
     private final AntProjectHelper projectHelper;
     private final PropertyEvaluator evaluator;
     private FileChangeListener fcl = null;
 
     /**
      * Construct the implementation.
-     * @param sourceRoots used to get the roots information and events
+     * @param sourceRoots SourceRoots instance (passed as Object to avoid classloading)
      * @param projectHelper used to obtain the project root
      */
-    public SourcePathImplementation(SourceRoots sourceRoots, AntProjectHelper projectHelper, PropertyEvaluator evaluator) {
+    public SourcePathImplementation(Object sourceRoots, AntProjectHelper projectHelper, PropertyEvaluator evaluator) {
         assert sourceRoots != null && projectHelper != null && evaluator != null;
         this.sourceRoots = sourceRoots;
-        sourceRoots.addPropertyChangeListener(this);
+        try {
+            Method addPCL = sourceRoots.getClass().getMethod("addPropertyChangeListener", PropertyChangeListener.class);
+            addPCL.invoke(sourceRoots, this);
+        } catch (ReflectiveOperationException ex) {
+            Exceptions.printStackTrace(ex);
+        }
         this.projectHelper = projectHelper;
         this.evaluator = evaluator;
         evaluator.addPropertyChangeListener(this);
+    }
+
+    private URL[] getRootURLs() {
+        try {
+            Method m = sourceRoots.getClass().getMethod("getRootURLs");
+            return (URL[]) m.invoke(sourceRoots);
+        } catch (ReflectiveOperationException ex) {
+            Exceptions.printStackTrace(ex);
+            return new URL[0];
+        }
     }
 
     private synchronized void createListener(String buildDir, String[] paths) {
@@ -125,7 +149,7 @@ final class SourcePathImplementation implements ClassPathImplementation, Propert
                 return this.resources;
             }
         }
-        URL[] roots = sourceRoots.getRootURLs();
+        URL[] roots = getRootURLs();
         synchronized (this) {
             if (this.resources == null) {
                 List<PathResourceImplementation> result = new ArrayList<PathResourceImplementation>(roots.length);
@@ -146,8 +170,8 @@ final class SourcePathImplementation implements ClassPathImplementation, Propert
                         public boolean includes(URL root, String resource) {
                             if (matcher == null) {
                                 matcher = new PathMatcher(
-                                        evaluator.getProperty(ProjectProperties.INCLUDES),
-                                        evaluator.getProperty(ProjectProperties.EXCLUDES),
+                                        evaluator.getProperty(INCLUDES),
+                                        evaluator.getProperty(EXCLUDES),
                                         new File(URI.create(root.toExternalForm())));
                             }
                             return matcher.matches(resource, true);
@@ -167,7 +191,7 @@ final class SourcePathImplementation implements ClassPathImplementation, Propert
 
                         public void propertyChange(PropertyChangeEvent ev) {
                             String prop = ev.getPropertyName();
-                            if (prop == null || prop.equals(ProjectProperties.INCLUDES) || prop.equals(ProjectProperties.EXCLUDES)) {
+                            if (prop == null || prop.equals(INCLUDES) || prop.equals(EXCLUDES)) {
                                 matcher = null;
                                 PropertyChangeEvent ev2 = new PropertyChangeEvent(this, FilteringPathResourceImplementation.PROP_INCLUDES, null, null);
                                 ev2.setPropagationId(ev);
@@ -224,7 +248,7 @@ final class SourcePathImplementation implements ClassPathImplementation, Propert
     }
 
     public void propertyChange(PropertyChangeEvent evt) {
-        if (SourceRoots.PROP_ROOTS.equals(evt.getPropertyName())) {
+        if (PROP_ROOTS.equals(evt.getPropertyName())) {
             invalidate();
         } else if (this.evaluator != null && evt.getSource() == this.evaluator &&
                 (evt.getPropertyName() == null || PROP_BUILD_DIR.equals(evt.getPropertyName()))) {

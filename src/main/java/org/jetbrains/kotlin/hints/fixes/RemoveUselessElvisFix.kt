@@ -29,7 +29,6 @@ class RemoveUselessElvisFix(kotlinError: KotlinError,
 
     override fun isApplicable() = when (kotlinError.diagnostic.factory) {
         Errors.USELESS_ELVIS,
-        Errors.USELESS_ELVIS_ON_LAMBDA_EXPRESSION,
         Errors.USELESS_ELVIS_RIGHT_IS_NULL -> true
         else -> false
     }

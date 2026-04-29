@@ -138,7 +138,7 @@ private fun getImplClassName(memberDescriptor: DeserializedCallableMemberDescrip
         return null
     }
     
-    return memberDescriptor.nameResolver.getName(nameIndex)
+    return org.jetbrains.kotlin.name.Name.identifier(memberDescriptor.nameResolver.getString(nameIndex))
 }
 
 private fun gotoKotlinDeclaration(psi: PsiElement, fromElement: KtElement,
@@ -199,11 +199,11 @@ fun getNavigationData(referenceExpression: KtReferenceExpression,
     val ktFile = referenceExpression.containingKtFile
     val analysisResult = KotlinParser.getAnalysisResult(ktFile, project) ?: return null
     val context = analysisResult.analysisResult.bindingContext
-    
+
     return createReferences(referenceExpression)
             .asSequence()
             .flatMap { it.getTargetDescriptors(context).asSequence() }
-            .mapNotNull { 
+            .mapNotNull {
                 val elementWithSource = getElementWithSource(it, project)
                 if (elementWithSource != null) NavigationData(elementWithSource, it) else null
             }

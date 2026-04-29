@@ -63,7 +63,7 @@ class KotlinCompletionProposal(private val idenStartOffset: Int,
         val handle = source.getElementBinding()
         val doc = handle.getJavaDoc(project) ?: return null
 
-        return ElementHandle.UrlHandle(doc.rawCommentText)
+        return ElementHandle.UrlHandle(doc)
     }
 
     override fun getLhsHtml(formatter: HtmlFormatter) = proposalName

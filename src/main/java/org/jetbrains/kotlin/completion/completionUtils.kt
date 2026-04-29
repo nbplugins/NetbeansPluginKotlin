@@ -165,7 +165,11 @@ fun getIdentifierStartOffset(text: String, offset: Int): Int {
 private fun generateBasicCompletionProposals(file: FileObject, identifierPart: String,
                                              identOffset: Int, editorText: String,
                                              result: AnalysisResultWithProvider): Collection<DeclarationDescriptor> {
-    var simpleNameExpression = getSimpleNameExpression(identOffset)
+    // Only use cached KotlinParser.file if it matches the file being completed
+    val cachedFile = KotlinParser.file
+    var simpleNameExpression = if (cachedFile != null && cachedFile.virtualFile.path.endsWith(file.path)) {
+        getSimpleNameExpression(identOffset)
+    } else null
     if (simpleNameExpression != null) return getReferenceVariants(simpleNameExpression,
             {applicableNameFor(identifierPart, it)}, file, result)
     
@@ -189,7 +193,12 @@ fun createProposals(doc: Document, caretOffset: Int,
     val proposals: MutableList<CompletionProposal> = descriptors.filter { it !is JavaClassConstructorDescriptor }
             .map { KotlinCompletionProposal(identOffset, it, styledDoc, prefix, project) }
             .toMutableList()
-    val ktFile = KotlinParser.file ?: ProjectUtils.getKtFile(editorText, file) ?:  return proposals
+    val cachedKtFile = KotlinParser.file
+    val ktFile = if (cachedKtFile != null && cachedKtFile.virtualFile.path.endsWith(file.path)) {
+        cachedKtFile
+    } else {
+        ProjectUtils.getKtFile(editorText, file)
+    } ?: return proposals
     val psiElement = ktFile.findElementAt(identOffset) ?: return proposals
     
     proposals.addAll(generateKeywordProposals(identifierPart, psiElement, identOffset, prefix))

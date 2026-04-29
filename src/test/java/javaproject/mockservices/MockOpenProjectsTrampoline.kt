@@ -48,4 +48,8 @@ class MockOpenProjectsTrampoline : OpenProjectsTrampoline {
     override fun addProjectGroupChangeListenerAPI(pl: ProjectGroupChangeListener?) {}
 
     override fun removeProjectGroupChangeListenerAPI(pl: ProjectGroupChangeListener?) {}
+
+    override fun createLogicalView() = null
+
+    override fun createPhysicalView() = null
 }

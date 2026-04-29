@@ -36,7 +36,6 @@ import org.jetbrains.kotlin.descriptors.annotations.KotlinTarget.CLASS_ONLY
 import org.jetbrains.kotlin.descriptors.annotations.KotlinTarget.ENUM_CLASS
 import org.jetbrains.kotlin.descriptors.annotations.KotlinTarget.ENUM_ENTRY
 import org.jetbrains.kotlin.descriptors.annotations.KotlinTarget.FUNCTION
-import org.jetbrains.kotlin.descriptors.annotations.KotlinTarget.INNER_CLASS
 import org.jetbrains.kotlin.descriptors.annotations.KotlinTarget.INTERFACE
 import org.jetbrains.kotlin.descriptors.annotations.KotlinTarget.MEMBER_FUNCTION
 import org.jetbrains.kotlin.descriptors.annotations.KotlinTarget.MEMBER_PROPERTY
@@ -247,7 +246,7 @@ object KeywordCompletion {
 
                         is KtEnumEntry -> listOf(ENUM_ENTRY)
 
-                        is KtClassBody -> listOf(CLASS_ONLY, INTERFACE, OBJECT, ENUM_CLASS, ANNOTATION_CLASS, INNER_CLASS, MEMBER_FUNCTION, MEMBER_PROPERTY, FUNCTION, PROPERTY)
+                        is KtClassBody -> listOf(CLASS_ONLY, INTERFACE, OBJECT, ENUM_CLASS, ANNOTATION_CLASS, MEMBER_FUNCTION, MEMBER_PROPERTY, FUNCTION, PROPERTY)
 
                         is KtFile -> listOf(CLASS_ONLY, INTERFACE, OBJECT, ENUM_CLASS, ANNOTATION_CLASS, TOP_LEVEL_FUNCTION, TOP_LEVEL_PROPERTY, FUNCTION, PROPERTY)
 
@@ -265,7 +264,7 @@ object KeywordCompletion {
                                 ownerDeclaration.isInterface() -> KotlinTarget.INTERFACE
                                 ownerDeclaration.isEnum() -> KotlinTarget.ENUM_CLASS
                                 ownerDeclaration.isAnnotation() -> KotlinTarget.ANNOTATION_CLASS
-                                ownerDeclaration.isInner() -> KotlinTarget.INNER_CLASS
+                                ownerDeclaration.isInner() -> KotlinTarget.CLASS_ONLY
                                 else -> KotlinTarget.CLASS_ONLY
                             }
                         }
@@ -275,11 +274,7 @@ object KeywordCompletion {
                         else -> return true
                     }
 
-                    val modifierParents = ModifierCheckerCore.possibleParentTargetMap[keywordTokenType]
-                    if (modifierParents != null && parentTarget !in modifierParents) return false
-
-                    val deprecatedParents = ModifierCheckerCore.deprecatedParentTargetMap[keywordTokenType]
-                    if (deprecatedParents != null && parentTarget in deprecatedParents) return false
+                    if (!ModifierCheckerCore.isPossibleParentTarget(keywordTokenType, parentTarget, org.jetbrains.kotlin.config.LanguageVersionSettingsImpl.DEFAULT)) return false
 
                     return true
                 }

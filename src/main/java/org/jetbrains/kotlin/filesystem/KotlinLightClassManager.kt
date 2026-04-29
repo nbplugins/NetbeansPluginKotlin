@@ -25,8 +25,7 @@ import org.jetbrains.kotlin.filesystem.lightclasses.LightClassFile
 import org.jetbrains.kotlin.model.KotlinEnvironment
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.jetbrains.kotlin.fileClasses.*
-import org.jetbrains.kotlin.fileClasses.NoResolveFileClassesProvider
-import org.jetbrains.kotlin.load.kotlin.PackagePartClassUtils
+import org.jetbrains.kotlin.fileClasses.JvmFileClassUtil
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtFile
@@ -90,8 +89,8 @@ class KotlinLightClassManager(private val project: NBProject) {
             if (internalName != null) lightClasses.add(computePathByInternalName(internalName))
         }
 
-        if (PackagePartClassUtils.fileHasTopLevelCallables(ktFile)) {
-            val newFacadeInternalName = NoResolveFileClassesProvider.getFileClassInternalName(ktFile)
+        if (ktFile != null && ktFile.declarations.any { it is KtNamedFunction || it is KtProperty }) {
+            val newFacadeInternalName = JvmFileClassUtil.getFileClassInternalName(ktFile)
             lightClasses.add(computePathByInternalName(newFacadeInternalName))
         }
 

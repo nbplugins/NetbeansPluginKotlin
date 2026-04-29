@@ -64,7 +64,7 @@ fun getToolTip(referenceExpression: KtReferenceExpression?,
         }
         is NetBeansJavaSourceElement -> {
             val handle = sourceElement.getElementBinding()
-            val javaDoc = handle.getJavaDoc(project)?.commentText()?.let { "\n\n$it" } ?: ""
+            val javaDoc = handle.getJavaDoc(project)?.let { "\n\n$it" } ?: ""
             
             val element = sourceElement.javaElement
             when (element) {

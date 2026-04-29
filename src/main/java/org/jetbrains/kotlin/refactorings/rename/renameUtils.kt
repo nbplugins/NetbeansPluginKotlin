@@ -24,6 +24,7 @@ import com.intellij.psi.util.PsiTreeUtil
 import java.io.File
 import javax.swing.text.Position
 import org.jetbrains.kotlin.fileClasses.*
+import org.jetbrains.kotlin.fileClasses.JvmFileClassUtil
 import org.jetbrains.kotlin.highlighter.occurrences.*
 import org.jetbrains.kotlin.navigation.references.resolveToSourceDeclaration
 import org.jetbrains.kotlin.psi.*
@@ -201,7 +202,7 @@ private fun getClassMethod(searchingElement: KtDeclaration,
                            methodName: String,
                            numberOfValueParameters: Int = 0): ElementHandle<*>? {
     val classOrObject = searchingElement.containingClassOrObject?.fqName ?:
-            NoResolveFileClassesProvider.getFileClassFqName(searchingElement.containingKtFile)
+            JvmFileClassUtil.getFileClassInfoNoResolve(searchingElement.containingKtFile).fileClassFqName
     val elementHandle = project.findTypeElementHandle(classOrObject.asString()) ?: return null
     val methods = elementHandle.getMethodsHandles(project)
 

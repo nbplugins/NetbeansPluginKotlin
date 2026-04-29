@@ -83,10 +83,14 @@ object KotlinProjectHelper {
         if (!checkProject()) return null
         
         if (!extendedClassPaths.containsKey(this)) {
-            when (this::class.java.name) {
-                "org.netbeans.modules.java.j2seproject.J2SEProject" -> extendedClassPaths.put(this, J2SEExtendedClassPathProvider(this))
-                "org.netbeans.modules.maven.NbMavenProjectImpl" -> extendedClassPaths.put(this, MavenExtendedClassPath(this))
-                "org.netbeans.gradle.project.NbGradleProject" -> extendedClassPaths.put(this, GradleExtendedClassPath(this))
+            try {
+                when (this::class.java.name) {
+                    "org.netbeans.modules.java.j2seproject.J2SEProject" -> extendedClassPaths.put(this, J2SEExtendedClassPathProvider(this))
+                    "org.netbeans.modules.maven.NbMavenProjectImpl" -> extendedClassPaths.put(this, MavenExtendedClassPath(this))
+                    "org.netbeans.gradle.project.NbGradleProject" -> extendedClassPaths.put(this, GradleExtendedClassPath(this))
+                }
+            } catch (ex: NoClassDefFoundError) {
+                java.util.logging.Logger.getLogger("KotlinProjectHelper").warning("Cannot create extended classpath for ${this::class.java.name}: $ex")
             }
         }
         return extendedClassPaths[this]
@@ -117,10 +121,14 @@ object KotlinProjectHelper {
     }
 
     fun Project.updateExtendedClassPath() {
-        when (this::class.java.name) {
-            "org.netbeans.modules.java.j2seproject.J2SEProject" -> extendedClassPaths.put(this, J2SEExtendedClassPathProvider(this))
-            "org.netbeans.modules.maven.NbMavenProjectImpl" -> extendedClassPaths.put(this, MavenExtendedClassPath(this))
-            "org.netbeans.gradle.project.NbGradleProject" -> extendedClassPaths.put(this, GradleExtendedClassPath(this))
+        try {
+            when (this::class.java.name) {
+                "org.netbeans.modules.java.j2seproject.J2SEProject" -> extendedClassPaths.put(this, J2SEExtendedClassPathProvider(this))
+                "org.netbeans.modules.maven.NbMavenProjectImpl" -> extendedClassPaths.put(this, MavenExtendedClassPath(this))
+                "org.netbeans.gradle.project.NbGradleProject" -> extendedClassPaths.put(this, GradleExtendedClassPath(this))
+            }
+        } catch (ex: NoClassDefFoundError) {
+            java.util.logging.Logger.getLogger("KotlinProjectHelper").warning("Cannot update extended classpath for ${this::class.java.name}: $ex")
         }
         
         updateFullClassPath()

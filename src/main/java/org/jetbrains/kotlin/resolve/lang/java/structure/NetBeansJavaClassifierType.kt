@@ -32,9 +32,11 @@ import org.jetbrains.kotlin.resolve.lang.java.*
 class NetBeansJavaClassifierType(handle: TypeMirrorHandle<*>, project: Project) :
         NetBeansJavaType(handle, project), JavaClassifierType {
 
-    override val presentableText 
+    override val presentableText
         get() = handle.getName(project)
-    override val canonicalText 
+    override val classifierQualifiedName: String
+        get() = handle.getName(project)
+    val canonicalText
         get() = handle.getName(project)
 
     override val isRaw: Boolean

@@ -25,7 +25,6 @@ import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper;
 import org.netbeans.api.progress.ProgressHandle;
 import org.netbeans.api.progress.ProgressHandleFactory;
 import org.netbeans.api.project.Project;
-import org.netbeans.modules.maven.api.NbMavenProject;
 import org.netbeans.spi.project.ui.ProjectOpenedHook;
 import org.openide.filesystems.FileAttributeEvent;
 import org.openide.filesystems.FileChangeListener;
@@ -55,12 +54,20 @@ public class MavenProjectOpenedHook extends ProjectOpenedHook{
                             @Override
                             public void run(){
                                 progressHandleRun = true;
-                                final ProgressHandle progressBar = 
+                                final ProgressHandle progressBar =
                                     ProgressHandleFactory.createHandle("Loading Kotlin environment");
                                 progressBar.start();
-                                KotlinEnvironment.Companion.getEnvironment(project);
-                                progressBar.finish();
-                                progressHandleRun = false;
+                                try {
+                                    KotlinEnvironment.Companion.getEnvironment(project);
+                                } catch (Throwable ex) {
+                                    KotlinLogger.INSTANCE.logWarning("KotlinEnvironment init failed: " + ex
+                                            + (ex.getCause() != null ? "\n  Caused by: " + ex.getCause() : ""));
+                                    java.util.logging.Logger.getLogger(MavenProjectOpenedHook.class.getName())
+                                            .log(java.util.logging.Level.WARNING, "KotlinEnvironment init failed", ex);
+                                } finally {
+                                    progressBar.finish();
+                                    progressHandleRun = false;
+                                }
                             }
                         };
                         if (!progressHandleRun) {
@@ -72,7 +79,16 @@ public class MavenProjectOpenedHook extends ProjectOpenedHook{
                         
                         if (pomXml != null) {
                             pomXml.addFileChangeListener(pomListener);
-                            getProjectWatcher().addPropertyChangeListener(pomListener);
+                            Object watcher = getProjectWatcher();
+                            if (watcher != null) {
+                                try {
+                                    watcher.getClass()
+                                        .getMethod("addPropertyChangeListener", PropertyChangeListener.class)
+                                        .invoke(watcher, pomListener);
+                                } catch (ReflectiveOperationException ex) {
+                                    KotlinLogger.INSTANCE.logWarning("Cannot add POM listener: " + ex.getMessage());
+                                }
+                            }
                         }
                         
                         KotlinProjectHelper.INSTANCE.doInitialScan(project);
@@ -80,13 +96,14 @@ public class MavenProjectOpenedHook extends ProjectOpenedHook{
             };
         thread.start();
     }
-    private NbMavenProject getProjectWatcher() {
+    private Object getProjectWatcher() {
         Class clazz = project.getClass();
         try {
             Method getProjectWatcher = clazz.getMethod("getProjectWatcher");
-            return (NbMavenProject) getProjectWatcher.invoke(project);
-        } catch (ReflectiveOperationException ex) {} 
-        
+            return getProjectWatcher.invoke(project);
+        } catch (ReflectiveOperationException | NoClassDefFoundError ex) {
+            KotlinLogger.INSTANCE.logWarning("Cannot get Maven project watcher: " + ex.getMessage());
+        }
         return null;
     }
     @Override

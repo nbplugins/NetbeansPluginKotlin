@@ -3,13 +3,16 @@ package org.jetbrains.kotlin.resolve
 import com.intellij.openapi.vfs.VirtualFile
 import java.io.EOFException
 import org.netbeans.api.project.Project
+import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.model.KotlinEnvironment
-import org.jetbrains.kotlin.descriptors.PackagePartProvider
-import org.jetbrains.kotlin.load.kotlin.ModuleMapping
-import org.jetbrains.kotlin.load.kotlin.PackageParts
+import org.jetbrains.kotlin.load.kotlin.PackagePartProvider
+import org.jetbrains.kotlin.metadata.jvm.deserialization.ModuleMapping
+import org.jetbrains.kotlin.metadata.jvm.deserialization.PackageParts
+import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.utils.SmartList
 
-class KotlinPackagePartProvider(val project: Project) : PackagePartProvider {
+class KotlinPackagePartProvider(val project: Project) : PackagePartProvider,
+        org.jetbrains.kotlin.serialization.deserialization.MetadataPartProvider {
     private data class ModuleMappingInfo(val root: VirtualFile, val mapping: ModuleMapping)
     
     private val notLoadedRoots by lazy(LazyThreadSafetyMode.NONE) {
@@ -41,8 +44,10 @@ class KotlinPackagePartProvider(val project: Project) : PackagePartProvider {
     }
     
     override fun findMetadataPackageParts(packageFqName: String) = getPackageParts(packageFqName).values
-            .flatMap(PackageParts::metadataParts)
+            .flatMap { it.metadataParts }
             .distinct()
+
+    override fun getAnnotationsOnBinaryModule(moduleName: String): List<ClassId> = emptyList()
     
     @Synchronized private fun getPackageParts(packageFqName: String): Map<VirtualFile, PackageParts> {
         processNotLoadedRelevantRoots(packageFqName)
@@ -73,12 +78,19 @@ class KotlinPackagePartProvider(val project: Project) : PackagePartProvider {
             val metaInf = root.findChild("META-INF") ?: continue
             val moduleFiles = metaInf.children.filter { it.name.endsWith(ModuleMapping.MAPPING_FILE_EXT) }
             for (moduleFile in moduleFiles) {
+                if (!moduleFile.isValid) continue
                 val mapping = try {
-                    if (!moduleFile.isValid) continue
-                    ModuleMapping.create(moduleFile.contentsToByteArray(), moduleFile.toString())
-                }
-                catch (e: EOFException) {
-                    throw RuntimeException("Error on reading package parts for '$packageFqName' package in '$moduleFile', roots: $notLoadedRoots", e)
+                    ModuleMapping.loadModuleMapping(moduleFile.contentsToByteArray(), moduleFile.toString(),
+                            skipMetadataVersionCheck = true, isJvmPackageNameSupported = false) { }
+                } catch (e: EOFException) {
+                    KotlinLogger.INSTANCE.logWarning("KotlinPackagePartProvider: skipping unreadable module file $moduleFile (EOF): ${e.message}")
+                    continue
+                } catch (e: Throwable) {
+                    // .kotlin_module written by a newer Kotlin version (e.g. 1.4+) uses tags our 1.3.72
+                    // protobuf reader doesn't recognise → InvalidProtocolBufferException. Skip the file
+                    // instead of aborting the whole analysis.
+                    KotlinLogger.INSTANCE.logWarning("KotlinPackagePartProvider: skipping incompatible module file $moduleFile: ${e.javaClass.simpleName}: ${e.message}")
+                    continue
                 }
                 loadedModules.add(ModuleMappingInfo(root, mapping))
             }

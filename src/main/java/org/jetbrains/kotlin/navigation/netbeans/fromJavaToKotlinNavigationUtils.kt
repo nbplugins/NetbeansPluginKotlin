@@ -22,7 +22,7 @@ import java.io.IOException
 import javax.lang.model.element.ElementKind
 import javax.swing.text.Document
 import org.jetbrains.kotlin.utils.ProjectUtils
-import org.jetbrains.kotlin.fileClasses.NoResolveFileClassesProvider
+import org.jetbrains.kotlin.fileClasses.JvmFileClassUtil
 import org.jetbrains.kotlin.filesystem.lightclasses.LightClassBuilderFactory
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.psi.*
@@ -55,7 +55,7 @@ fun findKotlinFileToNavigate(element: ElementHandle<*>?, project: Project?, doc:
 
     ktFiles.forEach {
         if (element.kind == ElementKind.CLASS) {
-            val fqName = NoResolveFileClassesProvider.getFileClassInfo(it).fileClassFqName
+            val fqName = JvmFileClassUtil.getFileClassInfoNoResolve(it).fileClassFqName
             if (fqName.asString() == element.qualifiedName) {
                 return Pair(it, 0)
             }
@@ -239,7 +239,7 @@ private fun getDeclaringTypeFqName(ktElement: KtElement?): FqName? {
 
 private fun getTypeFqName(element: PsiElement?) = when (element) {
     is KtClassOrObject -> element.fqName
-    is KtFile -> NoResolveFileClassesProvider.getFileClassInfo(element).fileClassFqName
+    is KtFile -> JvmFileClassUtil.getFileClassInfoNoResolve(element).fileClassFqName
     else -> null
 }
 

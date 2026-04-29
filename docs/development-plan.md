@@ -1,0 +1,240 @@
+# NetBeans Kotlin Plugin — Long-Term Development Plan
+
+## Context
+
+The `kotlin-netbeans` plugin (JetBrains, abandoned in 2020) provides Kotlin support in NetBeans IDE.
+The goal is to revive the project under a new name, clean up the infrastructure, migrate to the K2
+compiler API, and bring language support to a level comparable to the IDEA plugin.
+
+Key constraints:
+- Existing packages (`org.jetbrains.kotlin.*`) are **not renamed**; new and substantially reworked
+  code goes into `io.github.nbkotlinplugin.*`.
+- Kotlin 1.3.72 + BindingContext stay until the K2 migration.
+- Java 17 — runtime for tests (Java 25 breaks the Kotlin Maven plugin).
+
+---
+
+## Cross-cutting Task — Dependency Updates
+
+Throughout all stages (A and B): when touching any module or dependency, update it to the latest
+compatible version. Not a separate stage — done along the way.
+
+**Guidelines:**
+- NetBeans Platform API (target cluster) — latest stable release
+- Maven plugins (`nbm-maven-plugin`, `maven-compiler-plugin`, etc.) — latest versions
+- Test dependencies (JUnit, etc.) — latest versions
+- `kotlin-compiler`: stays at 1.3.72 until B2, then update to the current K2 version
+- Java source/target: can be raised above 17 after B2 if the ecosystem allows
+
+---
+
+## Stage Order
+
+- [ ] **A1** — Rename artifact and plugin metadata
+- [ ] **A2** — GitHub Actions CI/CD
+- [ ] **A3** — MIME type: switch to `text/x-kotlin`, override built-in NB services
+- [ ] **A4.1** — Maven multi-module: install `lib/*.jar` as Maven artifacts (no compilation)
+- [ ] **A4.2** — `kotlin-compiler`: Maven Central + ASM patch; `kotlin-formatter`: compile from embedded sources
+- [ ] **B1** — Research K2 Analysis API, choose architectural approach
+- [ ] **B2** — Migrate resolve layer to K2 + switch remaining JARs to `submodules/IntelliJCommunity`
+- [ ] **B3** — Restore and implement missing features
+
+---
+
+## Track A — Infrastructure
+
+### A1. Rename Artifact and Plugin Metadata
+
+- [ ] Update `pom.xml`
+- [ ] Update `src/main/resources/META-INF/MANIFEST.MF`
+- [ ] Update `src/main/resources/META-INF/layer.xml` (display-name attributes, if any)
+- [ ] Update `src/main/resources/*.properties` / `Bundle.properties`
+- [ ] Update `setup-local-repo.sh` (groupId/artifactId references, if any)
+
+| Before | After |
+|--------|-------|
+| `groupId` = `org.jetbrains.kotlin` | `io.github.nbkotlinplugin` |
+| `artifactId` = `kotlin-netbeans` | `netbeans-kotlin-plugin` |
+| `<name>` in pom.xml | `NetBeans Kotlin Plugin` |
+| Display name in NB (bundle, manifest) | `Kotlin Support` |
+| `OpenIDE-Module-Name` in MANIFEST.MF | `Kotlin Support` |
+
+Source packages are **not renamed**.
+
+---
+
+### A2. GitHub Actions CI/CD
+
+- [ ] Rename branch `master` → `main`
+- [ ] Copy and adapt `.github/workflows/build.yml` from `NetbeansClaudeCodePlugin`
+- [ ] Copy `build-scripts/autotag.sh`
+- [ ] Research licenses (Apache-2.0 / JetBrains / IntelliJ Community) — whether Maven Central deployment is allowed
+- [ ] Configure publishing (Maven Central or GitHub Packages)
+
+Base on `.github/workflows/build.yml` and `build-scripts/autotag.sh` from `NetbeansClaudeCodePlugin`.
+Adaptations:
+
+- Main branch: `main`
+- Replace all repository references with `io.github.nbkotlinplugin/netbeans-kotlin-plugin`
+- Xvfb: remove explicit `xvfb-run` — Xvfb is started automatically by pom.xml
+- Documentation: remove the pandoc step
+
+**Versioning scheme:**
+- `pom.xml` holds `MAJOR.MINOR.0-SNAPSHOT` — only MAJOR.MINOR matters to CI
+- CI computes the version from git tags: base tag `MAJOR.MINOR` + commit count → `MAJOR.MINOR.N`
+
+**Release cycle:**
+- *Starting a release:* bump `pom.xml` to new `MAJOR.MINOR.0-SNAPSHOT` → CI creates base tag
+- *During development:* add changes to `CHANGELOG.md` (no version heading)
+- *Finishing a release:* add heading `# MAJOR.MINOR` or `# MAJOR.MINOR (YYYY-MM-DD)` to `CHANGELOG.md`
+  → CI sees the signal, creates tag `MAJOR.MINOR.N`, publishes GitHub Release,
+  auto-replaces heading with `# MAJOR.MINOR.N (date)`
+- *Patch releases on an old branch:* branch `release/MAJOR.MINOR`, same mechanism
+
+**`CHANGELOG.md` rules:**
+- Heading `# MAJOR.MINOR` — only when finishing a release (CI signal)
+- During development — bullet lines at the very top of the file, no heading
+- Each bullet starts with a past-tense verb: `Fixed`, `Added`, `Improved`, etc.
+- Changes described from the user's perspective, not implementation
+- Bullet committed together with the code change, never separately
+
+**Commit message rules:**
+- Start with a past-tense verb: `Fixed ...`, `Added ...`, `Improved ...`
+- Subject describes *what* was done; body (if needed) — *how* and *why*
+- When closing a GitHub issue: subject = CHANGELOG bullet text; body contains `Resolves: #N`
+- Release-finish commit: `"Requested release MAJOR.MINOR"`
+
+**Branch naming:**
+- `bugfix/<description>` — bug fixes
+- `feature/<description>` — new features
+- `release/MAJOR.MINOR` — patch branches for old versions
+- Backports: `bugfix/MAJOR.MINOR/<description>`
+
+---
+
+### A3. MIME Type — Override Built-in NB Support
+
+- [ ] Study registration of `org.netbeans.modules.languages.kotlin` in NB sources
+- [ ] Choose override mechanism
+- [ ] Replace `text/x-kt` with `text/x-kotlin` in all plugin registrations
+- [ ] Register our services with higher priority than the built-in ones
+
+NetBeans 12+ includes basic `.kt` highlighting via `org.netbeans.modules.languages.kotlin`
+(MIME type `text/x-kotlin`). Our plugin currently uses `text/x-kt`.
+
+**Goal:** switch to `text/x-kotlin` with our services taking precedence over the built-in NB ones.
+
+Override mechanism chosen after research: `position` in `layer.xml`, `supersedes` in
+`@ServiceProvider`, or a module-level conflict declaration.
+
+---
+
+### A4. Remove JARs from Repository + Maven Multi-Module
+
+**Phase 4.1 — Maven multi-module: copy existing JARs**
+
+- [ ] Create root `pom.xml` with `packaging=pom`
+- [ ] Create `bundled-jars/` submodule with child modules for each JAR
+- [ ] Move the main plugin into `plugin/`
+- [ ] Package ASM patches as a `jar-patches/` submodule
+- [ ] Delete `setup-local-repo.sh`
+- [ ] Remove `lib/*.jar` and `lib/*.jar.bak` from git
+
+```
+pom.xml (root, packaging=pom)
+├── bundled-jars/
+│   ├── pom.xml
+│   ├── kotlin-ide-common/pom.xml      — installs lib/kotlin-ide-common.jar
+│   ├── kotlin-formatter/pom.xml       — installs lib/kotlin-formatter.jar
+│   ├── kotlin-converter/pom.xml       — installs lib/kotlin-converter.jar
+│   ├── intellij-core/pom.xml          — installs lib/intellij-core.jar
+│   └── ...
+└── plugin/pom.xml                     — main plugin module (former root pom)
+```
+
+**Phase 4.2 — Compile from sources (before K2)**
+
+- [ ] `kotlin-compiler`: submodule downloads from Maven Central and applies ASM patch
+- [ ] `kotlin-formatter`: submodule compiles from embedded sources (6 `.kt` files in `src/`)
+
+| JAR | Phase 4.1 | Phase 4.2 |
+|-----|-----------|-----------|
+| `kotlin-compiler-1.3.72` | Maven Central | Maven Central + ASM patch |
+| `kotlin-formatter` | `lib/` | embedded sources from JAR |
+| `kotlin-ide-common` | `lib/` | `lib/` (unchanged) |
+| `kotlin-converter` | `lib/` | `lib/` (unchanged) |
+| `intellij-core` | `lib/` | `lib/` (unchanged) |
+| `openapi-formatter`, `idea-formatter` | `lib/` | `lib/` (unchanged) |
+
+Remaining `lib/` JARs are switched to `submodules/IntelliJCommunity` as part of B2.
+After B2: `lib/` and `jar-patches/` are removed entirely.
+
+---
+
+## Track B — Core: Migration to K2 Compiler API
+
+### B1. Research K2 Analysis API
+
+- [ ] Study the structure of `submodules/IntelliJCommunity/plugins/kotlin`
+- [ ] Determine the depth of dependency on the IDEA platform
+- [ ] Find or rule out a standalone mode for K2
+- [ ] Identify the minimum set of modules needed for resolve, completion, diagnostics
+- [ ] Document the K2 analysis entry point (initialization order)
+- [ ] Write an ADR with the chosen approach
+
+**Primary source:** `submodules/IntelliJCommunity/plugins/kotlin`
+
+**Research questions:**
+- How deeply are `plugins/kotlin` modules coupled to the IDEA platform
+  (`Application`/`Project`, extension points, `ServiceManager`)?
+- Is there a standalone mode for K2 (without the full IDEA stack)?
+- What is the minimum set of modules from `plugins/kotlin` needed for
+  resolve, completion, diagnostics?
+- What is the K2 analysis entry point in the IDEA plugin — what is initialized and in what order?
+
+---
+
+### B2. Replace the Resolve Layer
+
+- [ ] Replace `BindingContext` → K2 Analysis API across all affected packages
+- [ ] Switch remaining bundled JARs to `submodules/IntelliJCommunity`
+- [ ] Delete `lib/` and `jar-patches/`
+- [ ] Update `kotlin-compiler` to the current K2 version
+
+Current layer: `BindingContext` (FE1.0, Kotlin 1.3.72).
+Target layer: K2 Analysis API (`KaSession`, `KaSymbol`).
+
+**Principle:** reuse as much code as possible from
+`submodules/IntelliJCommunity/plugins/kotlin`. Write from scratch only the adapters
+to the NetBeans CSL API — what the IDEA plugin does not have by definition.
+
+**Affected packages:**
+- `org.jetbrains.kotlin.resolve/` — replace with K2, reuse from `plugins/kotlin` where possible
+- `org.jetbrains.kotlin.diagnostics/` — rewrite with reuse
+- `org.jetbrains.kotlin.completion/` — rewrite with reuse
+- `org.jetbrains.kotlin.navigation/` — rewrite with reuse
+
+New code goes into `io.github.nbkotlinplugin.*`.
+
+**K2 benefits:** correct classpath (JPMS), navigation into JDK/stdlib, support for
+all modern language features (value classes, context receivers, etc.).
+
+---
+
+### B3. Restore and Implement Missing Features
+
+- [ ] Find Usages (Alt+F7) — implement via `IndexSearcher`
+- [ ] Go to Declaration (Ctrl+B) — implement `DeclarationFinder`
+- [ ] Navigator (class structure) — rewrite on K2
+- [ ] Rename refactoring — rewrite
+- [ ] Debugger — rewrite via reflection (bypass Friend-restricted module)
+- [ ] J2K (Java→Kotlin) — wire up the action, verify the converter
+- [ ] Create function quick fix — implement
+
+---
+
+## Versioning
+
+- Current branch: `master`, version `0.3.x`
+- After A1: version stays `0.3.x`, new Maven coordinates
+- After B2 (K2): major version `1.0.0`

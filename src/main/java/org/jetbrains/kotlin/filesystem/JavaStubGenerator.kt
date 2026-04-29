@@ -130,7 +130,8 @@ object JavaStubGenerator {
 
         if (getClassType(access) == "enum") {
             fieldsStub.append(
-                    fields.joinToString(", ", "", "", -1, "...", { it.name })
+                    fields.filter { (it.access and Opcodes.ACC_SYNTHETIC) == 0 }
+                          .joinToString(", ", "", "", -1, "...", { it.name })
             ).append(";")
         } else fields.forEach {
             fieldsStub.append(it.getString())

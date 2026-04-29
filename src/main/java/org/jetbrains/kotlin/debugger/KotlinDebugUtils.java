@@ -28,7 +28,7 @@ import java.net.URL;
 import javax.swing.text.StyledDocument;
 import kotlin.Pair;
 import org.jetbrains.kotlin.builder.KotlinPsiManager;
-import org.jetbrains.kotlin.fileClasses.NoResolveFileClassesProvider;
+import org.jetbrains.kotlin.fileClasses.JvmFileClassUtil;
 import org.jetbrains.kotlin.name.FqName;
 import org.jetbrains.kotlin.psi.KtClass;
 import org.jetbrains.kotlin.psi.KtDeclaration;
@@ -150,10 +150,10 @@ class KotlinDebugUtils {
                 if (fqName != null) {
                     classFqName = fqName.asString();
                 } else {
-                    classFqName = NoResolveFileClassesProvider.INSTANCE.getFileClassInfo(ktFile).getFacadeClassFqName().toString();
+                    classFqName = JvmFileClassUtil.getFileClassInfoNoResolve(ktFile).getFacadeClassFqName().toString();
                 }
             } else {
-                classFqName = NoResolveFileClassesProvider.INSTANCE.getFileClassInfo(ktFile).getFacadeClassFqName().toString();
+                classFqName = JvmFileClassUtil.getFileClassInfoNoResolve(ktFile).getFacadeClassFqName().toString();
             }
         } catch (IOException ex) {
             Exceptions.printStackTrace(ex);
@@ -169,7 +169,7 @@ class KotlinDebugUtils {
             FileObject fo = getFileFromUrlString(urlStr);
             if (fo == null) return null;
             KtFile ktFile = KotlinPsiManager.INSTANCE.getParsedFile(fo);
-            classFqName = NoResolveFileClassesProvider.INSTANCE.getFileClassInfo(ktFile).getFacadeClassFqName().toString();
+            classFqName = JvmFileClassUtil.getFileClassInfoNoResolve(ktFile).getFacadeClassFqName().toString();
             if (ktFile == null) return classFqName;
 
             StyledDocument doc = ProjectUtils.getDocumentFromFileObject(fo);

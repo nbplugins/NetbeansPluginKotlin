@@ -114,12 +114,21 @@ public abstract class Yenta extends ModuleInstall {
                     throw new IllegalStateException("Cannot specify the same module " + m + " in both friends and siblings");
                 }
                 Object data = data(findDependency(manager, m));
-                Field friendNamesF = Class.forName("org.netbeans.ModuleData", true, data.getClass().getClassLoader()).getDeclaredField("friendNames");
+                Class<?> moduleDataClass = Class.forName("org.netbeans.ModuleData", true, data.getClass().getClassLoader());
+                Field friendNamesF = moduleDataClass.getDeclaredField("friendNames");
                 friendNamesF.setAccessible(true);
                 Set<?> names = (Set<?>) friendNamesF.get(data);
-                Set<Object> newNames = new HashSet<Object>(names);
+                Set<Object> newNames = new HashSet<Object>(names != null ? names : Collections.emptySet());
                 newNames.add(me.getCodeNameBase());
-                friendNamesF.set(data, newNames);
+                try {
+                    friendNamesF.set(data, newNames);
+                } catch (Exception setEx) {
+                    // Java 17+: final field write via reflection requires --add-opens;
+                    // use VarHandle as fallback
+                    java.lang.invoke.MethodHandles.Lookup lookup = java.lang.invoke.MethodHandles.privateLookupIn(moduleDataClass, java.lang.invoke.MethodHandles.lookup());
+                    java.lang.invoke.VarHandle vh = lookup.findVarHandle(moduleDataClass, "friendNames", java.util.Set.class);
+                    vh.set(data, newNames);
+                }
             }
             for (String m : siblings) {
                 ModuleInfo dep = findDependency(manager, m);

@@ -19,6 +19,7 @@ package org.jetbrains.kotlin.highlighter.semanticanalyzer
 import org.jetbrains.kotlin.analyzer.AnalysisResult
 import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParserResult
 import org.jetbrains.kotlin.diagnostics.Errors
+import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper.isScanning
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.resolve.BindingContext
@@ -49,19 +50,35 @@ class KotlinSemanticAnalyzer : SemanticAnalyzer<KotlinParserResult>() {
     override fun run(result: KotlinParserResult?, event: SchedulerEvent?) {
         highlighting.clear()
         cancel = false
-        
-        if (result == null || result.project.isScanning()) return
-          
-        val analysisResult = result.analysisResult?.analysisResult ?: return
-        
+
+        KotlinLogger.INSTANCE.logInfo("KotlinSemanticAnalyzer.run: result=${result?.javaClass?.simpleName}")
+        if (result == null) {
+            KotlinLogger.INSTANCE.logWarning("KotlinSemanticAnalyzer.run: result is null")
+            return
+        }
+        if (result.project.isScanning()) {
+            KotlinLogger.INSTANCE.logInfo("KotlinSemanticAnalyzer.run: project is scanning, skip")
+            return
+        }
+
+        val analysisResult = result.analysisResult?.analysisResult
+        if (analysisResult == null) {
+            KotlinLogger.INSTANCE.logWarning("KotlinSemanticAnalyzer.run: analysisResult is null")
+            return
+        }
+
         highlight(analysisResult, result.ktFile)
+        KotlinLogger.INSTANCE.logInfo("KotlinSemanticAnalyzer.run: produced ${highlighting.size} highlight ranges")
     }
 
     fun highlight(analysisResult: AnalysisResult, ktFile: KtFile) {
-        val highlightingVisitor = KotlinSemanticHighlightingVisitor(ktFile, analysisResult)
-        highlighting.putAll(highlightingVisitor.computeHighlightingRanges())
-        
-        highlightDeprecatedElements(analysisResult.bindingContext, ktFile)
+        try {
+            val highlightingVisitor = KotlinSemanticHighlightingVisitor(ktFile, analysisResult)
+            highlighting.putAll(highlightingVisitor.computeHighlightingRanges())
+            highlightDeprecatedElements(analysisResult.bindingContext, ktFile)
+        } catch (ex: Throwable) {
+            KotlinLogger.INSTANCE.logWarning("KotlinSemanticAnalyzer.highlight failed: $ex")
+        }
     }
     
     override fun cancel() {

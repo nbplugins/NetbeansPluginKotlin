@@ -23,22 +23,13 @@ import org.openide.filesystems.FileObject
 import org.openide.loaders.DataObject
 import org.openide.windows.TopComponent
 import org.openide.windows.WindowManager
-import java.util.HashSet
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper.isMavenProject
 import org.jetbrains.kotlin.projectsextensions.maven.MavenHelper
+import org.openide.modules.ModuleInstall
 
-class KotlinInstaller : Yenta() {
+class KotlinInstaller : ModuleInstall() {
 
-    override fun friends() = setOf("org.netbeans.modules.maven",
-            "org.netbeans.modules.maven.embedder",
-            "org.netbeans.modules.jumpto",
-            "org.netbeans.modules.debugger.jpda",
-            "org.netbeans.modules.debugger.jpda.projects",
-            "org.netbeans.modules.java.api.common",
-            "org.netbeans.modules.java.preprocessorbridge"
-    )
-    
     override fun restored() {        
         WindowManager.getDefault().invokeWhenUIReady { 
             ProjectUtils.checkKtHome()

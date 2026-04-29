@@ -61,24 +61,61 @@ class KotlinParser : Parser() {
     override fun parse(snapshot: Snapshot, task: Task, event: SourceModificationEvent) {
         this.snapshot = snapshot
         cancel = false
-        
-        if (SourceUtils.isScanInProgress()) return
-        
-        val project = ProjectUtils.getKotlinProjectForFileObject(snapshot.source.fileObject)
-        if (project.isScanning()) return
-        if (cancel) return
 
-        val ktFile = ProjectUtils.getKtFile(snapshot.text.toString(), snapshot.source.fileObject)
+        val fo = snapshot.source.fileObject
+        KotlinLogger.INSTANCE.logInfo("KotlinParser.parse called for ${fo?.path}")
 
-        getAnalysisResult(ktFile, project)
+        if (SourceUtils.isScanInProgress()) {
+            KotlinLogger.INSTANCE.logInfo("KotlinParser.parse: scan in progress, skipping ${fo?.path}")
+            return
+        }
+
+        val project = ProjectUtils.getKotlinProjectForFileObject(fo)
+        if (project == null) {
+            KotlinLogger.INSTANCE.logWarning("KotlinParser.parse: no project for ${fo?.path}")
+            return
+        }
+        if (project.isScanning()) {
+            KotlinLogger.INSTANCE.logInfo("KotlinParser.parse: project scanning, skipping ${fo?.path}")
+            return
+        }
+        if (cancel) {
+            KotlinLogger.INSTANCE.logInfo("KotlinParser.parse: cancel flag set before analysis, skipping ${fo?.path}")
+            return
+        }
+
+        try {
+            KotlinLogger.INSTANCE.logInfo("KotlinParser.parse: building KtFile for ${fo?.path}")
+            val ktFile = ProjectUtils.getKtFile(snapshot.text.toString(), fo)
+            KotlinLogger.INSTANCE.logInfo("KotlinParser.parse: starting analysis for ${fo?.path}")
+            val result = getAnalysisResult(ktFile, project)
+            KotlinLogger.INSTANCE.logInfo("KotlinParser.parse: analysis finished for ${fo?.path}, result=${result != null}")
+        } catch (ex: Throwable) {
+            KotlinLogger.INSTANCE.logException("KotlinParser.parse failed for ${fo?.path}", ex)
+        }
     }
 
     override fun getResult(task: Task): Result? {
-        val project = project ?: return null
-        val ktFile = if (snapshot.source.fileObject.path == file?.virtualFile?.path) file else null
-        ktFile ?: return null
-        val result = getAnalysisResult(ktFile, project) ?: return null
+        val taskName = task.javaClass.simpleName
+        val project = project
+        if (project == null) {
+            KotlinLogger.INSTANCE.logWarning("KotlinParser.getResult($taskName): companion.project is null")
+            return null
+        }
+        val foPath = snapshot.source.fileObject?.path
+        val filePath = file?.virtualFile?.path
+        val ktFile = if (foPath == filePath) file else null
+        if (ktFile == null) {
+            KotlinLogger.INSTANCE.logWarning("KotlinParser.getResult($taskName): ktFile null (snapshot=$foPath companion=$filePath)")
+            return null
+        }
+        val result = getAnalysisResult(ktFile, project)
+        if (result == null) {
+            KotlinLogger.INSTANCE.logWarning("KotlinParser.getResult($taskName): analysisResult is null")
+            return null
+        }
 
+        KotlinLogger.INSTANCE.logInfo("KotlinParser.getResult($taskName): returning KotlinParserResult for $foPath")
         return KotlinParserResult(snapshot, result, ktFile, snapshot.source.fileObject, project)
     }
 

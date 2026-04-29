@@ -23,6 +23,7 @@ import org.netbeans.api.lexer.TokenId
 class KotlinTokenId(private val tokenName: String, private val category: String, val id: Int) : TokenId {
     
     companion object {
+        @JvmStatic
         fun getLanguage(): Language<KotlinTokenId> = KotlinLanguageHierarchy().language()
     }
     

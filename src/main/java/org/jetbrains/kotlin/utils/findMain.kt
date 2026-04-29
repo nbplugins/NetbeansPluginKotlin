@@ -18,11 +18,11 @@ package org.jetbrains.kotlin.utils
 
 import java.io.File
 import org.jetbrains.kotlin.psi.*
-import org.jetbrains.kotlin.fileClasses.NoResolveFileClassesProvider
+import org.jetbrains.kotlin.fileClasses.JvmFileClassUtil
 
 fun KtFile.mainClassName(simple: Boolean = false) = declarations.findMainFunction()
         ?.let {
-            NoResolveFileClassesProvider.getFileClassInfo(this).facadeClassFqName.let {
+            JvmFileClassUtil.getFileClassInfoNoResolve(this).facadeClassFqName.let {
                 if (simple) it.shortName().asString() else it.asString()
             }
         }

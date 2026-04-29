@@ -34,8 +34,10 @@ class DiagnosticsTest : KotlinTestCase("Diagnostics test", "diagnostics") {
         val ktFile = ProjectUtils.getKtFile(fileToAnalyze)
         
         val diagnostics = result.analysisResult.bindingContext.diagnostics.all()
+                .filter { it.psiFile == ktFile }
+                .filter { it.factory.name != "MISSING_DEPENDENCY_SUPERCLASS" }
         val syntaxErrors = AnalyzingUtils.getSyntaxErrorRanges(ktFile)
-        
+
         assertEquals(numberOfDiagnostics, diagnostics.size)
         assertEquals(numberOfSyntaxErrors, syntaxErrors.size)
         

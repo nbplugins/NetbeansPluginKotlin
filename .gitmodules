@@ -1,0 +1,3 @@
+[submodule "submodules/IntellijCommunity"]
+	path = submodules/IntellijCommunity
+	url = git@github.com:oleg68/IntellijCommunity.git

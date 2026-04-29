@@ -4,12 +4,12 @@
   <modelVersion>4.0.0</modelVersion>  
   <groupId>Kotlin</groupId>  
   <artifactId>kotlin.netbeans.plugin</artifactId>  
-  <version>0.2.0-SNAPSHOT</version>  
+  <version>0.3.30-SNAPSHOT</version>
   <packaging>nbm</packaging>  
-  <properties> 
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>  
-    <netbeans.version>RELEASE82</netbeans.version>  
-    <kotlin.version>1.1.1</kotlin.version> 
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <netbeans.version>RELEASE230</netbeans.version>
+    <kotlin.version>1.3.72</kotlin.version>
   </properties>  
   <name>Kotlin</name>  
   <description url="https://kotlinlang.org/">Kotlin language support</description>  
@@ -29,157 +29,57 @@
   </developers>  
   <build> 
     <plugins> 
-      <plugin> 
-        <groupId>org.apache.maven.plugins</groupId>  
-        <artifactId>maven-install-plugin</artifactId>  
-        <version>2.5.2</version>  
-        <executions> 
-          <execution> 
-            <id>inst1</id>  
-            <phase>validate</phase>  
-            <goals> 
-              <goal>install-file</goal> 
-            </goals>  
-            <configuration> 
-              <file>${project.basedir}/lib/kotlin-ide-common.jar</file>  
-              <groupId>org.jetbrains.kotlin</groupId>  
-              <artifactId>kotlin-ide-common</artifactId>  
-              <version>1.0</version>  
-              <packaging>jar</packaging>  
-              <generatePom>true</generatePom> 
-            </configuration> 
-          </execution>  
-          <execution> 
-            <id>inst2</id>  
-            <phase>validate</phase>  
-            <goals> 
-              <goal>install-file</goal> 
-            </goals>  
-            <configuration> 
-              <file>${project.basedir}/lib/openapi-formatter.jar</file>  
-              <groupId>org.jetbrains.kotlin</groupId>  
-              <artifactId>openapi-formatter</artifactId>  
-              <version>1.0</version>  
-              <packaging>jar</packaging>  
-              <generatePom>true</generatePom> 
-            </configuration> 
-          </execution>  
-          <execution> 
-            <id>inst3</id>  
-            <phase>validate</phase>  
-            <goals> 
-              <goal>install-file</goal> 
-            </goals>  
-            <configuration> 
-              <file>${project.basedir}/lib/kotlin-formatter.jar</file>  
-              <groupId>org.jetbrains.kotlin</groupId>  
-              <artifactId>kotlin-formatter</artifactId>  
-              <version>1.0</version>  
-              <packaging>jar</packaging>  
-              <generatePom>true</generatePom> 
-            </configuration> 
-          </execution>  
-          <execution> 
-            <id>inst4</id>  
-            <phase>validate</phase>  
-            <goals> 
-              <goal>install-file</goal> 
-            </goals>  
-            <configuration> 
-              <file>${project.basedir}/lib/idea-formatter.jar</file>  
-              <groupId>org.jetbrains.kotlin</groupId>  
-              <artifactId>idea-formatter</artifactId>  
-              <version>1.0</version>  
-              <packaging>jar</packaging>  
-              <generatePom>true</generatePom> 
-            </configuration> 
-          </execution>  
-          <execution> 
-            <id>inst5</id>  
-            <phase>validate</phase>  
-            <goals> 
-              <goal>install-file</goal> 
-            </goals>  
-            <configuration> 
-              <file>${project.basedir}/lib/intellij-core.jar</file>  
-              <groupId>org.jetbrains.kotlin</groupId>  
-              <artifactId>intellij-core</artifactId>  
-              <version>1.0</version>  
-              <packaging>jar</packaging>  
-              <generatePom>true</generatePom> 
-            </configuration> 
-          </execution>  
-          <execution> 
-            <id>inst6</id>  
-            <phase>validate</phase>  
-            <goals> 
-              <goal>install-file</goal> 
-            </goals>  
-            <configuration> 
-              <file>${project.basedir}/lib/kotlin-converter.jar</file>  
-              <groupId>org.jetbrains.kotlin</groupId>  
-              <artifactId>kotlin-converter</artifactId>  
-              <version>1.0</version>  
-              <packaging>jar</packaging>  
-              <generatePom>true</generatePom> 
-            </configuration> 
-          </execution>  
-          <execution> 
-            <id>inst7</id>  
-            <phase>validate</phase>  
-            <goals> 
-              <goal>install-file</goal> 
-            </goals>  
-            <configuration> 
-              <file>${project.basedir}/lib/asm-all.jar</file>  
-              <groupId>org.jetbrains.kotlin</groupId>  
-              <artifactId>asm</artifactId>  
-              <version>1.0</version>  
-              <packaging>jar</packaging>  
-              <generatePom>true</generatePom> 
-            </configuration> 
-          </execution>  
-        </executions> 
-      </plugin>  
+  
       <plugin> 
         <groupId>org.jetbrains.kotlin</groupId>  
         <artifactId>kotlin-maven-plugin</artifactId>  
         <version>${kotlin.version}</version>  
-        <executions> 
-          <execution> 
-            <id>compile</id>  
-            <phase>process-sources</phase>  
-            <goals> 
-              <goal>compile</goal> 
-            </goals> 
-          </execution>  
-          <execution> 
-            <id>test-compile</id>  
-            <phase>process-test-sources</phase>  
-            <goals> 
-              <goal>test-compile</goal> 
-            </goals> 
-          </execution> 
+        <configuration>
+          <languageVersion>1.3</languageVersion>
+          <apiVersion>1.3</apiVersion>
+          <jvmTarget>11</jvmTarget>
+          <args>
+            <arg>-Xskip-metadata-version-check</arg>
+            <arg>-XXLanguage:-ForbidSuperDelegationToAbstractFakeOverride</arg>
+            <arg>-XXLanguage:-ProhibitVisibilityOfNestedClassifiersFromSupertypesOfCompanion</arg>
+          </args>
+        </configuration>
+        <executions>
+          <execution>
+            <id>compile</id>
+            <phase>process-sources</phase>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>test-compile</id>
+            <phase>process-test-sources</phase>
+            <goals>
+              <goal>test-compile</goal>
+            </goals>
+          </execution>
         </executions> 
       </plugin>  
-      <plugin> 
-        <groupId>org.codehaus.mojo</groupId>  
-        <artifactId>nbm-maven-plugin</artifactId>  
-        <version>4.1</version>  
+      <plugin>
+        <groupId>org.apache.netbeans.utilities</groupId>
+        <artifactId>nbm-maven-plugin</artifactId>
+        <version>14.3</version>
         <extensions>true</extensions>  
-        <configuration> 
-          <licenseFile>license.txt</licenseFile>  
-          <licenseName>Apache License, Version 2.0</licenseName>  
-          <verifyRuntime>warn</verifyRuntime> 
-        </configuration> 
+        <configuration>
+          <licenseFile>license.txt</licenseFile>
+          <licenseName>Apache License, Version 2.0</licenseName>
+          <verifyRuntime>warn</verifyRuntime>
+        </configuration>
       </plugin>  
       <plugin> 
         <groupId>org.apache.maven.plugins</groupId>  
         <artifactId>maven-compiler-plugin</artifactId>  
         <version>3.3</version>  
-        <configuration> 
-          <source>1.7</source>  
-          <target>1.7</target> 
+        <configuration>
+          <source>17</source>
+          <target>17</target>
+          <compilerArgument>-proc:none</compilerArgument>
         </configuration> 
       </plugin>  
       <plugin> 
@@ -190,92 +90,128 @@
           <useDefaultManifestFile>true</useDefaultManifestFile> 
         </configuration> 
       </plugin>  
-      <plugin> 
-        <groupId>org.apache.maven.plugins</groupId>  
-        <artifactId>maven-surefire-plugin</artifactId>  
-        <version>2.15</version> 
-      </plugin> 
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <id>start-xvfb</id>
+            <phase>generate-test-resources</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <executable>Xvfb</executable>
+              <arguments>
+                <argument>:99</argument>
+                <argument>-screen</argument>
+                <argument>0</argument>
+                <argument>1024x768x24</argument>
+              </arguments>
+              <async>true</async>
+              <asyncDestroyOnShutdown>true</asyncDestroyOnShutdown>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>2.15</version>
+        <configuration>
+          <argLine>
+            --add-opens java.base/java.lang=ALL-UNNAMED
+            --add-opens java.base/java.lang.reflect=ALL-UNNAMED
+            --add-opens java.base/sun.misc=ALL-UNNAMED
+            --add-opens java.base/java.util=ALL-UNNAMED
+            --add-opens java.base/java.util.concurrent.atomic=ALL-UNNAMED
+            --add-opens java.base/java.net=ALL-UNNAMED
+            --add-opens java.base/jdk.internal.misc=ALL-UNNAMED
+            --add-opens jdk.unsupported/sun.misc=ALL-UNNAMED
+          </argLine>
+          <environmentVariables>
+            <DISPLAY>:99</DISPLAY>
+          </environmentVariables>
+        </configuration>
+      </plugin>
     </plugins> 
   </build>
   
-  <repositories> 
-    <repository> 
-      <id>netbeans-modules</id>  
-      <name>Repository hosting NetBeans modules</name>  
-      <url>https://bits.netbeans.org/nexus/content/groups/netbeans</url>  
-      <snapshots> 
-        <enabled>false</enabled> 
-      </snapshots> 
-    </repository>  
-    <repository> 
-      <id>netbeans-api-artifacts</id>  
-      <name>Repository hosting netbeans.org api artifacts</name>  
-      <url>https://bits.netbeans.org/maven2/</url>  
-      <releases> 
-        <enabled>true</enabled> 
-      </releases>  
-      <snapshots> 
-        <enabled>false</enabled> 
-      </snapshots> 
+  <repositories>
+    <!-- Project-local repo for bundled JARs. Run setup-local-repo.sh once to populate. -->
+    <repository>
+      <id>local-project-repo</id>
+      <name>Project-local bundled JARs</name>
+      <url>file://${project.basedir}/repo</url>
+      <releases><enabled>true</enabled></releases>
+      <snapshots><enabled>false</enabled></snapshots>
     </repository>
-    
   </repositories>  
-  <dependencies> 
-    <dependency> 
-      <groupId>org.jetbrains.kotlin</groupId>  
-      <artifactId>kotlin-ide-common</artifactId>  
-      <version>1.0</version>  
-      <type>jar</type> 
-    </dependency>  
-    <dependency> 
-      <groupId>org.jetbrains.kotlin</groupId>  
-      <artifactId>openapi-formatter</artifactId>  
-      <version>1.0</version>  
-      <type>jar</type> 
-    </dependency>  
-    <dependency> 
-      <groupId>org.jetbrains.kotlin</groupId>  
-      <artifactId>kotlin-formatter</artifactId>  
-      <version>1.0</version>  
-      <type>jar</type> 
-    </dependency>  
-    <dependency> 
-      <groupId>org.jetbrains.kotlin</groupId>  
-      <artifactId>idea-formatter</artifactId>  
-      <version>1.0</version>  
-      <type>jar</type> 
-    </dependency>  
-    <dependency> 
-      <groupId>org.jetbrains.kotlin</groupId>  
-      <artifactId>intellij-core</artifactId>  
-      <version>1.0</version>  
-      <type>jar</type> 
-    </dependency>  
-    <dependency> 
-      <groupId>org.jetbrains.kotlin</groupId>  
-      <artifactId>kotlin-converter</artifactId>  
-      <version>1.0</version>  
-      <type>jar</type> 
+  <dependencies>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-ide-common</artifactId>
+      <version>1.0-PATCHED</version>
+      <type>jar</type>
     </dependency>
-    <dependency> 
-      <groupId>org.jetbrains.kotlin</groupId>  
-      <artifactId>asm</artifactId>  
-      <version>1.0</version>  
-      <type>jar</type> 
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>openapi-formatter</artifactId>
+      <version>1.0</version>
+      <type>jar</type>
     </dependency>
-    
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-formatter</artifactId>
+      <version>1.0-PATCHED</version>
+      <type>jar</type>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>idea-formatter</artifactId>
+      <version>1.0</version>
+      <type>jar</type>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>intellij-core</artifactId>
+      <version>1.0-PATCHED</version>
+      <type>jar</type>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-converter</artifactId>
+      <version>1.0-PATCHED</version>
+      <type>jar</type>
+    </dependency>
+    <!-- lib/kotlin-compiler-1.3.72-PATCHED.jar: patched for JVM17 compat (KtNodeTypes),
+         bundled org/picocontainer/ and com/google/ classes stripped (see PatchStripPicocontainer,
+         PatchStripBundled). Installed via setup-local-repo.sh using lib/kotlin-compiler-1.3.72-PATCHED.pom,
+         which carries all transitive deps (kotlin-stdlib, trove4j, etc.) from the original 1.3.72 POM. -->
     <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-compiler</artifactId>
-        <version>${kotlin.version}</version>
-        <type>jar</type>
+        <version>1.3.72-PATCHED</version>
+    </dependency>
+    <!-- picocontainer 1.2: replaces the old incomplete picocontainer that was bundled inside
+         kotlin-compiler.jar (now stripped by PatchStripPicocontainer). Provides
+         ConstructorInjectionComponentAdapter and other classes absent from the bundled version. -->
+    <dependency>
+        <groupId>picocontainer</groupId>
+        <artifactId>picocontainer</artifactId>
+        <version>1.2</version>
     </dependency>
                 
-    <dependency> 
-      <groupId>org.netbeans.modules</groupId>  
-      <artifactId>org-netbeans-modules-maven</artifactId>  
-      <version>${netbeans.version}</version>  
-      <type>jar</type> 
+    <dependency>
+      <groupId>org.netbeans.modules</groupId>
+      <artifactId>org-netbeans-modules-maven</artifactId>
+      <version>${netbeans.version}</version>
+      <type>jar</type>
+      <exclusions>
+        <exclusion>
+          <groupId>com.mastfrog</groupId>
+          <artifactId>nbstubs</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>  
     <dependency> 
       <groupId>org.netbeans.modules</groupId>  
@@ -408,13 +344,8 @@
       <version>${netbeans.version}</version>  
       <type>jar</type> 
     </dependency>  
-    <dependency> 
-      <groupId>org.netbeans.external</groupId>  
-      <artifactId>asm-all-5.0.1</artifactId>  
-      <version>${netbeans.version}</version> 
-    </dependency>  
-    <dependency> 
-      <groupId>org.netbeans.api</groupId>  
+    <dependency>
+      <groupId>org.netbeans.api</groupId>
       <artifactId>org-openide-windows</artifactId>  
       <version>${netbeans.version}</version>  
       <type>jar</type> 
@@ -448,13 +379,8 @@
       <artifactId>org-netbeans-libs-javacapi</artifactId>  
       <version>${netbeans.version}</version> 
     </dependency>  
-    <dependency> 
-      <groupId>org.netbeans.external</groupId>  
-      <artifactId>nb-javac-api</artifactId>  
-      <version>${netbeans.version}</version> 
-    </dependency>  
-    <dependency> 
-      <groupId>org.netbeans.api</groupId>  
+    <dependency>
+      <groupId>org.netbeans.api</groupId>
       <artifactId>org-openide-text</artifactId>  
       <version>${netbeans.version}</version> 
     </dependency>  
@@ -490,10 +416,15 @@
     </dependency>  
     <dependency> 
       <groupId>org.netbeans.api</groupId>  
-      <artifactId>org-netbeans-modules-editor-mimelookup</artifactId>  
-      <version>${netbeans.version}</version>  
-      <type>jar</type> 
-    </dependency>  
+      <artifactId>org-netbeans-modules-editor-mimelookup</artifactId>
+      <version>${netbeans.version}</version>
+      <type>jar</type>
+    </dependency>
+    <dependency>
+      <groupId>org.netbeans.api</groupId>
+      <artifactId>org-netbeans-modules-editor-settings</artifactId>
+      <version>${netbeans.version}</version>
+    </dependency>
     <dependency> 
       <groupId>org.netbeans.api</groupId>  
       <artifactId>org-netbeans-api-templates</artifactId>  
@@ -554,10 +485,10 @@
       <version>${netbeans.version}</version>  
       <type>jar</type> 
     </dependency>  
-    <dependency> 
-      <groupId>dom4j</groupId>  
-      <artifactId>dom4j</artifactId>  
-      <version>1.6.1</version> 
+    <dependency>
+      <groupId>org.dom4j</groupId>
+      <artifactId>dom4j</artifactId>
+      <version>2.1.4</version>
     </dependency>    
     <dependency> 
       <groupId>org.netbeans.api</groupId>  
@@ -571,11 +502,11 @@
       <version>${netbeans.version}</version>  
       <type>jar</type> 
     </dependency>  
-    <dependency> 
-      <groupId>org.netbeans.modules</groupId>  
-      <artifactId>org-netbeans-modules-jumpto</artifactId>  
-      <version>${netbeans.version}</version>  
-      <type>jar</type> 
+    <dependency>
+      <groupId>org.netbeans.api</groupId>
+      <artifactId>org-netbeans-modules-jumpto</artifactId>
+      <version>${netbeans.version}</version>
+      <type>jar</type>
     </dependency>  
     <dependency> 
       <groupId>org.netbeans.api</groupId>  
@@ -634,7 +565,7 @@
     <dependency> 
       <groupId>commons-io</groupId>  
       <artifactId>commons-io</artifactId>  
-      <version>2.4</version> 
+      <version>2.7</version> 
     </dependency>  
     <dependency> 
       <groupId>org.netbeans.modules</groupId>  
@@ -669,7 +600,7 @@
     <dependency> 
       <groupId>com.google.guava</groupId>  
       <artifactId>guava</artifactId>  
-      <version>14.0</version> 
+      <version>28.2-jre</version>
     </dependency>
     <dependency>
       <groupId>org.netbeans.api</groupId>
@@ -685,38 +616,14 @@
     <dependency> 
       <groupId>junit</groupId>  
       <artifactId>junit</artifactId>  
-      <version>4.12</version>  
+      <version>4.13.1</version>  
       <scope>test</scope> 
     </dependency>  
-    <dependency> 
-      <groupId>org.netbeans.modules</groupId>  
-      <artifactId>org-netbeans-modules-junit</artifactId>  
-      <version>${netbeans.version}</version>  
-      <scope>test</scope> 
-    </dependency>  
-    <dependency> 
-      <groupId>org.netbeans.modules</groupId>  
-      <artifactId>org-netbeans-modules-junit-ant</artifactId>  
-      <version>${netbeans.version}</version>  
-      <scope>test</scope> 
-    </dependency>  
-    <dependency> 
-      <groupId>org.netbeans.modules</groupId>  
-      <artifactId>org-netbeans-modules-junit-ant-ui</artifactId>  
-      <version>${netbeans.version}</version>  
-      <scope>test</scope> 
-    </dependency>  
-    <dependency> 
-      <groupId>org.netbeans.modules</groupId>  
-      <artifactId>org-netbeans-modules-junit-ui</artifactId>  
-      <version>${netbeans.version}</version>  
-      <scope>test</scope> 
-    </dependency>  
-    <dependency> 
-      <groupId>org.netbeans.modules</groupId>  
-      <artifactId>org-netbeans-modules-junitlib</artifactId>  
-      <version>${netbeans.version}</version>  
-      <scope>test</scope> 
+    <dependency>
+      <groupId>org.netbeans.api</groupId>
+      <artifactId>org-netbeans-libs-junit5</artifactId>
+      <version>${netbeans.version}</version>
+      <scope>test</scope>
     </dependency>  
     <dependency> 
       <groupId>org.seleniumhq.selenium</groupId>  
@@ -746,7 +653,7 @@
     <dependency> 
       <groupId>xalan</groupId>  
       <artifactId>xalan</artifactId>  
-      <version>2.7.1</version>  
+      <version>2.7.2</version>  
       <scope>test</scope> 
     </dependency>  
     <dependency> 
@@ -761,14 +668,8 @@
       <version>1.4.01</version>  
       <scope>test</scope> 
     </dependency>  
-    <dependency> 
-      <groupId>org.netbeans.external</groupId>  
-      <artifactId>xerces-2.8.0</artifactId>  
-      <version>${netbeans.version}</version>  
-      <scope>test</scope> 
-    </dependency>  
-    <dependency> 
-      <groupId>org.netbeans.api</groupId>  
+    <dependency>
+      <groupId>org.netbeans.api</groupId>
       <artifactId>org-apache-xml-resolver</artifactId>  
       <version>${netbeans.version}</version>  
       <scope>test</scope> 

@@ -18,7 +18,7 @@ import org.netbeans.api.project.Project as NBProject
 
 class KotlinCacheServiceImpl(private val ideaProject: Project, val project: NBProject) : KotlinCacheService {
 
-    override fun getResolutionFacadeByFile(file: PsiFile, platform: TargetPlatform): ResolutionFacade {
+    override fun getResolutionFacadeByFile(file: PsiFile, platform: Any): ResolutionFacade {
         throw UnsupportedOperationException()
     }
 

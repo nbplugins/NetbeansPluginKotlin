@@ -33,10 +33,14 @@ import javax.lang.model.element.VariableElement
 class NetBeansJavaField(elementHandle: ElemHandle<VariableElement>, containingClass: JavaClass, project: Project) :
         NetBeansJavaMember<VariableElement>(elementHandle, containingClass, project), JavaField {
 
-    override val isEnumEntry 
+    override val isEnumEntry
         get() = elementHandle.kind == ElementKind.ENUM_CONSTANT
     override val type: JavaType
         get() = elementHandle.getFieldType(project)
+    override val hasConstantNotNullInitializer: Boolean
+        get() = false
+    override val initializerValue: Any?
+        get() = null
 
     override fun presentation() = "$type $name"
     

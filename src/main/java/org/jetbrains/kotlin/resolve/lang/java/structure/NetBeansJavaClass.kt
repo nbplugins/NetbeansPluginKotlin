@@ -47,7 +47,15 @@ class NetBeansJavaClass(elementHandle: ElemHandle<TypeElement>, project: Project
     override val supertypes: Collection<JavaClassifierType>
         get() = elementHandle.getSuperTypes(project)
 
-    override val innerClasses: Collection<JavaClass>
+    override val innerClassNames: Collection<org.jetbrains.kotlin.name.Name>
+        get() = elementHandle.getInnerClasses(project).mapNotNull { it.name }
+
+    override fun findInnerClass(name: org.jetbrains.kotlin.name.Name): JavaClass? =
+            elementHandle.getInnerClasses(project).firstOrNull { it.name == name }
+
+    override fun hasDefaultConstructor(): Boolean = false
+
+    val innerClasses: Collection<JavaClass>
         get() = elementHandle.getInnerClasses(project)
 
     override val outerClass: JavaClass?
@@ -86,7 +94,7 @@ class NetBeansJavaClass(elementHandle: ElemHandle<TypeElement>, project: Project
     override fun toString(): String = elementHandle.qualifiedName
 
     fun presentation(): String {
-        val visibility = visibility.displayName
+        val visibility = visibility.toString()
         val final = if (isFinal) " final" else ""
         val cl = if (isInterface) " interface" else if (isEnum) " enum" else " class"
         
