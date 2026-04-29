@@ -86,15 +86,15 @@ work with Kotlin 1.3.72 and Java 17+. Patches are written using ASM and live in 
 cd /path/to/KotlinNetbeans
 CP="patches-src:/usr/share/java/objectweb-asm/asm.jar"
 
-# 1. Patch intellij-core.jar (input = .bak = original)
-java -cp $CP InjectGetGreenStub lib/intellij-core.jar.bak lib/intellij-core.jar
+# 1. Patch intellij-core.jar (input = .orig = original)
+java -cp $CP InjectGetGreenStub lib/intellij-core.jar.orig lib/intellij-core.jar
 
 # 2. Patch kotlin-converter.jar (chain: PatchImportConversionKt -> PatchFqnPart)
-java -cp $CP PatchImportConversionKt lib/kotlin-converter.jar.bak /tmp/kc-step1.jar
+java -cp $CP PatchImportConversionKt lib/kotlin-converter.jar.orig /tmp/kc-step1.jar
 java -cp $CP PatchFqnPart /tmp/kc-step1.jar lib/kotlin-converter.jar
 
 # 3. Patch kotlin-ide-common.jar (input = original, from lib/)
-java -cp $CP PatchKotlinIdeCommon lib/kotlin-ide-common.jar.bak lib/kotlin-ide-common.jar
+java -cp $CP PatchKotlinIdeCommon lib/kotlin-ide-common.jar.orig lib/kotlin-ide-common.jar
 
 # 4. Patch kotlin-compiler-1.3.72.jar from Maven (chain PatchKtNodeTypes -> PatchJvmPlatform)
 KCJ=~/.m2/repository/org/jetbrains/kotlin/kotlin-compiler/1.3.72/kotlin-compiler-1.3.72.jar
