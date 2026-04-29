@@ -17,6 +17,19 @@ To update the submodule to the latest commit:
 git submodule update --remote submodules/IntellijCommunity
 ```
 
+## Git Workflow
+
+Before creating a branch for a PR, always sync from the upstream target branch:
+
+```bash
+git fetch upstream
+git checkout main         # or the target branch
+git merge upstream/main   # fast-forward to latest upstream state
+git checkout -b <branch>  # then create the feature branch
+```
+
+The canonical upstream remote is `https://github.com/nbplugins/NetbeansPluginKotlin.git`.
+
 ## Build Commands
 
 ```bash
