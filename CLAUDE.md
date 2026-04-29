@@ -102,11 +102,17 @@ java -cp $CP PatchKtNodeTypes $KCJ /tmp/kc-step1.jar
 java -cp $CP PatchJvmPlatform  /tmp/kc-step1.jar /tmp/kc-patched.jar
 cp /tmp/kc-patched.jar $KCJ   # overwrite in-place
 
-# 5. Reinstall lib/ JARs to local Maven repo (also copies to ~/.m2)
+# 5. Reinstall lib/ JARs to local Maven repo
 bash setup-local-repo.sh
-# If ~/.m2 copy differs, manually copy:
-cp lib/kotlin-converter.jar ~/.m2/repository/org/jetbrains/kotlin/kotlin-converter/1.0/kotlin-converter-1.0.jar
+# Clear ~/.m2 copies so Maven uses repo/ (not the stale ~/.m2 cache):
+for jar in intellij-core kotlin-ide-common kotlin-converter kotlin-formatter idea-formatter openapi-formatter; do
+  rm -rf ~/.m2/repository/org/jetbrains/kotlin/$jar/1.0
+done
 ```
+
+**Note on picocontainer:** `intellij-core.jar`'s `MockComponentManager` requires `org.picocontainer` classes.
+`kotlin-compiler-1.3.72.jar` bundles an old picocontainer version missing `registerComponentInstance(Object)`.
+`pom.xml` declares `picocontainer:picocontainer:1.2` as an explicit dependency (before kotlin-compiler) to supply the complete API.
 
 **Running tests** (must use Java 17 — Java 25 breaks the Kotlin Maven plugin; Xvfb is started automatically by Maven on display :99):
 

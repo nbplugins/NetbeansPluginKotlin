@@ -17,6 +17,7 @@ declare -A JARS=(
 )
 
 for file in "${!JARS[@]}"; do
+  [ -f "$SCRIPT_DIR/$file" ] || { echo "Skipping missing $file"; continue; }
   coords="${JARS[$file]}"
   groupId="${coords%%:*}"
   artifactId="${coords##*:}"

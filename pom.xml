@@ -142,9 +142,15 @@
       <snapshots><enabled>false</enabled></snapshots>
     </repository>
   </repositories>  
-  <dependencies> 
-    <dependency> 
-      <groupId>org.jetbrains.kotlin</groupId>  
+  <dependencies>
+    <!-- Provides org.picocontainer classes needed by intellij-core.jar's MockComponentManager -->
+    <dependency>
+      <groupId>picocontainer</groupId>
+      <artifactId>picocontainer</artifactId>
+      <version>1.2</version>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-ide-common</artifactId>  
       <version>1.0</version>  
       <type>jar</type> 
