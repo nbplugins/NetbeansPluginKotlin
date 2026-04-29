@@ -51,8 +51,8 @@ sudo sed -i \
 ### Step 1. Clone the repository
 
 ```bash
-git clone --recurse-submodules https://github.com/JetBrains/kotlin-netbeans.git
-cd kotlin-netbeans
+git clone --recurse-submodules https://github.com/nbplugins/NetbeansPluginKotlin.git
+cd NetbeansPluginKotlin
 ```
 
 ### Step 2. Populate the local Maven repository
