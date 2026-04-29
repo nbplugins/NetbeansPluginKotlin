@@ -23,6 +23,26 @@ The plugin could be installed via NetBeans Update Center.
 7. Click **Install** button in the Plugins dialog
 8. Complete the installation wizard by clicking **Next**, agreeing to the license terms and clicking **Install** button.
 
+### Required JVM flags (NetBeans 23+ / Java 17+)
+
+The plugin uses `sun.misc.Unsafe` and `java.lang.reflect` APIs that are encapsulated by default in Java 17+. Without the following flags, opening a `.kt` file causes `ExceptionInInitializerError` in `AtomicFieldUpdater` and the Kotlin environment never loads.
+
+Add these flags to your user NetBeans configuration (no `sudo` required):
+
+```bash
+mkdir -p ~/.netbeans/27/etc
+cat >> ~/.netbeans/27/etc/netbeans.conf << 'EOF'
+netbeans_default_options="$netbeans_default_options -J--add-opens=java.base/java.lang.reflect=ALL-UNNAMED -J--add-opens=jdk.unsupported/sun.misc=ALL-UNNAMED -J--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED -J--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED"
+EOF
+```
+
+Replace `27` with your NetBeans major version (check `Help → About`).
+
+Verify the flags were applied:
+```bash
+grep "add-opens" ~/.netbeans/27/etc/netbeans.conf
+```
+
 
 ## Plugin feature set
 

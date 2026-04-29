@@ -31,7 +31,6 @@ import org.netbeans.api.java.classpath.ClassPath;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ProjectManager;
 import org.netbeans.api.project.SourceGroup;
-import org.netbeans.modules.java.api.common.SourceRoots;
 import org.netbeans.spi.java.classpath.ClassPathFactory;
 import org.netbeans.spi.java.classpath.ClassPathProvider;
 import org.netbeans.spi.java.classpath.PathResourceImplementation;
@@ -62,13 +61,14 @@ public class J2SEExtendedClassPathProvider implements ClassPathProvider, Propert
     private final AntProjectHelper helper;
     private final File projectDirectory;
     private final PropertyEvaluator evaluator;
-    private final SourceRoots sourceRoots;
-    private final SourceRoots testSourceRoots;
+    // SourceRoots referenced as Object to avoid static bytecode dep on java.api.common
+    private final Object sourceRoots;
+    private final Object testSourceRoots;
     private final ClassPath[] cache = new ClassPath[8];
     private final Map<String, FileObject> dirCache = new HashMap<>();
     private final BootClassPathImplementation bootClassPathImpl;
     private final Project project;
-    
+
     public J2SEExtendedClassPathProvider(Project project) {
         Class projectClass = project.getClass();
         this.project = project;
@@ -81,11 +81,11 @@ public class J2SEExtendedClassPathProvider implements ClassPathProvider, Propert
         this.bootClassPathImpl = new BootClassPathImplementation(project, evaluator);
         evaluator.addPropertyChangeListener(WeakListeners.propertyChange(J2SEExtendedClassPathProvider.this, evaluator));
     }
-    
-    private SourceRoots getTestSourceRoots(Class clazz, Project project) {
+
+    private Object getTestSourceRoots(Class clazz, Project project) {
         try {
             Method ev = clazz.getMethod("getTestSourceRoots");
-            return (SourceRoots) ev.invoke(project);
+            return ev.invoke(project);
         } catch (ReflectiveOperationException ex) {
             Exceptions.printStackTrace(ex);
         } catch (NoClassDefFoundError ex) {
@@ -94,10 +94,10 @@ public class J2SEExtendedClassPathProvider implements ClassPathProvider, Propert
         return null;
     }
 
-    private SourceRoots getSourceRoots(Class clazz, Project project) {
+    private Object getSourceRoots(Class clazz, Project project) {
         try {
             Method ev = clazz.getMethod("getSourceRoots");
-            return (SourceRoots) ev.invoke(project);
+            return ev.invoke(project);
         } catch (ReflectiveOperationException ex) {
             Exceptions.printStackTrace(ex);
         } catch (NoClassDefFoundError ex) {
@@ -105,44 +105,36 @@ public class J2SEExtendedClassPathProvider implements ClassPathProvider, Propert
         }
         return null;
     }
-    
+
     private PropertyEvaluator getEvaluator(Class clazz, Project project) {
         PropertyEvaluator eval = null;
-        
         try {
             Method ev = clazz.getMethod("evaluator");
             eval = (PropertyEvaluator) ev.invoke(project);
         } catch (ReflectiveOperationException ex) {
             Exceptions.printStackTrace(ex);
         }
-        
         assert eval != null : "PropertyEvaluator NPE";
-        
         return eval;
     }
-    
+
     private AntProjectHelper getAntProjectHelper(Class clazz, Project project) {
         AntProjectHelper helper = null;
-        
         try {
             Method getAntProjectHelper = clazz.getMethod("getAntProjectHelper");
             helper = (AntProjectHelper) getAntProjectHelper.invoke(project);
         } catch (ReflectiveOperationException ex) {
             Exceptions.printStackTrace(ex);
         }
-        
         assert helper != null : "AntProjectHelper NPE";
-        
         return helper;
     }
-    
+
     private FileObject getDir(final String propname) {
         return ProjectManager.mutex().readAccess(new Mutex.Action<FileObject>() {
-
-            @Override
-            public FileObject run() {
+            public @Override FileObject run() {
                 synchronized (J2SEExtendedClassPathProvider.this) {
-                    FileObject fo = (FileObject) J2SEExtendedClassPathProvider.this.dirCache.get(propname);
+                    FileObject fo = J2SEExtendedClassPathProvider.this.dirCache.get(propname);
                     if (fo == null || !fo.isValid()) {
                         String prop = evaluator.getProperty(propname);
                         if (prop != null) {
@@ -156,12 +148,24 @@ public class J2SEExtendedClassPathProvider implements ClassPathProvider, Propert
         });
     }
 
+    /** Call getRoots() on a SourceRoots object via reflection. */
+    private static FileObject[] getRoots(Object sourceRootsObj) {
+        if (sourceRootsObj == null) return new FileObject[0];
+        try {
+            Method m = sourceRootsObj.getClass().getMethod("getRoots");
+            return (FileObject[]) m.invoke(sourceRootsObj);
+        } catch (ReflectiveOperationException ex) {
+            Exceptions.printStackTrace(ex);
+            return new FileObject[0];
+        }
+    }
+
     private FileObject[] getPrimarySrcPath() {
-        return this.sourceRoots != null ? this.sourceRoots.getRoots() : new FileObject[0];
+        return getRoots(this.sourceRoots);
     }
 
     private FileObject[] getTestSrcDir() {
-        return this.testSourceRoots != null ? this.testSourceRoots.getRoots() : new FileObject[0];
+        return getRoots(this.testSourceRoots);
     }
 
     private FileObject getBuildClassesDir() {
@@ -227,33 +231,21 @@ public class J2SEExtendedClassPathProvider implements ClassPathProvider, Propert
             // Not a source file.
             return null;
         }
-
-        ClassPath cp = cache[2 + type];
+        ClassPath cp = cache[type];
         if (cp == null) {
-            List<PathResourceImplementation> resources = new ArrayList<>();
-
-            
-            List<URL> kotlinBoot = bootClassPathImpl.getKotlinBootClassPath();
-            for (URL url : kotlinBoot){
-                resources.add(ClassPathSupport.createResource(url));
-            }
-            
-            if (type == 0) {
-                cp = ClassPathFactory.createClassPath(
+            switch (type) {
+                case 0:
+                    cp = ClassPathFactory.createClassPath(
                         ProjectClassPathSupport.createPropertyBasedClassPathImplementation(
-                        projectDirectory, evaluator, new String[]{JAVAC_CLASSPATH, KOTLINC_CLASSPATH})); // NOI18N
-            } else {
-                cp = ClassPathFactory.createClassPath(
+                        projectDirectory, evaluator, new String[] {JAVAC_CLASSPATH, KOTLINC_CLASSPATH})); // NOI18N
+                    break;
+                case 1:
+                    cp = ClassPathFactory.createClassPath(
                         ProjectClassPathSupport.createPropertyBasedClassPathImplementation(
-                        projectDirectory, evaluator, new String[]{JAVAC_TEST_CLASSPATH, KOTLINC_CLASSPATH})); // NOI18N
+                        projectDirectory, evaluator, new String[] {JAVAC_TEST_CLASSPATH, KOTLINC_CLASSPATH})); // NOI18N
+                    break;
             }
-
-            for (ClassPath.Entry entry : cp.entries()) {
-                resources.add(ClassPathSupport.createResource(entry.getURL()));
-            }
-            cp = ClassPathSupport.createClassPath(resources);
-
-            cache[2 + type] = cp;
+            cache[type] = cp;
         }
         return cp;
     }
@@ -261,54 +253,34 @@ public class J2SEExtendedClassPathProvider implements ClassPathProvider, Propert
     private ClassPath getRunTimeClasspath(FileObject file) {
         int type = getType(file);
         if (type < 0 || type > 4) {
-            // Unregistered file, or in a JAR.
-            // For jar:file:$projdir/dist/*.jar!/**/*.class, it is misleading to use
-            // run.classpath since that does not actually contain the file!
-            // (It contains file:$projdir/build/classes/ instead.)
             return null;
         } else if (type > 1) {
-            type -= 2;            //Compiled source transform into source
+            type -= 2;
         }
-        return getRunTimeClasspath(type);
+        return this.getRunTimeClasspath(type);
     }
 
-    private synchronized ClassPath getRunTimeClasspath(final int type) {
-        ClassPath cp = cache[4 + type];
+    private synchronized ClassPath getRunTimeClasspath(int type) {
+        ClassPath cp = cache[type + 2];
         if (cp == null) {
-            List<PathResourceImplementation> resources = new ArrayList<>();
-
-            List<URL> kotlinBoot = bootClassPathImpl.getKotlinBootClassPath();
-            for (URL url : kotlinBoot){
-                resources.add(ClassPathSupport.createResource(url));
-            }
-
             switch (type) {
                 case 0:
                     cp = ClassPathFactory.createClassPath(
                             ProjectClassPathSupport.createPropertyBasedClassPathImplementation(
-                                    projectDirectory, evaluator, new String[]{RUN_CLASSPATH, KOTLINC_CLASSPATH})); // NOI18N
+                            projectDirectory, evaluator, new String[] {RUN_CLASSPATH})); // NOI18N
                     break;
                 case 1:
                     cp = ClassPathFactory.createClassPath(
                             ProjectClassPathSupport.createPropertyBasedClassPathImplementation(
-                                    projectDirectory, evaluator, new String[]{RUN_TEST_CLASSPATH, KOTLINC_CLASSPATH}));
-                    
+                            projectDirectory, evaluator, new String[] {RUN_TEST_CLASSPATH})); // NOI18N
                     break;
                 case 2:
                     cp = ClassPathFactory.createClassPath(
                             ProjectClassPathSupport.createPropertyBasedClassPathImplementation(
-                                    projectDirectory, evaluator, new String[]{DIST_JAR, KOTLINC_CLASSPATH})); // NOI18N
-                    break;
-                default:
+                            projectDirectory, evaluator, new String[] {RUN_CLASSPATH}));
                     break;
             }
-
-            for (ClassPath.Entry entry : cp.entries()) {
-                resources.add(ClassPathSupport.createResource(entry.getURL()));
-            }
-            cp = ClassPathSupport.createClassPath(resources);
-
-            cache[4 + type] = cp;
+            cache[type + 2] = cp;
         }
         return cp;
     }
@@ -369,7 +341,6 @@ public class J2SEExtendedClassPathProvider implements ClassPathProvider, Propert
      */
     public ClassPath[] getProjectClassPaths(final String type) {
         return ProjectManager.mutex().readAccess(new Mutex.Action<ClassPath[]>() {
-
             @Override
             public ClassPath[] run() {
                 if (ClassPath.BOOT.equals(type)) {
@@ -393,10 +364,6 @@ public class J2SEExtendedClassPathProvider implements ClassPathProvider, Propert
         });
     }
 
-    /**
-     * Returns the given type of the classpath for the project sources
-     * (i.e., excluding tests roots).
-     */
     @Override
     public ClassPath getProjectSourcesClassPath(String type) {
         if (ClassPath.BOOT.equals(type)) {
@@ -421,47 +388,54 @@ public class J2SEExtendedClassPathProvider implements ClassPathProvider, Propert
         KotlinProjectHelper.INSTANCE.updateExtendedClassPath(project);
     }
 
-    public String[] getPropertyName(final SourceRoots roots, final String type) {
-        if (roots.isTest()) {
-            if (ClassPath.COMPILE.equals(type)) {
-                return new String[] {JAVAC_TEST_CLASSPATH};
-            } else if (ClassPath.EXECUTE.equals(type)) {
-                return new String[]{RUN_TEST_CLASSPATH};
-            } else {
-                return null;
-            }
-        } else {
-            if (ClassPath.COMPILE.equals(type)) {
-                return new String[] {JAVAC_CLASSPATH};
-            } else if (ClassPath.EXECUTE.equals(type)) {
-                return new String[]{RUN_CLASSPATH};
-            } else {
-                return null;
-            }
-        }
-    }
-
-    public String[] getPropertyName(SourceGroup sg, String type) {
-        FileObject root = sg.getRootFolder();
-        FileObject[] path = getPrimarySrcPath();
-        for (FileObject path1 : path) {
-            if (root.equals(path1)) {
+    public String[] getPropertyName(final Object roots, final String type) {
+        try {
+            Method isTest = roots.getClass().getMethod("isTest");
+            boolean test = (Boolean) isTest.invoke(roots);
+            if (test) {
                 if (ClassPath.COMPILE.equals(type)) {
-                    return new String[]{JAVAC_CLASSPATH};
+                    return new String[] {JAVAC_TEST_CLASSPATH};
+                } else if (ClassPath.EXECUTE.equals(type)) {
+                    return new String[]{RUN_TEST_CLASSPATH};
+                } else {
+                    return null;
+                }
+            } else {
+                if (ClassPath.COMPILE.equals(type)) {
+                    return new String[] {JAVAC_CLASSPATH};
                 } else if (ClassPath.EXECUTE.equals(type)) {
                     return new String[]{RUN_CLASSPATH};
                 } else {
                     return null;
                 }
             }
+        } catch (ReflectiveOperationException ex) {
+            Exceptions.printStackTrace(ex);
+            return null;
+        }
+    }
+
+    public String[] getPropertyName(SourceGroup sg, String type) {
+        FileObject root = sg.getRootFolder();
+        FileObject[] path = getPrimarySrcPath();
+        for (FileObject fo : path) {
+            if (fo.equals(root)) {
+                if (ClassPath.COMPILE.equals(type)) {
+                    return new String[] {JAVAC_CLASSPATH};
+                } else if (ClassPath.EXECUTE.equals(type)) {
+                    return new String[] {RUN_CLASSPATH};
+                } else {
+                    return null;
+                }
+            }
         }
         path = getTestSrcDir();
-        for (FileObject path1 : path) {
-            if (root.equals(path1)) {
+        for (FileObject fo : path) {
+            if (fo.equals(root)) {
                 if (ClassPath.COMPILE.equals(type)) {
-                    return new String[]{JAVAC_TEST_CLASSPATH};
+                    return new String[] {JAVAC_TEST_CLASSPATH};
                 } else if (ClassPath.EXECUTE.equals(type)) {
-                    return new String[]{RUN_TEST_CLASSPATH};
+                    return new String[] {RUN_TEST_CLASSPATH};
                 } else {
                     return null;
                 }
@@ -469,4 +443,5 @@ public class J2SEExtendedClassPathProvider implements ClassPathProvider, Propert
         }
         return null;
     }
+
 }

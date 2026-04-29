@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>  
   <groupId>Kotlin</groupId>  
   <artifactId>kotlin.netbeans.plugin</artifactId>  
-  <version>0.3.27-SNAPSHOT</version>
+  <version>0.3.30-SNAPSHOT</version>
   <packaging>nbm</packaging>  
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -123,6 +123,10 @@
             --add-opens java.base/java.lang.reflect=ALL-UNNAMED
             --add-opens java.base/sun.misc=ALL-UNNAMED
             --add-opens java.base/java.util=ALL-UNNAMED
+            --add-opens java.base/java.util.concurrent.atomic=ALL-UNNAMED
+            --add-opens java.base/java.net=ALL-UNNAMED
+            --add-opens java.base/jdk.internal.misc=ALL-UNNAMED
+            --add-opens jdk.unsupported/sun.misc=ALL-UNNAMED
           </argLine>
           <environmentVariables>
             <DISPLAY>:99</DISPLAY>
@@ -143,56 +147,58 @@
     </repository>
   </repositories>  
   <dependencies>
-    <!-- Provides org.picocontainer classes needed by intellij-core.jar's MockComponentManager -->
     <dependency>
-      <groupId>picocontainer</groupId>
-      <artifactId>picocontainer</artifactId>
-      <version>1.2</version>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-ide-common</artifactId>
+      <version>1.0-PATCHED</version>
+      <type>jar</type>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
-      <artifactId>kotlin-ide-common</artifactId>  
-      <version>1.0</version>  
-      <type>jar</type> 
-    </dependency>  
-    <dependency> 
-      <groupId>org.jetbrains.kotlin</groupId>  
-      <artifactId>openapi-formatter</artifactId>  
-      <version>1.0</version>  
-      <type>jar</type> 
-    </dependency>  
-    <dependency> 
-      <groupId>org.jetbrains.kotlin</groupId>  
-      <artifactId>kotlin-formatter</artifactId>  
-      <version>1.0</version>  
-      <type>jar</type> 
-    </dependency>  
-    <dependency> 
-      <groupId>org.jetbrains.kotlin</groupId>  
-      <artifactId>idea-formatter</artifactId>  
-      <version>1.0</version>  
-      <type>jar</type> 
-    </dependency>  
-    <dependency> 
-      <groupId>org.jetbrains.kotlin</groupId>  
-      <artifactId>intellij-core</artifactId>  
-      <version>1.0</version>  
-      <type>jar</type> 
-    </dependency>  
-    <dependency> 
-      <groupId>org.jetbrains.kotlin</groupId>  
-      <artifactId>kotlin-converter</artifactId>  
-      <version>1.0</version>  
-      <type>jar</type> 
+      <artifactId>openapi-formatter</artifactId>
+      <version>1.0</version>
+      <type>jar</type>
     </dependency>
-    <!-- lib/asm-all.jar removed: org.jetbrains.org.objectweb.asm is bundled in kotlin-compiler-1.3.72.jar -->
-    <!-- The old asm-all.jar only supported ASM4/ASM5 and shadowed the ASM7-capable version in kotlin-compiler -->
-    
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-formatter</artifactId>
+      <version>1.0-PATCHED</version>
+      <type>jar</type>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>idea-formatter</artifactId>
+      <version>1.0</version>
+      <type>jar</type>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>intellij-core</artifactId>
+      <version>1.0-PATCHED</version>
+      <type>jar</type>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-converter</artifactId>
+      <version>1.0-PATCHED</version>
+      <type>jar</type>
+    </dependency>
+    <!-- lib/kotlin-compiler-1.3.72-PATCHED.jar: patched for JVM17 compat (KtNodeTypes),
+         bundled org/picocontainer/ and com/google/ classes stripped (see PatchStripPicocontainer,
+         PatchStripBundled). Installed via setup-local-repo.sh using lib/kotlin-compiler-1.3.72-PATCHED.pom,
+         which carries all transitive deps (kotlin-stdlib, trove4j, etc.) from the original 1.3.72 POM. -->
     <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-compiler</artifactId>
-        <version>${kotlin.version}</version>
-        <type>jar</type>
+        <version>1.3.72-PATCHED</version>
+    </dependency>
+    <!-- picocontainer 1.2: replaces the old incomplete picocontainer that was bundled inside
+         kotlin-compiler.jar (now stripped by PatchStripPicocontainer). Provides
+         ConstructorInjectionComponentAdapter and other classes absent from the bundled version. -->
+    <dependency>
+        <groupId>picocontainer</groupId>
+        <artifactId>picocontainer</artifactId>
+        <version>1.2</version>
     </dependency>
                 
     <dependency>

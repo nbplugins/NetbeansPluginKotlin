@@ -73,13 +73,15 @@ work with Kotlin 1.3.72 and Java 17+. Patches are written using ASM and live in 
 
 | Patch | Input JAR | Problem fixed |
 |-------|-----------|---------------|
-| `InjectGetGreenStub.java` | `lib/intellij-core.jar` | Adds `getGreenStub()` to `SubstrateRef` and `StubBasedPsiElementBase` — method missing from the bundled IntelliJ version but called by kotlin-compiler 1.3.72 |
+| `InjectGetGreenStub.java` | `lib/intellij-core-1.0.jar` | Adds `getGreenStub()` to `SubstrateRef` and `StubBasedPsiElementBase` — method missing from the bundled IntelliJ version but called by kotlin-compiler 1.3.72 |
+| `PatchStripBundled.java` | `lib/intellij-core-1.0.jar` | Strips `com/intellij/psi/search/SearchScope.class` — kotlin-compiler 1.3.72 has a newer version with `contains(VirtualFile)`; the old one in intellij-core causes `NoSuchMethodError` |
 | `PatchKtNodeTypes.java` | `kotlin-compiler-1.3.72.jar` (Maven) | Fixes `KtNodeTypes.BODY` field declared as `KtNodeType` but accessed as `IElementType` — Java 17+ enforces strict descriptor matching |
-| `PatchJvmPlatform.java` | `kotlin-compiler-1.3.72.jar` (Maven) | Converts `JvmPlatform` from interface to abstract class and adds `getDefaultImports()` — needed by `kotlin-converter.jar` compiled against Kotlin 1.1.1 |
-| `PatchImportConversionKt.java` | `lib/kotlin-converter.jar` | Rewrites `ImportConversionKt` static initializer to use `JvmPlatformAnalyzerServices` instead of the removed `JvmPlatform.getDefaultImports()` |
-| `PatchFqnPart.java` | `lib/kotlin-converter.jar` | Renames `ImportPath.fqnPart()` → `getFqName()` (renamed in 1.3.72); redirects `AddToStdlibKt.singletonList()` → `Collections.singletonList()` (removed in 1.3.72) |
-| `PatchKotlinIdeCommon.java` | `lib/kotlin-ide-common.jar` | Removes `setShowInternalKeyword` call (property removed in 1.3.72); renames `KotlinTypeFactory.simpleType(5-arg)` → `simpleTypeWithNonTrivialMemberScope`; redirects `KotlinType.isError()` → static `KotlinTypeKt.isError(KotlinType)` |
-| `PatchFormatterBody.java` | `lib/kotlin-formatter.jar` | Rewrites `getstatic KtNodeTypes.BODY` descriptor from `KtNodeType` → `IElementType` — Java 17+ enforces strict field descriptor matching at resolution |
+| `PatchStripBundled.java` | `kotlin-compiler-1.3.72.jar` (Maven) | Strips `org/picocontainer/` — the bundled old picocontainer is incomplete; replaced by `picocontainer:1.2` Maven dependency which is a strict superset |
+| `PatchStripBundled.java` | `kotlin-compiler-1.3.72.jar` (Maven) | Strips `com/google/` — the bundled Guava lacks `Maps.newHashMap()`; replaced by `guava:28.2-jre` Maven dependency |
+| `PatchImportConversionKt.java` | `lib/kotlin-converter-1.0.jar` | Rewrites `ImportConversionKt` static initializer to use `JvmPlatformAnalyzerServices` instead of the removed `JvmPlatform.getDefaultImports()` |
+| `PatchFqnPart.java` | `lib/kotlin-converter-1.0.jar` | Renames `ImportPath.fqnPart()` → `getFqName()` (renamed in 1.3.72); redirects `AddToStdlibKt.singletonList()` → `Collections.singletonList()` (removed in 1.3.72) |
+| `PatchKotlinIdeCommon.java` | `lib/kotlin-ide-common-1.0.jar` | Removes `setShowInternalKeyword` call (property removed in 1.3.72); renames `KotlinTypeFactory.simpleType(5-arg)` → `simpleTypeWithNonTrivialMemberScope`; redirects `KotlinType.isError()` → static `KotlinTypeKt.isError(KotlinType)` |
+| `PatchFormatterBody.java` | `lib/kotlin-formatter-1.0.jar` | Rewrites `getstatic KtNodeTypes.BODY` descriptor from `KtNodeType` → `IElementType` — Java 17+ enforces strict field descriptor matching at resolution |
 
 **Applying patches** (run with Java 17):
 
@@ -87,36 +89,47 @@ work with Kotlin 1.3.72 and Java 17+. Patches are written using ASM and live in 
 cd /path/to/KotlinNetbeans
 CP="patches-src:/usr/share/java/objectweb-asm/asm.jar"
 
-# 1. Patch intellij-core.jar (input = .orig = original)
-java -cp $CP InjectGetGreenStub lib/intellij-core.jar.orig lib/intellij-core.jar
+# Compile patch tools (only needed once, or after editing patches-src/)
+javac -cp /usr/share/java/objectweb-asm/asm.jar patches-src/*.java -d patches-src
 
-# 2. Patch kotlin-converter.jar (chain: PatchImportConversionKt -> PatchFqnPart)
-java -cp $CP PatchImportConversionKt lib/kotlin-converter.jar.orig /tmp/kc-step1.jar
-java -cp $CP PatchFqnPart /tmp/kc-step1.jar lib/kotlin-converter.jar
+# 1. Patch intellij-core.jar (InjectGetGreenStub -> strip old SearchScope)
+java -cp $CP InjectGetGreenStub lib/intellij-core-1.0.jar /tmp/ic-step1.jar
+java -cp $CP PatchStripBundled /tmp/ic-step1.jar lib/intellij-core-1.0-PATCHED.jar \
+    com/intellij/psi/search/SearchScope
+
+# 2. Patch kotlin-converter.jar (PatchImportConversionKt -> PatchFqnPart)
+java -cp $CP PatchImportConversionKt lib/kotlin-converter-1.0.jar /tmp/kconv-step1.jar
+java -cp $CP PatchFqnPart /tmp/kconv-step1.jar lib/kotlin-converter-1.0-PATCHED.jar
 
 # 3. Patch kotlin-ide-common.jar
-java -cp $CP PatchKotlinIdeCommon lib/kotlin-ide-common.jar.orig lib/kotlin-ide-common.jar
+java -cp $CP PatchKotlinIdeCommon lib/kotlin-ide-common-1.0.jar lib/kotlin-ide-common-1.0-PATCHED.jar
 
 # 4. Patch kotlin-formatter.jar
-java -cp $CP PatchFormatterBody lib/kotlin-formatter.jar.orig lib/kotlin-formatter.jar
+java -cp $CP PatchFormatterBody lib/kotlin-formatter-1.0.jar lib/kotlin-formatter-1.0-PATCHED.jar
 
-# 5. Patch kotlin-compiler-1.3.72.jar from Maven (chain PatchKtNodeTypes -> PatchJvmPlatform)
+# 5. Patch kotlin-compiler-1.3.72.jar from Maven (KtNodeTypes -> strip picocontainer -> strip Guava)
+#    The original in ~/.m2 is NOT modified; output goes to lib/ as a versioned artifact.
 KCJ=~/.m2/repository/org/jetbrains/kotlin/kotlin-compiler/1.3.72/kotlin-compiler-1.3.72.jar
 java -cp $CP PatchKtNodeTypes $KCJ /tmp/kc-step1.jar
-java -cp $CP PatchJvmPlatform  /tmp/kc-step1.jar /tmp/kc-patched.jar
-cp /tmp/kc-patched.jar $KCJ   # overwrite in-place
+java -cp $CP PatchStripBundled /tmp/kc-step1.jar /tmp/kc-step2.jar org/picocontainer/
+java -cp $CP PatchStripBundled /tmp/kc-step2.jar lib/kotlin-compiler-1.3.72-PATCHED.jar com/google/
+# lib/kotlin-compiler-1.3.72-PATCHED.pom is committed and used by setup-local-repo.sh
 
 # 6. Reinstall lib/ JARs to local Maven repo
 bash setup-local-repo.sh
-# Clear ~/.m2 copies so Maven uses repo/ (not the stale ~/.m2 cache):
-for jar in intellij-core kotlin-ide-common kotlin-converter kotlin-formatter idea-formatter openapi-formatter; do
-  rm -rf ~/.m2/repository/org/jetbrains/kotlin/$jar/1.0
+# Clear ~/.m2 copies so Maven picks up fresh versions from repo/:
+for jar in intellij-core kotlin-ide-common kotlin-converter kotlin-formatter; do
+  rm -rf ~/.m2/repository/org/jetbrains/kotlin/$jar/1.0-PATCHED
 done
+rm -rf ~/.m2/repository/org/jetbrains/kotlin/kotlin-compiler/1.3.72-PATCHED
 ```
 
-**Note on picocontainer:** `intellij-core.jar`'s `MockComponentManager` requires `org.picocontainer` classes.
-`kotlin-compiler-1.3.72.jar` bundles an old picocontainer version missing `registerComponentInstance(Object)`.
-`pom.xml` declares `picocontainer:picocontainer:1.2` as an explicit dependency (before kotlin-compiler) to supply the complete API.
+**Note on bundled library conflicts:** `kotlin-compiler-1.3.72.jar` bundles old/incomplete versions of
+several libraries (`org/picocontainer/`, `com/google/`) that conflict with the versions required by
+`intellij-core.jar` call sites. Rather than patching call sites, the bundled copies are stripped so
+that Maven dependencies (`picocontainer:1.2`, `guava:28.2-jre`) are the sole providers.
+`intellij-core-1.0.jar` bundles an old `SearchScope` without `contains(VirtualFile)`; it is stripped
+so that kotlin-compiler's newer version is loaded instead.
 
 **Running tests** (must use Java 17 — Java 25 breaks the Kotlin Maven plugin; Xvfb is started automatically by Maven on display :99):
 
@@ -134,26 +147,33 @@ Tests live in `src/test/java/` mirroring feature packages: `completion/`, `diagn
 
 Test resource files (sample `.kt` files) are in `src/test/resources/projForTest/src/`, organized by feature. Tests extend `KotlinTestCase` (a custom NetBeans test base class) which sets up a mock NetBeans environment.
 
-## NetBeans Runtime Configuration (NB 28+)
+## NetBeans Runtime Configuration (NB 23+ / Java 17+)
 
-The plugin uses the IntelliJ platform's `JavaCoreApplicationEnvironment`, which requires reflective access to `java.lang.reflect` — not opened by default in NB 28. Without this, "Loading Kotlin environment" hangs indefinitely.
+The plugin uses `sun.misc.Unsafe` (via IntelliJ's `AtomicFieldUpdater`) and `java.lang.reflect` APIs that are encapsulated by default in Java 17+. Without the required flags, opening a `.kt` file triggers `ExceptionInInitializerError: Could not initialize class com.intellij.openapi.util.Disposer` and the Kotlin environment never loads.
 
-**Required JVM flag:** `-J--add-opens=java.base/java.lang.reflect=ALL-UNNAMED`
+**Required JVM flags:**
+- `-J--add-opens=java.base/java.lang.reflect=ALL-UNNAMED` — reflective access used by `JavaCoreApplicationEnvironment`
+- `-J--add-opens=jdk.unsupported/sun.misc=ALL-UNNAMED` — allows `ReflectionUtil` to call `setAccessible(true)` on `sun.misc.Unsafe.theUnsafe`, which `AtomicFieldUpdater` needs to initialise
+- `-J--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED` — `DebugReflectionUtil` in `CachedValueChecker` calls `setAccessible(true)` on `AtomicIntegerFieldUpdater.U`; without this, `KotlinParser.parse` fails for every Kotlin file with `InaccessibleObjectException`
+- `-J--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED` — `sun.misc.Unsafe` in newer JDKs delegates to `jdk.internal.misc.Unsafe.theUnsafe`; without this, `KotlinParser.parse` fails with `InaccessibleObjectException` on `jdk.internal.misc.Unsafe.theUnsafe`
 
 ### Option A — пользовательский конфиг (без sudo, рекомендуется)
 
-NB launcher читает `~/.netbeans/28/etc/netbeans.conf` после системного и позволяет дополнять настройки:
+NB launcher читает `~/.netbeans/<version>/etc/netbeans.conf` после системного и позволяет дополнять настройки:
 
 ```bash
-mkdir -p ~/.netbeans/28/etc
-echo 'netbeans_default_options="$netbeans_default_options -J--add-opens=java.base/java.lang.reflect=ALL-UNNAMED"' \
-    >> ~/.netbeans/28/etc/netbeans.conf
+mkdir -p ~/.netbeans/27/etc
+cat >> ~/.netbeans/27/etc/netbeans.conf << 'EOF'
+netbeans_default_options="$netbeans_default_options -J--add-opens=java.base/java.lang.reflect=ALL-UNNAMED -J--add-opens=jdk.unsupported/sun.misc=ALL-UNNAMED -J--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED -J--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED"
+EOF
 ```
+
+Replace `27` with your NetBeans major version.
 
 ### Option B — системный конфиг (требует sudo)
 
 ```bash
-sudo sed -i 's|-J--add-opens=java.base/java.lang=ALL-UNNAMED|-J--add-opens=java.base/java.lang=ALL-UNNAMED -J--add-opens=java.base/java.lang.reflect=ALL-UNNAMED|' \
+sudo sed -i 's|-J--add-opens=java.base/java.lang=ALL-UNNAMED|-J--add-opens=java.base/java.lang=ALL-UNNAMED -J--add-opens=java.base/java.lang.reflect=ALL-UNNAMED -J--add-opens=jdk.unsupported/sun.misc=ALL-UNNAMED -J--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED -J--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED|' \
     /usr/lib/apache-netbeans/etc/netbeans.conf
 ```
 
@@ -161,10 +181,10 @@ sudo sed -i 's|-J--add-opens=java.base/java.lang=ALL-UNNAMED|-J--add-opens=java.
 
 ```bash
 # пользовательский конфиг
-grep "java.lang.reflect" ~/.netbeans/28/etc/netbeans.conf
+grep "add-opens" ~/.netbeans/27/etc/netbeans.conf
 
 # системный конфиг
-grep "java.lang.reflect" /usr/lib/apache-netbeans/etc/netbeans.conf
+grep "jdk.unsupported" /usr/lib/apache-netbeans/etc/netbeans.conf
 ```
 
 ## Key Versions
