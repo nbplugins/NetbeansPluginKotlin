@@ -79,6 +79,7 @@ work with Kotlin 1.3.72 and Java 17+. Patches are written using ASM and live in 
 | `PatchImportConversionKt.java` | `lib/kotlin-converter.jar` | Rewrites `ImportConversionKt` static initializer to use `JvmPlatformAnalyzerServices` instead of the removed `JvmPlatform.getDefaultImports()` |
 | `PatchFqnPart.java` | `lib/kotlin-converter.jar` | Renames `ImportPath.fqnPart()` → `getFqName()` (renamed in 1.3.72); redirects `AddToStdlibKt.singletonList()` → `Collections.singletonList()` (removed in 1.3.72) |
 | `PatchKotlinIdeCommon.java` | `lib/kotlin-ide-common.jar` | Removes `setShowInternalKeyword` call (property removed in 1.3.72); renames `KotlinTypeFactory.simpleType(5-arg)` → `simpleTypeWithNonTrivialMemberScope`; redirects `KotlinType.isError()` → static `KotlinTypeKt.isError(KotlinType)` |
+| `PatchFormatterBody.java` | `lib/kotlin-formatter.jar` | Rewrites `getstatic KtNodeTypes.BODY` descriptor from `KtNodeType` → `IElementType` — Java 17+ enforces strict field descriptor matching at resolution |
 
 **Applying patches** (run with Java 17):
 
@@ -93,16 +94,19 @@ java -cp $CP InjectGetGreenStub lib/intellij-core.jar.orig lib/intellij-core.jar
 java -cp $CP PatchImportConversionKt lib/kotlin-converter.jar.orig /tmp/kc-step1.jar
 java -cp $CP PatchFqnPart /tmp/kc-step1.jar lib/kotlin-converter.jar
 
-# 3. Patch kotlin-ide-common.jar (input = original, from lib/)
+# 3. Patch kotlin-ide-common.jar
 java -cp $CP PatchKotlinIdeCommon lib/kotlin-ide-common.jar.orig lib/kotlin-ide-common.jar
 
-# 4. Patch kotlin-compiler-1.3.72.jar from Maven (chain PatchKtNodeTypes -> PatchJvmPlatform)
+# 4. Patch kotlin-formatter.jar
+java -cp $CP PatchFormatterBody lib/kotlin-formatter.jar.orig lib/kotlin-formatter.jar
+
+# 5. Patch kotlin-compiler-1.3.72.jar from Maven (chain PatchKtNodeTypes -> PatchJvmPlatform)
 KCJ=~/.m2/repository/org/jetbrains/kotlin/kotlin-compiler/1.3.72/kotlin-compiler-1.3.72.jar
 java -cp $CP PatchKtNodeTypes $KCJ /tmp/kc-step1.jar
 java -cp $CP PatchJvmPlatform  /tmp/kc-step1.jar /tmp/kc-patched.jar
 cp /tmp/kc-patched.jar $KCJ   # overwrite in-place
 
-# 5. Reinstall lib/ JARs to local Maven repo
+# 6. Reinstall lib/ JARs to local Maven repo
 bash setup-local-repo.sh
 # Clear ~/.m2 copies so Maven uses repo/ (not the stale ~/.m2 cache):
 for jar in intellij-core kotlin-ide-common kotlin-converter kotlin-formatter idea-formatter openapi-formatter; do
