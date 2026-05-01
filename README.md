@@ -4,7 +4,12 @@
 
 # Kotlin plugin for NetBeans IDE
 
-**NOTE**: This plugin is no longer actively developed. See https://github.com/JetBrains/kotlin-netbeans/issues/122 for more information.
+> **⚠ Alpha — Active Development**
+> JetBrains has discontinued this plugin (see [issue #122](https://github.com/JetBrains/kotlin-netbeans/issues/122)).
+> Active development continues in the community fork:
+> **https://github.com/nbplugins/NetbeansPluginKotlin**
+> This is **alpha-quality software** — expect rough edges and breaking changes.
+> See [docs/development-plan.md](docs/development-plan.md) for the roadmap.
 
 ## Installing Kotlin plugin
 
