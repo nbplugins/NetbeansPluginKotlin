@@ -2,16 +2,16 @@
 
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">  
   <modelVersion>4.0.0</modelVersion>  
-  <groupId>Kotlin</groupId>  
-  <artifactId>kotlin.netbeans.plugin</artifactId>  
-  <version>0.3.30-SNAPSHOT</version>
+  <groupId>io.github.nbplugins</groupId>
+  <artifactId>netbeans-plugin-kotlin-nbm</artifactId>
+  <version>0.4.0-SNAPSHOT</version>
   <packaging>nbm</packaging>  
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <netbeans.version>RELEASE230</netbeans.version>
     <kotlin.version>1.3.72</kotlin.version>
   </properties>  
-  <name>Kotlin</name>  
+  <name>Netbeans Plugin Kotlin</name>  
   <description url="https://kotlinlang.org/">Kotlin language support</description>  
   <organization> 
     <name>JetBrains</name>  
@@ -65,8 +65,9 @@
         <groupId>org.apache.netbeans.utilities</groupId>
         <artifactId>nbm-maven-plugin</artifactId>
         <version>14.3</version>
-        <extensions>true</extensions>  
+        <extensions>true</extensions>
         <configuration>
+          <codeNameBase>io.github.nbplugins.kotlin</codeNameBase>
           <licenseFile>license.txt</licenseFile>
           <licenseName>Apache License, Version 2.0</licenseName>
           <verifyRuntime>warn</verifyRuntime>

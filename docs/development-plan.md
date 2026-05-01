@@ -30,7 +30,7 @@ compatible version. Not a separate stage — done along the way.
 
 ## Stage Order
 
-- [ ] **A1** — Rename artifact and plugin metadata
+- [x] **A1** — Rename artifact and plugin metadata
 - [ ] **A2** — GitHub Actions CI/CD
 - [ ] **A3** — MIME type: switch to `text/x-kotlin`, override built-in NB services
 - [ ] **A4.1** — Maven multi-module: install `lib/*.jar` as Maven artifacts (no compilation)
@@ -45,19 +45,20 @@ compatible version. Not a separate stage — done along the way.
 
 ### A1. Rename Artifact and Plugin Metadata
 
-- [ ] Update `pom.xml`
-- [ ] Update `src/main/resources/META-INF/MANIFEST.MF`
-- [ ] Update `src/main/resources/META-INF/layer.xml` (display-name attributes, if any)
-- [ ] Update `src/main/resources/*.properties` / `Bundle.properties`
-- [ ] Update `setup-local-repo.sh` (groupId/artifactId references, if any)
+- [x] Update `pom.xml`
+- [x] Create `src/main/nbm/manifest.mf` with `OpenIDE-Module-Name`
+- `layer.xml` — no display-name changes needed
+- `Bundle.properties` — no changes needed (name set via manifest.mf)
+- `setup-local-repo.sh` — no groupId/artifactId references to the main plugin
 
-| Before | After |
-|--------|-------|
-| `groupId` = `org.jetbrains.kotlin` | `io.github.nbkotlinplugin` |
-| `artifactId` = `kotlin-netbeans` | `netbeans-kotlin-plugin` |
-| `<name>` in pom.xml | `NetBeans Kotlin Plugin` |
-| Display name in NB (bundle, manifest) | `Kotlin Support` |
-| `OpenIDE-Module-Name` in MANIFEST.MF | `Kotlin Support` |
+| Field | Before | After |
+|-------|--------|-------|
+| `groupId` | `Kotlin` | `io.github.nbplugins` |
+| `artifactId` | `kotlin.netbeans.plugin` | `netbeans-plugin-kotlin-nbm` |
+| `version` | `0.3.30-SNAPSHOT` | `0.4.0-SNAPSHOT` |
+| `<name>` in pom.xml | `Kotlin` | `Netbeans Plugin Kotlin` |
+| `OpenIDE-Module` (NB code-name) | `Kotlin.kotlin.netbeans.plugin` | `io.github.nbplugins.kotlin` |
+| `OpenIDE-Module-Name` (NB UI) | `Kotlin` | `Kotlin Support` |
 
 Source packages are **not renamed**.
 
