@@ -91,6 +91,7 @@ work with Kotlin 1.3.72 and Java 17+. Patches are written using ASM and live in 
 | `PatchKtNodeTypes.java` | `kotlin-compiler-1.3.72.jar` (Maven) | Fixes `KtNodeTypes.BODY` field declared as `KtNodeType` but accessed as `IElementType` — Java 17+ enforces strict descriptor matching |
 | `PatchStripBundled.java` | `kotlin-compiler-1.3.72.jar` (Maven) | Strips `org/picocontainer/` — the bundled old picocontainer is incomplete; replaced by `picocontainer:1.2` Maven dependency which is a strict superset |
 | `PatchStripBundled.java` | `kotlin-compiler-1.3.72.jar` (Maven) | Strips `com/google/` — the bundled Guava lacks `Maps.newHashMap()`; replaced by `guava:28.2-jre` Maven dependency |
+| `PatchStripBundled.java` | `kotlin-compiler-1.3.72.jar` (Maven) | Strips `com/intellij/openapi/extensions/Extensions.class` and `impl/` — kotlin-compiler bundles a newer incompatible `Extensions`/`ExtensionsAreaImpl`; `intellij-core`'s older but internally consistent versions must win |
 | `PatchImportConversionKt.java` | `lib/kotlin-converter-1.0.jar` | Rewrites `ImportConversionKt` static initializer to use `JvmPlatformAnalyzerServices` instead of the removed `JvmPlatform.getDefaultImports()` |
 | `PatchFqnPart.java` | `lib/kotlin-converter-1.0.jar` | Renames `ImportPath.fqnPart()` → `getFqName()` (renamed in 1.3.72); redirects `AddToStdlibKt.singletonList()` → `Collections.singletonList()` (removed in 1.3.72) |
 | `PatchKotlinIdeCommon.java` | `lib/kotlin-ide-common-1.0.jar` | Removes `setShowInternalKeyword` call (property removed in 1.3.72); renames `KotlinTypeFactory.simpleType(5-arg)` → `simpleTypeWithNonTrivialMemberScope`; redirects `KotlinType.isError()` → static `KotlinTypeKt.isError(KotlinType)` |
@@ -125,7 +126,10 @@ java -cp $CP PatchFormatterBody lib/kotlin-formatter-1.0.jar lib/kotlin-formatte
 KCJ=~/.m2/repository/org/jetbrains/kotlin/kotlin-compiler/1.3.72/kotlin-compiler-1.3.72.jar
 java -cp $CP PatchKtNodeTypes $KCJ /tmp/kc-step1.jar
 java -cp $CP PatchStripBundled /tmp/kc-step1.jar /tmp/kc-step2.jar org/picocontainer/
-java -cp $CP PatchStripBundled /tmp/kc-step2.jar lib/kotlin-compiler-1.3.72-PATCHED.jar com/google/
+java -cp $CP PatchStripBundled /tmp/kc-step2.jar /tmp/kc-step3.jar com/google/
+java -cp $CP PatchStripBundled /tmp/kc-step3.jar lib/kotlin-compiler-1.3.72-PATCHED.jar \
+    com/intellij/openapi/extensions/Extensions.class \
+    com/intellij/openapi/extensions/impl/
 # lib/kotlin-compiler-1.3.72-PATCHED.pom is committed and used by setup-local-repo.sh
 
 # 6. Reinstall lib/ JARs to local Maven repo
@@ -138,9 +142,10 @@ rm -rf ~/.m2/repository/org/jetbrains/kotlin/kotlin-compiler/1.3.72-PATCHED
 ```
 
 **Note on bundled library conflicts:** `kotlin-compiler-1.3.72.jar` bundles old/incomplete versions of
-several libraries (`org/picocontainer/`, `com/google/`) that conflict with the versions required by
-`intellij-core.jar` call sites. Rather than patching call sites, the bundled copies are stripped so
-that Maven dependencies (`picocontainer:1.2`, `guava:28.2-jre`) are the sole providers.
+several libraries (`org/picocontainer/`, `com/google/`, `com/intellij/openapi/extensions/`) that
+conflict with the versions required by `intellij-core.jar` call sites. Rather than patching call
+sites, the bundled copies are stripped so that Maven dependencies (`picocontainer:1.2`,
+`guava:28.2-jre`) or the `intellij-core` copy (`Extensions`) are the sole providers.
 `intellij-core-1.0.jar` bundles an old `SearchScope` without `contains(VirtualFile)`; it is stripped
 so that kotlin-compiler's newer version is loaded instead.
 

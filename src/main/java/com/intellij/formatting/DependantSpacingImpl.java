@@ -27,7 +27,7 @@ public class DependantSpacingImpl extends SpacingImpl {
     public DependantSpacingImpl(final int minSpaces, final int maxSpaces, @NotNull TextRange dependency,
             final boolean keepLineBreaks, final int keepBlankLines, @NotNull DependentSpacingRule rule) {
         super(minSpaces, maxSpaces, 0, false, false, keepLineBreaks, keepBlankLines, false, 0);
-        myDependentRegionRanges = ContainerUtil.newSmartList(dependency);
+        myDependentRegionRanges = new com.intellij.util.SmartList<>(dependency);
         myRule = rule;
     }
     
