@@ -34,6 +34,7 @@ import com.intellij.core.CoreApplicationEnvironment
 import com.intellij.core.CoreJavaFileManager
 import com.intellij.core.JavaCoreApplicationEnvironment
 import com.intellij.core.JavaCoreProjectEnvironment
+import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreApplicationEnvironment
 import com.intellij.mock.MockProject
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.ServiceManager
@@ -49,6 +50,7 @@ import com.intellij.psi.augment.PsiAugmentProvider
 import com.intellij.psi.codeStyle.CodeStyleSettingsProvider
 import com.intellij.psi.codeStyle.LanguageCodeStyleSettingsProvider
 import com.intellij.psi.compiled.ClassFileDecompilers
+import com.intellij.lang.jvm.facade.JvmElementProvider
 import com.intellij.psi.impl.PsiTreeChangePreprocessor
 import com.intellij.psi.impl.compiled.ClsCustomNavigationPolicy
 import com.intellij.psi.impl.file.impl.JavaFileManager
@@ -124,7 +126,7 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
         @Synchronized fun updateKotlinEnvironment(kotlinProject: NBProject) = getEnvironment(kotlinProject).configureClasspath(kotlinProject)
     }
 
-    val applicationEnvironment: JavaCoreApplicationEnvironment
+    val applicationEnvironment: CoreApplicationEnvironment
     private val projectEnvironment: JavaCoreProjectEnvironment
     val project: MockProject
     val roots = hashSetOf<JavaRoot>()
@@ -150,7 +152,7 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
         
         with (project) {
             registerService(ModuleVisibilityManager::class.java, CliModuleVisibilityManagerImpl(true))
-            registerService(NullableNotNullManager::class.java, KotlinNullableNotNullManager(kotlinProject))
+            registerService(NullableNotNullManager::class.java, KotlinNullableNotNullManager(kotlinProject, project))
             registerService(CoreJavaFileManager::class.java,
                 ServiceManager.getService(project, JavaFileManager::class.java) as CoreJavaFileManager)
             
@@ -204,10 +206,12 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
     }
     
     private fun registerProjectExtensionPoints(area: ExtensionsArea) {
-        CoreApplicationEnvironment.registerExtensionPoint(area, 
+        CoreApplicationEnvironment.registerExtensionPoint(area,
                 PsiTreeChangePreprocessor.EP_NAME, PsiTreeChangePreprocessor::class.java)
-        CoreApplicationEnvironment.registerExtensionPoint(area, 
+        CoreApplicationEnvironment.registerExtensionPoint(area,
                 PsiElementFinder.EP_NAME, PsiElementFinder::class.java)
+        CoreApplicationEnvironment.registerExtensionPoint(area,
+                JvmElementProvider.EP_NAME, JvmElementProvider::class.java)
     }
     
     private fun getExtensionsFromCommonXml() {
@@ -231,8 +235,9 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
     }
     
     private fun getExtensionsFromKotlin2JvmXml() {
-        CoreApplicationEnvironment.registerComponentInstance<DefaultErrorMessages.Extension>(Extensions.getRootArea().picoContainer,
-                DefaultErrorMessages.Extension::class.java, DefaultErrorMessagesJvm())
+        Extensions.getRootArea()
+            .getExtensionPoint<DefaultErrorMessages.Extension>(ExtensionPointName("org.jetbrains.kotlin.defaultErrorMessages"))
+            .registerExtension(DefaultErrorMessagesJvm())
     }
     
     fun configureClasspath(kotlinProject: NBProject) {
@@ -247,31 +252,25 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
         }
     }
     
-    private fun createJavaCoreApplicationEnvironment(disposable: Disposable): JavaCoreApplicationEnvironment {
-        Extensions.cleanRootArea(disposable)
+    private fun createJavaCoreApplicationEnvironment(disposable: Disposable): CoreApplicationEnvironment {
+        val env = KotlinCoreApplicationEnvironment.create(disposable, false)
         registerAppExtensionPoints()
-        val javaApplicationEnvironment = JavaCoreApplicationEnvironment(disposable)
-        
-        with (javaApplicationEnvironment) {
+
+        with (env) {
             registerFileType(PlainTextFileType.INSTANCE, "xml")
             registerFileType(KotlinFileType.INSTANCE, "kt")
             registerParserDefinition(KotlinParserDefinition())
             application.registerService(KotlinBinaryClassCache::class.java, KotlinBinaryClassCache())
         }
-        
-        return javaApplicationEnvironment
+
+        return env
     }
-    
+
     private fun registerAppExtensionPoints() {
-        CoreApplicationEnvironment.registerExtensionPoint(Extensions.getRootArea(), ContainerProvider.EP_NAME,
-                ContainerProvider::class.java)
+        // KotlinCoreApplicationEnvironment already registers ContainerProvider, ClassFileDecompilers,
+        // PsiAugmentProvider, JavaMainMethodProvider — only register what it doesn't
         CoreApplicationEnvironment.registerExtensionPoint(Extensions.getRootArea(), ClsCustomNavigationPolicy.EP_NAME,
                 ClsCustomNavigationPolicy::class.java)
-        CoreApplicationEnvironment.registerExtensionPoint(Extensions.getRootArea(), ClassFileDecompilers.EP_NAME,
-                ClassFileDecompilers.Decompiler::class.java)
-        
-        CoreApplicationEnvironment.registerExtensionPoint(Extensions.getRootArea(), PsiAugmentProvider.EP_NAME, PsiAugmentProvider::class.java)
-        CoreApplicationEnvironment.registerExtensionPoint(Extensions.getRootArea(), JavaMainMethodProvider.EP_NAME, JavaMainMethodProvider::class.java)
     }
     
     private fun addToClasspath(path: String, rootType: JavaRoot.RootType?) {

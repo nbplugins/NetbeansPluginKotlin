@@ -42,13 +42,13 @@ class KotlinParser : Parser() {
         @JvmStatic fun getAnalysisResult(ktFile: KtFile,
                                          proj: Project) = if (ktFile upToDate file) analysisResult else analyze(ktFile, proj)
         
-        private fun analyze(ktFile: KtFile, 
-                            proj: Project): AnalysisResultWithProvider? = KotlinAnalyzer.analyzeFile(proj, ktFile)
-                .also { 
-                    project = proj 
-                    file = ktFile
-                    analysisResult = it
-                }
+        private fun analyze(ktFile: KtFile,
+                            proj: Project): AnalysisResultWithProvider? {
+            project = proj
+            file = ktFile
+            return KotlinAnalyzer.analyzeFile(proj, ktFile)
+                .also { analysisResult = it }
+        }
         
         private infix fun KtFile.upToDate(ktFile: KtFile?) = 
                 virtualFile.path == ktFile?.virtualFile?.path && text == ktFile.text

@@ -26,14 +26,18 @@ object KotlinAnalyzer {
     fun analyzeFile(project: Project, file: KtFile): AnalysisResultWithProvider {
         KotlinLogger.INSTANCE.logInfo("Analyzing ${file.virtualFile.path}")
         val kotlinEnvironment = KotlinEnvironment.getEnvironment(project)
-
-        return NetBeansAnalyzerFacadeForJVM.analyzeFilesWithJavaIntegration(
-                project, kotlinEnvironment.project, listOf(file))
+        // JvmDependenciesIndexImpl is explicitly NOT THREADSAFE; serialize per environment
+        return synchronized(kotlinEnvironment) {
+            NetBeansAnalyzerFacadeForJVM.analyzeFilesWithJavaIntegration(
+                    project, kotlinEnvironment.project, listOf(file))
+        }
     }
-    
+
     private fun analyzeFiles(kotlinProject: Project,
-                             kotlinEnvironment: KotlinEnvironment, 
-                             filesToAnalyze: Collection<KtFile>) = NetBeansAnalyzerFacadeForJVM.analyzeFilesWithJavaIntegration(kotlinProject, kotlinEnvironment.project, filesToAnalyze)
+                             kotlinEnvironment: KotlinEnvironment,
+                             filesToAnalyze: Collection<KtFile>) = synchronized(kotlinEnvironment) {
+        NetBeansAnalyzerFacadeForJVM.analyzeFilesWithJavaIntegration(kotlinProject, kotlinEnvironment.project, filesToAnalyze)
+    }
 
     fun analyzeFiles(kotlinProject: Project,
                      filesToAnalyze: Collection<KtFile>): AnalysisResultWithProvider {
