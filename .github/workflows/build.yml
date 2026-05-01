@@ -98,6 +98,8 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: ${{ env.JAVA_DISTRIBUTION }}
           cache: maven
+      - name: Install bundled JARs to local Maven repo
+        run: bash setup-local-repo.sh
       - name: Set version
         run: mvn versions:set -DnewVersion=${{ needs.calc_ver.outputs.project_ver }} --batch-mode
       - name: Build and test
