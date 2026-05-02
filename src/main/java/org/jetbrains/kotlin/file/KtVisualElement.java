@@ -31,7 +31,7 @@ import org.openide.windows.TopComponent;
 @MultiViewElement.Registration(
         displayName = "#LBL_Kt_VISUAL",
         iconBase = "org/jetbrains/kotlin/kt.png",
-        mimeType = "text/x-kt",
+        mimeType = "text/x-kotlin",
         persistenceType = TopComponent.PERSISTENCE_NEVER,
         preferredID = "KtVisual",
         position = 2000

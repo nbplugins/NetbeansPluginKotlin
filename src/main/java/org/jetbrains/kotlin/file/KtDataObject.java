@@ -36,63 +36,63 @@ import org.openide.windows.TopComponent;
 })
 @MIMEResolver.ExtensionRegistration(
         displayName = "#LBL_Kt_LOADER",
-        mimeType = "text/x-kt",
+        mimeType = "text/x-kotlin",
         extension = {"kt", "KT"}
 )
 @DataObject.Registration(
-        mimeType = "text/x-kt",
+        mimeType = "text/x-kotlin",
         iconBase = "org/jetbrains/kotlin/kt.png",
         displayName = "#LBL_Kt_LOADER",
         position = 300
 )
 @ActionReferences({
     @ActionReference(
-            path = "Loaders/text/x-kt/Actions",
+            path = "Loaders/text/x-kotlin/Actions",
             id = @ActionID(category = "System", id = "org.openide.actions.OpenAction"),
             position = 100,
             separatorAfter = 200
     ),
     @ActionReference(
-            path = "Loaders/text/x-kt/Actions",
+            path = "Loaders/text/x-kotlin/Actions",
             id = @ActionID(category = "Edit", id = "org.openide.actions.CutAction"),
             position = 300
     ),
     @ActionReference(
-            path = "Loaders/text/x-kt/Actions",
+            path = "Loaders/text/x-kotlin/Actions",
             id = @ActionID(category = "Edit", id = "org.openide.actions.CopyAction"),
             position = 400,
             separatorAfter = 500
     ),
     @ActionReference(
-            path = "Loaders/text/x-kt/Actions",
+            path = "Loaders/text/x-kotlin/Actions",
             id = @ActionID(category = "Edit", id = "org.openide.actions.DeleteAction"),
             position = 600
     ),
     @ActionReference(
-            path = "Loaders/text/x-kt/Actions",
+            path = "Loaders/text/x-kotlin/Actions",
             id = @ActionID(category = "System", id = "org.openide.actions.RenameAction"),
             position = 700,
             separatorAfter = 800
     ),
     @ActionReference(
-            path = "Loaders/text/x-kt/Actions",
+            path = "Loaders/text/x-kotlin/Actions",
             id = @ActionID(category = "System", id = "org.openide.actions.SaveAsTemplateAction"),
             position = 900,
             separatorAfter = 1000
     ),
     @ActionReference(
-            path = "Loaders/text/x-kt/Actions",
+            path = "Loaders/text/x-kotlin/Actions",
             id = @ActionID(category = "System", id = "org.openide.actions.FileSystemAction"),
             position = 1100,
             separatorAfter = 1200
     ),
     @ActionReference(
-            path = "Loaders/text/x-kt/Actions",
+            path = "Loaders/text/x-kotlin/Actions",
             id = @ActionID(category = "System", id = "org.openide.actions.ToolsAction"),
             position = 1300
     ),
     @ActionReference(
-            path = "Loaders/text/x-kt/Actions",
+            path = "Loaders/text/x-kotlin/Actions",
             id = @ActionID(category = "System", id = "org.openide.actions.PropertiesAction"),
             position = 1400
     )
@@ -101,7 +101,7 @@ public class KtDataObject extends MultiDataObject {
 
     public KtDataObject(final FileObject file, MultiFileLoader loader) throws IOException {
         super(file, loader);
-        registerEditor("text/x-kt", true);
+        registerEditor("text/x-kotlin", true);
     }
 
     @Override
@@ -112,7 +112,7 @@ public class KtDataObject extends MultiDataObject {
     @MultiViewElement.Registration(
             displayName = "#LBL_Kt_EDITOR",
             iconBase = "org/jetbrains/kotlin/kt.png",
-            mimeType = "text/x-kt",
+            mimeType = "text/x-kotlin",
             persistenceType = TopComponent.PERSISTENCE_ONLY_OPENED,
             preferredID = "Kt",
             position = 1000

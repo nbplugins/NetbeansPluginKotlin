@@ -33,7 +33,7 @@ import org.netbeans.lib.editor.hyperlink.spi.HyperlinkProviderExt;
 import org.netbeans.lib.editor.hyperlink.spi.HyperlinkType;
 import org.openide.filesystems.FileObject;
 
-@MimeRegistration(mimeType = "text/x-kt", service = HyperlinkProviderExt.class)
+@MimeRegistration(mimeType = "text/x-kotlin", service = HyperlinkProviderExt.class)
 public class KotlinHyperlinkProvider implements HyperlinkProviderExt {
 
     private PsiElement psi = null;

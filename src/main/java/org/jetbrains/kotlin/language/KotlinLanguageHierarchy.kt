@@ -43,5 +43,5 @@ class KotlinLanguageHierarchy : LanguageHierarchy<KotlinTokenId>() {
     
     override fun createTokenIds() = tokens
     override fun createLexer(info: LexerRestartInfo<KotlinTokenId>) = KotlinLexerProxy(info)
-    override fun mimeType() = "text/x-kt"
+    override fun mimeType() = "text/x-kotlin"
 }

@@ -42,7 +42,7 @@ class KotlinInstaller : ModuleInstall() {
                                 val dataObject = (it as? TopComponent)?.lookup?.lookup(DataObject::class.java) ?: return@forEach
                                 val currentFile = dataObject.primaryFile
                                 if (currentFile != null) {
-                                    if (currentFile.mimeType == "text/x-kt") {
+                                    if (currentFile.mimeType == "text/x-kotlin") {
                                         checkUpdates()
                                         checkProjectConfiguration(currentFile)
                                     }
