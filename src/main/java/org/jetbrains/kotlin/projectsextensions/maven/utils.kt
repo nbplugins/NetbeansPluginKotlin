@@ -27,7 +27,7 @@ fun convert(action: String, lookup: Lookup): String? {
     if (ActionProvider.COMMAND_RUN_SINGLE == action || ActionProvider.COMMAND_DEBUG_SINGLE == action) {
         val f = lookup.lookup(FileObject::class.java)
 
-        if (f != null && "text/x-kt" == f.mimeType) {
+        if (f != null && "text/x-kotlin" == f.mimeType) {
             val ktFile = ProjectUtils.getKtFile(f)
             if (!ktFile.hasMain()) return null
 
@@ -41,7 +41,7 @@ fun convert(action: String, lookup: Lookup): String? {
 fun createReplacements(action: String, lookup: Lookup): Map<String, String> {
     val f = lookup.lookup(FileObject::class.java)
 
-    if (f != null && "text/x-kt" == f.mimeType) {
+    if (f != null && "text/x-kotlin" == f.mimeType) {
         val ktFile = ProjectUtils.getKtFile(f) ?: return emptyMap()
         val fqName = ktFile.mainClassName() ?: return emptyMap()
         

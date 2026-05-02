@@ -49,8 +49,8 @@ import org.openide.filesystems.URLMapper;
  * @author Alexander.Baratynski
  */
 @ActionsProvider.Registrations({
-    @ActionsProvider.Registration(path="", actions={ "toggleBreakpoint" }, activateForMIMETypes={ "text/x-kt" }),
-    @ActionsProvider.Registration(path="netbeans-JPDASession", actions={ "toggleBreakpoint" }, activateForMIMETypes={ "text/x-kt" })
+    @ActionsProvider.Registration(path="", actions={ "toggleBreakpoint" }, activateForMIMETypes={ "text/x-kotlin" }),
+    @ActionsProvider.Registration(path="netbeans-JPDASession", actions={ "toggleBreakpoint" }, activateForMIMETypes={ "text/x-kotlin" })
 })
 public class KotlinToggleBreakpointActionProvider extends ActionsProviderSupport 
     implements PropertyChangeListener {
@@ -165,7 +165,7 @@ public class KotlinToggleBreakpointActionProvider extends ActionsProviderSupport
         }
         setEnabled(ActionsManager.ACTION_TOGGLE_BREAKPOINT,
                 (EditorContextBridge.getContext().getCurrentLineNumber() >= 0) &&
-                        (fo != null && "text/x-kt".equals(fo.getMIMEType())));
+                        (fo != null && "text/x-kotlin".equals(fo.getMIMEType())));
         if (debugger != null && debugger.getState() == JPDADebugger.STATE_DISCONNECTED) {
             destroy();
         }

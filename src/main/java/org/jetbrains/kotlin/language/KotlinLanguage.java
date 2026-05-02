@@ -40,7 +40,7 @@ import org.netbeans.modules.csl.spi.LanguageRegistration;
 import org.netbeans.modules.parsing.spi.Parser;
 import org.netbeans.modules.parsing.spi.indexing.EmbeddingIndexerFactory;
 
-@LanguageRegistration(mimeType = "text/x-kt")
+@LanguageRegistration(mimeType = "text/x-kotlin")
 public class KotlinLanguage extends DefaultLanguageConfig {
 
     @NotNull

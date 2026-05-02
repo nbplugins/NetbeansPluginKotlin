@@ -24,7 +24,7 @@ import org.netbeans.spi.editor.bracesmatching.BracesMatcherFactory;
 import org.netbeans.spi.editor.bracesmatching.MatcherContext; 
 import org.netbeans.spi.editor.bracesmatching.support.BracesMatcherSupport; 
 
-@MimeRegistration(mimeType="text/x-kt",service=BracesMatcherFactory.class) 
+@MimeRegistration(mimeType="text/x-kotlin",service=BracesMatcherFactory.class) 
 public class KotlinBracesMatcherFactory implements BracesMatcherFactory { 
     
     @Override 

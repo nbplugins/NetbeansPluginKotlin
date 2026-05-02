@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>  
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin-nbm</artifactId>
-  <version>0.5.0-SNAPSHOT</version>
+  <version>0.5.1-SNAPSHOT</version>
   <packaging>nbm</packaging>  
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
