@@ -24,7 +24,12 @@ The canonical upstream remote is `https://github.com/nbplugins/NetbeansPluginKot
 PRs are submitted from a personal fork (`origin` = `git@github.com:oleg68/NetbeansPluginKotlin.git`).
 Always push the feature branch to `origin` (the fork), then open a PR targeting `upstream` (`nbplugins/NetbeansPluginKotlin`).
 
-Branch naming: use `doc/` prefix for documentation-only PRs (e.g. `doc/update-readme`).
+Branch naming:
+- `feature/` — new features (e.g. `feature/a3-mime-type`)
+- `bugfix/` — bug fixes (e.g. `bugfix/parser-crash`)
+- `refactor/` — refactoring (e.g. `refactor/cleanup-indexer`)
+- `doc/` — documentation-only PRs (e.g. `doc/update-readme`)
+- `req/MAJOR.MINOR` — release PRs (e.g. `req/0.5`)
 
 Before creating a PR branch, always fetch and sync from the upstream target branch:
 
