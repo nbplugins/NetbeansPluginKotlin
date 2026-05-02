@@ -30,6 +30,9 @@ git checkout -b <branch>  # then create the feature branch
 
 The canonical upstream remote is `https://github.com/nbplugins/NetbeansPluginKotlin.git`.
 
+PRs are submitted from a personal fork (`origin` = `git@github.com:oleg68/NetbeansPluginKotlin.git`).
+Always push the feature branch to `origin` (the fork), then open a PR targeting `upstream` (`nbplugins/NetbeansPluginKotlin`).
+
 ## Build Commands
 
 ```bash
