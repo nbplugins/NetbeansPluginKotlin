@@ -35,6 +35,53 @@ git merge upstream/main   # fast-forward to latest upstream state
 git checkout -b <branch>  # then create the feature branch
 ```
 
+## Release & Versioning
+
+### Versioning scheme
+
+Build version is computed from git tags by CI:
+- Base tag `MAJOR.MINOR` (e.g. `0.4`) + commit count from it → `MAJOR.MINOR.N` (e.g. `0.4.13`)
+- `pom.xml` holds `MAJOR.MINOR.0-SNAPSHOT` — only MAJOR.MINOR matters to CI; patch and SNAPSHOT suffix are ignored
+
+### Release cycle
+
+A release has an explicit **start** and **finish**:
+
+**Starting a release** (only this, nothing else):
+- Bump `pom.xml` to `MAJOR.MINOR.0-SNAPSHOT` → CI creates base tag `MAJOR.MINOR`, build version becomes `MAJOR.MINOR.0`
+- Each subsequent push to main → version `MAJOR.MINOR.N` (N increments automatically)
+
+**During development** — add user-visible changes to `CHANGELOG.md` (see rules below).
+
+**Finishing a release** (only this, nothing else):
+- Update `CHANGELOG.md` heading to `# MAJOR.MINOR` or `# MAJOR.MINOR (YYYY-MM-DD)` (matching current `pom.xml`) → CI sees this as the release signal, creates release tag `MAJOR.MINOR.N`, and publishes a GitHub Release. If the date is omitted, CI inserts today's date automatically.
+
+**After a published release** — CI auto-edits `CHANGELOG.md`: the release heading `# MAJOR.MINOR (date)` is replaced with `# MAJOR.MINOR.N (date)`. Development can continue immediately; patch versions increment from the last released N.
+
+Implemented in `build-scripts/autotag.sh` and `.github/workflows/build.yml`.
+
+### CHANGELOG.md rules
+
+The heading `# MAJOR.MINOR` or `# MAJOR.MINOR (YYYY-MM-DD)` is the CI release signal — **only add it when finishing a release**. The date is optional; if omitted, CI inserts today's date automatically (e.g. `# 0.4` or `# 0.4 (2026-05-02)`).
+
+During development, add bullet lines at the **very top** of `CHANGELOG.md` (above any existing heading), with no section heading. When finishing a release, add the `# MAJOR.MINOR` or `# MAJOR.MINOR (YYYY-MM-DD)` heading above those bullets.
+
+The changelog within a release is **cumulative**: if a feature was added and later refined or fixed within the same release cycle, **update the existing bullet** rather than adding a new one.
+
+Every user-visible change **must** add or update a bullet at the **top** of the list (reverse chronological order — newest entries first). "User-visible" means: new feature, changed behavior, bug fix (in a previously released version), UI change, new setting, README update. Internal refactors, test-only changes, CI changes, and fixes to features not yet released do not require an entry.
+
+Entries must describe the change from the **user's perspective** — what the user experiences, not how it was implemented.
+
+Each entry must start with a past-tense verb: **Fixed**, **Added**, **Improved**, **Changed**, **Removed**, etc.
+
+Each changelog entry must be committed **together with the code change it describes** — never in a separate commit.
+
+### Commit message rules
+
+Commit messages must also start with a past-tense verb (e.g. "Fixed ...", "Added ..."). The subject line describes *what* was done; the body (if needed) explains *how* or *why*.
+
+When finishing a release by adding `# MAJOR.MINOR` to CHANGELOG.md, the commit message must be `"Requested release MAJOR.MINOR"` (not `"Released MAJOR.MINOR"`).
+
 ## Build Commands
 
 ```bash
