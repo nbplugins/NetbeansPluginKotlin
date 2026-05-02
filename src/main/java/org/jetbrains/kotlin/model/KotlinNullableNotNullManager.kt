@@ -27,29 +27,29 @@ class KotlinNullableNotNullManager(
     intellijProject: Project
 ) : NullableNotNullManagerBase(intellijProject) {
 
-    private val myNotNulls = mutableListOf("NotNull")
-    private val myNullables = mutableListOf("Nullable")
-    private var myDefaultNotNull = "NotNull"
-    private var myDefaultNullable = "Nullable"
+    private val notNullAnnotations = mutableListOf("NotNull")
+    private val nullableAnnotations = mutableListOf("Nullable")
+    private var defaultNotNull = "NotNull"
+    private var defaultNullable = "Nullable"
 
     override fun setNotNulls(vararg annotations: String) {
-        myNotNulls.clear(); myNotNulls.addAll(annotations.toList())
+        notNullAnnotations.clear(); notNullAnnotations.addAll(annotations.toList())
     }
     override fun setNullables(vararg annotations: String) {
-        myNullables.clear(); myNullables.addAll(annotations.toList())
+        nullableAnnotations.clear(); nullableAnnotations.addAll(annotations.toList())
     }
-    override fun getDefaultNullable() = myDefaultNullable
-    override fun setDefaultNullable(defaultNullable: String) { myDefaultNullable = defaultNullable }
-    override fun getDefaultNotNull() = myDefaultNotNull
-    override fun setDefaultNotNull(defaultNotNull: String) { myDefaultNotNull = defaultNotNull }
-    override fun getNullables(): List<String> = myNullables
-    override fun getNotNulls(): List<String> = myNotNulls
+    override fun getDefaultNullable() = defaultNullable
+    override fun setDefaultNullable(defaultNullable: String) { this.defaultNullable = defaultNullable }
+    override fun getDefaultNotNull() = defaultNotNull
+    override fun setDefaultNotNull(defaultNotNull: String) { this.defaultNotNull = defaultNotNull }
+    override fun getNullables(): List<String> = nullableAnnotations
+    override fun getNotNulls(): List<String> = notNullAnnotations
     override fun getInstrumentedNotNulls(): List<String> = emptyList()
     override fun setInstrumentedNotNulls(annotations: List<String>) {}
     override fun hasHardcodedContracts(element: PsiElement) = false
 
     override fun isNotNull(owner: PsiModifierListOwner, checkBases: Boolean): Boolean {
-        val notNullAnnotations = myNotNulls.toSet()
+        val notNullAnnotations = notNullAnnotations.toSet()
         return owner.modifierList?.annotations?.any { annotation ->
             annotation.qualifiedName in notNullAnnotations
         } ?: false
