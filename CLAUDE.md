@@ -19,7 +19,14 @@ git submodule update --remote submodules/IntellijCommunity
 
 ## Git Workflow
 
-Before creating a branch for a PR, always sync from the upstream target branch:
+The canonical upstream remote is `https://github.com/nbplugins/NetbeansPluginKotlin.git`.
+
+PRs are submitted from a personal fork (`origin` = `git@github.com:oleg68/NetbeansPluginKotlin.git`).
+Always push the feature branch to `origin` (the fork), then open a PR targeting `upstream` (`nbplugins/NetbeansPluginKotlin`).
+
+Branch naming: use `doc/` prefix for documentation-only PRs (e.g. `doc/update-readme`).
+
+Before creating a PR branch, always fetch and sync from the upstream target branch:
 
 ```bash
 git fetch upstream
@@ -27,11 +34,6 @@ git checkout main         # or the target branch
 git merge upstream/main   # fast-forward to latest upstream state
 git checkout -b <branch>  # then create the feature branch
 ```
-
-The canonical upstream remote is `https://github.com/nbplugins/NetbeansPluginKotlin.git`.
-
-PRs are submitted from a personal fork (`origin` = `git@github.com:oleg68/NetbeansPluginKotlin.git`).
-Always push the feature branch to `origin` (the fork), then open a PR targeting `upstream` (`nbplugins/NetbeansPluginKotlin`).
 
 ## Build Commands
 

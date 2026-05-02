@@ -5,12 +5,19 @@
 
 # Kotlin plugin for NetBeans IDE
 
+This plugin was originally developed by JetBrains and published under the Apache License 2.0
+([original repository](https://github.com/JetBrains/kotlin-netbeans)).
+In 2017 JetBrains discontinued active work on it
+(see [issue #122](https://github.com/JetBrains/kotlin-netbeans/issues/122)).
+
+In 2026 active community development resumed at the new home:
+**https://github.com/nbplugins/NetbeansPluginKotlin**
+See [docs/development-plan.md](docs/development-plan.md) for the roadmap.
+
 > **⚠ Alpha — Active Development**
-> JetBrains has discontinued this plugin (see [issue #122](https://github.com/JetBrains/kotlin-netbeans/issues/122)).
-> Active development continues in the community fork:
-> **https://github.com/nbplugins/NetbeansPluginKotlin**
 > This is **alpha-quality software** — expect rough edges and breaking changes.
-> See [docs/development-plan.md](docs/development-plan.md) for the roadmap.
+
+Plugin development is assisted by the AI model **Claude Sonnet 4.6**.
 
 ## Installing Kotlin plugin
 
