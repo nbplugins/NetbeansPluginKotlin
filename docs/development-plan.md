@@ -31,7 +31,7 @@ compatible version. Not a separate stage — done along the way.
 ## Stage Order
 
 - [x] **A1** — Rename artifact and plugin metadata
-- [ ] **A2** — GitHub Actions CI/CD
+- [x] **A2** — GitHub Actions CI/CD
 - [ ] **A3** — MIME type: switch to `text/x-kotlin`, override built-in NB services
 - [ ] **A4.1** — Maven multi-module: install `lib/*.jar` as Maven artifacts (no compilation)
 - [ ] **A4.2** — `kotlin-compiler`: Maven Central + ASM patch; `kotlin-formatter`: compile from embedded sources

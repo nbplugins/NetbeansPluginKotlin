@@ -1,5 +1,6 @@
-[![JetBrains team project](http://jb.gg/badges/team.svg)](https://confluence.jetbrains.com/display/ALL/JetBrains+on+GitHub)
-[![TeamCity (simple build status)](https://img.shields.io/teamcity/http/teamcity.jetbrains.com/s/Kotlin_NetBeansPlugin.svg)](https://teamcity.jetbrains.com/viewType.html?buildTypeId=Kotlin_NetBeansPlugin&branch_Kotlin=%3Cdefault%3E&tab=buildTypeStatusDiv)
+![Build](https://github.com/nbplugins/NetbeansPluginKotlin/actions/workflows/build.yml/badge.svg)
+[![Release](https://img.shields.io/github/v/release/nbplugins/NetbeansPluginKotlin)](https://github.com/nbplugins/NetbeansPluginKotlin/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/nbplugins/NetbeansPluginKotlin/total)](https://github.com/nbplugins/NetbeansPluginKotlin/releases)
 [![GitHub license](https://img.shields.io/badge/license-Apache%20License%202.0-blue.svg?style=flat)](http://www.apache.org/licenses/LICENSE-2.0)
 
 # Kotlin plugin for NetBeans IDE
