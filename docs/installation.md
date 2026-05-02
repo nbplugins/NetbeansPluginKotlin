@@ -46,7 +46,26 @@ sudo sed -i \
 
 ---
 
-## Build and install from source
+## Download
+
+Download the latest `.nbm` file from [GitHub Releases](https://github.com/nbplugins/NetbeansPluginKotlin/releases/latest).
+
+Intermediate builds between releases are available as artifacts on the
+[Actions](https://github.com/nbplugins/NetbeansPluginKotlin/actions) page — open the latest
+successful workflow run and download the `nbm` artifact (delivered as a zip file; extract
+the `.nbm` before installing).
+
+### Install into NetBeans
+
+1. Open NetBeans → **Tools → Plugins**
+2. Switch to the **Downloaded** tab
+3. Click **Add Plugins…** and select the `.nbm` file
+4. Click **Install** and follow the wizard (accept the license when prompted)
+5. Restart NetBeans when prompted
+
+---
+
+## Build from source
 
 ### Step 1. Clone the repository
 
