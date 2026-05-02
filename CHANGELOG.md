@@ -1,4 +1,4 @@
-# 0.5
+# 0.5.4 (2026-05-02)
 
 - Changed MIME type from `text/x-kt` to standard `text/x-kotlin`, overriding NetBeans' built-in basic Kotlin support with full CSL-based features
 
