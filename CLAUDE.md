@@ -106,10 +106,20 @@ CP="patches-src:/usr/share/java/objectweb-asm/asm.jar"
 # Compile patch tools (only needed once, or after editing patches-src/)
 javac -cp /usr/share/java/objectweb-asm/asm.jar patches-src/*.java -d patches-src
 
-# 1. Patch intellij-core.jar (InjectGetGreenStub -> strip old SearchScope)
+# 1. Patch intellij-core.jar
+#    NOTE: intellij-core-1.0-PATCHED.jar is committed to git with many pre-applied strips.
+#    To rebuild from scratch, apply all strips documented in git history. For the incremental
+#    strip of ConcurrentRefHashMap/ConcurrentWeakHashMap (added to fix Disposer init failure):
+java -cp $CP PatchStripBundled lib/intellij-core-1.0-PATCHED.jar /tmp/ic-new.jar \
+    com/intellij/util/containers/ConcurrentRefHashMap \
+    com/intellij/util/containers/ConcurrentWeakHashMap
+cp /tmp/ic-new.jar lib/intellij-core-1.0-PATCHED.jar
+#    Full rebuild from raw:
 java -cp $CP InjectGetGreenStub lib/intellij-core-1.0.jar /tmp/ic-step1.jar
-java -cp $CP PatchStripBundled /tmp/ic-step1.jar lib/intellij-core-1.0-PATCHED.jar \
-    com/intellij/psi/search/SearchScope
+#    ... then apply all strips from original committed PATCHED jar (see git log), then:
+java -cp $CP PatchStripBundled /tmp/ic-stepN.jar lib/intellij-core-1.0-PATCHED.jar \
+    com/intellij/util/containers/ConcurrentRefHashMap \
+    com/intellij/util/containers/ConcurrentWeakHashMap
 
 # 2. Patch kotlin-converter.jar (PatchImportConversionKt -> PatchFqnPart)
 java -cp $CP PatchImportConversionKt lib/kotlin-converter-1.0.jar /tmp/kconv-step1.jar
@@ -141,13 +151,19 @@ done
 rm -rf ~/.m2/repository/org/jetbrains/kotlin/kotlin-compiler/1.3.72-PATCHED
 ```
 
+**Правило разрешения конфликтов версий классов:** При конфликте двух версий одного класса из разных JAR-файлов — всегда стрипить **старую** версию, оставлять **новую**. При необходимости патчить **точки вызова** (call sites) через ASM, чтобы они использовали API новой версии.
+
 **Note on bundled library conflicts:** `kotlin-compiler-1.3.72.jar` bundles old/incomplete versions of
 several libraries (`org/picocontainer/`, `com/google/`, `com/intellij/openapi/extensions/`) that
-conflict with the versions required by `intellij-core.jar` call sites. Rather than patching call
-sites, the bundled copies are stripped so that Maven dependencies (`picocontainer:1.2`,
-`guava:28.2-jre`) or the `intellij-core` copy (`Extensions`) are the sole providers.
+conflict with the versions required by `intellij-core.jar` call sites. The bundled copies are stripped
+so that Maven dependencies (`picocontainer:1.2`, `guava:28.2-jre`) or the `intellij-core` copy
+(`Extensions`) are the sole providers.
 `intellij-core-1.0.jar` bundles an old `SearchScope` without `contains(VirtualFile)`; it is stripped
 so that kotlin-compiler's newer version is loaded instead.
+`intellij-core-1.0.jar` also bundles old `ConcurrentRefHashMap` and `ConcurrentWeakHashMap` that call
+`ContainerUtil.newConcurrentMap(int,float,int,TObjectHashingStrategy)` — a method removed from the
+newer `ContainerUtil` in `kotlin-compiler-1.3.72.jar`. Both are stripped from `intellij-core` so that
+kotlin-compiler's self-consistent newer versions are loaded instead.
 
 **Running tests** (must use Java 17 — Java 25 breaks the Kotlin Maven plugin; Xvfb is started automatically by Maven on display :99):
 
