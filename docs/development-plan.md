@@ -32,7 +32,7 @@ compatible version. Not a separate stage — done along the way.
 
 - [x] **A1** — Rename artifact and plugin metadata
 - [x] **A2** — GitHub Actions CI/CD
-- [ ] **A3** — MIME type: switch to `text/x-kotlin`, override built-in NB services
+- [x] **A3** — MIME type: switch to `text/x-kotlin`, override built-in NB services
 - [ ] **A4.1** — Maven multi-module: install `lib/*.jar` as Maven artifacts (no compilation)
 - [ ] **A4.2** — `kotlin-compiler`: Maven Central + ASM patch; `kotlin-formatter`: compile from embedded sources
 - [ ] **B1** — Research K2 Analysis API, choose architectural approach
