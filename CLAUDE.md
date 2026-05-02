@@ -89,14 +89,19 @@ When finishing a release by adding `# MAJOR.MINOR` to CHANGELOG.md, the commit m
 
 ## Build Commands
 
+All commands run from the **repository root** (multi-module build):
+
 ```bash
-mvn clean install          # Build the plugin and install to local Maven repo
-mvn clean package          # Build the plugin (produces .nbm file)
-mvn test                   # Run all tests
-mvn test -Dtest=ClassName  # Run a single test class
+mvn clean install          # Build all modules and install to local Maven repo
+mvn clean package          # Build the plugin (produces .nbm file in Nbm/target/)
+mvn test -pl Nbm           # Run all tests
+mvn test -pl Nbm -Dtest=ClassName  # Run a single test class
 mvn clean package -DskipTests  # Build without running tests
-mvn nbm:cluster-app        # Create a NetBeans test cluster for manual testing
+mvn nbm:cluster-app -pl Nbm    # Create a NetBeans test cluster for manual testing
 ```
+
+The `bundled-jars/*` modules must be built (or have run at least once) before `Nbm` can be built
+in isolation. From the root `mvn clean install` handles this automatically.
 
 ## Architecture
 
@@ -106,7 +111,27 @@ The plugin integrates with NetBeans via the **CSL (Colored Syntax Language) API*
 - **Java** (`~67 files`): NetBeans integration layer — service registrations, API adapters, and entry points
 - **Kotlin** (`~164 files`): Core implementation logic — analysis, completion, refactoring, etc.
 
-### Main Packages (`src/main/java/org/jetbrains/kotlin/`)
+### Project Structure
+
+```
+pom.xml                  ← root (packaging=pom), dependencyManagement for all versions
+Nbm/                     ← main plugin module (packaging=nbm)
+  pom.xml
+  src/                   ← plugin source and tests
+bundled-jars/            ← grouping dir (no pom); each submodule installs one JAR to ~/.m2
+  KotlinIdeCommon/
+  KotlinFormatter/
+  KotlinConverter/
+  KotlinCompiler/
+  IntellijCore/
+  OpenapiFormatter/
+  IdeaFormatter/
+lib/                     ← patched JARs (referenced by bundled-jars/* modules)
+patches-src/             ← ASM-based patch tools (used to produce the PATCHED JARs)
+patches/                 ← replacement class sources for picocontainer/IntelliJ utilities
+```
+
+### Main Packages (`Nbm/src/main/java/org/jetbrains/kotlin/`)
 
 | Package | Purpose |
 |---------|---------|
@@ -133,8 +158,9 @@ Several capabilities depend on bundled custom JARs (not from Maven Central):
 - `intellij-core.jar` — IntelliJ platform core used for Kotlin analysis
 - `openapi-formatter.jar`, `idea-formatter.jar` — Formatting infrastructure
 
-These JARs are installed into the local Maven repository (`repo/`) via `setup-local-repo.sh`.
-Run it after modifying any JAR in `lib/`.
+These JARs are installed into `~/.m2` automatically by the `bundled-jars/*` Maven modules during
+`mvn clean install` from the root. They are installed under `io.github.nbplugins` coordinates
+(e.g. `io.github.nbplugins:netbeans-plugin-kotlin-ide-common:${project.version}`).
 
 ### JAR Patches (`patches-src/`)
 
@@ -197,15 +223,16 @@ java -cp $CP PatchStripBundled /tmp/kc-step2.jar /tmp/kc-step3.jar com/google/
 java -cp $CP PatchStripBundled /tmp/kc-step3.jar lib/kotlin-compiler-1.3.72-PATCHED.jar \
     com/intellij/openapi/extensions/Extensions.class \
     com/intellij/openapi/extensions/impl/
-# lib/kotlin-compiler-1.3.72-PATCHED.pom is committed and used by setup-local-repo.sh
+# lib/kotlin-compiler-1.3.72-PATCHED.pom is committed (carries transitive dep declarations)
 
-# 6. Reinstall lib/ JARs to local Maven repo
-bash setup-local-repo.sh
-# Clear ~/.m2 copies so Maven picks up fresh versions from repo/:
-for jar in intellij-core kotlin-ide-common kotlin-converter kotlin-formatter; do
-  rm -rf ~/.m2/repository/org/jetbrains/kotlin/$jar/1.0-PATCHED
+# 6. Reinstall lib/ JARs — rebuild from root to re-run bundled-jars/* install-file executions:
+mvn clean install -DskipTests
+# Or clear specific ~/.m2 entries and rebuild:
+for art in netbeans-plugin-kotlin-intellij-core netbeans-plugin-kotlin-ide-common \
+           netbeans-plugin-kotlin-converter netbeans-plugin-kotlin-formatter \
+           netbeans-plugin-kotlin-compiler; do
+  rm -rf ~/.m2/repository/io/github/nbplugins/$art
 done
-rm -rf ~/.m2/repository/org/jetbrains/kotlin/kotlin-compiler/1.3.72-PATCHED
 ```
 
 **Правило разрешения конфликтов версий классов:** При конфликте двух версий одного класса из разных JAR-файлов — всегда стрипить **старую** версию, оставлять **новую**. При необходимости патчить **точки вызова** (call sites) через ASM, чтобы они использовали API новой версии.
@@ -229,14 +256,14 @@ JAVA_HOME=/usr/lib/jvm/java-17-temurin-jdk mvn clean test
 ```
 
 ### Plugin Registration
-- `src/main/resources/META-INF/layer.xml` — Registers language services, file actions, project integrations
+- `Nbm/src/main/resources/META-INF/layer.xml` — Registers language services, file actions, project integrations
 - `@LanguageRegistration` on `KotlinLanguage.java` — Binds the plugin to `.kt` files
 
 ## Test Structure
 
-Tests live in `src/test/java/` mirroring feature packages: `completion/`, `diagnostics/`, `formatting/`, `navigation/`, `rename/`, etc.
+Tests live in `Nbm/src/test/java/` mirroring feature packages: `completion/`, `diagnostics/`, `formatting/`, `navigation/`, `rename/`, etc.
 
-Test resource files (sample `.kt` files) are in `src/test/resources/projForTest/src/`, organized by feature. Tests extend `KotlinTestCase` (a custom NetBeans test base class) which sets up a mock NetBeans environment.
+Test resource files (sample `.kt` files) are in `Nbm/src/test/resources/projForTest/src/`, organized by feature. Tests extend `KotlinTestCase` (a custom NetBeans test base class) which sets up a mock NetBeans environment.
 
 ## NetBeans Runtime Configuration (NB 23+ / Java 17+)
 
