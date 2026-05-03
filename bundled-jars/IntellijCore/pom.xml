@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.5.4-SNAPSHOT</version>
+    <version>0.5.3-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-intellij-core</artifactId>
@@ -114,7 +114,7 @@
         <executions>
           <execution>
             <id>install-patched-jar</id>
-            <phase>package</phase>
+            <phase>install</phase>
             <goals><goal>install-file</goal></goals>
             <configuration>
               <file>${project.build.directory}/patched.jar</file>
