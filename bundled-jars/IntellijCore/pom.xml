@@ -5,25 +5,119 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.5.2-SNAPSHOT</version>
+    <version>0.5.4-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-intellij-core</artifactId>
   <packaging>pom</packaging>
-  <name>Netbeans Plugin Kotlin Intellij Core</name>
+  <name>Netbeans Plugin Kotlin IntelliJ Core</name>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-patching-jars</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+  </dependencies>
+
   <build>
     <plugins>
+      <!-- Step 0: copy original kotlin-compiler from Maven Central (reference for PatchStripConflicts) -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.7.1</version>
+        <executions>
+          <execution>
+            <id>copy-compiler-reference</id>
+            <phase>generate-resources</phase>
+            <goals><goal>copy</goal></goals>
+            <configuration>
+              <artifactItems>
+                <artifactItem>
+                  <groupId>org.jetbrains.kotlin</groupId>
+                  <artifactId>kotlin-compiler</artifactId>
+                  <version>1.3.72</version>
+                  <type>jar</type>
+                  <outputDirectory>${project.build.directory}</outputDirectory>
+                  <destFileName>kotlin-compiler-original.jar</destFileName>
+                </artifactItem>
+              </artifactItems>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.3.0</version>
+        <executions>
+          <!-- Step 1: InjectGetGreenStub -->
+          <execution>
+            <id>patch-step-1-inject-greenstub</id>
+            <phase>process-resources</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <executable>java</executable>
+              <arguments>
+                <argument>-cp</argument>
+                <argument>${project.basedir}/../../PatchingJars/target/netbeans-plugin-kotlin-patching-jars-${project.version}.jar</argument>
+                <argument>InjectGetGreenStub</argument>
+                <argument>${project.basedir}/../../lib/intellij-core-1.0.jar</argument>
+                <argument>${project.build.directory}/step1.jar</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <!-- Step 2: PatchStripConflicts against original kotlin-compiler -->
+          <execution>
+            <id>patch-step-2-strip-conflicts</id>
+            <phase>process-resources</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <executable>java</executable>
+              <arguments>
+                <argument>-cp</argument>
+                <argument>${project.basedir}/../../PatchingJars/target/netbeans-plugin-kotlin-patching-jars-${project.version}.jar</argument>
+                <argument>PatchStripConflicts</argument>
+                <argument>${project.build.directory}/step1.jar</argument>
+                <argument>${project.build.directory}/kotlin-compiler-original.jar</argument>
+                <argument>${project.build.directory}/step2.jar</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <!-- Step 3: strip ConcurrentRefHashMap and ConcurrentWeakHashMap -->
+          <execution>
+            <id>patch-step-3-strip-concurrent</id>
+            <phase>process-resources</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <executable>java</executable>
+              <arguments>
+                <argument>-cp</argument>
+                <argument>${project.basedir}/../../PatchingJars/target/netbeans-plugin-kotlin-patching-jars-${project.version}.jar</argument>
+                <argument>PatchStripBundled</argument>
+                <argument>${project.build.directory}/step2.jar</argument>
+                <argument>${project.build.directory}/patched.jar</argument>
+                <argument>com/intellij/util/containers/ConcurrentRefHashMap</argument>
+                <argument>com/intellij/util/containers/ConcurrentWeakHashMap</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-install-plugin</artifactId>
         <version>3.1.1</version>
         <executions>
           <execution>
-            <id>install-bundled-jar</id>
-            <phase>initialize</phase>
+            <id>install-patched-jar</id>
+            <phase>package</phase>
             <goals><goal>install-file</goal></goals>
             <configuration>
-              <file>../../lib/intellij-core-1.0-PATCHED.jar</file>
+              <file>${project.build.directory}/patched.jar</file>
               <groupId>io.github.nbplugins</groupId>
               <artifactId>netbeans-plugin-kotlin-intellij-core</artifactId>
               <version>${project.version}</version>
