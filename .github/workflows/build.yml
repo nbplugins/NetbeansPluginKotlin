@@ -100,7 +100,7 @@ jobs:
       - name: Set version
         run: mvn versions:set -DnewVersion=${{ needs.calc_ver.outputs.project_ver }} --batch-mode
       - name: Build and test
-        run: mvn package --batch-mode
+        run: mvn install --batch-mode
       # Maven Central deploy — disabled pending license research (Apache-2.0 / JetBrains / IntelliJ Community)
       # - name: Deploy to Maven Central (release only)
       #   if: needs.calc_ver.outputs.release_flag == 'ON' && github.repository == 'nbplugins/NetbeansPluginKotlin'
