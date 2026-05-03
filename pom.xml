@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin</artifactId>
-  <version>0.5.2-SNAPSHOT</version>
+  <version>0.5.3-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin</name>
   <properties>
@@ -13,6 +13,7 @@
     <kotlin.version>1.3.72</kotlin.version>
   </properties>
   <modules>
+    <module>PatchingJars</module>
     <module>bundled-jars/KotlinIdeCommon</module>
     <module>bundled-jars/KotlinFormatter</module>
     <module>bundled-jars/KotlinConverter</module>
@@ -22,6 +23,29 @@
     <module>bundled-jars/IdeaFormatter</module>
     <module>Nbm</module>
   </modules>
+  <build>
+    <plugins>
+      <!-- Ensure target/ exists before exec-maven-plugin runs (needed for packaging=pom modules) -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <id>create-build-dir</id>
+            <phase>initialize</phase>
+            <goals><goal>run</goal></goals>
+            <configuration>
+              <target>
+                <mkdir dir="${project.build.directory}"/>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
   <dependencyManagement>
     <dependencies>
       <!-- Bundled JARs -->

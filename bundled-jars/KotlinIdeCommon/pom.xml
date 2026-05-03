@@ -5,25 +5,81 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.5.2-SNAPSHOT</version>
+    <version>0.5.3-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-ide-common</artifactId>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin Ide Common</name>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-patching-jars</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+  </dependencies>
+
   <build>
     <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.3.0</version>
+        <executions>
+          <execution>
+            <id>patch-step-1-ide-common</id>
+            <phase>process-resources</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <executable>java</executable>
+              <arguments>
+                <argument>-cp</argument>
+                <argument>${project.basedir}/../../PatchingJars/target/netbeans-plugin-kotlin-patching-jars-${project.version}.jar</argument>
+                <argument>PatchKotlinIdeCommon</argument>
+                <argument>${project.basedir}/../../lib/kotlin-ide-common-1.0.jar</argument>
+                <argument>${project.build.directory}/step1.jar</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <!-- Step 2: strip classes that the plugin provides its own versions of (in Nbm/src) -->
+          <execution>
+            <id>patch-step-2-strip-plugin-owned</id>
+            <phase>process-resources</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <executable>java</executable>
+              <arguments>
+                <argument>-cp</argument>
+                <argument>${project.basedir}/../../PatchingJars/target/netbeans-plugin-kotlin-patching-jars-${project.version}.jar</argument>
+                <argument>PatchStripBundled</argument>
+                <argument>${project.build.directory}/step1.jar</argument>
+                <argument>${project.build.directory}/patched.jar</argument>
+                <argument>org/jetbrains/kotlin/idea/codeInsight/ReferenceVariantsHelper</argument>
+                <argument>org/jetbrains/kotlin/idea/util/CallType</argument>
+                <argument>org/jetbrains/kotlin/idea/util/ExtensionUtils</argument>
+                <argument>org/jetbrains/kotlin/idea/util/FuzzyType</argument>
+                <argument>org/jetbrains/kotlin/idea/util/ReceiverType</argument>
+                <argument>org/jetbrains/kotlin/idea/util/ScopeUtils</argument>
+                <argument>org/jetbrains/kotlin/idea/util/ShadowedDeclarationsFilter</argument>
+                <argument>org/jetbrains/kotlin/idea/util/UtilsKt</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-install-plugin</artifactId>
         <version>3.1.1</version>
         <executions>
           <execution>
-            <id>install-bundled-jar</id>
-            <phase>initialize</phase>
+            <id>install-patched-jar</id>
+            <phase>install</phase>
             <goals><goal>install-file</goal></goals>
             <configuration>
-              <file>../../lib/kotlin-ide-common-1.0-PATCHED.jar</file>
+              <file>${project.build.directory}/patched.jar</file>
               <groupId>io.github.nbplugins</groupId>
               <artifactId>netbeans-plugin-kotlin-ide-common</artifactId>
               <version>${project.version}</version>

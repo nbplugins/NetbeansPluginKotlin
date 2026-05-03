@@ -170,84 +170,46 @@ work with Kotlin 1.3.72 and Java 17+. Patches are written using ASM and live in 
 | Patch | Input JAR | Problem fixed |
 |-------|-----------|---------------|
 | `InjectGetGreenStub.java` | `lib/intellij-core-1.0.jar` | Adds `getGreenStub()` to `SubstrateRef` and `StubBasedPsiElementBase` — method missing from the bundled IntelliJ version but called by kotlin-compiler 1.3.72 |
-| `PatchStripBundled.java` | `lib/intellij-core-1.0.jar` | Strips `com/intellij/psi/search/SearchScope.class` — kotlin-compiler 1.3.72 has a newer version with `contains(VirtualFile)`; the old one in intellij-core causes `NoSuchMethodError` |
+| `PatchStripConflicts.java` | `lib/intellij-core-1.0.jar` | Strips all classes from intellij-core that conflict with the original kotlin-compiler 1.3.72 (SearchScope, Extensions, ContainerUtil, etc.) — newer versions from kotlin-compiler win |
+| `PatchStripBundled.java` | `lib/intellij-core-1.0.jar` | Strips `ConcurrentRefHashMap` and `ConcurrentWeakHashMap` — they call a removed `ContainerUtil.newConcurrentMap(4-arg)` overload; kotlin-compiler's self-consistent versions are used instead |
 | `PatchKtNodeTypes.java` | `kotlin-compiler-1.3.72.jar` (Maven) | Fixes `KtNodeTypes.BODY` field declared as `KtNodeType` but accessed as `IElementType` — Java 17+ enforces strict descriptor matching |
 | `PatchStripBundled.java` | `kotlin-compiler-1.3.72.jar` (Maven) | Strips `org/picocontainer/` — the bundled old picocontainer is incomplete; replaced by `picocontainer:1.2` Maven dependency which is a strict superset |
 | `PatchStripBundled.java` | `kotlin-compiler-1.3.72.jar` (Maven) | Strips `com/google/` — the bundled Guava lacks `Maps.newHashMap()`; replaced by `guava:28.2-jre` Maven dependency |
-| `PatchStripBundled.java` | `kotlin-compiler-1.3.72.jar` (Maven) | Strips `com/intellij/openapi/extensions/Extensions.class` and `impl/` — kotlin-compiler bundles a newer incompatible `Extensions`/`ExtensionsAreaImpl`; `intellij-core`'s older but internally consistent versions must win |
+| `PatchContainerUtilAddMissing.java` | `kotlin-compiler-1.3.72.jar` (Maven) | Adds missing `ContainerUtil`/`ContainerUtilRt` methods (`newHashSet`, `newHashMap`, `newArrayList`, etc.) called by formatter JARs compiled against older IntelliJ API |
+| `PatchAstLoadingFilter.java` | `kotlin-compiler-1.3.72.jar` (Maven) | Stubs `AstLoadingFilter.assertTreeLoadingAllowed()` to always return — avoids `MissingResourceException` from `Registry.is()` in test environments |
+| `PatchExtensionsAddGetExtensions.java` | `kotlin-compiler-1.3.72.jar` (Maven) | Adds `Extensions.getExtensions(ExtensionPointName)` — called by `CodeStyleSettings` (openapi-formatter) but absent from kotlin-compiler's thin Extensions stub |
 | `PatchImportConversionKt.java` | `lib/kotlin-converter-1.0.jar` | Rewrites `ImportConversionKt` static initializer to use `JvmPlatformAnalyzerServices` instead of the removed `JvmPlatform.getDefaultImports()` |
 | `PatchFqnPart.java` | `lib/kotlin-converter-1.0.jar` | Renames `ImportPath.fqnPart()` → `getFqName()` (renamed in 1.3.72); redirects `AddToStdlibKt.singletonList()` → `Collections.singletonList()` (removed in 1.3.72) |
 | `PatchKotlinIdeCommon.java` | `lib/kotlin-ide-common-1.0.jar` | Removes `setShowInternalKeyword` call (property removed in 1.3.72); renames `KotlinTypeFactory.simpleType(5-arg)` → `simpleTypeWithNonTrivialMemberScope`; redirects `KotlinType.isError()` → static `KotlinTypeKt.isError(KotlinType)` |
+| `PatchStripBundled.java` | `lib/kotlin-ide-common-1.0.jar` | Strips `ReferenceVariantsHelper`, `CallType`, `ExtensionUtils`, `FuzzyType`, `ScopeUtils`, `ShadowedDeclarationsFilter`, `UtilsKt`, `ReceiverType` — the plugin provides its own versions of these classes in `Nbm/src`; the bundled copies would conflict at runtime |
 | `PatchFormatterBody.java` | `lib/kotlin-formatter-1.0.jar` | Rewrites `getstatic KtNodeTypes.BODY` descriptor from `KtNodeType` → `IElementType` — Java 17+ enforces strict field descriptor matching at resolution |
 
-**Applying patches** (run with Java 17):
+**Applying patches** — patches are applied automatically by `mvn clean install` via the `PatchingJars`
+module and `exec-maven-plugin` in each `bundled-jars/*` module. The `*-PATCHED.jar` files are generated
+into each module's `target/` directory and installed to `~/.m2`; they are **not** stored in git.
+
+To force-regenerate (e.g. after modifying a patch tool):
 
 ```bash
-cd /path/to/KotlinNetbeans
-CP="patches-src:/usr/share/java/objectweb-asm/asm.jar"
-
-# Compile patch tools (only needed once, or after editing patches-src/)
-javac -cp /usr/share/java/objectweb-asm/asm.jar patches-src/*.java -d patches-src
-
-# 1. Patch intellij-core.jar
-#    NOTE: intellij-core-1.0-PATCHED.jar is committed to git with many pre-applied strips.
-#    To rebuild from scratch, apply all strips documented in git history. For the incremental
-#    strip of ConcurrentRefHashMap/ConcurrentWeakHashMap (added to fix Disposer init failure):
-java -cp $CP PatchStripBundled lib/intellij-core-1.0-PATCHED.jar /tmp/ic-new.jar \
-    com/intellij/util/containers/ConcurrentRefHashMap \
-    com/intellij/util/containers/ConcurrentWeakHashMap
-cp /tmp/ic-new.jar lib/intellij-core-1.0-PATCHED.jar
-#    Full rebuild from raw:
-java -cp $CP InjectGetGreenStub lib/intellij-core-1.0.jar /tmp/ic-step1.jar
-#    ... then apply all strips from original committed PATCHED jar (see git log), then:
-java -cp $CP PatchStripBundled /tmp/ic-stepN.jar lib/intellij-core-1.0-PATCHED.jar \
-    com/intellij/util/containers/ConcurrentRefHashMap \
-    com/intellij/util/containers/ConcurrentWeakHashMap
-
-# 2. Patch kotlin-converter.jar (PatchImportConversionKt -> PatchFqnPart)
-java -cp $CP PatchImportConversionKt lib/kotlin-converter-1.0.jar /tmp/kconv-step1.jar
-java -cp $CP PatchFqnPart /tmp/kconv-step1.jar lib/kotlin-converter-1.0-PATCHED.jar
-
-# 3. Patch kotlin-ide-common.jar
-java -cp $CP PatchKotlinIdeCommon lib/kotlin-ide-common-1.0.jar lib/kotlin-ide-common-1.0-PATCHED.jar
-
-# 4. Patch kotlin-formatter.jar
-java -cp $CP PatchFormatterBody lib/kotlin-formatter-1.0.jar lib/kotlin-formatter-1.0-PATCHED.jar
-
-# 5. Patch kotlin-compiler-1.3.72.jar from Maven (KtNodeTypes -> strip picocontainer -> strip Guava)
-#    The original in ~/.m2 is NOT modified; output goes to lib/ as a versioned artifact.
-KCJ=~/.m2/repository/org/jetbrains/kotlin/kotlin-compiler/1.3.72/kotlin-compiler-1.3.72.jar
-java -cp $CP PatchKtNodeTypes $KCJ /tmp/kc-step1.jar
-java -cp $CP PatchStripBundled /tmp/kc-step1.jar /tmp/kc-step2.jar org/picocontainer/
-java -cp $CP PatchStripBundled /tmp/kc-step2.jar /tmp/kc-step3.jar com/google/
-java -cp $CP PatchStripBundled /tmp/kc-step3.jar lib/kotlin-compiler-1.3.72-PATCHED.jar \
-    com/intellij/openapi/extensions/Extensions.class \
-    com/intellij/openapi/extensions/impl/
-# lib/kotlin-compiler-1.3.72-PATCHED.pom is committed (carries transitive dep declarations)
-
-# 6. Reinstall lib/ JARs — rebuild from root to re-run bundled-jars/* install-file executions:
-mvn clean install -DskipTests
-# Or clear specific ~/.m2 entries and rebuild:
+# Clear cached ~/.m2 entries and rebuild
 for art in netbeans-plugin-kotlin-intellij-core netbeans-plugin-kotlin-ide-common \
            netbeans-plugin-kotlin-converter netbeans-plugin-kotlin-formatter \
            netbeans-plugin-kotlin-compiler; do
   rm -rf ~/.m2/repository/io/github/nbplugins/$art
 done
+JAVA_HOME=/usr/lib/jvm/java-17-temurin-jdk mvn clean install -DskipTests
 ```
 
 **Правило разрешения конфликтов версий классов:** При конфликте двух версий одного класса из разных JAR-файлов — всегда стрипить **старую** версию, оставлять **новую**. При необходимости патчить **точки вызова** (call sites) через ASM, чтобы они использовали API новой версии.
 
 **Note on bundled library conflicts:** `kotlin-compiler-1.3.72.jar` bundles old/incomplete versions of
-several libraries (`org/picocontainer/`, `com/google/`, `com/intellij/openapi/extensions/`) that
-conflict with the versions required by `intellij-core.jar` call sites. The bundled copies are stripped
-so that Maven dependencies (`picocontainer:1.2`, `guava:28.2-jre`) or the `intellij-core` copy
-(`Extensions`) are the sole providers.
-`intellij-core-1.0.jar` bundles an old `SearchScope` without `contains(VirtualFile)`; it is stripped
-so that kotlin-compiler's newer version is loaded instead.
-`intellij-core-1.0.jar` also bundles old `ConcurrentRefHashMap` and `ConcurrentWeakHashMap` that call
-`ContainerUtil.newConcurrentMap(int,float,int,TObjectHashingStrategy)` — a method removed from the
-newer `ContainerUtil` in `kotlin-compiler-1.3.72.jar`. Both are stripped from `intellij-core` so that
-kotlin-compiler's self-consistent newer versions are loaded instead.
+`org/picocontainer/` and `com/google/`; these are stripped so that Maven dependencies
+(`picocontainer:1.2`, `guava:28.2-jre`) are the sole providers.
+`intellij-core-1.0.jar` bundles many IntelliJ platform classes that conflict with the newer versions
+in `kotlin-compiler-1.3.72.jar`; `PatchStripConflicts` strips all such classes from `intellij-core`
+so that kotlin-compiler's versions win. `ConcurrentRefHashMap` and `ConcurrentWeakHashMap` are also
+stripped from `intellij-core` because they call a 4-arg `ContainerUtil.newConcurrentMap` overload
+removed in the newer `ContainerUtil` bundled in kotlin-compiler.
 
 **Running tests** (must use Java 17 — Java 25 breaks the Kotlin Maven plugin; Xvfb is started automatically by Maven on display :99):
 
