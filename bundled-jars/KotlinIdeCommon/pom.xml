@@ -76,7 +76,7 @@
         <executions>
           <execution>
             <id>install-patched-jar</id>
-            <phase>install</phase>
+            <phase>package</phase>
             <goals><goal>install-file</goal></goals>
             <configuration>
               <file>${project.build.directory}/patched.jar</file>
