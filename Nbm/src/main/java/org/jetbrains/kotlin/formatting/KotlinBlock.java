@@ -65,11 +65,12 @@ public class KotlinBlock extends AbstractBlock {
     }
     
     private KotlinCommonBlock getKotlinCommonBlock() {
-        return new KotlinCommonBlock(node, mySettings, mySpacingBuilder,myAlignmentStrategy) {
-            
+        return new KotlinCommonBlock(node, mySettings, mySpacingBuilder, myAlignmentStrategy, null) {
+
             @Override
-            protected Block createBlock(ASTNode node, CommonAlignmentStrategy alignmentStrategy, 
-                    Indent indent, Wrap wrap, CodeStyleSettings css, KotlinSpacingBuilder ksb) {
+            protected ASTBlock createBlock(ASTNode node, CommonAlignmentStrategy alignmentStrategy,
+                    Indent indent, Wrap wrap, CodeStyleSettings css, KotlinSpacingBuilder ksb,
+                    kotlin.sequences.Sequence<? extends ASTNode> overrideChildren) {
                 return new KotlinBlock(node, alignmentStrategy, indent,
                     wrap, mySettings, mySpacingBuilder);
             }

@@ -1,3 +1,6 @@
 [submodule "submodules/IntellijCommunity"]
 	path = submodules/IntellijCommunity
 	url = git@github.com:oleg68/IntellijCommunity.git
+[submodule "submodules/Kotlin"]
+	path = submodules/Kotlin
+	url = https://github.com/JetBrains/kotlin

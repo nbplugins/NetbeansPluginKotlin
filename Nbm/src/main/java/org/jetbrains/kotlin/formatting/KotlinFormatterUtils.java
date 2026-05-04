@@ -24,6 +24,7 @@ import com.intellij.formatting.FormatterImpl;
 import com.intellij.formatting.Indent;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.impl.DocumentImpl;
+import java.lang.reflect.Proxy;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiElement;
@@ -115,7 +116,10 @@ public class KotlinFormatterUtils {
     
     // ???
     public static Document getMockDocument(Document document) {
-        return document;
+        return (Document) Proxy.newProxyInstance(
+                document.getClass().getClassLoader(),
+                new Class<?>[]{Document.class},
+                (proxy, method, args) -> method.invoke(document, args));
     }
     
     public static KtFile createKtFile(String source, KtPsiFactory psiFactory, String fileName) {

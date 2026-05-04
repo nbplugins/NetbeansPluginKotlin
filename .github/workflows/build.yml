@@ -90,8 +90,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # submodules: recursive  # disabled until submodule code is used in the build
           fetch-depth: 0
+      - name: Checkout submodules/Kotlin (sparse)
+        run: git submodule update --init submodules/Kotlin
       - uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
