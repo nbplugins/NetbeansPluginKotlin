@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.5.7-SNAPSHOT</version>
+    <version>0.5.8-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-ide-common</artifactId>
@@ -42,28 +42,34 @@
               </arguments>
             </configuration>
           </execution>
-          <!-- Step 2: strip classes that the plugin provides its own versions of (in Nbm/src) -->
+        </executions>
+      </plugin>
+
+      <!-- Step 2: strip classes that the plugin provides its own versions of (in Nbm/src) -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
           <execution>
-            <id>patch-step-2-strip-plugin-owned</id>
+            <id>strip-plugin-owned-ant</id>
             <phase>process-resources</phase>
-            <goals><goal>exec</goal></goals>
+            <goals><goal>run</goal></goals>
             <configuration>
-              <executable>java</executable>
-              <arguments>
-                <argument>-cp</argument>
-                <argument>${project.basedir}/../../PatchingJars/target/netbeans-plugin-kotlin-patching-jars-${project.version}.jar</argument>
-                <argument>PatchStripBundled</argument>
-                <argument>${project.build.directory}/step1.jar</argument>
-                <argument>${project.build.directory}/patched.jar</argument>
-                <argument>org/jetbrains/kotlin/idea/codeInsight/ReferenceVariantsHelper</argument>
-                <argument>org/jetbrains/kotlin/idea/util/CallType</argument>
-                <argument>org/jetbrains/kotlin/idea/util/ExtensionUtils</argument>
-                <argument>org/jetbrains/kotlin/idea/util/FuzzyType</argument>
-                <argument>org/jetbrains/kotlin/idea/util/ReceiverType</argument>
-                <argument>org/jetbrains/kotlin/idea/util/ScopeUtils</argument>
-                <argument>org/jetbrains/kotlin/idea/util/ShadowedDeclarationsFilter</argument>
-                <argument>org/jetbrains/kotlin/idea/util/UtilsKt</argument>
-              </arguments>
+              <target>
+                <zip destfile="${project.build.directory}/${project.build.finalName}.jar">
+                  <zipfileset src="${project.build.directory}/step1.jar">
+                    <exclude name="org/jetbrains/kotlin/idea/codeInsight/ReferenceVariantsHelper*"/>
+                    <exclude name="org/jetbrains/kotlin/idea/util/CallType*"/>
+                    <exclude name="org/jetbrains/kotlin/idea/util/ExtensionUtils*"/>
+                    <exclude name="org/jetbrains/kotlin/idea/util/FuzzyType*"/>
+                    <exclude name="org/jetbrains/kotlin/idea/util/ReceiverType*"/>
+                    <exclude name="org/jetbrains/kotlin/idea/util/ScopeUtils*"/>
+                    <exclude name="org/jetbrains/kotlin/idea/util/ShadowedDeclarationsFilter*"/>
+                    <exclude name="org/jetbrains/kotlin/idea/util/UtilsKt*"/>
+                  </zipfileset>
+                </zip>
+              </target>
             </configuration>
           </execution>
         </executions>
@@ -79,7 +85,7 @@
             <phase>package</phase>
             <goals><goal>install-file</goal></goals>
             <configuration>
-              <file>${project.build.directory}/patched.jar</file>
+              <file>${project.build.directory}/${project.build.finalName}.jar</file>
               <groupId>io.github.nbplugins</groupId>
               <artifactId>netbeans-plugin-kotlin-ide-common</artifactId>
               <version>${project.version}</version>
