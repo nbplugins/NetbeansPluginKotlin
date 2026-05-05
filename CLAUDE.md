@@ -173,7 +173,7 @@ work with Kotlin 1.3.72 and Java 17+. Patches are written using ASM and live in 
 | Maven submodule | Patch | Зачем |
 |-----------------|-------|-------|
 | `IntellijCore` | `InjectGetGreenStub.java` | Добавляет `getGreenStub()` в `SubstrateRef` и `StubBasedPsiElementBase` — метод отсутствует в бандловой версии IntelliJ, но вызывается kotlin-compiler 1.3.72 |
-| `KotlinCompilerIntellijPlatform` | `PatchContainerUtilAddMissing.java` | Добавляет недостающие методы `ContainerUtil`/`ContainerUtilRt` (`newHashSet`, `newHashMap`, `newArrayList` и др.) — formatter JARы скомпилированы против старого IntelliJ API |
+| `KotlinCompilerIntellijPlatform` | `PatchContainerUtilAddMissing.java` | Добавляет недостающие методы `ContainerUtil`/`ContainerUtilRt` (`newHashSet`, `newHashMap`, `newArrayList` и др.) — `lib/openapi-formatter-1.0.jar` и `lib/idea-formatter-1.0.jar` скомпилированы против старого IntelliJ API, в котором эти методы ещё существовали |
 | `KotlinCompilerIntellijPlatform` | `PatchAstLoadingFilter.java` | Заглушает `AstLoadingFilter.assertTreeLoadingAllowed()` — без этого падает `MissingResourceException` из `Registry.is()` в тестах |
 | `KotlinCompilerIntellijPlatform` | `PatchExtensionsAddGetExtensions.java` | Добавляет `Extensions.getExtensions(ExtensionPointName)` — вызывается `CodeStyleSettings` (openapi-formatter), но отсутствует в тонком стабе Extensions из kotlin-compiler |
 | `KotlinConverter` | `PatchImportConversionKt.java` | Переписывает статический инициализатор `ImportConversionKt` — использует `JvmPlatformAnalyzerServices` вместо удалённого `JvmPlatform.getDefaultImports()` |
