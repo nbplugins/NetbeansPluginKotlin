@@ -118,7 +118,7 @@ class ChangeReturnTypeIntention(doc: Document,
 
     override fun getDescription(): String {
         val functionName = function.name
-        val renderedType = IdeDescriptorRenderers.SOURCE_CODE_SHORT_NAMES_IN_TYPES.renderType(type)
+        val renderedType = IdeDescriptorRenderers.SOURCE_CODE_SHORT_NAMES_NO_ANNOTATIONS.renderType(type)
         return if (functionName != null) {
             "Change '$functionName' function return type to '$renderedType'"
         } else {
@@ -128,7 +128,7 @@ class ChangeReturnTypeIntention(doc: Document,
     
     override fun implement() {
         val oldTypeRef = function.typeReference
-        val renderedType = IdeDescriptorRenderers.SOURCE_CODE_SHORT_NAMES_IN_TYPES.renderType(type)
+        val renderedType = IdeDescriptorRenderers.SOURCE_CODE_SHORT_NAMES_NO_ANNOTATIONS.renderType(type)
         
         if (oldTypeRef != null) {
             val startOffset = oldTypeRef.textRange.startOffset

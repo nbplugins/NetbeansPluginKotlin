@@ -39,7 +39,7 @@ compatible version. Not a separate stage — done along the way.
 - [x] **A4.4** — `kotlin-compiler`: split into two JARs (`compiler` / `compiler-intellij-platform`); all bundled deps replaced by explicit Maven coords; removed ASM patches and `kotlin-compiler-patched.pom`
 - [x] **A4.5** — Eliminated strip-based ASM patches; replaced with Ant extraction (`<present>` selector, `<zipfileset exclude>`); removed dead patch tools from `patches-src/`
 - [x] **A4.6** — `kotlin-converter`: compile from sources; remove `PatchImportConversionKt`, `PatchFqnPart`
-- [ ] **A4.7** — `kotlin-ide-common`: compile from sources; remove `PatchKotlinIdeCommon`
+- [x] **A4.7** — `kotlin-ide-common`: compile from sources; remove `PatchKotlinIdeCommon`
 - [ ] **A4.8** — `KotlinCompilerIntellijPlatform`: replace `PatchAstLoadingFilter`, `PatchExtensionsAddGetExtensions` with source classes in `patches/`
 - [ ] **A4.9** — `openapi-formatter`, `idea-formatter`: compile from sources; remove `PatchContainerUtilAddMissing`
 - [ ] **A4.10** — `intellij-core`: compile from sources; remove `InjectGetGreenStub`; remove `PatchingJars` module and `patches-src/` entirely
@@ -211,10 +211,11 @@ Dependencies compiled against: `netbeans-plugin-kotlin-openapi-formatter`, `idea
 
 **Phase 4.7 — kotlin-ide-common: compile from sources**
 
-- [ ] Add sparse-checkout for kotlin-ide-common sources in `submodules/IntellijCommunity`
-- [ ] Rewrite `bundled-jars/KotlinIdeCommon/pom.xml`: compile from sources
-- [ ] Remove `lib/kotlin-ide-common-1.0.jar` from git
-- [ ] Remove `PatchKotlinIdeCommon.java` from `patches-src/`
+- [x] Add sparse-checkout for kotlin-ide-common sources in `submodules/Kotlin` (idea/ide-common/)
+- [x] Rewrite `bundled-jars/KotlinIdeCommon/pom.xml`: compile from sources
+- [x] Remove `PatchKotlinIdeCommon.java` from `patches-src/`
+- [x] Add stubs in `Nbm/src` for new abstract methods introduced by v1.3.72 API
+- [ ] Replace stubs with real implementations (`getResolutionFacadeByFile`, `getResolutionFacadeByModuleInfo`, `getResolutionFacade(platform)`, `tryGetFrontendService`, `analyzeWithAllCompilerChecks`)
 
 **Phase 4.8 — KotlinCompilerIntellijPlatform: replace stub patches with source classes**
 
