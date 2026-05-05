@@ -146,14 +146,13 @@
         <artifactId>maven-install-plugin</artifactId>
         <version>3.1.1</version>
         <executions>
-          <!-- Disable default install so our install-file POM is not overwritten -->
           <execution>
             <id>default-install</id>
             <phase>none</phase>
           </execution>
           <execution>
             <id>install-patched-jar</id>
-            <phase>install</phase>
+            <phase>package</phase>
             <goals><goal>install-file</goal></goals>
             <configuration>
               <file>${project.build.directory}/patched.jar</file>
