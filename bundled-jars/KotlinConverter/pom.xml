@@ -5,81 +5,302 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.5.8-SNAPSHOT</version>
+    <version>0.5.9-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-converter</artifactId>
-  <packaging>pom</packaging>
+  <packaging>jar</packaging>
   <name>Netbeans Plugin Kotlin Converter</name>
 
   <dependencies>
+    <!-- Full intellij-core (unstripped) FIRST — provides complete ProgressIndicator interface
+         (startNonCancelableSection etc.) that was stripped from netbeans-plugin-kotlin-compiler.
+         Must appear before netbeans-plugin-kotlin-compiler so it wins the classpath race. -->
     <dependency>
       <groupId>io.github.nbplugins</groupId>
-      <artifactId>netbeans-plugin-kotlin-patching-jars</artifactId>
-      <version>${project.version}</version>
+      <artifactId>intellij-core-unstripped</artifactId>
+      <version>1.0</version>
+      <scope>system</scope>
+      <systemPath>${project.basedir}/../../lib/intellij-core-1.0.jar</systemPath>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-compiler</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-intellij-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-stdlib</artifactId>
     </dependency>
   </dependencies>
 
   <build>
+    <!-- Include j2k message bundles in the JAR -->
+    <resources>
+      <resource>
+        <directory>${project.basedir}/../../submodules/Kotlin/j2k/resources</directory>
+      </resource>
+    </resources>
+
     <plugins>
+      <!-- Step 1: create output directory for source copy -->
       <plugin>
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>exec-maven-plugin</artifactId>
-        <version>3.3.0</version>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.1.0</version>
         <executions>
-          <!-- Step 1: PatchImportConversionKt -->
           <execution>
-            <id>patch-step-1-import-conversion</id>
-            <phase>process-resources</phase>
-            <goals><goal>exec</goal></goals>
+            <id>mkdir-converter-sources</id>
+            <phase>initialize</phase>
+            <goals><goal>run</goal></goals>
             <configuration>
-              <executable>java</executable>
-              <arguments>
-                <argument>-cp</argument>
-                <argument>${project.basedir}/../../PatchingJars/target/netbeans-plugin-kotlin-patching-jars-${project.version}.jar</argument>
-                <argument>PatchImportConversionKt</argument>
-                <argument>${project.basedir}/../../lib/kotlin-converter-1.0.jar</argument>
-                <argument>${project.build.directory}/step1.jar</argument>
-              </arguments>
-            </configuration>
-          </execution>
-          <!-- Step 2: PatchFqnPart -->
-          <execution>
-            <id>patch-step-2-fqn-part</id>
-            <phase>process-resources</phase>
-            <goals><goal>exec</goal></goals>
-            <configuration>
-              <executable>java</executable>
-              <arguments>
-                <argument>-cp</argument>
-                <argument>${project.basedir}/../../PatchingJars/target/netbeans-plugin-kotlin-patching-jars-${project.version}.jar</argument>
-                <argument>PatchFqnPart</argument>
-                <argument>${project.build.directory}/step1.jar</argument>
-                <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
-              </arguments>
+              <target>
+                <mkdir dir="${project.build.directory}/generated-sources/converter/src/org/jetbrains/kotlin/j2k"/>
+                <mkdir dir="${project.build.directory}/generated-sources/converter/src/org/jetbrains/kotlin/j2k/ast"/>
+                <mkdir dir="${project.build.directory}/generated-sources/converter/src/org/jetbrains/kotlin/j2k/usageProcessing"/>
+                <mkdir dir="${project.build.directory}/generated-sources/converter/src/org/jetbrains/kotlin/idea/j2k"/>
+                <mkdir dir="${project.build.directory}/generated-sources/converter/src/org/jetbrains/kotlin/idea/core/util"/>
+                <mkdir dir="${project.build.directory}/generated-sources/converter/src/org/jetbrains/kotlin/idea/util/application"/>
+                <mkdir dir="${project.build.directory}/generated-sources/converter/src/org/jetbrains/kotlin/util"/>
+              </target>
             </configuration>
           </execution>
         </executions>
       </plugin>
 
+      <!-- Step 2: copy j2k source files from submodules/Kotlin (v1.3.72) -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-install-plugin</artifactId>
-        <version>3.1.1</version>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>3.3.1</version>
         <executions>
           <execution>
-            <id>install-patched-jar</id>
-            <phase>package</phase>
-            <goals><goal>install-file</goal></goals>
+            <id>copy-converter-sources</id>
+            <phase>generate-sources</phase>
+            <goals><goal>copy-resources</goal></goals>
             <configuration>
-              <file>${project.build.directory}/${project.build.finalName}.jar</file>
-              <groupId>io.github.nbplugins</groupId>
-              <artifactId>netbeans-plugin-kotlin-converter</artifactId>
-              <version>${project.version}</version>
-              <packaging>jar</packaging>
+              <outputDirectory>${project.build.directory}/generated-sources/converter/src</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${project.basedir}/../../submodules/Kotlin/j2k/src</directory>
+                  <includes>
+                    <include>org/jetbrains/kotlin/j2k/AfterConversionPass.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/AnnotationConverter.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ClassBodyConverter.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/CodeBuilder.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/CodeConverter.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ConstructorConverter.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/Converter.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ConverterSettings.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ExpressionConverter.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ForConverter.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/J2KConverterExtension.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/JavaToKotlinConverter.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/JavaToKotlinConverterServices.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/JavaToKotlinTranslator.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/KotlinJ2KBundle.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/OverloadReducer.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ReferenceSearcher.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ResolverForConverter.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/SpecialMethod.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/StatementConverter.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/SwitchConverter.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/TypeConverter.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/TypeVisitor.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/Utils.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/importConversion.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/propertyDetection.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/Annotation.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/AnonymousClassBody.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/ArgumentList.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/ArrayWithoutInitializationExpression.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/Block.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/Class.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/ClassBody.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/Constructors.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/DummyStringExpression.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/Element.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/Enum.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/EnumConstant.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/Expression.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/Expressions.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/File.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/Function.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/Identifier.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/Imports.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/Initializer.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/Interface.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/LocalVariable.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/MethodCallExpression.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/Modifier.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/NewClassExpression.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/Parameter.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/ParameterList.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/Property.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/ReferenceElement.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/Statements.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/TypeParameters.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/Types.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/ast/Util.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/usageProcessing/AccessorToPropertyProcessing.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/usageProcessing/ElementRenamedCodeProcessor.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/usageProcessing/FieldToPropertyProcessing.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/usageProcessing/MemberIntoObjectProcessing.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/usageProcessing/ToObjectWithOnlyMethodsProcessing.kt</include>
+                    <include>org/jetbrains/kotlin/j2k/usageProcessing/UsageProcessing.kt</include>
+                    <!-- javaToKotlinFus.kt excluded: imports IntelliJ FUS API not in our bundled JARs -->
+                  </includes>
+                  <filtering>false</filtering>
+                </resource>
+                <!-- DocCommentConverter and EmptyDocCommentConverter -->
+                <resource>
+                  <directory>${project.basedir}/../../submodules/Kotlin/idea/idea-core/src</directory>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/j2k/DocCommentConverter.kt</include>
+                  </includes>
+                  <filtering>false</filtering>
+                </resource>
+                <!-- AbstractKotlinBundle -->
+                <resource>
+                  <directory>${project.basedir}/../../submodules/Kotlin/idea/ide-common/src</directory>
+                  <includes>
+                    <include>org/jetbrains/kotlin/util/AbstractKotlinBundle.kt</include>
+                  </includes>
+                  <filtering>false</filtering>
+                </resource>
+                <!-- range extension on TextRange/PsiElement -->
+                <resource>
+                  <directory>${project.basedir}/../../submodules/Kotlin/idea/idea-core/src</directory>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/core/util/RangeUtils.kt</include>
+                  </includes>
+                  <filtering>false</filtering>
+                </resource>
+                <!-- runReadAction extension (file is in util/ but package is util.application — Kotlin allows this) -->
+                <resource>
+                  <directory>${project.basedir}/../../submodules/Kotlin/idea/idea-analysis/src</directory>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/util/ApplicationUtils.kt</include>
+                  </includes>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
             </configuration>
           </execution>
         </executions>
+      </plugin>
+
+      <!-- Step 3: patch JavaToKotlinConverter.kt — emptyList() type inference regressed in 1.3 strict mode -->
+      <plugin>
+        <groupId>com.google.code.maven-replacer-plugin</groupId>
+        <artifactId>replacer</artifactId>
+        <version>1.5.3</version>
+        <executions>
+          <execution>
+            <id>patch-java-to-kotlin-converter</id>
+            <phase>generate-sources</phase>
+            <goals><goal>replace</goal></goals>
+            <configuration>
+              <file>${project.build.directory}/generated-sources/converter/src/org/jetbrains/kotlin/j2k/JavaToKotlinConverter.kt</file>
+              <replacements>
+                <replacement>
+                  <token>return@runReadAction emptyList\(\)</token>
+                  <value>return@runReadAction emptyList&lt;com.intellij.psi.PsiElement&gt;()</value>
+                </replacement>
+              </replacements>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Step 4: patch ApplicationUtils.kt — runWriteAction uses generic Application.runWriteAction<T>
+           which doesn't exist in our IntelliJ version (only Runnable overload); replace with cast -->
+      <plugin>
+        <groupId>com.google.code.maven-replacer-plugin</groupId>
+        <artifactId>replacer</artifactId>
+        <version>1.5.3</version>
+        <executions>
+          <execution>
+            <id>patch-application-utils</id>
+            <phase>generate-sources</phase>
+            <goals><goal>replace</goal></goals>
+            <configuration>
+              <file>${project.build.directory}/generated-sources/converter/src/org/jetbrains/kotlin/idea/util/ApplicationUtils.kt</file>
+              <replacements>
+                <replacement>
+                  <token>fun &lt;T&gt; runWriteAction\(action: \(\) -&gt; T\): T \{[^}]+\}</token>
+                  <value>@Suppress("UNCHECKED_CAST")
+fun &lt;T&gt; runWriteAction(action: () -&gt; T): T {
+    var result: T = null as T
+    ApplicationManager.getApplication().runWriteAction(Runnable { result = action() })
+    return result
+}</value>
+                </replacement>
+              </replacements>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Step 5: register generated-sources as source root -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <id>add-converter-source-root</id>
+            <phase>generate-sources</phase>
+            <goals><goal>add-source</goal></goals>
+            <configuration>
+              <sources>
+                <source>${project.build.directory}/generated-sources/converter/src</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Step 6: compile Kotlin sources -->
+      <plugin>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-maven-plugin</artifactId>
+        <version>${kotlin.version}</version>
+        <configuration>
+          <languageVersion>1.3</languageVersion>
+          <apiVersion>1.3</apiVersion>
+          <jvmTarget>11</jvmTarget>
+          <args>
+            <arg>-Xskip-metadata-version-check</arg>
+          </args>
+          <sourceDirs>
+            <sourceDir>${project.build.directory}/generated-sources/converter/src</sourceDir>
+          </sourceDirs>
+        </configuration>
+        <executions>
+          <execution>
+            <id>compile</id>
+            <phase>process-sources</phase>
+            <goals><goal>compile</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Step 7: Java compilation (no Java sources, keeps consistency) -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.3</version>
+        <configuration>
+          <source>11</source>
+          <target>11</target>
+          <compilerArgument>-proc:none</compilerArgument>
+        </configuration>
       </plugin>
     </plugins>
   </build>
