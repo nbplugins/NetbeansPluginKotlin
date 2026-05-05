@@ -57,7 +57,7 @@
             <goals><goal>run</goal></goals>
             <configuration>
               <target>
-                <zip destfile="${project.build.directory}/patched.jar">
+                <zip destfile="${project.build.directory}/${project.build.finalName}.jar">
                   <zipfileset src="${project.build.directory}/step1.jar">
                     <exclude name="org/jetbrains/kotlin/idea/codeInsight/ReferenceVariantsHelper*"/>
                     <exclude name="org/jetbrains/kotlin/idea/util/CallType*"/>
@@ -85,7 +85,7 @@
             <phase>package</phase>
             <goals><goal>install-file</goal></goals>
             <configuration>
-              <file>${project.build.directory}/patched.jar</file>
+              <file>${project.build.directory}/${project.build.finalName}.jar</file>
               <groupId>io.github.nbplugins</groupId>
               <artifactId>netbeans-plugin-kotlin-ide-common</artifactId>
               <version>${project.version}</version>

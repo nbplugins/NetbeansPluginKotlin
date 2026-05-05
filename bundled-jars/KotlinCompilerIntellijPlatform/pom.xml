@@ -133,7 +133,7 @@
                 <argument>${project.basedir}/../../PatchingJars/target/netbeans-plugin-kotlin-patching-jars-${project.version}.jar</argument>
                 <argument>PatchExtensionsAddGetExtensions</argument>
                 <argument>${project.build.directory}/step3.jar</argument>
-                <argument>${project.build.directory}/patched.jar</argument>
+                <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
               </arguments>
             </configuration>
           </execution>
@@ -155,7 +155,7 @@
             <phase>package</phase>
             <goals><goal>install-file</goal></goals>
             <configuration>
-              <file>${project.build.directory}/patched.jar</file>
+              <file>${project.build.directory}/${project.build.finalName}.jar</file>
               <groupId>io.github.nbplugins</groupId>
               <artifactId>netbeans-plugin-kotlin-compiler-intellij-platform</artifactId>
               <version>${project.version}</version>

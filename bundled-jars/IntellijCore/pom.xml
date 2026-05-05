@@ -102,7 +102,7 @@
                            includes="com/intellij/util/containers/ConcurrentRefHashMap*.class
                                      com/intellij/util/containers/ConcurrentWeakHashMap*.class"/>
                 </delete>
-                <zip destfile="${project.build.directory}/patched.jar"
+                <zip destfile="${project.build.directory}/${project.build.finalName}.jar"
                      basedir="${project.build.directory}/ic-extracted"/>
               </target>
             </configuration>
@@ -120,7 +120,7 @@
             <phase>package</phase>
             <goals><goal>install-file</goal></goals>
             <configuration>
-              <file>${project.build.directory}/patched.jar</file>
+              <file>${project.build.directory}/${project.build.finalName}.jar</file>
               <groupId>io.github.nbplugins</groupId>
               <artifactId>netbeans-plugin-kotlin-intellij-core</artifactId>
               <version>${project.version}</version>
