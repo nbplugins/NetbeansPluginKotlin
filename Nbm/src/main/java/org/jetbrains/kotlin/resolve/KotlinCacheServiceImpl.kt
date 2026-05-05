@@ -1,12 +1,14 @@
 package org.jetbrains.kotlin.resolve
 
 import com.intellij.psi.PsiFile
+import org.jetbrains.kotlin.analyzer.ModuleInfo
 import org.jetbrains.kotlin.caches.resolve.KotlinCacheService
 import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParser
 import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.idea.resolve.ResolutionFacade
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
 import com.intellij.openapi.project.Project
+import org.jetbrains.kotlin.platform.TargetPlatform
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
 import org.jetbrains.kotlin.analyzer.AnalysisResult
 import com.intellij.psi.PsiElement
@@ -18,7 +20,15 @@ import org.netbeans.api.project.Project as NBProject
 
 class KotlinCacheServiceImpl(private val ideaProject: Project, val project: NBProject) : KotlinCacheService {
 
-    override fun getResolutionFacadeByFile(file: PsiFile, platform: Any): ResolutionFacade {
+    override fun getResolutionFacadeByFile(file: PsiFile, platform: TargetPlatform): ResolutionFacade? {
+        throw UnsupportedOperationException()
+    }
+
+    override fun getResolutionFacade(elements: List<KtElement>, platform: TargetPlatform): ResolutionFacade {
+        throw UnsupportedOperationException()
+    }
+
+    override fun getResolutionFacadeByModuleInfo(moduleInfo: ModuleInfo, platform: TargetPlatform): ResolutionFacade? {
         throw UnsupportedOperationException()
     }
 
@@ -55,7 +65,11 @@ class KotlinSimpleResolutionFacade(
         return KotlinParser.getAnalysisResult(ktFile, nbProject)?.analysisResult?.bindingContext ?: BindingContext.EMPTY
     }
 
-    override fun analyzeFullyAndGetResult(elements: Collection<KtElement>): AnalysisResult {
+    override fun analyzeWithAllCompilerChecks(elements: Collection<KtElement>): AnalysisResult {
+        throw UnsupportedOperationException()
+    }
+
+    override fun <T : Any> tryGetFrontendService(element: PsiElement, serviceClass: Class<T>): T? {
         throw UnsupportedOperationException()
     }
 

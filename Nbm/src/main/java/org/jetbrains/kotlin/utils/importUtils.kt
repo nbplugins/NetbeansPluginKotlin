@@ -34,6 +34,8 @@ class KotlinImportInserterHelper : ImportInsertHelper() {
         throw UnsupportedOperationException()
     }
     
+    override fun isImportedWithLowPriorityDefaultImport(importPath: ImportPath, contextFile: KtFile): Boolean = false
+
     override fun isImportedWithDefault(importPath: ImportPath, contextFile: KtFile): Boolean {
         val defaultImports = JvmPlatformAnalyzerServices.getDefaultImports(LanguageVersionSettingsImpl.DEFAULT, true)
         return importPath.isImported(defaultImports)

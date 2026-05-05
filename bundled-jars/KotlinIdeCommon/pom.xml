@@ -5,94 +5,137 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.5.9-SNAPSHOT</version>
+    <version>0.5.10-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-ide-common</artifactId>
-  <packaging>pom</packaging>
+  <packaging>jar</packaging>
   <name>Netbeans Plugin Kotlin Ide Common</name>
 
   <dependencies>
+    <!-- Full intellij-core (unstripped) FIRST — provides complete ProgressIndicator interface
+         that was stripped from netbeans-plugin-kotlin-compiler.
+         Must appear before netbeans-plugin-kotlin-compiler so it wins the classpath race. -->
     <dependency>
       <groupId>io.github.nbplugins</groupId>
-      <artifactId>netbeans-plugin-kotlin-patching-jars</artifactId>
-      <version>${project.version}</version>
+      <artifactId>intellij-core-unstripped</artifactId>
+      <version>1.0</version>
+      <scope>system</scope>
+      <systemPath>${project.basedir}/../../lib/intellij-core-1.0.jar</systemPath>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-compiler</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-intellij-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-stdlib</artifactId>
     </dependency>
   </dependencies>
 
   <build>
     <plugins>
+      <!-- Step 1: copy ide-common sources from submodules/Kotlin (v1.3.72) -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>3.3.1</version>
+        <executions>
+          <execution>
+            <id>copy-ide-common-sources</id>
+            <phase>generate-sources</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/ide-common/src</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${project.basedir}/../../submodules/Kotlin/idea/ide-common/src</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Step 2: register generated-sources as source root -->
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
-        <artifactId>exec-maven-plugin</artifactId>
-        <version>3.3.0</version>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.6.0</version>
         <executions>
           <execution>
-            <id>patch-step-1-ide-common</id>
-            <phase>process-resources</phase>
-            <goals><goal>exec</goal></goals>
+            <id>add-ide-common-source-root</id>
+            <phase>generate-sources</phase>
+            <goals><goal>add-source</goal></goals>
             <configuration>
-              <executable>java</executable>
-              <arguments>
-                <argument>-cp</argument>
-                <argument>${project.basedir}/../../PatchingJars/target/netbeans-plugin-kotlin-patching-jars-${project.version}.jar</argument>
-                <argument>PatchKotlinIdeCommon</argument>
-                <argument>${project.basedir}/../../lib/kotlin-ide-common-1.0.jar</argument>
-                <argument>${project.build.directory}/step1.jar</argument>
-              </arguments>
+              <sources>
+                <source>${project.build.directory}/generated-sources/ide-common/src</source>
+              </sources>
             </configuration>
           </execution>
         </executions>
       </plugin>
 
-      <!-- Step 2: strip classes that the plugin provides its own versions of (in Nbm/src) -->
+      <!-- Step 3: compile Kotlin sources -->
       <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-antrun-plugin</artifactId>
-        <version>3.1.0</version>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-maven-plugin</artifactId>
+        <version>${kotlin.version}</version>
+        <configuration>
+          <languageVersion>1.3</languageVersion>
+          <apiVersion>1.3</apiVersion>
+          <jvmTarget>11</jvmTarget>
+          <args>
+            <arg>-Xskip-metadata-version-check</arg>
+          </args>
+          <sourceDirs>
+            <sourceDir>${project.build.directory}/generated-sources/ide-common/src</sourceDir>
+          </sourceDirs>
+        </configuration>
         <executions>
           <execution>
-            <id>strip-plugin-owned-ant</id>
-            <phase>process-resources</phase>
-            <goals><goal>run</goal></goals>
-            <configuration>
-              <target>
-                <zip destfile="${project.build.directory}/${project.build.finalName}.jar">
-                  <zipfileset src="${project.build.directory}/step1.jar">
-                    <exclude name="org/jetbrains/kotlin/idea/codeInsight/ReferenceVariantsHelper*"/>
-                    <exclude name="org/jetbrains/kotlin/idea/util/CallType*"/>
-                    <exclude name="org/jetbrains/kotlin/idea/util/ExtensionUtils*"/>
-                    <exclude name="org/jetbrains/kotlin/idea/util/FuzzyType*"/>
-                    <exclude name="org/jetbrains/kotlin/idea/util/ReceiverType*"/>
-                    <exclude name="org/jetbrains/kotlin/idea/util/ScopeUtils*"/>
-                    <exclude name="org/jetbrains/kotlin/idea/util/ShadowedDeclarationsFilter*"/>
-                    <exclude name="org/jetbrains/kotlin/idea/util/UtilsKt*"/>
-                  </zipfileset>
-                </zip>
-              </target>
-            </configuration>
+            <id>compile</id>
+            <phase>process-sources</phase>
+            <goals><goal>compile</goal></goals>
           </execution>
         </executions>
       </plugin>
 
+      <!-- Step 4: Java compilation (QuickFixUtil.java) -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-install-plugin</artifactId>
-        <version>3.1.1</version>
-        <executions>
-          <execution>
-            <id>install-patched-jar</id>
-            <phase>package</phase>
-            <goals><goal>install-file</goal></goals>
-            <configuration>
-              <file>${project.build.directory}/${project.build.finalName}.jar</file>
-              <groupId>io.github.nbplugins</groupId>
-              <artifactId>netbeans-plugin-kotlin-ide-common</artifactId>
-              <version>${project.version}</version>
-              <packaging>jar</packaging>
-            </configuration>
-          </execution>
-        </executions>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.3</version>
+        <configuration>
+          <source>11</source>
+          <target>11</target>
+          <compilerArgument>-proc:none</compilerArgument>
+        </configuration>
+      </plugin>
+
+      <!-- Step 5: exclude classes the plugin provides its own versions of (in Nbm/src) -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <configuration>
+          <excludes>
+            <exclude>org/jetbrains/kotlin/idea/codeInsight/ReferenceVariantsHelper*</exclude>
+            <exclude>org/jetbrains/kotlin/idea/util/CallType*</exclude>
+            <exclude>org/jetbrains/kotlin/idea/util/ExtensionUtils*</exclude>
+            <exclude>org/jetbrains/kotlin/idea/util/FuzzyType*</exclude>
+            <exclude>org/jetbrains/kotlin/idea/util/ReceiverType*</exclude>
+            <exclude>org/jetbrains/kotlin/idea/util/ScopeUtils*</exclude>
+            <exclude>org/jetbrains/kotlin/idea/util/ShadowedDeclarationsFilter*</exclude>
+            <exclude>org/jetbrains/kotlin/idea/util/UtilsKt*</exclude>
+          </excludes>
+        </configuration>
       </plugin>
     </plugins>
   </build>
