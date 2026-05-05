@@ -188,6 +188,13 @@ work with Kotlin 1.3.72 and Java 17+. Patches are written using ASM and live in 
 module and `exec-maven-plugin` in each `bundled-jars/*` module. The `*-PATCHED.jar` files are generated
 into each module's `target/` directory and installed to `~/.m2`; they are **not** stored in git.
 
+**Phase convention for `install-file`** — all `bundled-jars/*` modules use `packaging=pom` and bind
+`maven-install-plugin:install-file` to the **`package`** phase (not `install`). This allows reactor
+builds (`mvn clean install` from root) to install patched JARs as part of `package`, so downstream
+modules can find them in `~/.m2` before their own `install` phase runs. The default `install`
+execution is disabled (`<phase>none</phase>`) to prevent Maven from overwriting the custom installed
+JAR with the empty POM-only artifact.
+
 To force-regenerate (e.g. after modifying a patch tool):
 
 ```bash

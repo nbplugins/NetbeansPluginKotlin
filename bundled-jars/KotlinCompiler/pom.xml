@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.5.6-SNAPSHOT</version>
+    <version>0.5.7-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-compiler</artifactId>
@@ -15,8 +15,73 @@
   <dependencies>
     <dependency>
       <groupId>io.github.nbplugins</groupId>
-      <artifactId>netbeans-plugin-kotlin-patching-jars</artifactId>
+      <artifactId>netbeans-plugin-kotlin-compiler-intellij-platform</artifactId>
       <version>${project.version}</version>
+    </dependency>
+    <!-- All transitive deps declared here — this pom.xml is also used as pomFile in install-file -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-stdlib</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-script-runtime</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-reflect</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>picocontainer</groupId>
+      <artifactId>picocontainer</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.intellij.deps</groupId>
+      <artifactId>trove4j</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.intellij.deps</groupId>
+      <artifactId>jdom</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.intellij.deps</groupId>
+      <artifactId>log4j</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.javaslang</groupId>
+      <artifactId>javaslang</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>net.java.dev.jna</groupId>
+      <artifactId>jna</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>net.jpountz.lz4</groupId>
+      <artifactId>lz4</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>one.util</groupId>
+      <artifactId>streamex</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jline</groupId>
+      <artifactId>jline</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.fusesource.jansi</groupId>
+      <artifactId>jansi</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>javax.inject</groupId>
+      <artifactId>javax.inject</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlinx</groupId>
+      <artifactId>kotlinx-coroutines-core</artifactId>
     </dependency>
   </dependencies>
 
@@ -48,125 +113,50 @@
         </executions>
       </plugin>
 
+      <!-- Step 1: extract only org/jetbrains/kotlin/** and repack -->
       <plugin>
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>exec-maven-plugin</artifactId>
-        <version>3.3.0</version>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.1.0</version>
         <executions>
-          <!-- Step 1: PatchKtNodeTypes -->
           <execution>
-            <id>patch-step-1-ktnodetype</id>
+            <id>extract-kotlin-classes</id>
             <phase>process-resources</phase>
-            <goals><goal>exec</goal></goals>
+            <goals><goal>run</goal></goals>
             <configuration>
-              <executable>java</executable>
-              <arguments>
-                <argument>-cp</argument>
-                <argument>${project.basedir}/../../PatchingJars/target/netbeans-plugin-kotlin-patching-jars-${project.version}.jar</argument>
-                <argument>PatchKtNodeTypes</argument>
-                <argument>${project.build.directory}/original.jar</argument>
-                <argument>${project.build.directory}/step1.jar</argument>
-              </arguments>
-            </configuration>
-          </execution>
-          <!-- Step 2: strip picocontainer -->
-          <execution>
-            <id>patch-step-2-strip-picocontainer</id>
-            <phase>process-resources</phase>
-            <goals><goal>exec</goal></goals>
-            <configuration>
-              <executable>java</executable>
-              <arguments>
-                <argument>-cp</argument>
-                <argument>${project.basedir}/../../PatchingJars/target/netbeans-plugin-kotlin-patching-jars-${project.version}.jar</argument>
-                <argument>PatchStripBundled</argument>
-                <argument>${project.build.directory}/step1.jar</argument>
-                <argument>${project.build.directory}/step2.jar</argument>
-                <argument>org/picocontainer/</argument>
-              </arguments>
-            </configuration>
-          </execution>
-          <!-- Step 3: strip guava -->
-          <execution>
-            <id>patch-step-3-strip-guava</id>
-            <phase>process-resources</phase>
-            <goals><goal>exec</goal></goals>
-            <configuration>
-              <executable>java</executable>
-              <arguments>
-                <argument>-cp</argument>
-                <argument>${project.basedir}/../../PatchingJars/target/netbeans-plugin-kotlin-patching-jars-${project.version}.jar</argument>
-                <argument>PatchStripBundled</argument>
-                <argument>${project.build.directory}/step2.jar</argument>
-                <argument>${project.build.directory}/step3.jar</argument>
-                <argument>com/google/</argument>
-              </arguments>
-            </configuration>
-          </execution>
-          <!-- Step 4: PatchContainerUtilAddMissing -->
-          <execution>
-            <id>patch-step-4-containerutil</id>
-            <phase>process-resources</phase>
-            <goals><goal>exec</goal></goals>
-            <configuration>
-              <executable>java</executable>
-              <arguments>
-                <argument>-cp</argument>
-                <argument>${project.basedir}/../../PatchingJars/target/netbeans-plugin-kotlin-patching-jars-${project.version}.jar</argument>
-                <argument>PatchContainerUtilAddMissing</argument>
-                <argument>${project.build.directory}/step3.jar</argument>
-                <argument>${project.build.directory}/step4.jar</argument>
-              </arguments>
-            </configuration>
-          </execution>
-          <!-- Step 5: PatchAstLoadingFilter -->
-          <execution>
-            <id>patch-step-5-astloading</id>
-            <phase>process-resources</phase>
-            <goals><goal>exec</goal></goals>
-            <configuration>
-              <executable>java</executable>
-              <arguments>
-                <argument>-cp</argument>
-                <argument>${project.basedir}/../../PatchingJars/target/netbeans-plugin-kotlin-patching-jars-${project.version}.jar</argument>
-                <argument>PatchAstLoadingFilter</argument>
-                <argument>${project.build.directory}/step4.jar</argument>
-                <argument>${project.build.directory}/step5.jar</argument>
-              </arguments>
-            </configuration>
-          </execution>
-          <!-- Step 6: PatchExtensionsAddGetExtensions -->
-          <execution>
-            <id>patch-step-6-extensions-get</id>
-            <phase>process-resources</phase>
-            <goals><goal>exec</goal></goals>
-            <configuration>
-              <executable>java</executable>
-              <arguments>
-                <argument>-cp</argument>
-                <argument>${project.basedir}/../../PatchingJars/target/netbeans-plugin-kotlin-patching-jars-${project.version}.jar</argument>
-                <argument>PatchExtensionsAddGetExtensions</argument>
-                <argument>${project.build.directory}/step5.jar</argument>
-                <argument>${project.build.directory}/patched.jar</argument>
-              </arguments>
+              <target>
+                <mkdir dir="${project.build.directory}/extracted"/>
+                <unzip src="${project.build.directory}/original.jar"
+                       dest="${project.build.directory}/extracted">
+                  <patternset>
+                    <include name="org/jetbrains/kotlin/**"/>
+                    <include name="META-INF/*.kotlin_module"/>
+                  </patternset>
+                </unzip>
+                <jar destfile="${project.build.directory}/patched.jar"
+                     basedir="${project.build.directory}/extracted"/>
+              </target>
             </configuration>
           </execution>
         </executions>
       </plugin>
 
-      <!-- Install patched JAR with custom POM (preserves transitive dep declarations) -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-install-plugin</artifactId>
         <version>3.1.1</version>
         <executions>
           <execution>
+            <id>default-install</id>
+            <phase>none</phase>
+          </execution>
+          <execution>
             <id>install-patched-jar</id>
             <phase>package</phase>
             <goals><goal>install-file</goal></goals>
             <configuration>
               <file>${project.build.directory}/patched.jar</file>
-              <pomFile>${project.basedir}/kotlin-compiler-patched.pom</pomFile>
+              <pomFile>${project.basedir}/pom.xml</pomFile>
               <groupId>io.github.nbplugins</groupId>
               <artifactId>netbeans-plugin-kotlin-compiler</artifactId>
               <version>${project.version}</version>

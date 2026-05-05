@@ -38,3 +38,4 @@ test-output.txt
 /bundled-jars/IntellijCore/target/
 /bundled-jars/IdeaFormatter/target/
 /bundled-jars/OpenapiFormatter/target/
+/bundled-jars/KotlinCompilerIntellijPlatform/target/
