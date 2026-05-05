@@ -214,6 +214,7 @@ Dependencies compiled against: `netbeans-plugin-kotlin-openapi-formatter`, `idea
 - [x] Add sparse-checkout for kotlin-ide-common sources in `submodules/Kotlin` (idea/ide-common/)
 - [x] Rewrite `bundled-jars/KotlinIdeCommon/pom.xml`: compile from sources
 - [x] Remove `PatchKotlinIdeCommon.java` from `patches-src/`
+- [x] Remove `lib/kotlin-ide-common-1.0.jar` from git
 - [x] Add stubs in `Nbm/src` for new abstract methods introduced by v1.3.72 API
 - [ ] Replace stubs with real implementations (`getResolutionFacadeByFile`, `getResolutionFacadeByModuleInfo`, `getResolutionFacade(platform)`, `tryGetFrontendService`, `analyzeWithAllCompilerChecks`)
 
