@@ -155,9 +155,12 @@ patches/                 ← replacement class sources for picocontainer/Intelli
 
 ### Bundled JARs (`lib/`)
 Several capabilities depend on bundled custom JARs (not from Maven Central):
-- `kotlin-ide-common.jar`, `kotlin-formatter.jar`, `kotlin-converter.jar` — JetBrains IDE tooling
+- `kotlin-ide-common.jar` — JetBrains IDE tooling (compiled from `lib/`, pending A4.7)
 - `intellij-core.jar` — IntelliJ platform core used for Kotlin analysis
 - `openapi-formatter.jar`, `idea-formatter.jar` — Formatting infrastructure
+
+`kotlin-formatter.jar` (A4.3) and `kotlin-converter.jar` (A4.6) are now compiled from
+`submodules/Kotlin` sources and no longer live in `lib/`.
 
 These JARs are installed into `~/.m2` automatically by the `bundled-jars/*` Maven modules during
 `mvn clean install` from the root. They are installed under `io.github.nbplugins` coordinates
@@ -176,8 +179,6 @@ work with Kotlin 1.3.72 and Java 17+. Patches are written using ASM and live in 
 | `KotlinCompilerIntellijPlatform` | `PatchContainerUtilAddMissing.java` | Добавляет недостающие методы `ContainerUtil`/`ContainerUtilRt` (`newHashSet`, `newHashMap`, `newArrayList` и др.) — `lib/openapi-formatter-1.0.jar` и `lib/idea-formatter-1.0.jar` скомпилированы против старого IntelliJ API, в котором эти методы ещё существовали |
 | `KotlinCompilerIntellijPlatform` | `PatchAstLoadingFilter.java` | Заглушает `AstLoadingFilter.assertTreeLoadingAllowed()` — без этого падает `MissingResourceException` из `Registry.is()` в тестах |
 | `KotlinCompilerIntellijPlatform` | `PatchExtensionsAddGetExtensions.java` | Добавляет `Extensions.getExtensions(ExtensionPointName)` — вызывается `CodeStyleSettings` (openapi-formatter), но отсутствует в тонком стабе Extensions из kotlin-compiler |
-| `KotlinConverter` | `PatchImportConversionKt.java` | Переписывает статический инициализатор `ImportConversionKt` — использует `JvmPlatformAnalyzerServices` вместо удалённого `JvmPlatform.getDefaultImports()` |
-| `KotlinConverter` | `PatchFqnPart.java` | Переименовывает `ImportPath.fqnPart()` → `getFqName()` и `AddToStdlibKt.singletonList()` → `Collections.singletonList()` (оба переименованы/удалены в 1.3.72) |
 | `KotlinIdeCommon` | `PatchKotlinIdeCommon.java` | Убирает вызов `setShowInternalKeyword`; переименовывает `KotlinTypeFactory.simpleType(5-arg)` → `simpleTypeWithNonTrivialMemberScope`; перенаправляет `KotlinType.isError()` → статический `KotlinTypeKt.isError(KotlinType)` |
 
 **Class stripping** — instead of custom Java tools, stripping is done with Ant tasks in pom.xml:
@@ -191,12 +192,15 @@ module and `exec-maven-plugin` in each `bundled-jars/*` module. Patched JARs are
 module's `target/` directory as `${project.build.finalName}.jar` and installed to `~/.m2`; they are
 **not** stored in git.
 
-**Phase convention for `install-file`** — all `bundled-jars/*` modules use `packaging=pom` and bind
-`maven-install-plugin:install-file` to the **`package`** phase (not `install`). This allows reactor
-builds (`mvn clean install` from root) to install patched JARs as part of `package`, so downstream
-modules can find them in `~/.m2` before their own `install` phase runs. The default `install`
-execution is disabled (`<phase>none</phase>`) to prevent Maven from overwriting the custom installed
-JAR with the empty POM-only artifact.
+**Phase convention for `install-file`** — `bundled-jars/*` modules that wrap pre-built JARs use
+`packaging=pom` and bind `maven-install-plugin:install-file` to the **`package`** phase (not
+`install`). This allows reactor builds (`mvn clean install` from root) to install patched JARs as
+part of `package`, so downstream modules can find them in `~/.m2` before their own `install` phase
+runs. The default `install` execution is disabled (`<phase>none</phase>`) to prevent Maven from
+overwriting the custom installed JAR with the empty POM-only artifact.
+
+Modules that compile from sources (`KotlinFormatter`, `KotlinConverter`) use `packaging=jar` and
+rely on standard Maven install — no custom `install-file` needed.
 
 To force-regenerate (e.g. after modifying a patch tool):
 

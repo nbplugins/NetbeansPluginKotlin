@@ -38,7 +38,7 @@ compatible version. Not a separate stage — done along the way.
 - [x] **A4.3** — `kotlin-formatter`: compile from sources (`submodules/Kotlin@v1.3.72`); remove `lib/kotlin-formatter-1.0.jar`
 - [x] **A4.4** — `kotlin-compiler`: split into two JARs (`compiler` / `compiler-intellij-platform`); all bundled deps replaced by explicit Maven coords; removed ASM patches and `kotlin-compiler-patched.pom`
 - [x] **A4.5** — Eliminated strip-based ASM patches; replaced with Ant extraction (`<present>` selector, `<zipfileset exclude>`); removed dead patch tools from `patches-src/`
-- [ ] **A4.6** — `kotlin-converter`: compile from sources; remove `PatchImportConversionKt`, `PatchFqnPart`
+- [x] **A4.6** — `kotlin-converter`: compile from sources; remove `PatchImportConversionKt`, `PatchFqnPart`
 - [ ] **A4.7** — `kotlin-ide-common`: compile from sources; remove `PatchKotlinIdeCommon`
 - [ ] **A4.8** — `KotlinCompilerIntellijPlatform`: replace `PatchAstLoadingFilter`, `PatchExtensionsAddGetExtensions` with source classes in `patches/`
 - [ ] **A4.9** — `openapi-formatter`, `idea-formatter`: compile from sources; remove `PatchContainerUtilAddMissing`
@@ -204,10 +204,10 @@ Dependencies compiled against: `netbeans-plugin-kotlin-openapi-formatter`, `idea
 
 **Phase 4.6 — kotlin-converter: compile from sources**
 
-- [ ] Add sparse-checkout for kotlin-converter sources in `submodules/IntellijCommunity`
-- [ ] Rewrite `bundled-jars/KotlinConverter/pom.xml`: compile from sources with `kotlin-maven-plugin`
-- [ ] Remove `lib/kotlin-converter-1.0.jar` from git
-- [ ] Remove `PatchImportConversionKt.java` and `PatchFqnPart.java` from `patches-src/`
+- [x] Add sparse-checkout for kotlin-converter sources in `submodules/Kotlin` (j2k/, idea/idea-core/, idea/ide-common/, idea/idea-analysis/)
+- [x] Rewrite `bundled-jars/KotlinConverter/pom.xml`: compile from sources with `kotlin-maven-plugin`
+- [x] Remove `lib/kotlin-converter-1.0.jar` from git
+- [x] Remove `PatchImportConversionKt.java` and `PatchFqnPart.java` from `patches-src/`
 
 **Phase 4.7 — kotlin-ide-common: compile from sources**
 
