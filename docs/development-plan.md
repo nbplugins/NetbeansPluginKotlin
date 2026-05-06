@@ -216,7 +216,7 @@ Dependencies compiled against: `netbeans-plugin-kotlin-openapi-formatter`, `idea
 - [x] Remove `PatchKotlinIdeCommon.java` from `patches-src/`
 - [x] Remove `lib/kotlin-ide-common-1.0.jar` from git
 - [x] Add stubs in `Nbm/src` for new abstract methods introduced by v1.3.72 API
-- [ ] Replace stubs with real implementations (`getResolutionFacadeByFile`, `getResolutionFacadeByModuleInfo`, `getResolutionFacade(platform)`, `tryGetFrontendService`, `analyzeWithAllCompilerChecks`)
+- [x] Replace stubs with real implementations (`getResolutionFacadeByFile`, `getResolutionFacadeByModuleInfo`, `getResolutionFacade(platform)`, `tryGetFrontendService`, `analyzeWithAllCompilerChecks`)
 
 **Phase 4.8 — KotlinCompilerIntellijPlatform: replace stub patches with source classes**
 
