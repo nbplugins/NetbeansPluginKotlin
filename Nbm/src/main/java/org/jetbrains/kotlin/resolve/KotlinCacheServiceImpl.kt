@@ -1,39 +1,46 @@
 package org.jetbrains.kotlin.resolve
 
+import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import org.jetbrains.kotlin.analyzer.AnalysisResult
 import org.jetbrains.kotlin.analyzer.ModuleInfo
 import org.jetbrains.kotlin.caches.resolve.KotlinCacheService
-import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParser
-import org.jetbrains.kotlin.psi.KtElement
-import org.jetbrains.kotlin.idea.resolve.ResolutionFacade
-import org.jetbrains.kotlin.descriptors.ModuleDescriptor
-import com.intellij.openapi.project.Project
-import org.jetbrains.kotlin.platform.TargetPlatform
-import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
-import org.jetbrains.kotlin.analyzer.AnalysisResult
-import com.intellij.psi.PsiElement
-import org.jetbrains.kotlin.psi.KtDeclaration
-import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
-import org.jetbrains.kotlin.resolve.diagnostics.KotlinSuppressCache
 import org.jetbrains.kotlin.container.ComponentProvider
+import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
+import org.jetbrains.kotlin.descriptors.ModuleDescriptor
+import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptor
+import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParser
+import org.jetbrains.kotlin.idea.resolve.ResolutionFacade
+import org.jetbrains.kotlin.platform.TargetPlatform
+import org.jetbrains.kotlin.psi.KtAnnotated
+import org.jetbrains.kotlin.psi.KtDeclaration
+import org.jetbrains.kotlin.psi.KtElement
+import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.resolve.diagnostics.KotlinSuppressCache
+import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
+import com.intellij.openapi.project.Project
 import org.netbeans.api.project.Project as NBProject
 
 class KotlinCacheServiceImpl(private val ideaProject: Project, val project: NBProject) : KotlinCacheService {
 
     override fun getResolutionFacadeByFile(file: PsiFile, platform: TargetPlatform): ResolutionFacade? {
-        throw UnsupportedOperationException()
+        if (file !is KtFile) return null
+        return KotlinSimpleResolutionFacade(ideaProject, listOf(file), project)
     }
 
-    override fun getResolutionFacade(elements: List<KtElement>, platform: TargetPlatform): ResolutionFacade {
-        throw UnsupportedOperationException()
-    }
+    override fun getResolutionFacade(elements: List<KtElement>, platform: TargetPlatform): ResolutionFacade =
+            getResolutionFacade(elements)
 
-    override fun getResolutionFacadeByModuleInfo(moduleInfo: ModuleInfo, platform: TargetPlatform): ResolutionFacade? {
-        throw UnsupportedOperationException()
-    }
+    override fun getResolutionFacadeByModuleInfo(moduleInfo: ModuleInfo, platform: TargetPlatform): ResolutionFacade? = null
 
-    override fun getSuppressionCache(): KotlinSuppressCache {
-        throw UnsupportedOperationException()
+    override fun getSuppressionCache(): KotlinSuppressCache = object : KotlinSuppressCache() {
+        override fun getSuppressionAnnotations(annotated: KtAnnotated): List<AnnotationDescriptor> {
+            val context = KotlinParser.getAnalysisResult(annotated.containingKtFile, project)
+                    ?.analysisResult?.bindingContext ?: return emptyList()
+            val descriptor = context.get(BindingContext.DECLARATION_TO_DESCRIPTOR, annotated)
+            return if (descriptor != null) descriptor.annotations.toList()
+                   else annotated.annotationEntries.mapNotNull { context.get(BindingContext.ANNOTATION, it) }
+        }
     }
 
     override fun getResolutionFacade(elements: List<KtElement>): ResolutionFacade =
@@ -66,11 +73,16 @@ class KotlinSimpleResolutionFacade(
     }
 
     override fun analyzeWithAllCompilerChecks(elements: Collection<KtElement>): AnalysisResult {
-        throw UnsupportedOperationException()
+        val files = elements.map { it.containingKtFile }.toSet()
+        if (files.isEmpty()) throw IllegalStateException("Elements should not be empty")
+        return KotlinAnalyzer.analyzeFiles(nbProject, files).analysisResult
     }
 
     override fun <T : Any> tryGetFrontendService(element: PsiElement, serviceClass: Class<T>): T? {
-        throw UnsupportedOperationException()
+        val ktFile = (element as? KtElement)?.containingKtFile ?: return null
+        return try {
+            KotlinAnalyzer.analyzeFiles(nbProject, setOf(ktFile)).componentProvider.getService(serviceClass)
+        } catch (e: Exception) { null }
     }
 
     override fun <T : Any> getFrontendService(element: PsiElement, serviceClass: Class<T>): T {
