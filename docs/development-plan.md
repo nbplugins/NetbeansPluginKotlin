@@ -40,7 +40,7 @@ compatible version. Not a separate stage — done along the way.
 - [x] **A4.5** — Eliminated strip-based ASM patches; replaced with Ant extraction (`<present>` selector, `<zipfileset exclude>`); removed dead patch tools from `patches-src/`
 - [x] **A4.6** — `kotlin-converter`: compile from sources; remove `PatchImportConversionKt`, `PatchFqnPart`
 - [x] **A4.7** — `kotlin-ide-common`: compile from sources; remove `PatchKotlinIdeCommon`
-- [ ] **A4.8** — `KotlinCompilerIntellijPlatform`: replace `PatchAstLoadingFilter`, `PatchExtensionsAddGetExtensions` with source classes in `patches/`
+- [x] **A4.8** — `KotlinCompilerIntellijPlatform`: replace `PatchAstLoadingFilter`, `PatchExtensionsAddGetExtensions` with source classes in `patches/`
 - [ ] **A4.9** — `openapi-formatter`, `idea-formatter`: compile from sources; remove `PatchContainerUtilAddMissing`
 - [ ] **A4.10** — `intellij-core`: compile from sources; remove `InjectGetGreenStub`; remove `PatchingJars` module and `patches-src/` entirely
 - [ ] **B1** — Research K2 Analysis API, choose architectural approach
@@ -220,9 +220,9 @@ Dependencies compiled against: `netbeans-plugin-kotlin-openapi-formatter`, `idea
 
 **Phase 4.8 — KotlinCompilerIntellijPlatform: replace stub patches with source classes**
 
-- [ ] Move `PatchAstLoadingFilter` logic to a source class in `patches/` (stub that always returns)
-- [ ] Move `PatchExtensionsAddGetExtensions` logic to a source class in `patches/`
-- [ ] Remove `PatchAstLoadingFilter.java` and `PatchExtensionsAddGetExtensions.java` from `patches-src/`
+- [x] Move `PatchAstLoadingFilter` logic to a source class in `patches/` (stub that always returns)
+- [x] Move `PatchExtensionsAddGetExtensions` logic to a source class in `patches/`
+- [x] Remove `PatchAstLoadingFilter.java` and `PatchExtensionsAddGetExtensions.java` from `patches-src/`
 
 **Phase 4.9 — openapi-formatter, idea-formatter: compile from sources**
 
