@@ -244,6 +244,12 @@ Remaining `lib/` JARs (`kotlin-ide-common`, `kotlin-converter`, `intellij-core`,
 `idea-formatter`) are switched to `submodules/IntelliJCommunity` as part of B2.
 After B2: `lib/` and `PatchingJars/` are removed entirely.
 
+**Strategy note (A4.8)**: `com.jetbrains.intellij.platform:util:193.5964` (repo `jetbrains-intellij-dependencies`)
+contains `ContainerUtil` with all deprecated methods intact. When rewriting `IntellijCore`, consider
+extracting selected classes from this artifact instead of compiling the full 3194-line `ContainerUtil.java`
+from submodule sources. The artifact cannot be used as a whole (83% of its packages conflict with
+`intellij-core`), but individual classes can be extracted cleanly.
+
 ---
 
 ## Track B — Core: Migration to K2 Compiler API
