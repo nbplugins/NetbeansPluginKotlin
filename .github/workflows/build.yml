@@ -93,6 +93,8 @@ jobs:
           fetch-depth: 0
       - name: Checkout submodules/Kotlin (sparse)
         run: git submodule update --init submodules/Kotlin
+      - name: Checkout submodules/IntellijCommunity (sparse)
+        run: git submodule update --init submodules/IntellijCommunity
       - uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}

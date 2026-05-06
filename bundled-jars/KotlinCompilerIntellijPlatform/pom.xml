@@ -5,20 +5,12 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.5.11-SNAPSHOT</version>
+    <version>0.5.13-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-compiler-intellij-platform</artifactId>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin Compiler IntelliJ Platform</name>
-
-  <dependencies>
-    <dependency>
-      <groupId>io.github.nbplugins</groupId>
-      <artifactId>netbeans-plugin-kotlin-patching-jars</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-  </dependencies>
 
   <build>
     <plugins>
@@ -42,18 +34,36 @@
                   <outputDirectory>${project.build.directory}</outputDirectory>
                   <destFileName>original.jar</destFileName>
                 </artifactItem>
+                <!-- ContainerUtil with all deprecated methods intact (193.5964) -->
+                <artifactItem>
+                  <groupId>com.jetbrains.intellij.platform</groupId>
+                  <artifactId>util</artifactId>
+                  <version>193.5964</version>
+                  <type>jar</type>
+                  <outputDirectory>${project.build.directory}</outputDirectory>
+                  <destFileName>intellij-util-193.jar</destFileName>
+                </artifactItem>
+                <!-- annotations for javac classpath (NotNull, Nullable, Contract) -->
+                <artifactItem>
+                  <groupId>org.jetbrains</groupId>
+                  <artifactId>annotations</artifactId>
+                  <version>20.1.0</version>
+                  <type>jar</type>
+                  <outputDirectory>${project.build.directory}</outputDirectory>
+                  <destFileName>annotations.jar</destFileName>
+                </artifactItem>
               </artifactItems>
             </configuration>
           </execution>
         </executions>
       </plugin>
 
-      <!-- Step 1: extract only IntelliJ platform classes from kotlin-compiler -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-antrun-plugin</artifactId>
         <version>3.1.0</version>
         <executions>
+          <!-- Step 1: extract only IntelliJ platform classes from kotlin-compiler -->
           <execution>
             <id>extract-intellij-platform</id>
             <phase>process-resources</phase>
@@ -75,66 +85,73 @@
                     <include name="META-INF/**"/>
                   </patternset>
                 </unzip>
-                <!-- Repack into a JAR for patching -->
+                <!-- Repack into a JAR -->
                 <jar destfile="${project.build.directory}/step1.jar"
                      basedir="${project.build.directory}/extracted"/>
               </target>
             </configuration>
           </execution>
-        </executions>
-      </plugin>
 
-      <plugin>
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>exec-maven-plugin</artifactId>
-        <version>3.3.0</version>
-        <executions>
-          <!-- Step 2: PatchContainerUtilAddMissing -->
+          <!-- Step 2: replace patched classes with source/binary equivalents -->
           <execution>
-            <id>patch-step-2-containerutil</id>
+            <id>inject-replacement-classes</id>
             <phase>process-resources</phase>
-            <goals><goal>exec</goal></goals>
+            <goals><goal>run</goal></goals>
             <configuration>
-              <executable>java</executable>
-              <arguments>
-                <argument>-cp</argument>
-                <argument>${project.basedir}/../../PatchingJars/target/netbeans-plugin-kotlin-patching-jars-${project.version}.jar</argument>
-                <argument>PatchContainerUtilAddMissing</argument>
-                <argument>${project.build.directory}/step1.jar</argument>
-                <argument>${project.build.directory}/step2.jar</argument>
-              </arguments>
-            </configuration>
-          </execution>
-          <!-- Step 3: PatchAstLoadingFilter -->
-          <execution>
-            <id>patch-step-3-astloading</id>
-            <phase>process-resources</phase>
-            <goals><goal>exec</goal></goals>
-            <configuration>
-              <executable>java</executable>
-              <arguments>
-                <argument>-cp</argument>
-                <argument>${project.basedir}/../../PatchingJars/target/netbeans-plugin-kotlin-patching-jars-${project.version}.jar</argument>
-                <argument>PatchAstLoadingFilter</argument>
-                <argument>${project.build.directory}/step2.jar</argument>
-                <argument>${project.build.directory}/step3.jar</argument>
-              </arguments>
-            </configuration>
-          </execution>
-          <!-- Step 4: PatchExtensionsAddGetExtensions -->
-          <execution>
-            <id>patch-step-4-extensions-get</id>
-            <phase>process-resources</phase>
-            <goals><goal>exec</goal></goals>
-            <configuration>
-              <executable>java</executable>
-              <arguments>
-                <argument>-cp</argument>
-                <argument>${project.basedir}/../../PatchingJars/target/netbeans-plugin-kotlin-patching-jars-${project.version}.jar</argument>
-                <argument>PatchExtensionsAddGetExtensions</argument>
-                <argument>${project.build.directory}/step3.jar</argument>
-                <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
-              </arguments>
+              <target>
+                <mkdir dir="${project.build.directory}/patch-classes"/>
+
+                <!-- ContainerUtil: extract from util:193.5964 (has all deprecated methods).
+                     ObjectIntMap/ObjectIntHashMap are used by ContainerUtil and ObjectTree. -->
+                <unzip src="${project.build.directory}/intellij-util-193.jar"
+                       dest="${project.build.directory}/patch-classes">
+                  <patternset>
+                    <include name="com/intellij/util/containers/ContainerUtil.class"/>
+                    <include name="com/intellij/util/containers/ContainerUtil$*.class"/>
+                    <include name="com/intellij/util/containers/ObjectIntMap.class"/>
+                    <include name="com/intellij/util/containers/ObjectIntMap$*.class"/>
+                    <include name="com/intellij/util/containers/ObjectIntHashMap.class"/>
+                    <include name="com/intellij/util/containers/ObjectIntHashMap$*.class"/>
+                  </patternset>
+                </unzip>
+
+                <!-- Copy only the specific source files from submodules to target/sources.
+                     This avoids adding the entire submodule to javac's source path,
+                     which would cause cascading compilation of all transitive sources. -->
+                <mkdir dir="${project.build.directory}/sources/com/intellij/util"/>
+                <copy file="${project.basedir}/../../submodules/IntellijCommunity/platform/core-api/src/com/intellij/util/AstLoadingFilter.java"
+                      todir="${project.build.directory}/sources/com/intellij/util/"/>
+
+                <!-- ContainerUtilRt, AstLoadingFilter, Extensions: compile from sources -->
+                <javac destdir="${project.build.directory}/patch-classes"
+                       classpath="${project.build.directory}/step1.jar:${project.build.directory}/annotations.jar"
+                       source="17" target="17"
+                       includeantruntime="false">
+                  <compilerarg value="-proc:none"/>
+                  <src path="${project.basedir}/../../patches"/>
+                  <src path="${project.build.directory}/sources"/>
+                  <include name="com/intellij/util/containers/ContainerUtilRt.java"/>
+                  <include name="com/intellij/util/AstLoadingFilter.java"/>
+                  <include name="com/intellij/openapi/extensions/Extensions.java"/>
+                </javac>
+
+                <!-- Build final JAR: step1 minus replaced classes + replacements -->
+                <zip destfile="${project.build.directory}/${project.build.finalName}.jar">
+                  <zipfileset src="${project.build.directory}/step1.jar"
+                              excludes="com/intellij/util/containers/ContainerUtil.class,
+                                        com/intellij/util/containers/ContainerUtil$*.class,
+                                        com/intellij/util/containers/ContainerUtilRt.class,
+                                        com/intellij/util/containers/ContainerUtilRt$*.class,
+                                        com/intellij/util/containers/ObjectIntMap.class,
+                                        com/intellij/util/containers/ObjectIntMap$*.class,
+                                        com/intellij/util/containers/ObjectIntHashMap.class,
+                                        com/intellij/util/containers/ObjectIntHashMap$*.class,
+                                        com/intellij/util/AstLoadingFilter.class,
+                                        com/intellij/util/AstLoadingFilter$*.class,
+                                        com/intellij/openapi/extensions/Extensions.class"/>
+                  <fileset dir="${project.build.directory}/patch-classes"/>
+                </zip>
+              </target>
             </configuration>
           </execution>
         </executions>
