@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.5.14-SNAPSHOT</version>
+    <version>0.5.18-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-ide-common</artifactId>
@@ -13,24 +13,22 @@
   <name>Netbeans Plugin Kotlin Ide Common</name>
 
   <dependencies>
-    <!-- Full intellij-core (unstripped) FIRST — provides complete ProgressIndicator interface
-         that was stripped from netbeans-plugin-kotlin-compiler.
-         Must appear before netbeans-plugin-kotlin-compiler so it wins the classpath race. -->
+    <!-- IntelliJ Platform Core 193 — replaces lib/intellij-core-1.0.jar (A4.10) -->
     <dependency>
-      <groupId>io.github.nbplugins</groupId>
-      <artifactId>intellij-core-unstripped</artifactId>
-      <version>1.0</version>
-      <scope>system</scope>
-      <systemPath>${project.basedir}/../../lib/intellij-core-1.0.jar</systemPath>
-      <optional>true</optional>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core</artifactId>
+      <version>193.7288.26</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core-impl</artifactId>
+      <version>193.7288.26</version>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>io.github.nbplugins</groupId>
       <artifactId>netbeans-plugin-kotlin-compiler</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.github.nbplugins</groupId>
-      <artifactId>netbeans-plugin-kotlin-intellij-core</artifactId>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>

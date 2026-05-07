@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.5.14-SNAPSHOT</version>
+    <version>0.5.18-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-compiler-intellij-platform</artifactId>
@@ -139,8 +139,10 @@
                   <include name="com/intellij/openapi/extensions/Extensions.java"/>
                 </javac>
 
-                <!-- Build final JAR: step1 minus replaced classes + replacements -->
+                <!-- Build final JAR: step1 minus replaced classes + replacements + message bundles -->
                 <zip destfile="${project.build.directory}/${project.build.finalName}.jar">
+                  <!-- message bundles absent from core:193 but required by JavaCoreBundle / LanguageLevel -->
+                  <zipfileset dir="${project.basedir}/../../patches/messages" includes="*.properties" prefix="messages"/>
                   <zipfileset src="${project.build.directory}/step1.jar"
                               excludes="com/intellij/util/containers/ContainerUtil.class,
                                         com/intellij/util/containers/ContainerUtil$*.class,
