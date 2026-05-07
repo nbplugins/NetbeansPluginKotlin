@@ -149,6 +149,17 @@ patches/                 ← replacement class sources + message bundles injecte
 | `utils/` | Shared helpers |
 
 ### Bundled JARs
+
+#### bundled-jars/* submodule summary
+
+| Submodule | What it does | To be removed |
+|-----------|-------------|---------------|
+| **KotlinCompiler** | Takes `kotlin-compiler-1.3.72.jar`, strips everything except `org/jetbrains/kotlin/**`, installs via `install-file` | A4.11 |
+| **KotlinCompilerIntellijPlatform** | Takes `kotlin-compiler-1.3.72.jar`, extracts `com/intellij/**`, patches `ContainerUtil`/`StringUtil`/`Extensions`/`AstLoadingFilter`, injects message bundles | A4.11 |
+| **KotlinFormatter** | Compiles 12 files from `submodules/Kotlin/idea/formatter/`, patches `ReflectionUtil.copyFields` (inlined) | No — no Maven artifact |
+| **KotlinConverter** | Compiles 55+ files from `submodules/Kotlin/j2k/`, patches 2 sites (type inference, `runWriteAction`) | No — no Maven artifact |
+| **KotlinIdeCommon** | Compiles all of `submodules/Kotlin/idea/ide-common/src/`, excludes 8 classes overridden by the plugin | No — no Maven artifact |
+
 Several capabilities depend on bundled custom JARs (not from Maven Central):
 - `kotlin-ide-common.jar` — JetBrains IDE tooling (compiled from `submodules/Kotlin` sources since A4.7)
 - IntelliJ platform core — provided by `com.jetbrains.intellij.platform:core:193.7288.26` +
