@@ -125,9 +125,8 @@ bundled-jars/            ← grouping dir (no pom); each submodule installs one 
   KotlinCompiler/
   KotlinCompilerIntellijPlatform/
   IntellijCore/
-  OpenapiFormatter/
-  IdeaFormatter/
-lib/                     ← source JARs (referenced by bundled-jars/* modules)
+lib/                     ← pre-built JARs referenced by bundled-jars/* modules
+  intellij-core-1.0.jar  ← IntelliJ platform core (wrapped by IntellijCore module)
 patches-src/             ← ASM-based patch tools (compiled into PatchingJars fat JAR)
 patches/                 ← replacement class sources for picocontainer/IntelliJ utilities
 ```
