@@ -166,10 +166,27 @@ source classes in `patches/` (compiled and injected at build time) instead of AS
 
 Formatter infrastructure (A4.9): `openapi-formatter.jar` and `idea-formatter.jar` replaced by
 `com.jetbrains.intellij.platform:code-style:241.194` and `code-style-impl:241.194` (direct Maven
-dependencies). Stubs for `Configurable`, `IndentOptionsEditor`, `CodeStyleSettingsProvider`,
-`LanguageCodeStyleSettingsProvider`, and `CodeStyleSettingsCustomizable` live in `Nbm/src/main/java/`.
-The first two are compile-only (methods throw or return null). The latter three are also needed at
-runtime for extension point registration (`EXTENSION_POINT_NAME` / `EP_NAME` fields must be present).
+dependencies). All `com.jetbrains.intellij.platform:*` transitive deps are excluded from `Nbm` to
+avoid conflicts with bundled 193-era JARs. The following stubs live in `Nbm/src/main/java/`:
+
+| Class | Package | Purpose |
+|-------|---------|---------|
+| `Configurable` | `com.intellij.openapi.options` | Compile-only; return type of `createSettingsPage()` (throws) |
+| `IndentOptionsEditor` | `com.intellij.application.options` | Compile-only; return type of `getIndentOptionsEditor()` (returns null) |
+| `CodeStyleSettingsProvider` | `com.intellij.psi.codeStyle` | Runtime; `EXTENSION_POINT_NAME` field needed for extension registration |
+| `LanguageCodeStyleSettingsProvider` | `com.intellij.psi.codeStyle` | Runtime; `EP_NAME` field needed for extension registration |
+| `CodeStyleSettingsCustomizable` | `com.intellij.psi.codeStyle` | Compile-only interface |
+| `CodeStyleSettingsService` | `com.intellij.psi.codeStyle` | Runtime; `getInstance()` returns no-op (empty factory lists) |
+| `CustomCodeStyleSettingsManager` | `com.intellij.psi.codeStyle` | Runtime; `getCustomSettings()` uses reflection to create settings |
+| `Formatter` | `com.intellij.formatting` | Runtime; `getInstance()` returns `new FormatterImpl()` singleton |
+| `DynamicBundle` | `com.intellij` | Runtime; stub for `core:241` i18n bundle (no dynamic plugin support needed) |
+| `ConcurrentCollectionFactory` | `com.intellij.concurrency` | Runtime; delegates to `ContainerUtil` (193-era) factory methods |
+| `ObjectIntHashMap` | `com.intellij.util.containers` | Runtime; extends `TObjectIntHashMap` AND implements `ObjectIntMap` (241 casts it to interface) |
+
+Additionally, `StringUtil` (adds `trimStart(String,String)`) and `TextRangeUtil` (adds
+`intersectsOneOf`) are injected from `util:193.5964` into the patched `KotlinCompilerIntellijPlatform`
+and `IntellijCore` JARs respectively — 241-era formatter code calls these methods, but the bundled
+193-era versions lack them.
 
 These JARs are installed into `~/.m2` automatically by the `bundled-jars/*` Maven modules during
 `mvn clean install` from the root. They are installed under `io.github.nbplugins` coordinates
