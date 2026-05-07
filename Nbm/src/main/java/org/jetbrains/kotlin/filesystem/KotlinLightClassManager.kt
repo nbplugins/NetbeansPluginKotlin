@@ -112,8 +112,8 @@ class KotlinLightClassManager(private val project: NBProject) {
 
             override fun visitProperty(property: KtProperty) {}
 
-            override fun visitElement(element: PsiElement?) {
-                if (element != null) element.acceptChildren(this)
+            override fun visitElement(element: PsiElement) {
+                element.acceptChildren(this)
             }
         })
 

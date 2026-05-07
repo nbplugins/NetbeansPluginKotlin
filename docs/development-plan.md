@@ -41,7 +41,7 @@ compatible version. Not a separate stage — done along the way.
 - [x] **A4.6** — `kotlin-converter`: compile from sources; remove `PatchImportConversionKt`, `PatchFqnPart`
 - [x] **A4.7** — `kotlin-ide-common`: compile from sources; remove `PatchKotlinIdeCommon`
 - [x] **A4.8** — `KotlinCompilerIntellijPlatform`: replace `PatchAstLoadingFilter`, `PatchExtensionsAddGetExtensions` with source classes in `patches/`
-- [ ] **A4.9** — `openapi-formatter`, `idea-formatter`: compile from sources; remove `PatchContainerUtilAddMissing`
+- [x] **A4.9** — `openapi-formatter`, `idea-formatter`: replaced with `code-style:241.194` and `code-style-impl:241.194` (JetBrains Maven); removed `PatchContainerUtilAddMissing`
 - [ ] **A4.10** — `intellij-core`: compile from sources; remove `InjectGetGreenStub`; remove `PatchingJars` module and `patches-src/` entirely
 - [ ] **B1** — Research K2 Analysis API, choose architectural approach
 - [ ] **B2** — Migrate resolve layer to K2 + switch remaining JARs to `submodules/IntelliJCommunity`

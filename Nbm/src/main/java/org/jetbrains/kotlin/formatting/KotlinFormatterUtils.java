@@ -90,7 +90,7 @@ public class KotlinFormatterUtils {
         NetBeansDocumentFormattingModel formattingModel = 
                 buildModel(containingFile, rootBlock, settings, source, false);
         FormatTextRanges ranges = new FormatTextRanges(range, true);
-        new FormatterImpl().format(formattingModel, settings, settings.getIndentOptions(), ranges, false);
+        new FormatterImpl().format(formattingModel, settings, settings.getIndentOptions(), ranges);
         
         return formattingModel.getNewText();
     }

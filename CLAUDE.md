@@ -157,13 +157,19 @@ patches/                 ← replacement class sources for picocontainer/Intelli
 Several capabilities depend on bundled custom JARs (not from Maven Central):
 - `kotlin-ide-common.jar` — JetBrains IDE tooling (compiled from `submodules/Kotlin` sources since A4.7)
 - `intellij-core.jar` — IntelliJ platform core used for Kotlin analysis
-- `openapi-formatter.jar`, `idea-formatter.jar` — Formatting infrastructure
 
 `kotlin-formatter.jar` (A4.3), `kotlin-converter.jar` (A4.6), and `kotlin-ide-common.jar` (A4.7)
 are compiled from `submodules/Kotlin` sources and no longer live in `lib/`.
 
 `KotlinCompilerIntellijPlatform` (A4.8): `AstLoadingFilter` and `Extensions` stubs are provided as
 source classes in `patches/` (compiled and injected at build time) instead of ASM patches.
+
+Formatter infrastructure (A4.9): `openapi-formatter.jar` and `idea-formatter.jar` replaced by
+`com.jetbrains.intellij.platform:code-style:241.194` and `code-style-impl:241.194` (direct Maven
+dependencies). Stubs for `Configurable`, `IndentOptionsEditor`, `CodeStyleSettingsProvider`,
+`LanguageCodeStyleSettingsProvider`, and `CodeStyleSettingsCustomizable` live in `Nbm/src/main/java/`.
+The first two are compile-only (methods throw or return null). The latter three are also needed at
+runtime for extension point registration (`EXTENSION_POINT_NAME` / `EP_NAME` fields must be present).
 
 These JARs are installed into `~/.m2` automatically by the `bundled-jars/*` Maven modules during
 `mvn clean install` from the root. They are installed under `io.github.nbplugins` coordinates
@@ -179,7 +185,6 @@ work with Kotlin 1.3.72 and Java 17+. Patches are written using ASM and live in 
 | Maven submodule | Patch | Зачем |
 |-----------------|-------|-------|
 | `IntellijCore` | `InjectGetGreenStub.java` | Добавляет `getGreenStub()` в `SubstrateRef` и `StubBasedPsiElementBase` — метод отсутствует в бандловой версии IntelliJ, но вызывается kotlin-compiler 1.3.72 |
-| `KotlinCompilerIntellijPlatform` | `PatchContainerUtilAddMissing.java` | Добавляет недостающие методы `ContainerUtil`/`ContainerUtilRt` (`newHashSet`, `newHashMap`, `newArrayList` и др.) — `lib/openapi-formatter-1.0.jar` и `lib/idea-formatter-1.0.jar` скомпилированы против старого IntelliJ API, в котором эти методы ещё существовали |
 | `KotlinIdeCommon` | `PatchKotlinIdeCommon.java` | Убирает вызов `setShowInternalKeyword`; переименовывает `KotlinTypeFactory.simpleType(5-arg)` → `simpleTypeWithNonTrivialMemberScope`; перенаправляет `KotlinType.isError()` → статический `KotlinTypeKt.isError(KotlinType)` |
 
 **Class stripping** — instead of custom Java tools, stripping is done with Ant tasks in pom.xml:
