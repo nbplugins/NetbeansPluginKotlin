@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin</artifactId>
-  <version>0.5.14-SNAPSHOT</version>
+  <version>0.5.18-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin</name>
   <properties>
@@ -13,19 +13,21 @@
     <kotlin.version>1.3.72</kotlin.version>
   </properties>
   <modules>
-    <module>PatchingJars</module>
     <module>bundled-jars/KotlinCompilerIntellijPlatform</module>
     <module>bundled-jars/KotlinCompiler</module>
     <module>bundled-jars/KotlinIdeCommon</module>
     <module>bundled-jars/KotlinFormatter</module>
     <module>bundled-jars/KotlinConverter</module>
-    <module>bundled-jars/IntellijCore</module>
     <module>Nbm</module>
   </modules>
   <repositories>
     <repository>
       <id>jetbrains-intellij-dependencies</id>
       <url>https://packages.jetbrains.team/maven/p/ij/intellij-dependencies/</url>
+    </repository>
+    <repository>
+      <id>jetbrains-intellij-releases</id>
+      <url>https://www.jetbrains.com/intellij-repository/releases/</url>
     </repository>
   </repositories>
   <build>
@@ -75,9 +77,14 @@
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.github.nbplugins</groupId>
-        <artifactId>netbeans-plugin-kotlin-intellij-core</artifactId>
-        <version>${project.version}</version>
+        <groupId>com.jetbrains.intellij.platform</groupId>
+        <artifactId>core</artifactId>
+        <version>193.7288.26</version>
+      </dependency>
+      <dependency>
+        <groupId>com.jetbrains.intellij.platform</groupId>
+        <artifactId>core-impl</artifactId>
+        <version>193.7288.26</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
@@ -149,6 +156,11 @@
         <groupId>one.util</groupId>
         <artifactId>streamex</artifactId>
         <version>0.6.8</version>
+      </dependency>
+      <dependency>
+        <groupId>org.jetbrains.intellij.deps.fastutil</groupId>
+        <artifactId>intellij-deps-fastutil</artifactId>
+        <version>8.5.11-18</version>
       </dependency>
       <dependency>
         <groupId>org.jline</groupId>

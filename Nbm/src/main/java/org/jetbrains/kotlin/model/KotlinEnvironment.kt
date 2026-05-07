@@ -32,7 +32,6 @@ import com.intellij.codeInsight.NullableNotNullManager
 import com.intellij.codeInsight.runner.JavaMainMethodProvider
 import com.intellij.core.CoreApplicationEnvironment
 import com.intellij.core.CoreJavaFileManager
-import com.intellij.core.JavaCoreApplicationEnvironment
 import com.intellij.core.JavaCoreProjectEnvironment
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreApplicationEnvironment
 import com.intellij.mock.MockProject

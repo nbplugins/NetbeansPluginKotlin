@@ -124,11 +124,7 @@ bundled-jars/            ← grouping dir (no pom); each submodule installs one 
   KotlinConverter/
   KotlinCompiler/
   KotlinCompilerIntellijPlatform/
-  IntellijCore/
-lib/                     ← pre-built JARs referenced by bundled-jars/* modules
-  intellij-core-1.0.jar  ← IntelliJ platform core (wrapped by IntellijCore module)
-patches-src/             ← ASM-based patch tools (compiled into PatchingJars fat JAR)
-patches/                 ← replacement class sources for picocontainer/IntelliJ utilities
+patches/                 ← replacement class sources + message bundles injected at build time
 ```
 
 ### Main Packages (`Nbm/src/main/java/org/jetbrains/kotlin/`)
@@ -152,10 +148,11 @@ patches/                 ← replacement class sources for picocontainer/Intelli
 | `projectsextensions/` | Maven/Gradle/Ant build system integration |
 | `utils/` | Shared helpers |
 
-### Bundled JARs (`lib/`)
+### Bundled JARs
 Several capabilities depend on bundled custom JARs (not from Maven Central):
 - `kotlin-ide-common.jar` — JetBrains IDE tooling (compiled from `submodules/Kotlin` sources since A4.7)
-- `intellij-core.jar` — IntelliJ platform core used for Kotlin analysis
+- IntelliJ platform core — provided by `com.jetbrains.intellij.platform:core:193.7288.26` +
+  `core-impl:193.7288.26` as direct Maven dependencies of Nbm (since A4.10; replaces old `lib/intellij-core-1.0.jar`)
 
 `kotlin-formatter.jar` (A4.3), `kotlin-converter.jar` (A4.6), and `kotlin-ide-common.jar` (A4.7)
 are compiled from `submodules/Kotlin` sources and no longer live in `lib/`.
@@ -181,11 +178,11 @@ avoid conflicts with bundled 193-era JARs. The following stubs live in `Nbm/src/
 | `DynamicBundle` | `com.intellij` | Runtime; stub for `core:241` i18n bundle (no dynamic plugin support needed) |
 | `ConcurrentCollectionFactory` | `com.intellij.concurrency` | Runtime; delegates to `ContainerUtil` (193-era) factory methods |
 | `ObjectIntHashMap` | `com.intellij.util.containers` | Runtime; extends `TObjectIntHashMap` AND implements `ObjectIntMap` (241 casts it to interface) |
+| `ObjectUtils` | `com.intellij.util` | Runtime; adds `binarySearch(int,int,IntIntFunction)` (needed by `MarkerProduction` in `KotlinCompilerIntellijPlatform`) and `binarySearch(int,int,IntUnaryOperator)` (needed by `code-style-impl:241`); placed in main module JAR to take classloader priority over `ext/util.jar` |
 
-Additionally, `StringUtil` (adds `trimStart(String,String)`) and `TextRangeUtil` (adds
-`intersectsOneOf`) are injected from `util:193.5964` into the patched `KotlinCompilerIntellijPlatform`
-and `IntellijCore` JARs respectively — 241-era formatter code calls these methods, but the bundled
-193-era versions lack them.
+Additionally, `StringUtil` (adds `trimStart(String,String)`) is injected from `util:193.5964` into
+`KotlinCompilerIntellijPlatform` — 241-era formatter code calls this method, but the bundled
+193-era version lacks it.
 
 These JARs are installed into `~/.m2` automatically by the `bundled-jars/*` Maven modules during
 `mvn clean install` from the root. They are installed under `io.github.nbplugins` coordinates
@@ -193,42 +190,46 @@ These JARs are installed into `~/.m2` automatically by the `bundled-jars/*` Mave
 
 ### JAR Patches (`patches-src/`)
 
-The bundled JARs were compiled against older library versions and require bytecode patches to
-work with Kotlin 1.3.72 and Java 17+. Patches are written using ASM and live in `patches-src/`.
+The bundled JARs were compiled against older library versions and require bytecode patches or
+class replacements to work with Kotlin 1.3.72 and Java 17+. No ASM patches remain since A4.10.
 
-**Active ASM patches** (applied via `exec-maven-plugin` in each `bundled-jars/*` module):
+**Active class replacements** (injected via Ant tasks in `KotlinCompilerIntellijPlatform/pom.xml`):
 
-| Maven submodule | Patch | Зачем |
-|-----------------|-------|-------|
-| `IntellijCore` | `InjectGetGreenStub.java` | Добавляет `getGreenStub()` в `SubstrateRef` и `StubBasedPsiElementBase` — метод отсутствует в бандловой версии IntelliJ, но вызывается kotlin-compiler 1.3.72 |
-| `KotlinIdeCommon` | `PatchKotlinIdeCommon.java` | Убирает вызов `setShowInternalKeyword`; переименовывает `KotlinTypeFactory.simpleType(5-arg)` → `simpleTypeWithNonTrivialMemberScope`; перенаправляет `KotlinType.isError()` → статический `KotlinTypeKt.isError(KotlinType)` |
+| What | Source | Why |
+|------|--------|-----|
+| `ContainerUtil`, `ObjectIntMap/HashMap`, `StringUtil` | extracted from `util:193.5964` | 193.5964 has deprecated methods + `trimStart(String,String)` needed by code-style-impl:241 |
+| `ContainerUtilRt`, `AstLoadingFilter`, `Extensions` | compiled from `patches/` sources | kotlin-compiler's embedded versions lack required API |
+| `messages/JavaCoreBundle.properties`, `messages/JavaErrorMessages.properties` | `patches/messages/` | absent from `core:193` but required by `LanguageLevel.<clinit>` at runtime |
 
-**Class stripping** — instead of custom Java tools, stripping is done with Ant tasks in pom.xml:
+**Class stripping** — done with Ant tasks in pom.xml:
 
-- `IntellijCore`: Ant `<present>` selector removes all `.class` files from `intellij-core` that also exist (by path) in `kotlin-compiler-1.3.72.jar` — newer versions from kotlin-compiler win. Also explicitly strips `ConcurrentRefHashMap*` and `ConcurrentWeakHashMap*` — they call a removed `ContainerUtil.newConcurrentMap(4-arg)` overload.
-- `KotlinCompiler`: Ant `<zipfileset exclude>` strips `org/picocontainer/` (replaced by `picocontainer:1.2` Maven dep) and `com/google/` (replaced by `guava:28.2-jre` Maven dep).
-- `KotlinIdeCommon`: Ant `<zipfileset exclude>` strips 8 plugin-owned classes (`ReferenceVariantsHelper`, `CallType`, `ExtensionUtils`, `FuzzyType`, `ScopeUtils`, `ShadowedDeclarationsFilter`, `UtilsKt`, `ReceiverType`) — the plugin provides its own versions in `Nbm/src`; bundled copies would conflict at runtime.
+- `KotlinCompiler`: strips `org/picocontainer/` (replaced by `picocontainer:1.2` Maven dep) and `com/google/` (replaced by `guava:28.2-jre` Maven dep).
+- `KotlinIdeCommon`: strips 8 plugin-owned classes (`ReferenceVariantsHelper`, `CallType`, `ExtensionUtils`, `FuzzyType`, `ScopeUtils`, `ShadowedDeclarationsFilter`, `UtilsKt`, `ReceiverType`) — the plugin provides its own versions in `Nbm/src`; bundled copies would conflict at runtime.
 
-**Applying patches** — patches are applied automatically by `mvn clean install` via the `PatchingJars`
-module and `exec-maven-plugin` in each `bundled-jars/*` module. Patched JARs are generated into each
-module's `target/` directory as `${project.build.finalName}.jar` and installed to `~/.m2`; they are
-**not** stored in git.
-
-**Phase convention for `install-file`** — `bundled-jars/*` modules that wrap pre-built JARs use
+**Phase convention for `install-file`** — `KotlinCompilerIntellijPlatform` and `KotlinCompiler` use
 `packaging=pom` and bind `maven-install-plugin:install-file` to the **`package`** phase (not
 `install`). This allows reactor builds (`mvn clean install` from root) to install patched JARs as
 part of `package`, so downstream modules can find them in `~/.m2` before their own `install` phase
 runs. The default `install` execution is disabled (`<phase>none</phase>`) to prevent Maven from
 overwriting the custom installed JAR with the empty POM-only artifact.
 
-Modules that compile from sources (`KotlinFormatter`, `KotlinConverter`) use `packaging=jar` and
-rely on standard Maven install — no custom `install-file` needed.
+Modules that compile from sources (`KotlinFormatter`, `KotlinConverter`, `KotlinIdeCommon`) use
+`packaging=jar` and rely on standard Maven install — no custom `install-file` needed.
 
-To force-regenerate (e.g. after modifying a patch tool):
+**First-time setup** — after a version bump, run `mvn clean install -DskipTests` once to bootstrap
+`~/.m2`. Subsequent `mvn clean test` and `mvn clean package` work without install.
+`KotlinCompilerIntellijPlatform` and `KotlinCompiler` use `packaging=pom` + `install-file`, so
+their JARs must exist in `~/.m2` before downstream modules can resolve them.
+
+**JetBrains Maven repo** (`jetbrains-intellij-releases`) is slow without a proxy. To bootstrap:
+download missing 193.x JARs manually via SOCKS5 proxy (`router.oleghome:11337`) using curl and
+place them in `~/.m2/repository/com/jetbrains/intellij/platform/<artifact>/<version>/`.
+
+To force-regenerate:
 
 ```bash
 # Clear cached ~/.m2 entries and rebuild
-for art in netbeans-plugin-kotlin-intellij-core netbeans-plugin-kotlin-ide-common \
+for art in netbeans-plugin-kotlin-ide-common \
            netbeans-plugin-kotlin-converter netbeans-plugin-kotlin-formatter \
            netbeans-plugin-kotlin-compiler netbeans-plugin-kotlin-compiler-intellij-platform; do
   rm -rf ~/.m2/repository/io/github/nbplugins/$art
@@ -236,7 +237,7 @@ done
 JAVA_HOME=/usr/lib/jvm/java-17-temurin-jdk mvn clean install -DskipTests
 ```
 
-**Правило разрешения конфликтов версий классов:** При конфликте двух версий одного класса из разных JAR-файлов — всегда стрипить **старую** версию, оставлять **новую**. При необходимости патчить **точки вызова** (call sites) через ASM, чтобы они использовали API новой версии.
+**Правило разрешения конфликтов версий классов:** При конфликте двух версий одного класса из разных JAR-файлов — всегда стрипить **старую** версию, оставлять **новую**. Если новый код вызывает метод, отсутствующий в старом классе — добавить метод в старый класс (stub в `Nbm/src/main/java/`, главный JAR загружается первым и перекрывает `ext/*.jar`).
 
 **Running tests** (must use Java 17 — Java 25 breaks the Kotlin Maven plugin; Xvfb is started automatically by Maven on display :99):
 
@@ -259,7 +260,7 @@ Test resource files (sample `.kt` files) are in `Nbm/src/test/resources/projForT
 The plugin uses `sun.misc.Unsafe` (via IntelliJ's `AtomicFieldUpdater`) and `java.lang.reflect` APIs that are encapsulated by default in Java 17+. Without the required flags, opening a `.kt` file triggers `ExceptionInInitializerError: Could not initialize class com.intellij.openapi.util.Disposer` and the Kotlin environment never loads.
 
 **Required JVM flags:**
-- `-J--add-opens=java.base/java.lang.reflect=ALL-UNNAMED` — reflective access used by `JavaCoreApplicationEnvironment`
+- `-J--add-opens=java.base/java.lang.reflect=ALL-UNNAMED` — reflective access used by `JavaCoreProjectEnvironment`
 - `-J--add-opens=jdk.unsupported/sun.misc=ALL-UNNAMED` — allows `ReflectionUtil` to call `setAccessible(true)` on `sun.misc.Unsafe.theUnsafe`, which `AtomicFieldUpdater` needs to initialise
 - `-J--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED` — `DebugReflectionUtil` in `CachedValueChecker` calls `setAccessible(true)` on `AtomicIntegerFieldUpdater.U`; without this, `KotlinParser.parse` fails for every Kotlin file with `InaccessibleObjectException`
 - `-J--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED` — `sun.misc.Unsafe` in newer JDKs delegates to `jdk.internal.misc.Unsafe.theUnsafe`; without this, `KotlinParser.parse` fails with `InaccessibleObjectException` on `jdk.internal.misc.Unsafe.theUnsafe`

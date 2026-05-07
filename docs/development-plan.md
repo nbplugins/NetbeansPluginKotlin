@@ -42,7 +42,7 @@ compatible version. Not a separate stage — done along the way.
 - [x] **A4.7** — `kotlin-ide-common`: compile from sources; remove `PatchKotlinIdeCommon`
 - [x] **A4.8** — `KotlinCompilerIntellijPlatform`: replace `PatchAstLoadingFilter`, `PatchExtensionsAddGetExtensions` with source classes in `patches/`
 - [x] **A4.9** — `openapi-formatter`, `idea-formatter`: replaced with `code-style:241.194` and `code-style-impl:241.194` (JetBrains Maven); removed `PatchContainerUtilAddMissing`
-- [ ] **A4.10** — `intellij-core`: compile from sources; remove `InjectGetGreenStub`; remove `PatchingJars` module and `patches-src/` entirely
+- [x] **A4.10** — `intellij-core`: replaced with `core:193.7288.26` + `core-impl:193.7288.26` (direct Maven deps of Nbm); removed `IntellijCore` wrapper, `PatchingJars`, `patches-src/`, `lib/`
 - [ ] **B1** — Research K2 Analysis API, choose architectural approach
 - [ ] **B2** — Migrate resolve layer to K2 + switch remaining JARs to `submodules/IntelliJCommunity`
 - [ ] **B3** — Restore and implement missing features
@@ -224,12 +224,12 @@ Dependencies compiled against: `netbeans-plugin-kotlin-openapi-formatter`, `idea
 - [x] Move `PatchExtensionsAddGetExtensions` logic to a source class in `patches/`
 - [x] Remove `PatchAstLoadingFilter.java` and `PatchExtensionsAddGetExtensions.java` from `patches-src/`
 
-**Phase 4.9 — openapi-formatter, idea-formatter: compile from sources**
+**Phase 4.9 — openapi-formatter, idea-formatter: compile from sources** ✓ Done
 
-- [ ] Add sparse-checkout for openapi/idea formatter sources in `submodules/IntellijCommunity`
-- [ ] Rewrite `bundled-jars/OpenapiFormatter/` and `bundled-jars/IdeaFormatter/pom.xml`: compile from sources
-- [ ] Remove `lib/openapi-formatter-1.0.jar` and `lib/idea-formatter-1.0.jar` from git
-- [ ] Remove `PatchContainerUtilAddMissing.java` from `patches-src/`
+- [x] Add sparse-checkout for openapi/idea formatter sources in `submodules/IntellijCommunity`
+- [x] Rewrite `bundled-jars/OpenapiFormatter/` and `bundled-jars/IdeaFormatter/pom.xml`: compile from sources
+- [x] Remove `lib/openapi-formatter-1.0.jar` and `lib/idea-formatter-1.0.jar` from git
+- [x] Remove `PatchContainerUtilAddMissing.java` from `patches-src/`
 
 **Phase 4.10 — intellij-core: compile from sources; remove PatchingJars**
 

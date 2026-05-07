@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.5.14-SNAPSHOT</version>
+    <version>0.5.18-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-nbm</artifactId>
@@ -131,6 +131,39 @@
     </plugins>
   </build>
   <dependencies>
+    <!-- IntelliJ Platform Core 193 — replaces lib/intellij-core-1.0.jar (A4.10).
+         Declared before kotlin-compiler so 193-era classes win over kotlin-compiler's
+         older embedded IntelliJ classes. -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core</artifactId>
+      <version>193.7288.26</version>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core-impl</artifactId>
+      <version>193.7288.26</version>
+      <exclusions>
+        <!-- util-ui and core-ui pull Swing/batik/imgscalr — not needed at runtime -->
+        <exclusion>
+          <groupId>com.jetbrains.intellij.platform</groupId>
+          <artifactId>util-ui</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.jetbrains.intellij.platform</groupId>
+          <artifactId>core-ui</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <!-- util:193.5964 has TextRangeUtil.intersectsOneOf() called by code-style-impl:241;
+         util:193.7288.26 (transitive from core:193) lacks this method.
+         Direct dep wins over transitive, so Maven picks 193.5964. -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>util</artifactId>
+      <version>193.5964</version>
+    </dependency>
+
     <!-- Bundled JARs (installed by bundled-jars/* modules) -->
     <dependency>
       <groupId>io.github.nbplugins</groupId>
@@ -160,6 +193,11 @@
         </exclusion>
       </exclusions>
     </dependency>
+    <!-- fastutil: runtime dep of code-style-impl:241 — not auto-bundled by nbm plugin -->
+    <dependency>
+      <groupId>org.jetbrains.intellij.deps.fastutil</groupId>
+      <artifactId>intellij-deps-fastutil</artifactId>
+    </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>project-model</artifactId>
@@ -169,10 +207,6 @@
           <artifactId>*</artifactId>
         </exclusion>
       </exclusions>
-    </dependency>
-    <dependency>
-      <groupId>io.github.nbplugins</groupId>
-      <artifactId>netbeans-plugin-kotlin-intellij-core</artifactId>
     </dependency>
     <dependency>
       <groupId>io.github.nbplugins</groupId>
