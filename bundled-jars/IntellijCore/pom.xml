@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.5.13-SNAPSHOT</version>
+    <version>0.5.14-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-intellij-core</artifactId>
@@ -41,6 +41,15 @@
                   <type>jar</type>
                   <outputDirectory>${project.build.directory}</outputDirectory>
                   <destFileName>kotlin-compiler-original.jar</destFileName>
+                </artifactItem>
+                <!-- util:193.5964 has TextRangeUtil with intersectsOneOf called by code-style-impl:241 -->
+                <artifactItem>
+                  <groupId>com.jetbrains.intellij.platform</groupId>
+                  <artifactId>util</artifactId>
+                  <version>193.5964</version>
+                  <type>jar</type>
+                  <outputDirectory>${project.build.directory}</outputDirectory>
+                  <destFileName>intellij-util-193.jar</destFileName>
                 </artifactItem>
               </artifactItems>
             </configuration>
@@ -102,6 +111,14 @@
                            includes="com/intellij/util/containers/ConcurrentRefHashMap*.class
                                      com/intellij/util/containers/ConcurrentWeakHashMap*.class"/>
                 </delete>
+                <!-- Inject TextRangeUtil from util:193.5964 — has intersectsOneOf called by code-style-impl:241 -->
+                <unzip src="${project.build.directory}/intellij-util-193.jar"
+                       dest="${project.build.directory}/ic-extracted">
+                  <patternset>
+                    <include name="com/intellij/util/text/TextRangeUtil.class"/>
+                    <include name="com/intellij/util/text/TextRangeUtil$*.class"/>
+                  </patternset>
+                </unzip>
                 <zip destfile="${project.build.directory}/${project.build.finalName}.jar"
                      basedir="${project.build.directory}/ic-extracted"/>
               </target>

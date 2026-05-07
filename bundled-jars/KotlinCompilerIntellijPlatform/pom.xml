@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.5.13-SNAPSHOT</version>
+    <version>0.5.14-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-compiler-intellij-platform</artifactId>
@@ -102,7 +102,9 @@
                 <mkdir dir="${project.build.directory}/patch-classes"/>
 
                 <!-- ContainerUtil: extract from util:193.5964 (has all deprecated methods).
-                     ObjectIntMap/ObjectIntHashMap are used by ContainerUtil and ObjectTree. -->
+                     ObjectIntMap/ObjectIntHashMap are used by ContainerUtil and ObjectTree.
+                     StringUtil: extract from util:193.5964 — has trimStart(String,String)
+                     which code-style-impl:241 calls but kotlin-compiler-1.3.72 StringUtil lacks. -->
                 <unzip src="${project.build.directory}/intellij-util-193.jar"
                        dest="${project.build.directory}/patch-classes">
                   <patternset>
@@ -112,6 +114,8 @@
                     <include name="com/intellij/util/containers/ObjectIntMap$*.class"/>
                     <include name="com/intellij/util/containers/ObjectIntHashMap.class"/>
                     <include name="com/intellij/util/containers/ObjectIntHashMap$*.class"/>
+                    <include name="com/intellij/openapi/util/text/StringUtil.class"/>
+                    <include name="com/intellij/openapi/util/text/StringUtil$*.class"/>
                   </patternset>
                 </unzip>
 
@@ -148,7 +152,9 @@
                                         com/intellij/util/containers/ObjectIntHashMap$*.class,
                                         com/intellij/util/AstLoadingFilter.class,
                                         com/intellij/util/AstLoadingFilter$*.class,
-                                        com/intellij/openapi/extensions/Extensions.class"/>
+                                        com/intellij/openapi/extensions/Extensions.class,
+                                        com/intellij/openapi/util/text/StringUtil.class,
+                                        com/intellij/openapi/util/text/StringUtil$*.class"/>
                   <fileset dir="${project.build.directory}/patch-classes"/>
                 </zip>
               </target>
