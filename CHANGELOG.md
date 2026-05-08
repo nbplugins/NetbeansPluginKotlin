@@ -1,3 +1,5 @@
+# 0.5
+
 - Compiled kotlin-converter from submodule sources (A4.6)
 
 # 0.5.4 (2026-05-02)
