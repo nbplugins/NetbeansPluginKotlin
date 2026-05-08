@@ -100,8 +100,8 @@ mvn clean package -DskipTests  # Build without running tests
 mvn nbm:cluster-app -pl Nbm    # Create a NetBeans test cluster for manual testing
 ```
 
-The `bundled-jars/*` modules must be built (or have run at least once) before `Nbm` can be built
-in isolation. From the root `mvn clean install` handles this automatically.
+Running `mvn clean test` or `mvn clean package` from the root reactor builds `bundled-jars/*`
+modules first and passes them to `Nbm` automatically — no prior `mvn install` needed.
 
 ## Architecture
 
@@ -118,13 +118,11 @@ pom.xml                  ← root (packaging=pom), dependencyManagement for all 
 Nbm/                     ← main plugin module (packaging=nbm)
   pom.xml
   src/                   ← plugin source and tests
-bundled-jars/            ← grouping dir (no pom); each submodule installs one JAR to ~/.m2
+bundled-jars/            ← grouping dir (no pom); each submodule produces one JAR
   KotlinIdeCommon/
   KotlinFormatter/
   KotlinConverter/
-  KotlinCompiler/
-  KotlinCompilerIntellijPlatform/
-patches/                 ← replacement class sources + message bundles injected at build time
+patches/                 ← replacement class sources for bundled-jars modules (StubBasedPsiElementBase, AtomicFieldUpdater, picocontainer)
 ```
 
 ### Main Packages (`Nbm/src/main/java/org/jetbrains/kotlin/`)
@@ -152,13 +150,11 @@ patches/                 ← replacement class sources + message bundles injecte
 
 #### bundled-jars/* submodule summary
 
-| Submodule | What it does | To be removed |
-|-----------|-------------|---------------|
-| **KotlinCompiler** | Takes `kotlin-compiler-1.3.72.jar`, strips everything except `org/jetbrains/kotlin/**`, installs via `install-file` | A4.11 |
-| **KotlinCompilerIntellijPlatform** | Takes `kotlin-compiler-1.3.72.jar`, extracts `com/intellij/**`, patches `ContainerUtil`/`StringUtil`/`Extensions`/`AstLoadingFilter`, injects message bundles | A4.11 |
-| **KotlinFormatter** | Compiles 12 files from `submodules/Kotlin/idea/formatter/`, patches `ReflectionUtil.copyFields` (inlined) | No — no Maven artifact |
-| **KotlinConverter** | Compiles 55+ files from `submodules/Kotlin/j2k/`, patches 2 sites (type inference, `runWriteAction`) | No — no Maven artifact |
-| **KotlinIdeCommon** | Compiles all of `submodules/Kotlin/idea/ide-common/src/`, excludes 8 classes overridden by the plugin | No — no Maven artifact |
+| Submodule | What it does |
+|-----------|-------------|
+| **KotlinFormatter** | Compiles 12 files from `submodules/Kotlin/idea/formatter/`, patches `ReflectionUtil.copyFields` (inlined) |
+| **KotlinConverter** | Compiles 55+ files from `submodules/Kotlin/j2k/`, patches 2 sites (type inference, `runWriteAction`) |
+| **KotlinIdeCommon** | Compiles all of `submodules/Kotlin/idea/ide-common/src/`, excludes 8 classes overridden by the plugin |
 
 Several capabilities depend on bundled custom JARs (not from Maven Central):
 - `kotlin-ide-common.jar` — JetBrains IDE tooling (compiled from `submodules/Kotlin` sources since A4.7)
@@ -167,9 +163,6 @@ Several capabilities depend on bundled custom JARs (not from Maven Central):
 
 `kotlin-formatter.jar` (A4.3), `kotlin-converter.jar` (A4.6), and `kotlin-ide-common.jar` (A4.7)
 are compiled from `submodules/Kotlin` sources and no longer live in `lib/`.
-
-`KotlinCompilerIntellijPlatform` (A4.8): `AstLoadingFilter` and `Extensions` stubs are provided as
-source classes in `patches/` (compiled and injected at build time) instead of ASM patches.
 
 Formatter infrastructure (A4.9): `openapi-formatter.jar` and `idea-formatter.jar` replaced by
 `com.jetbrains.intellij.platform:code-style:241.194` and `code-style-impl:241.194` (direct Maven
@@ -189,64 +182,36 @@ avoid conflicts with bundled 193-era JARs. The following stubs live in `Nbm/src/
 | `DynamicBundle` | `com.intellij` | Runtime; stub for `core:241` i18n bundle (no dynamic plugin support needed) |
 | `ConcurrentCollectionFactory` | `com.intellij.concurrency` | Runtime; delegates to `ContainerUtil` (193-era) factory methods |
 | `ObjectIntHashMap` | `com.intellij.util.containers` | Runtime; extends `TObjectIntHashMap` AND implements `ObjectIntMap` (241 casts it to interface) |
-| `ObjectUtils` | `com.intellij.util` | Runtime; adds `binarySearch(int,int,IntIntFunction)` (needed by `MarkerProduction` in `KotlinCompilerIntellijPlatform`) and `binarySearch(int,int,IntUnaryOperator)` (needed by `code-style-impl:241`); placed in main module JAR to take classloader priority over `ext/util.jar` |
+| `ObjectUtils` | `com.intellij.util` | Runtime; adds `binarySearch(int,int,IntIntFunction)` (needed by `MarkerProduction` in kotlin-compiler) and `binarySearch(int,int,IntUnaryOperator)` (needed by `code-style-impl:241`); placed in main module JAR to take classloader priority over `ext/util.jar` |
+| `Extensions` | `com.intellij.openapi.extensions` | Runtime; adds `getExtensions(ExtensionPointName)` missing from kotlin-compiler's embedded stub; placed in main module JAR to take classloader priority |
+| `ContainerUtilRt` | `com.intellij.util.containers` | Runtime; copied from `submodules/IntellijCommunity` via generated-sources; kotlin-compiler's embedded version lacks `newArrayList()` |
 
-Additionally, `StringUtil` (adds `trimStart(String,String)`) is injected from `util:193.5964` into
-`KotlinCompilerIntellijPlatform` — 241-era formatter code calls this method, but the bundled
-193-era version lacks it.
-
-These JARs are installed into `~/.m2` automatically by the `bundled-jars/*` Maven modules during
-`mvn clean install` from the root. They are installed under `io.github.nbplugins` coordinates
+These JARs are built by the `bundled-jars/*` reactor modules and passed to `Nbm` automatically.
+They are installed under `io.github.nbplugins` coordinates
 (e.g. `io.github.nbplugins:netbeans-plugin-kotlin-ide-common:${project.version}`).
 
-### JAR Patches (`patches-src/`)
+### JAR Patches
 
-The bundled JARs were compiled against older library versions and require bytecode patches or
-class replacements to work with Kotlin 1.3.72 and Java 17+. No ASM patches remain since A4.10.
+The bundled JARs were compiled against older library versions and require class replacements to
+work with Kotlin 1.3.72 and Java 17+. No ASM patches remain since A4.10.
 
-**Active class replacements** (injected via Ant tasks in `KotlinCompilerIntellijPlatform/pom.xml`):
+**Active class replacements** — classes in `Nbm/src/main/java/` win over `ext/*.jar` via classloader order:
 
 | What | Source | Why |
 |------|--------|-----|
-| `ContainerUtil`, `ObjectIntMap/HashMap`, `StringUtil` | extracted from `util:193.5964` | 193.5964 has deprecated methods + `trimStart(String,String)` needed by code-style-impl:241 |
-| `ContainerUtilRt`, `AstLoadingFilter`, `Extensions` | compiled from `patches/` sources | kotlin-compiler's embedded versions lack required API |
-| `messages/JavaCoreBundle.properties`, `messages/JavaErrorMessages.properties` | `patches/messages/` | absent from `core:193` but required by `LanguageLevel.<clinit>` at runtime |
+| `StringUtil` | `submodules/IntellijCommunity` (via generated-sources) | kotlin-compiler's embedded version lacks `trimStart(String,String)` needed by code-style-impl:241 |
+| `ContainerUtil`, `ContainerUtilRt` | `submodules/IntellijCommunity` (via generated-sources) | kotlin-compiler's embedded versions lack `sorted(Collection,Comparator)` and `newArrayList()` |
+| `ObjectIntMap/HashMap` | extracted from `util:193.5964` | 193.5964 has deprecated methods needed at runtime |
+| `Extensions` | `Nbm/src/main/java/com/intellij/` | kotlin-compiler's embedded version lacks `getExtensions(ExtensionPointName)` |
+| `messages/JavaCoreBundle.properties`, `messages/JavaErrorMessages.properties` | `Nbm/src/main/resources/messages/` | absent from `core:193` but required by `LanguageLevel.<clinit>` at runtime |
 
-**Class stripping** — done with Ant tasks in pom.xml:
+**Class stripping** — done with Ant tasks in KotlinIdeCommon/pom.xml:
 
-- `KotlinCompiler`: strips `org/picocontainer/` (replaced by `picocontainer:1.2` Maven dep) and `com/google/` (replaced by `guava:28.2-jre` Maven dep).
 - `KotlinIdeCommon`: strips 8 plugin-owned classes (`ReferenceVariantsHelper`, `CallType`, `ExtensionUtils`, `FuzzyType`, `ScopeUtils`, `ShadowedDeclarationsFilter`, `UtilsKt`, `ReceiverType`) — the plugin provides its own versions in `Nbm/src`; bundled copies would conflict at runtime.
-
-**Phase convention for `install-file`** — `KotlinCompilerIntellijPlatform` and `KotlinCompiler` use
-`packaging=pom` and bind `maven-install-plugin:install-file` to the **`package`** phase (not
-`install`). This allows reactor builds (`mvn clean install` from root) to install patched JARs as
-part of `package`, so downstream modules can find them in `~/.m2` before their own `install` phase
-runs. The default `install` execution is disabled (`<phase>none</phase>`) to prevent Maven from
-overwriting the custom installed JAR with the empty POM-only artifact.
-
-Modules that compile from sources (`KotlinFormatter`, `KotlinConverter`, `KotlinIdeCommon`) use
-`packaging=jar` and rely on standard Maven install — no custom `install-file` needed.
-
-**First-time setup** — after a version bump, run `mvn clean install -DskipTests` once to bootstrap
-`~/.m2`. Subsequent `mvn clean test` and `mvn clean package` work without install.
-`KotlinCompilerIntellijPlatform` and `KotlinCompiler` use `packaging=pom` + `install-file`, so
-their JARs must exist in `~/.m2` before downstream modules can resolve them.
 
 **JetBrains Maven repo** (`jetbrains-intellij-releases`) is slow without a proxy. To bootstrap:
 download missing 193.x JARs manually via SOCKS5 proxy (`router.oleghome:11337`) using curl and
 place them in `~/.m2/repository/com/jetbrains/intellij/platform/<artifact>/<version>/`.
-
-To force-regenerate:
-
-```bash
-# Clear cached ~/.m2 entries and rebuild
-for art in netbeans-plugin-kotlin-ide-common \
-           netbeans-plugin-kotlin-converter netbeans-plugin-kotlin-formatter \
-           netbeans-plugin-kotlin-compiler netbeans-plugin-kotlin-compiler-intellij-platform; do
-  rm -rf ~/.m2/repository/io/github/nbplugins/$art
-done
-JAVA_HOME=/usr/lib/jvm/java-17-temurin-jdk mvn clean install -DskipTests
-```
 
 **Правило разрешения конфликтов версий классов:** При конфликте двух версий одного класса из разных JAR-файлов — всегда стрипить **старую** версию, оставлять **новую**. Если новый код вызывает метод, отсутствующий в старом классе — добавить метод в старый класс (stub в `Nbm/src/main/java/`, главный JAR загружается первым и перекрывает `ext/*.jar`).
 

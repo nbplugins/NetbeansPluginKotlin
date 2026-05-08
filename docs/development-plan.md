@@ -43,7 +43,7 @@ compatible version. Not a separate stage — done along the way.
 - [x] **A4.8** — `KotlinCompilerIntellijPlatform`: replace `PatchAstLoadingFilter`, `PatchExtensionsAddGetExtensions` with source classes in `patches/`
 - [x] **A4.9** — `openapi-formatter`, `idea-formatter`: replaced with `code-style:241.194` and `code-style-impl:241.194` (JetBrains Maven); removed `PatchContainerUtilAddMissing`
 - [x] **A4.10** — `intellij-core`: replaced with `core:193.7288.26` + `core-impl:193.7288.26` (direct Maven deps of Nbm); removed `IntellijCore` wrapper, `PatchingJars`, `patches-src/`, `lib/`
-- [ ] **A4.11** — Eliminate `KotlinCompiler` and `KotlinCompilerIntellijPlatform` submodules; use `kotlin-compiler:1.3.72` directly with exclusions; move patched classes (`Extensions`, `ContainerUtilRt`, message bundles) into `Nbm`
+- [x] **A4.11** — Eliminate `KotlinCompiler` and `KotlinCompilerIntellijPlatform` submodules; use `kotlin-compiler:1.3.72` directly with exclusions; move patched classes (`Extensions`, `ContainerUtilRt`, message bundles) into `Nbm`
 - [ ] **B1** — Research K2 Analysis API, choose architectural approach
 - [ ] **B2** — Migrate resolve layer to K2 + switch remaining JARs to `submodules/IntelliJCommunity`
 - [ ] **B3** — Restore and implement missing features
@@ -143,12 +143,12 @@ Override mechanism chosen after research: `position` in `layer.xml`, `supersedes
 
 **Phase 4.1 — Maven multi-module: copy existing JARs**
 
-- [ ] Create root `pom.xml` with `packaging=pom`
-- [ ] Create `bundled-jars/` submodule with child modules for each JAR
-- [ ] Move the main plugin into `plugin/`
-- [ ] Package ASM patches as a `jar-patches/` submodule
-- [ ] Delete `setup-local-repo.sh`
-- [ ] Remove `lib/*.jar` and `lib/*.jar.bak` from git
+- [x] Create root `pom.xml` with `packaging=pom`
+- [x] Create `bundled-jars/` submodule with child modules for each JAR
+- [x] Move the main plugin into `plugin/`
+- [x] Package ASM patches as a `jar-patches/` submodule
+- [x] Delete `setup-local-repo.sh`
+- [x] Remove `lib/*.jar` and `lib/*.jar.bak` from git
 
 ```
 pom.xml (root, packaging=pom)
@@ -180,11 +180,11 @@ pom.xml (root, packaging=pom)
 
 **Phase 4.3 — kotlin-formatter: compile from sources**
 
-- [ ] Add sparse git submodule `submodules/Kotlin` (JetBrains/kotlin@v1.3.72), sparse-checkout `idea/formatter`
-- [ ] Rewrite `bundled-jars/KotlinFormatter/pom.xml`: packaging `jar`, compile with `kotlin-maven-plugin`
+- [x] Add sparse git submodule `submodules/Kotlin` (JetBrains/kotlin@v1.3.72), sparse-checkout `idea/formatter`
+- [x] Rewrite `bundled-jars/KotlinFormatter/pom.xml`: packaging `jar`, compile with `kotlin-maven-plugin`
       from `submodules/Kotlin/idea/formatter/src/`; fallback — extract embedded sources from `lib/kotlin-formatter-1.0.jar`
-- [ ] Remove `lib/kotlin-formatter-1.0.jar` from git
-- [ ] Remove `PatchFormatterBody.java` from `patches-src/` (not needed when compiling from source)
+- [x] Remove `lib/kotlin-formatter-1.0.jar` from git
+- [x] Remove `PatchFormatterBody.java` from `patches-src/` (not needed when compiling from source)
 
 Dependencies compiled against: `netbeans-plugin-kotlin-openapi-formatter`, `idea-formatter`,
 `intellij-core`, `netbeans-plugin-kotlin-compiler`, `org.jetbrains:annotations`.
@@ -242,14 +242,14 @@ Dependencies compiled against: `netbeans-plugin-kotlin-openapi-formatter`, `idea
 
 **Phase 4.11 — Eliminate KotlinCompiler and KotlinCompilerIntellijPlatform submodules**
 
-- [ ] Replace `netbeans-plugin-kotlin-compiler` dep in `Nbm` with direct `kotlin-compiler:1.3.72` dep, with `<exclusions>` for packages already provided by other deps (`com/google`, `javaslang`, `org/picocontainer`, etc.)
-- [ ] Move `patches/com/intellij/openapi/extensions/Extensions.java` → `Nbm/src/main/java/`
-- [ ] Move `patches/com/intellij/util/containers/ContainerUtilRt.java` → `Nbm/src/main/java/`
-- [ ] Move `patches/messages/JavaCoreBundle.properties` and `JavaErrorMessages.properties` → `Nbm/src/main/resources/messages/`
-- [ ] Remove `patches/com/intellij/util/AstLoadingFilter.java` patch (class already present in `core:193.7288.26`)
-- [ ] Delete `bundled-jars/KotlinCompiler/` and `bundled-jars/KotlinCompilerIntellijPlatform/` modules
-- [ ] Remove both modules from root `pom.xml` reactor
-- [ ] Verify build and tests pass
+- [x] Replace `netbeans-plugin-kotlin-compiler` dep in `Nbm` with direct `kotlin-compiler:1.3.72` dep, with `<exclusions>` for packages already provided by other deps (`com/google`, `javaslang`, `org/picocontainer`, etc.)
+- [x] Move `patches/com/intellij/openapi/extensions/Extensions.java` → `Nbm/src/main/java/`
+- [x] Move `patches/com/intellij/util/containers/ContainerUtilRt.java` → `Nbm/src/main/java/`
+- [x] Move `patches/messages/JavaCoreBundle.properties` and `JavaErrorMessages.properties` → `Nbm/src/main/resources/messages/`
+- [x] Remove `patches/com/intellij/util/AstLoadingFilter.java` patch (class already present in `core:193.7288.26`)
+- [x] Delete `bundled-jars/KotlinCompiler/` and `bundled-jars/KotlinCompilerIntellijPlatform/` modules
+- [x] Remove both modules from root `pom.xml` reactor
+- [x] Verify build and tests pass
 
 **Class conflict strategy:** `kotlin-compiler:1.3.72` embeds 3245 `com/intellij/**` classes; 1123 of
 them duplicate `core:193` + `core-impl:193` + `util:193` with different bytecodes. In the NBM

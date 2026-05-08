@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.5.18-SNAPSHOT</version>
+    <version>0.5.21-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-nbm</artifactId>
@@ -70,7 +70,6 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.3</version>
         <configuration>
           <source>17</source>
           <target>17</target>
@@ -80,7 +79,6 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
-        <version>2.6</version>
         <configuration>
           <useDefaultManifestFile>true</useDefaultManifestFile>
         </configuration>
@@ -88,7 +86,6 @@
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
-        <version>3.1.0</version>
         <executions>
           <execution>
             <id>start-xvfb</id>
@@ -111,7 +108,6 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
-        <version>2.15</version>
         <configuration>
           <argLine>
             --add-opens java.base/java.lang=ALL-UNNAMED
@@ -127,6 +123,85 @@
             <DISPLAY>:99</DISPLAY>
           </environmentVariables>
         </configuration>
+      </plugin>
+      <!-- Copy StringUtil and ContainerUtil from IntellijCommunity/193.7288 into
+           generated-sources so they land in the main JAR and load before
+           kotlin-compiler.jar (which embeds older versions missing required methods) -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>copy-string-util</id>
+            <phase>generate-sources</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/string-util/com/intellij/openapi/util/text</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${project.basedir}/../submodules/IntellijCommunity/platform/util/src/com/intellij/openapi/util/text</directory>
+                  <includes>
+                    <include>StringUtil.java</include>
+                  </includes>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <execution>
+            <id>copy-container-util-rt</id>
+            <phase>generate-sources</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/string-util/com/intellij/util/containers</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${project.basedir}/../submodules/IntellijCommunity/platform/util-rt/src/com/intellij/util/containers</directory>
+                  <includes>
+                    <include>ContainerUtilRt.java</include>
+                  </includes>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <execution>
+            <id>copy-container-util</id>
+            <phase>generate-sources</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/string-util/com/intellij/util/containers</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${project.basedir}/../submodules/IntellijCommunity/platform/util/src/com/intellij/util/containers</directory>
+                  <includes>
+                    <include>ContainerUtil.java</include>
+                  </includes>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>add-string-util-source</id>
+            <phase>generate-sources</phase>
+            <goals><goal>add-source</goal></goals>
+            <configuration>
+              <sources>
+                <source>${project.build.directory}/generated-sources/string-util</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>
@@ -213,8 +288,26 @@
       <artifactId>netbeans-plugin-kotlin-converter</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.github.nbplugins</groupId>
-      <artifactId>netbeans-plugin-kotlin-compiler</artifactId>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-compiler</artifactId>
+      <version>1.3.72</version>
+      <exclusions>
+        <!-- guava provided as direct dep (guava:28.2-jre) -->
+        <exclusion>
+          <groupId>com.google.guava</groupId>
+          <artifactId>guava</artifactId>
+        </exclusion>
+        <!-- picocontainer provided as direct dep (picocontainer:1.2) -->
+        <exclusion>
+          <groupId>picocontainer</groupId>
+          <artifactId>picocontainer</artifactId>
+        </exclusion>
+        <!-- javaslang provided as direct dep (io.javaslang:javaslang:2.0.6) -->
+        <exclusion>
+          <groupId>io.javaslang</groupId>
+          <artifactId>javaslang</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains</groupId>
