@@ -44,7 +44,7 @@ compatible version. Not a separate stage — done along the way.
 - [x] **A4.9** — `openapi-formatter`, `idea-formatter`: replaced with `code-style:241.194` and `code-style-impl:241.194` (JetBrains Maven); removed `PatchContainerUtilAddMissing`
 - [x] **A4.10** — `intellij-core`: replaced with `core:193.7288.26` + `core-impl:193.7288.26` (direct Maven deps of Nbm); removed `IntellijCore` wrapper, `PatchingJars`, `patches-src/`, `lib/`
 - [x] **A4.11** — Eliminate `KotlinCompiler` and `KotlinCompilerIntellijPlatform` submodules; use `kotlin-compiler:1.3.72` directly with exclusions; move patched classes (`Extensions`, `ContainerUtilRt`, message bundles) into `Nbm`
-- [ ] **B1** — Research K2 Analysis API, choose architectural approach
+- [x] **B1** — Research K2 Analysis API, choose architectural approach
 - [ ] **B2** — Migrate resolve layer to K2 + switch remaining JARs to `submodules/IntelliJCommunity`
 - [ ] **B3** — Restore and implement missing features
 
@@ -264,12 +264,12 @@ required at runtime — they are not available as separate Maven artifacts for t
 
 ### B1. Research K2 Analysis API
 
-- [ ] Study the structure of `submodules/IntelliJCommunity/plugins/kotlin`
-- [ ] Determine the depth of dependency on the IDEA platform
-- [ ] Find or rule out a standalone mode for K2
-- [ ] Identify the minimum set of modules needed for resolve, completion, diagnostics
-- [ ] Document the K2 analysis entry point (initialization order)
-- [ ] Write an ADR with the chosen approach
+- [x] Study the structure of `submodules/IntelliJCommunity/plugins/kotlin`
+- [x] Determine the depth of dependency on the IDEA platform
+- [x] Find or rule out a standalone mode for K2
+- [x] Identify the minimum set of modules needed for resolve, completion, diagnostics
+- [x] Document the K2 analysis entry point (initialization order)
+- [x] Write an ADR with the chosen approach
 
 **Primary source:** `submodules/IntelliJCommunity/plugins/kotlin`
 
