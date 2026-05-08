@@ -43,6 +43,7 @@ compatible version. Not a separate stage — done along the way.
 - [x] **A4.8** — `KotlinCompilerIntellijPlatform`: replace `PatchAstLoadingFilter`, `PatchExtensionsAddGetExtensions` with source classes in `patches/`
 - [x] **A4.9** — `openapi-formatter`, `idea-formatter`: replaced with `code-style:241.194` and `code-style-impl:241.194` (JetBrains Maven); removed `PatchContainerUtilAddMissing`
 - [x] **A4.10** — `intellij-core`: replaced with `core:193.7288.26` + `core-impl:193.7288.26` (direct Maven deps of Nbm); removed `IntellijCore` wrapper, `PatchingJars`, `patches-src/`, `lib/`
+- [ ] **A4.11** — Eliminate `KotlinCompiler` and `KotlinCompilerIntellijPlatform` submodules; use `kotlin-compiler:1.3.72` directly with exclusions; move patched classes (`Extensions`, `ContainerUtilRt`, message bundles) into `Nbm`
 - [ ] **B1** — Research K2 Analysis API, choose architectural approach
 - [ ] **B2** — Migrate resolve layer to K2 + switch remaining JARs to `submodules/IntelliJCommunity`
 - [ ] **B3** — Restore and implement missing features
@@ -231,24 +232,31 @@ Dependencies compiled against: `netbeans-plugin-kotlin-openapi-formatter`, `idea
 - [x] Remove `lib/openapi-formatter-1.0.jar` and `lib/idea-formatter-1.0.jar` from git
 - [x] Remove `PatchContainerUtilAddMissing.java` from `patches-src/`
 
-**Phase 4.10 — intellij-core: compile from sources; remove PatchingJars**
+**Phase 4.10 — intellij-core: replaced with Maven artifacts** ✓ Done
 
-- [ ] Add sparse-checkout for intellij-core sources in `submodules/IntellijCommunity`
-- [ ] Rewrite `bundled-jars/IntellijCore/pom.xml`: compile from sources
-- [ ] Remove `lib/intellij-core-1.0.jar` from git
-- [ ] Remove `InjectGetGreenStub.java` from `patches-src/`
-- [ ] Delete `PatchingJars/` module and `patches-src/` directory entirely
-- [ ] Delete `lib/` directory (all source JARs gone)
+- [x] Add sparse-checkout for intellij-core sources in `submodules/IntellijCommunity`
+- [x] Replace `lib/intellij-core-1.0.jar` with `core:193.7288.26` + `core-impl:193.7288.26` as direct Maven deps of `Nbm`
+- [x] Remove `IntellijCore` bundled-jars wrapper module
+- [x] Delete `PatchingJars/` module and `patches-src/` directory entirely
+- [x] Delete `lib/` directory
 
-Remaining `lib/` JARs (`kotlin-ide-common`, `kotlin-converter`, `intellij-core`, `openapi-formatter`,
-`idea-formatter`) are switched to `submodules/IntelliJCommunity` as part of B2.
-After B2: `lib/` and `PatchingJars/` are removed entirely.
+**Phase 4.11 — Eliminate KotlinCompiler and KotlinCompilerIntellijPlatform submodules**
 
-**Strategy note (A4.8)**: `com.jetbrains.intellij.platform:util:193.5964` (repo `jetbrains-intellij-dependencies`)
-contains `ContainerUtil` with all deprecated methods intact. When rewriting `IntellijCore`, consider
-extracting selected classes from this artifact instead of compiling the full 3194-line `ContainerUtil.java`
-from submodule sources. The artifact cannot be used as a whole (83% of its packages conflict with
-`intellij-core`), but individual classes can be extracted cleanly.
+- [ ] Replace `netbeans-plugin-kotlin-compiler` dep in `Nbm` with direct `kotlin-compiler:1.3.72` dep, with `<exclusions>` for packages already provided by other deps (`com/google`, `javaslang`, `org/picocontainer`, etc.)
+- [ ] Move `patches/com/intellij/openapi/extensions/Extensions.java` → `Nbm/src/main/java/`
+- [ ] Move `patches/com/intellij/util/containers/ContainerUtilRt.java` → `Nbm/src/main/java/`
+- [ ] Move `patches/messages/JavaCoreBundle.properties` and `JavaErrorMessages.properties` → `Nbm/src/main/resources/messages/`
+- [ ] Remove `patches/com/intellij/util/AstLoadingFilter.java` patch (class already present in `core:193.7288.26`)
+- [ ] Delete `bundled-jars/KotlinCompiler/` and `bundled-jars/KotlinCompilerIntellijPlatform/` modules
+- [ ] Remove both modules from root `pom.xml` reactor
+- [ ] Verify build and tests pass
+
+**Class conflict strategy:** `kotlin-compiler:1.3.72` embeds 3245 `com/intellij/**` classes; 1123 of
+them duplicate `core:193` + `core-impl:193` + `util:193` with different bytecodes. In the NBM
+classloader the `Nbm` main JAR loads first, then `ext/` JARs in dependency order. Since `core:193`
+is declared before `kotlin-compiler` in `Nbm/pom.xml`, core:193 classes win. The remaining 1370
+Java PSI classes (`CoreJavaFileManager`, `PsiAnnotation`, etc.) are unique to `kotlin-compiler` and
+required at runtime — they are not available as separate Maven artifacts for the 193 era.
 
 ---
 
