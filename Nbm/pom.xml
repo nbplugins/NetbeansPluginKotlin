@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.5.21-SNAPSHOT</version>
+    <version>0.5.22-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-nbm</artifactId>
@@ -58,7 +58,7 @@
       <plugin>
         <groupId>org.apache.netbeans.utilities</groupId>
         <artifactId>nbm-maven-plugin</artifactId>
-        <version>14.3</version>
+        <version>14.4</version>
         <extensions>true</extensions>
         <configuration>
           <codeNameBase>io.github.nbplugins.kotlin</codeNameBase>
@@ -80,7 +80,9 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
         <configuration>
-          <useDefaultManifestFile>true</useDefaultManifestFile>
+          <archive>
+            <manifestFile>${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
+          </archive>
         </configuration>
       </plugin>
       <plugin>
@@ -108,6 +110,15 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
+        <dependencies>
+          <!-- Force JUnit 4 provider: tests extend NbTestCase (JUnit 3/4 style);
+               surefire 3.x would auto-select JUnit Platform due to org-netbeans-libs-junit5 -->
+          <dependency>
+            <groupId>org.apache.maven.surefire</groupId>
+            <artifactId>surefire-junit4</artifactId>
+            <version>3.5.5</version>
+          </dependency>
+        </dependencies>
         <configuration>
           <argLine>
             --add-opens java.base/java.lang=ALL-UNNAMED
@@ -292,7 +303,7 @@
       <artifactId>kotlin-compiler</artifactId>
       <version>1.3.72</version>
       <exclusions>
-        <!-- guava provided as direct dep (guava:28.2-jre) -->
+        <!-- guava is bundled inside kotlin-compiler fat jar -->
         <exclusion>
           <groupId>com.google.guava</groupId>
           <artifactId>guava</artifactId>
@@ -302,7 +313,7 @@
           <groupId>picocontainer</groupId>
           <artifactId>picocontainer</artifactId>
         </exclusion>
-        <!-- javaslang provided as direct dep (io.javaslang:javaslang:2.0.6) -->
+        <!-- vavr (javaslang successor) is bundled inside kotlin-compiler fat jar -->
         <exclusion>
           <groupId>io.javaslang</groupId>
           <artifactId>javaslang</artifactId>
@@ -312,7 +323,7 @@
     <dependency>
       <groupId>org.jetbrains</groupId>
       <artifactId>annotations</artifactId>
-      <version>24.0.0</version>
+      <version>26.0.2</version>
       <scope>compile</scope>
     </dependency>
     <!-- NetBeans API -->
