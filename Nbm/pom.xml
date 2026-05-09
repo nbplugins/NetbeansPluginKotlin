@@ -31,15 +31,19 @@
       <plugin>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-maven-plugin</artifactId>
-        <version>${kotlin.version}</version>
+        <!-- Bumped from ${kotlin.version} (1.3.72) to 1.9.25 — the 1.3.72 plugin can't parse
+             .kotlin_module files inside kotlin-compiler-1.9.25.jar that Nbm now depends on.
+             Bundled-jars still use ${kotlin.version}=1.3.72 for their own compilation. -->
+        <version>1.9.25</version>
         <configuration>
-          <languageVersion>1.3</languageVersion>
-          <apiVersion>1.3</apiVersion>
+          <!-- Bumped 1.3 → 1.4 (minimum supported by kotlin-maven-plugin:1.9.25).
+               Dropped the two -XXLanguage:- flags: their target features stabilized
+               before 1.4 and the compiler refuses to disable them. -->
+          <languageVersion>1.4</languageVersion>
+          <apiVersion>1.4</apiVersion>
           <jvmTarget>11</jvmTarget>
           <args>
             <arg>-Xskip-metadata-version-check</arg>
-            <arg>-XXLanguage:-ForbidSuperDelegationToAbstractFakeOverride</arg>
-            <arg>-XXLanguage:-ProhibitVisibilityOfNestedClassifiersFromSupertypesOfCompanion</arg>
           </args>
         </configuration>
         <executions>
@@ -301,7 +305,7 @@
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-compiler</artifactId>
-      <version>1.3.72</version>
+      <version>1.9.25</version>
       <exclusions>
         <!-- guava is bundled inside kotlin-compiler fat jar -->
         <exclusion>
