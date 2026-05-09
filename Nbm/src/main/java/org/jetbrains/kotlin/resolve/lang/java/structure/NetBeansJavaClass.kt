@@ -86,8 +86,9 @@ class NetBeansJavaClass(elementHandle: ElemHandle<TypeElement>, project: Project
         get() = elementHandle.isAbstract(project)
     override val isStatic 
         get() = elementHandle.isStatic(project)
-    override val isFinal 
+    override val isFinal
         get() = elementHandle.isFinal(project)
+    override val isFromSource: Boolean = false
 
     override val lightClassOriginKind = null
 

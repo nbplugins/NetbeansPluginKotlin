@@ -43,5 +43,6 @@ class NetBeansJavaField(elementHandle: ElemHandle<VariableElement>, containingCl
         get() = null
 
     override fun presentation() = "$type $name"
-    
+
+    override val isFromSource: Boolean = false
 }

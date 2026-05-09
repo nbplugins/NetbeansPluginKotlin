@@ -14,6 +14,8 @@
  * limitations under the License.
  *
  *******************************************************************************/
+@file:Suppress("DEPRECATION_ERROR")
+
 package org.jetbrains.kotlin.hints.intentions
 
 import com.intellij.psi.PsiElement

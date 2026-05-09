@@ -40,5 +40,6 @@ class NetBeansJavaConstructor(elementHandle: ElemHandle<ExecutableElement>, cont
         get() = elementHandle.getTypeParameters(project)
 
     override fun presentation() = "$name${valueParameters.joinToString(prefix = "(", postfix = ")") { "${it.type} ${it.name}" }}"
-    
+
+    override val isFromSource: Boolean = false
 }

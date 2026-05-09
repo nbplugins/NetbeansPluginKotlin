@@ -14,6 +14,8 @@
  * limitations under the License.
  *
  *******************************************************************************/
+@file:Suppress("DEPRECATION_ERROR")
+
 package org.jetbrains.kotlin.hints.intentions
 
 import com.intellij.psi.PsiElement
@@ -25,7 +27,7 @@ import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.idea.caches.resolve.analyze
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.*
-import org.jetbrains.kotlin.resolve.calls.callUtil.getType
+import org.jetbrains.kotlin.resolve.calls.util.getType
 import org.jetbrains.kotlin.resolve.constants.evaluate.ConstantExpressionEvaluator
 import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.hints.atomicChange

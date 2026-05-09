@@ -59,7 +59,7 @@ class ConvertToExpressionBodyIntention(doc: Document,
                 && block.statements.isNotEmpty()) {
             val valueType = context.getType(expression)
             if (valueType == null || KotlinBuiltIns.isUnit(valueType)) {
-                KotlinBuiltIns.FQ_NAMES.unit.shortName().asString()
+                org.jetbrains.kotlin.builtins.StandardNames.FqNames.unit.shortName().asString()
             } else return
         } else if (element.hasDeclaredReturnType()) {
             element.typeReference!!.text

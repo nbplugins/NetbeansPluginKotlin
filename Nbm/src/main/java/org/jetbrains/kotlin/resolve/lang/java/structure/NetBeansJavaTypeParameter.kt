@@ -42,6 +42,7 @@ class NetBeansJavaTypeParameter(elementHandle: ElemHandle<TypeParameterElement>,
 
     override val annotations: Collection<JavaAnnotation>
         get() = emptyList()
+    override val isFromSource: Boolean = false
 
     override fun findAnnotation(fqName: FqName): JavaAnnotation? = null
     override fun toString(): String = name.asString()

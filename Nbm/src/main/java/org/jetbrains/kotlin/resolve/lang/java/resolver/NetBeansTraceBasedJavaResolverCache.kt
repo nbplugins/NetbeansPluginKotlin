@@ -8,6 +8,7 @@ import org.jetbrains.kotlin.load.java.components.JavaResolverCache
 import org.jetbrains.kotlin.load.java.structure.JavaClass
 import org.jetbrains.kotlin.load.java.structure.JavaElement
 import org.jetbrains.kotlin.load.java.structure.JavaField
+import org.jetbrains.kotlin.load.java.structure.JavaMember
 import org.jetbrains.kotlin.load.java.structure.JavaMethod
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.tail
@@ -34,7 +35,7 @@ class NetBeansTraceBasedJavaResolverCache : JavaResolverCache {
     override fun getClassResolvedFromSource(fqName: FqName): ClassDescriptor? =
             trace[BindingContext.FQNAME_TO_CLASS_DESCRIPTOR, fqName.toUnsafe()] ?: findInPackageFragments(fqName)
 
-    override fun recordMethod(method: JavaMethod, descriptor: SimpleFunctionDescriptor) {
+    override fun recordMethod(method: JavaMember, descriptor: SimpleFunctionDescriptor) {
     }
 
     override fun recordConstructor(element: JavaElement, descriptor: ConstructorDescriptor) {

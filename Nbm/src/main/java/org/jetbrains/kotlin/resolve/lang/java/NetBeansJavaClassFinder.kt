@@ -40,19 +40,21 @@ class NetBeansJavaClassFinder : JavaClassFinder {
     }
     
     @PostConstruct fun initialize(trace: BindingTrace, codeAnalyzer: KotlinCodeAnalyzer) {
-        val ideaProject = KotlinEnvironment.getEnvironment(project).project
-        CodeAnalyzerInitializer.Companion.getInstance(ideaProject).initialize(trace, codeAnalyzer.moduleDescriptor, codeAnalyzer)
+        // CodeAnalyzerInitializer.initialize(trace, moduleDescriptor, codeAnalyzer) was removed in
+        // kotlin-compiler 1.9; the new interface exposes only createTrace(). Left as a no-op
+        // placeholder so the @PostConstruct/Inject wiring still resolves; real initialization
+        // happens via the standalone session in B2.1+.
     }
-    
-    
+
+
     override fun findClass(request: JavaClassFinder.Request): JavaClass? {
         val element = project.findType(request.classId.asSingleFqName().asString()) ?: return null
         return NetBeansJavaClass(element, project)
     }
-    
-    override fun findPackage(fqName: FqName): JavaPackage? {
+
+    override fun findPackage(fqName: FqName, mayHaveAnnotations: Boolean): JavaPackage? {
         val pack = project.findPackage(fqName.asString()) ?: return null
-        
+
         return NetBeansJavaPackage(pack, project)
     }
 

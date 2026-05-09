@@ -49,4 +49,6 @@ class NetBeansJavaMethod(elementHandle: ElemHandle<ExecutableElement>, containin
         get() = elementHandle.getTypeParameters(project)
     
     override fun presentation() = "$returnType $name${valueParameters.joinToString(prefix = "(", postfix = ")") { "${it.type} ${it.name}" }}"
+
+    override val isFromSource: Boolean = false
 }

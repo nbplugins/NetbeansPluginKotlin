@@ -14,6 +14,8 @@
  * limitations under the License.
  *
  *******************************************************************************/
+@file:Suppress("DEPRECATION_ERROR")
+
 package org.jetbrains.kotlin.hints.intentions
 
 import com.intellij.psi.PsiElement
@@ -23,7 +25,7 @@ import org.jetbrains.kotlin.descriptors.FunctionDescriptor
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.getNonStrictParentOfType
 import org.jetbrains.kotlin.psi.psiUtil.getQualifiedExpressionForSelector
-import org.jetbrains.kotlin.resolve.calls.callUtil.getResolvedCall
+import org.jetbrains.kotlin.resolve.calls.util.getResolvedCall
 import org.jetbrains.kotlin.hints.atomicChange
 
 class ToInfixIntention(doc: Document,

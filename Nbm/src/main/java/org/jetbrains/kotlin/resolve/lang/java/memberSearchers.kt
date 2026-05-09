@@ -20,7 +20,7 @@ import javax.lang.model.element.Modifier
 import javax.lang.model.element.TypeElement
 import javax.lang.model.element.VariableElement
 import org.jetbrains.kotlin.descriptors.Visibilities
-import org.jetbrains.kotlin.load.java.JavaVisibilities
+import org.jetbrains.kotlin.descriptors.java.JavaVisibilities
 import org.jetbrains.kotlin.load.java.structure.JavaType
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.resolve.lang.java.structure.NetBeansJavaType
@@ -104,7 +104,7 @@ class ElementHandleNameSearcher(val handle: ElementHandle<*>) : Task<Compilation
 
 class VisibilitySearcher(val handle: ElemHandle<*>) : Task<CompilationController> {
 
-    var visibility = JavaVisibilities.PACKAGE_VISIBILITY
+    var visibility: org.jetbrains.kotlin.descriptors.Visibility = JavaVisibilities.PackageVisibility
 
     override fun run(info: CompilationController) {
         info.toResolvedPhase()
@@ -112,16 +112,16 @@ class VisibilitySearcher(val handle: ElemHandle<*>) : Task<CompilationController
         val elem = handle.resolve(info) ?: return
         val modifiers = elem.modifiers
         visibility = when {
-            modifiers.contains(Modifier.PUBLIC) -> Visibilities.PUBLIC
-            modifiers.contains(Modifier.PRIVATE) -> Visibilities.PRIVATE
+            modifiers.contains(Modifier.PUBLIC) -> Visibilities.Public
+            modifiers.contains(Modifier.PRIVATE) -> Visibilities.Private
             modifiers.contains(Modifier.PROTECTED) -> {
                 if (modifiers.contains(Modifier.STATIC)) {
-                    JavaVisibilities.PROTECTED_STATIC_VISIBILITY
+                    JavaVisibilities.ProtectedStaticVisibility
                 } else {
-                    JavaVisibilities.PROTECTED_AND_PACKAGE
+                    JavaVisibilities.ProtectedAndPackage
                 }
             }
-            else -> JavaVisibilities.PACKAGE_VISIBILITY
+            else -> JavaVisibilities.PackageVisibility
         }
     }
 }

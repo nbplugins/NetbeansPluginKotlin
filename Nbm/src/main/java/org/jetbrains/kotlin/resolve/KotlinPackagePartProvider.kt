@@ -48,6 +48,12 @@ class KotlinPackagePartProvider(val project: Project) : PackagePartProvider,
             .distinct()
 
     override fun getAnnotationsOnBinaryModule(moduleName: String): List<ClassId> = emptyList()
+
+    override fun computePackageSetWithNonClassDeclarations(): Set<String> = emptySet()
+
+    override fun getAllOptionalAnnotationClasses() = emptyList<org.jetbrains.kotlin.serialization.deserialization.ClassData>()
+
+    override fun mayHaveOptionalAnnotationClasses(): Boolean = false
     
     @Synchronized private fun getPackageParts(packageFqName: String): Map<VirtualFile, PackageParts> {
         processNotLoadedRelevantRoots(packageFqName)

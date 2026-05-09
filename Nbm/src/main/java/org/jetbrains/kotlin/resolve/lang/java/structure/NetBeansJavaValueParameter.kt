@@ -46,6 +46,7 @@ class NetBeansJavaValueParameter(elementHandle: ElemHandle<VariableElement>, pro
 
     override val annotations: Collection<JavaAnnotation>
         get() = emptyList()
+    override val isFromSource: Boolean = false
 
     override fun findAnnotation(fqName: FqName) = null
 
