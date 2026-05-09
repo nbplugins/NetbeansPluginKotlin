@@ -31,16 +31,13 @@
       <plugin>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-maven-plugin</artifactId>
-        <!-- Bumped from ${kotlin.version} (1.3.72) to 1.9.25 — the 1.3.72 plugin can't parse
-             .kotlin_module files inside kotlin-compiler-1.9.25.jar that Nbm now depends on.
-             Bundled-jars still use ${kotlin.version}=1.3.72 for their own compilation. -->
-        <version>1.9.25</version>
+        <!-- Override parent pluginManagement default (${kotlin.version}=1.3.72) because Nbm now
+             depends on kotlin-compiler:${kotlin.runtime.version}=1.9.25, whose .kotlin_module
+             metadata format is unreadable by the 1.3.72 plugin. -->
+        <version>${kotlin.runtime.version}</version>
         <configuration>
-          <!-- Bumped 1.3 → 1.4 (minimum supported by kotlin-maven-plugin:1.9.25).
-               Dropped the two -XXLanguage:- flags: their target features stabilized
-               before 1.4 and the compiler refuses to disable them. -->
-          <languageVersion>1.4</languageVersion>
-          <apiVersion>1.4</apiVersion>
+          <languageVersion>${kotlin.runtime.languageVersion}</languageVersion>
+          <apiVersion>${kotlin.runtime.languageVersion}</apiVersion>
           <jvmTarget>11</jvmTarget>
           <args>
             <arg>-Xskip-metadata-version-check</arg>
@@ -62,7 +59,6 @@
       <plugin>
         <groupId>org.apache.netbeans.utilities</groupId>
         <artifactId>nbm-maven-plugin</artifactId>
-        <version>14.4</version>
         <extensions>true</extensions>
         <configuration>
           <codeNameBase>io.github.nbplugins.kotlin</codeNameBase>
@@ -120,7 +116,7 @@
           <dependency>
             <groupId>org.apache.maven.surefire</groupId>
             <artifactId>surefire-junit4</artifactId>
-            <version>3.5.5</version>
+            <version>${surefire.version}</version>
           </dependency>
         </dependencies>
         <configuration>
@@ -223,16 +219,14 @@
   <dependencies>
     <!-- IntelliJ Platform Core 193 — replaces lib/intellij-core-1.0.jar (A4.10).
          Declared before kotlin-compiler so 193-era classes win over kotlin-compiler's
-         older embedded IntelliJ classes. -->
+         older embedded IntelliJ classes. Versions inherited from parent dependencyManagement. -->
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>core</artifactId>
-      <version>193.7288.26</version>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>core-impl</artifactId>
-      <version>193.7288.26</version>
       <exclusions>
         <!-- util-ui and core-ui pull Swing/batik/imgscalr — not needed at runtime -->
         <exclusion>
@@ -245,13 +239,9 @@
         </exclusion>
       </exclusions>
     </dependency>
-    <!-- util:193.5964 has TextRangeUtil.intersectsOneOf() called by code-style-impl:241;
-         util:193.7288.26 (transitive from core:193) lacks this method.
-         Direct dep wins over transitive, so Maven picks 193.5964. -->
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>util</artifactId>
-      <version>193.5964</version>
     </dependency>
 
     <!-- Bundled JARs (installed by bundled-jars/* modules) -->
@@ -305,7 +295,7 @@
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-compiler</artifactId>
-      <version>1.9.25</version>
+      <!-- Version inherited from parent dependencyManagement: ${kotlin.runtime.version}=1.9.25 -->
       <exclusions>
         <!-- guava is bundled inside kotlin-compiler fat jar -->
         <exclusion>
@@ -327,7 +317,6 @@
     <dependency>
       <groupId>org.jetbrains</groupId>
       <artifactId>annotations</artifactId>
-      <version>26.0.2</version>
       <scope>compile</scope>
     </dependency>
     <!-- NetBeans API -->

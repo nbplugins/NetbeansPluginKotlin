@@ -10,7 +10,20 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <netbeans.version>RELEASE230</netbeans.version>
+    <!-- Legacy Kotlin used for compiling the bundled-jars/* sources (which were
+         written for FE1.0 1.3 era). -->
     <kotlin.version>1.3.72</kotlin.version>
+    <!-- Kotlin used by Nbm/* — both the kotlin-maven-plugin (driving Nbm Kotlin
+         compilation) and the kotlin-compiler runtime jar that ships in the .nbm.
+         B2.0 'compiler-only' experiment: see docs/plans/B2.0-compiler-only.md. -->
+    <kotlin.runtime.version>1.9.25</kotlin.runtime.version>
+    <kotlin.runtime.languageVersion>1.9</kotlin.runtime.languageVersion>
+    <intellij.platform.193.version>193.7288.26</intellij.platform.193.version>
+    <intellij.platform.193.util.version>193.5964</intellij.platform.193.util.version>
+    <intellij.platform.241.version>241.194</intellij.platform.241.version>
+    <jetbrains.annotations.version>26.0.2</jetbrains.annotations.version>
+    <nbm.maven.plugin.version>14.4</nbm.maven.plugin.version>
+    <surefire.version>3.5.5</surefire.version>
   </properties>
   <modules>
     <module>bundled-jars/KotlinIdeCommon</module>
@@ -54,7 +67,7 @@
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-surefire-plugin</artifactId>
-          <version>3.5.5</version>
+          <version>${surefire.version}</version>
         </plugin>
         <plugin>
           <groupId>org.codehaus.mojo</groupId>
@@ -70,6 +83,18 @@
           <groupId>com.google.code.maven-replacer-plugin</groupId>
           <artifactId>replacer</artifactId>
           <version>1.5.3</version>
+        </plugin>
+        <!-- Default kotlin-maven-plugin = legacy ${kotlin.version} (1.3.72) for bundled-jars.
+             Nbm overrides via <version>${kotlin.runtime.version}</version> (1.9.25). -->
+        <plugin>
+          <groupId>org.jetbrains.kotlin</groupId>
+          <artifactId>kotlin-maven-plugin</artifactId>
+          <version>${kotlin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.netbeans.utilities</groupId>
+          <artifactId>nbm-maven-plugin</artifactId>
+          <version>${nbm.maven.plugin.version}</version>
         </plugin>
       </plugins>
     </pluginManagement>
@@ -115,34 +140,51 @@
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>core</artifactId>
-        <version>193.7288.26</version>
+        <version>${intellij.platform.193.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>core-impl</artifactId>
-        <version>193.7288.26</version>
+        <version>${intellij.platform.193.version}</version>
+      </dependency>
+      <!-- util pinned to 193.5964 (older than core's 193.7288.26) because it has
+           TextRangeUtil.intersectsOneOf() called by code-style-impl:241.
+           bundled-jars compile against API surface present in both — they get the
+           same version via DM inheritance. -->
+      <dependency>
+        <groupId>com.jetbrains.intellij.platform</groupId>
+        <artifactId>util</artifactId>
+        <version>${intellij.platform.193.util.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>code-style</artifactId>
-        <version>241.194</version>
+        <version>${intellij.platform.241.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>code-style-impl</artifactId>
-        <version>241.194</version>
+        <version>${intellij.platform.241.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>project-model</artifactId>
-        <version>241.194</version>
+        <version>${intellij.platform.241.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>concurrency</artifactId>
-        <version>241.194</version>
+        <version>${intellij.platform.241.version}</version>
       </dependency>
-      <!-- kotlin-compiler transitive deps (declared explicitly in Nbm) -->
+      <!-- kotlin-compiler runtime version: B2.0 'compiler-only' bumps just this one artifact
+           from 1.3.72 → 1.9.25; the legacy kotlin-stdlib/reflect/script-runtime stay at
+           ${kotlin.version}=1.3.72 for bundled-jars source compat. Bundled-jars override the
+           kotlin-compiler version to ${kotlin.version} explicitly in their own poms. -->
+      <dependency>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-compiler</artifactId>
+        <version>${kotlin.runtime.version}</version>
+      </dependency>
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-stdlib</artifactId>
@@ -222,6 +264,11 @@
         <groupId>picocontainer</groupId>
         <artifactId>picocontainer</artifactId>
         <version>1.2</version>
+      </dependency>
+      <dependency>
+        <groupId>org.jetbrains</groupId>
+        <artifactId>annotations</artifactId>
+        <version>${jetbrains.annotations.version}</version>
       </dependency>
       <!-- NetBeans API -->
       <dependency>

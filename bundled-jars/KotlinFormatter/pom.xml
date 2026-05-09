@@ -25,25 +25,26 @@
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>project-model</artifactId>
     </dependency>
-    <!-- IntelliJ Platform Core 193 — replaces lib/intellij-core-1.0.jar (A4.10) -->
+    <!-- IntelliJ Platform Core 193 — replaces lib/intellij-core-1.0.jar (A4.10).
+         Versions inherited from parent dependencyManagement. -->
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>core</artifactId>
-      <version>193.7288.26</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>core-impl</artifactId>
-      <version>193.7288.26</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>util</artifactId>
-      <version>193.7288.26</version>
       <scope>provided</scope>
     </dependency>
+    <!-- kotlin-compiler version overridden to legacy ${kotlin.version} (1.3.72): bundled-jar
+         sources are FE1.0 1.3-era and don't compile against the newer ${kotlin.runtime.version}
+         (1.9.25) that parent dependencyManagement defaults to. -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-compiler</artifactId>
@@ -171,11 +172,10 @@
         </executions>
       </plugin>
 
-      <!-- Step 5: compile Kotlin sources -->
+      <!-- Step 5: compile Kotlin sources (plugin version inherited from parent pluginManagement: ${kotlin.version}) -->
       <plugin>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-maven-plugin</artifactId>
-        <version>${kotlin.version}</version>
         <configuration>
           <languageVersion>1.3</languageVersion>
           <apiVersion>1.3</apiVersion>

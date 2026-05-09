@@ -13,19 +13,20 @@
   <name>Netbeans Plugin Kotlin Converter</name>
 
   <dependencies>
-    <!-- IntelliJ Platform Core 193 — replaces lib/intellij-core-1.0.jar (A4.10) -->
+    <!-- IntelliJ Platform Core 193 — replaces lib/intellij-core-1.0.jar (A4.10).
+         Versions inherited from parent dependencyManagement. -->
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>core</artifactId>
-      <version>193.7288.26</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>core-impl</artifactId>
-      <version>193.7288.26</version>
       <scope>provided</scope>
     </dependency>
+    <!-- kotlin-compiler version overridden to legacy ${kotlin.version} (1.3.72) for FE1.0
+         1.3-era sources. Parent dependencyManagement defaults to ${kotlin.runtime.version}. -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-compiler</artifactId>
@@ -260,11 +261,10 @@ fun &lt;T&gt; runWriteAction(action: () -&gt; T): T {
         </executions>
       </plugin>
 
-      <!-- Step 6: compile Kotlin sources -->
+      <!-- Step 6: compile Kotlin sources (plugin version inherited from parent pluginManagement: ${kotlin.version}) -->
       <plugin>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-maven-plugin</artifactId>
-        <version>${kotlin.version}</version>
         <configuration>
           <languageVersion>1.3</languageVersion>
           <apiVersion>1.3</apiVersion>
