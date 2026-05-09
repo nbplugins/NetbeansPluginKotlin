@@ -192,7 +192,8 @@ fun createProposals(doc: Document, caretOffset: Int,
     val project = ProjectUtils.getKotlinProjectForFileObject(file) ?: return emptyList()
     val descriptors = generateBasicCompletionProposals(file, identifierPart, identOffset, editorText, result)
     
-    val proposals: MutableList<CompletionProposal> = descriptors.filter { it !is JavaClassConstructorDescriptor }
+    val proposals: MutableList<CompletionProposal> = descriptors
+            .filter { it !is JavaClassConstructorDescriptor && !it.name.isSpecial }
             .map { KotlinCompletionProposal(identOffset, it, styledDoc, prefix, project) }
             .toMutableList()
     val cachedKtFile = KotlinParser.file
