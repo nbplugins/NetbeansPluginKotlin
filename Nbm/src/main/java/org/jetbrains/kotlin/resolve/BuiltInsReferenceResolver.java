@@ -214,7 +214,9 @@ public class BuiltInsReferenceResolver {
             throw new RuntimeException(new IOException(VfsBundle.message("url.parse.error", url.toExternalForm())));
           }
         }
-        if (SystemInfo.isWindows) {
+        // SystemInfo.isWindows triggers SystemInfo class init which fails on JDK 17+ in
+        // core 232+ (IllegalArgumentException parsing version "25.0.1"). Use plain os.name.
+        if (System.getProperty("os.name", "").toLowerCase().contains("win")) {
           while (!path.isEmpty() && path.charAt(0) == '/') {
             path = path.substring(1, path.length());
           }

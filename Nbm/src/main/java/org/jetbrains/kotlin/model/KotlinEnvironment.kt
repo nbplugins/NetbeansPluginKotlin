@@ -96,16 +96,14 @@ import org.jetbrains.kotlin.cli.jvm.compiler.CliModuleAnnotationsResolver
 import org.jetbrains.kotlin.resolve.jvm.KotlinJavaPsiFacade
 import org.jetbrains.kotlin.cli.jvm.index.SingleJavaFileRootsIndex
 
-//copied from kotlin eclipse plugin to avoid RuntimeException: Could not find installation home path. 
-//Please make sure bin/idea.properties is present in the installation directory
+// Copied from kotlin eclipse plugin to avoid "Could not find installation home path".
+// Touches SystemInfo to detect Windows; on JDK 17+ with core 232+ SystemInfo's version-parsing
+// throws IllegalArgumentException for version strings like "25.0.1" (Java 25). Use a plain
+// System.getProperty("os.name") check instead — no static init of SystemInfo triggered.
 private fun setIdeaIoUseFallback() {
-    if (SystemInfo.isWindows) {
-        val properties = System.getProperties()
-
-        properties.setProperty("idea.io.use.nio2", java.lang.Boolean.TRUE.toString())
-
-        // SystemInfo.isJavaVersionAtLeast(int, int, int) was removed in core 232+; we always run
-        // on JDK 17+ so this 1.7.0 check is unconditionally satisfied — drop the fallback.
+    val osName = System.getProperty("os.name", "").lowercase()
+    if (osName.contains("win")) {
+        System.getProperties().setProperty("idea.io.use.nio2", java.lang.Boolean.TRUE.toString())
     }
 }
 

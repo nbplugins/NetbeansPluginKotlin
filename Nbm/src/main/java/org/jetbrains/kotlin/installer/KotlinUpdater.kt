@@ -113,7 +113,12 @@ object KotlinUpdater {
     }
 
     private fun getRequestParams(): String {
-        val os = URLEncoder.encode("${SystemInfo.OS_NAME} ${SystemInfo.OS_VERSION}", "UTF-8")
+        // SystemInfo.OS_NAME / OS_VERSION trigger SystemInfo class init which fails on JDK 17+
+        // in core 232+ (parses "25.0.1" → IllegalArgumentException). Use System.getProperty.
+        val os = URLEncoder.encode(
+            "${System.getProperty("os.name", "")} ${System.getProperty("os.version", "")}",
+            "UTF-8"
+        )
         val userId = getUserID()
         val netbeansVersion = getNetBeansVersion()
 
