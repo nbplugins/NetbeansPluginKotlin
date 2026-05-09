@@ -187,6 +187,13 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
 
             registerService(ExternalAnnotationsManager::class.java, MockExternalAnnotationsManager())
             registerService(InferredAnnotationsManager::class.java, MockInferredAnnotationsManager())
+            // 232+ requires JavaElementSourceFactory as project service — used by
+            // kotlin-compiler:1.9.25's resolution code in JavaElementImpl. JavaFixedElementSourceFactory
+            // is the default impl shipped inside kotlin-compiler.
+            registerService(
+                org.jetbrains.kotlin.load.java.structure.impl.source.JavaElementSourceFactory::class.java,
+                org.jetbrains.kotlin.load.java.structure.impl.source.JavaFixedElementSourceFactory()
+            )
         }
         
         configuration.put<String>(CommonConfigurationKeys.MODULE_NAME, project.name)
