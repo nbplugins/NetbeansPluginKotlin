@@ -104,9 +104,8 @@ private fun setIdeaIoUseFallback() {
 
         properties.setProperty("idea.io.use.nio2", java.lang.Boolean.TRUE.toString())
 
-        if (!(SystemInfo.isJavaVersionAtLeast(1, 7, 0) && "1.7.0-ea" != SystemInfo.JAVA_VERSION)) {
-            properties.setProperty("idea.io.use.fallback", java.lang.Boolean.TRUE.toString())
-        }
+        // SystemInfo.isJavaVersionAtLeast(int, int, int) was removed in core 232+; we always run
+        // on JDK 17+ so this 1.7.0 check is unconditionally satisfied — drop the fallback.
     }
 }
 
@@ -142,8 +141,11 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
                 
         applicationEnvironment = createJavaCoreApplicationEnvironment(disposable)
         projectEnvironment = object : JavaCoreProjectEnvironment(disposable, applicationEnvironment) {
-            override fun preregisterServices() { 
-                registerProjectExtensionPoints(Extensions.getArea(project)) 
+            override fun preregisterServices() {
+                // Extensions.getArea(Project) removed in core 232+; ProjectImpl exposes
+                // extensionArea directly. CoreProjectEnvironment.project is a MockProject
+                // / ProjectImpl that has it.
+                registerProjectExtensionPoints(project.extensionArea)
             }
             
             override fun createCoreFileManager() = KotlinCliJavaFileManagerImpl(PsiManager.getInstance(project))
@@ -212,10 +214,10 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
     }
     
     private fun registerProjectExtensionPoints(area: ExtensionsArea) {
+        // EP_NAME → EP for PsiTreeChangePreprocessor and PsiElementFinder in core 232+; new fields
+        // are ProjectExtensionPointName, not ExtensionPointName. Reconstruct by string name.
         CoreApplicationEnvironment.registerExtensionPoint(area,
-                PsiTreeChangePreprocessor.EP_NAME, PsiTreeChangePreprocessor::class.java)
-        // PsiElementFinder.EP_NAME → PsiElementFinder.EP in core 232+; the new field is
-        // ProjectExtensionPointName (not ExtensionPointName). Construct by name string.
+                ExtensionPointName.create<PsiTreeChangePreprocessor>(PsiTreeChangePreprocessor.EP.name), PsiTreeChangePreprocessor::class.java)
         CoreApplicationEnvironment.registerExtensionPoint(area,
                 ExtensionPointName.create<PsiElementFinder>(PsiElementFinder.EP.name), PsiElementFinder::class.java)
         CoreApplicationEnvironment.registerExtensionPoint(area,

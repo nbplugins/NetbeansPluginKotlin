@@ -50,9 +50,12 @@
       <artifactId>kotlin-compiler</artifactId>
       <version>${kotlin.version}</version>
     </dependency>
+    <!-- stdlib pinned to legacy ${kotlin.version}=1.3.72: kotlin-maven-plugin:1.3.72 used here
+         can't inline 1.9.25 stdlib functions like filterIsInstance. -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-stdlib</artifactId>
+      <version>${kotlin.version}</version>
     </dependency>
   </dependencies>
 

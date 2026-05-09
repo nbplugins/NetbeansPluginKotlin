@@ -8,31 +8,35 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-// Stub for concurrency:241 ConcurrentCollectionFactory — delegates to ContainerUtil (193-era).
+// Stub for concurrency:241 ConcurrentCollectionFactory used by code-style-impl:241. Switched
+// from ContainerUtil.newConcurrentMap (193 method, removed in 232 ContainerUtil) to direct
+// java.util.concurrent.ConcurrentHashMap. Identity / strategy variants degrade to plain hash
+// (no identity semantics) — acceptable: code-style-impl uses these for caching where collisions
+// only mean missed cache entries.
 public final class ConcurrentCollectionFactory {
     public static <K, V> ConcurrentMap<K, V> createConcurrentIdentityMap() {
-        return ContainerUtil.newConcurrentMap();
+        return new ConcurrentHashMap<>();
     }
     public static <T, V> ConcurrentMap<T, V> createConcurrentMap() {
-        return ContainerUtil.newConcurrentMap();
+        return new ConcurrentHashMap<>();
     }
     public static <T, V> ConcurrentMap<T, V> createConcurrentMap(Object strategy) {
-        return ContainerUtil.newConcurrentMap();
+        return new ConcurrentHashMap<>();
     }
     public static <T, V> ConcurrentMap<T, V> createConcurrentMap(int initialCapacity, float loadFactor, int concurrencyLevel, Object strategy) {
         return new ConcurrentHashMap<>(initialCapacity, loadFactor, concurrencyLevel);
     }
     public static <T> Set<T> createConcurrentSet() {
-        return Collections.newSetFromMap(ContainerUtil.newConcurrentMap());
+        return Collections.newSetFromMap(new ConcurrentHashMap<>());
     }
     public static <T> Set<T> createConcurrentIdentitySet() {
-        return Collections.newSetFromMap(ContainerUtil.newConcurrentMap());
+        return Collections.newSetFromMap(new ConcurrentHashMap<>());
     }
     public static <T> Set<T> createConcurrentIdentitySet(int initialCapacity) {
         return Collections.newSetFromMap(new ConcurrentHashMap<>(initialCapacity));
     }
     public static <T> Set<T> createConcurrentSet(Object strategy) {
-        return Collections.newSetFromMap(ContainerUtil.newConcurrentMap());
+        return Collections.newSetFromMap(new ConcurrentHashMap<>());
     }
     public static <T> Set<T> createConcurrentSet(int initialCapacity, Object strategy) {
         return Collections.newSetFromMap(new ConcurrentHashMap<>(initialCapacity));

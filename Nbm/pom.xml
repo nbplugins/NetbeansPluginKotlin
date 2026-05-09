@@ -135,113 +135,25 @@
           </environmentVariables>
         </configuration>
       </plugin>
-      <!-- Copy StringUtil and ContainerUtil from IntellijCommunity/193.7288 into
-           generated-sources so they land in the main JAR and load before
-           kotlin-compiler.jar (which embeds older versions missing required methods) -->
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-resources-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>copy-string-util</id>
-            <phase>generate-sources</phase>
-            <goals><goal>copy-resources</goal></goals>
-            <configuration>
-              <outputDirectory>${project.build.directory}/generated-sources/string-util/com/intellij/openapi/util/text</outputDirectory>
-              <overwrite>true</overwrite>
-              <resources>
-                <resource>
-                  <directory>${project.basedir}/../submodules/IntellijCommunity/platform/util/src/com/intellij/openapi/util/text</directory>
-                  <includes>
-                    <include>StringUtil.java</include>
-                  </includes>
-                  <filtering>false</filtering>
-                </resource>
-              </resources>
-            </configuration>
-          </execution>
-          <execution>
-            <id>copy-container-util-rt</id>
-            <phase>generate-sources</phase>
-            <goals><goal>copy-resources</goal></goals>
-            <configuration>
-              <outputDirectory>${project.build.directory}/generated-sources/string-util/com/intellij/util/containers</outputDirectory>
-              <overwrite>true</overwrite>
-              <resources>
-                <resource>
-                  <directory>${project.basedir}/../submodules/IntellijCommunity/platform/util-rt/src/com/intellij/util/containers</directory>
-                  <includes>
-                    <include>ContainerUtilRt.java</include>
-                  </includes>
-                  <filtering>false</filtering>
-                </resource>
-              </resources>
-            </configuration>
-          </execution>
-          <execution>
-            <id>copy-container-util</id>
-            <phase>generate-sources</phase>
-            <goals><goal>copy-resources</goal></goals>
-            <configuration>
-              <outputDirectory>${project.build.directory}/generated-sources/string-util/com/intellij/util/containers</outputDirectory>
-              <overwrite>true</overwrite>
-              <resources>
-                <resource>
-                  <directory>${project.basedir}/../submodules/IntellijCommunity/platform/util/src/com/intellij/util/containers</directory>
-                  <includes>
-                    <include>ContainerUtil.java</include>
-                  </includes>
-                  <filtering>false</filtering>
-                </resource>
-              </resources>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>build-helper-maven-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>add-string-util-source</id>
-            <phase>generate-sources</phase>
-            <goals><goal>add-source</goal></goals>
-            <configuration>
-              <sources>
-                <source>${project.build.directory}/generated-sources/string-util</source>
-              </sources>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
+      <!-- B2.0 (compiler-only): generated-sources copy of StringUtil/ContainerUtil/ContainerUtilRt
+           from submodules/IntellijCommunity/193 — REMOVED. Originally present because
+           kotlin-compiler:1.3.72's stripped versions lacked trimStart/sorted/newArrayList.
+           kotlin-compiler:1.9.25 ships richer 232-era versions that already provide those
+           methods. Keeping the 193-era source copies here would fail to compile against the
+           232-era ConcurrentIntObjectHashMap etc. generics. -->
+
     </plugins>
   </build>
   <dependencies>
-    <!-- IntelliJ Platform Core 193 — replaces lib/intellij-core-1.0.jar (A4.10).
-         Declared before kotlin-compiler so 193-era classes win over kotlin-compiler's
-         older embedded IntelliJ classes. Versions inherited from parent dependencyManagement. -->
+    <!-- IntelliJ Platform 193 (core+core-impl+util) replaced by netbeans-plugin-kotlin-patched-core-impl.
+         The patched jar contains all 193 classes EXCEPT those that also exist in
+         kotlin-compiler:1.9.25 — for those, kotlin-compiler's shaded 232-era versions take over,
+         so the API surface is internally consistent for kotlin-compiler bytecode that calls
+         methods added in 232+ (CoreApplicationEnvironment.registerApplicationDynamicExtensionPoint,
+         ApplicationManager.setApplication(Application, Supplier, Disposable), etc.). -->
     <dependency>
-      <groupId>com.jetbrains.intellij.platform</groupId>
-      <artifactId>core</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.jetbrains.intellij.platform</groupId>
-      <artifactId>core-impl</artifactId>
-      <exclusions>
-        <!-- util-ui and core-ui pull Swing/batik/imgscalr — not needed at runtime -->
-        <exclusion>
-          <groupId>com.jetbrains.intellij.platform</groupId>
-          <artifactId>util-ui</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>com.jetbrains.intellij.platform</groupId>
-          <artifactId>core-ui</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-    <dependency>
-      <groupId>com.jetbrains.intellij.platform</groupId>
-      <artifactId>util</artifactId>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-patched-core-impl</artifactId>
     </dependency>
 
     <!-- Bundled JARs (installed by bundled-jars/* modules) -->
@@ -295,7 +207,9 @@
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-compiler</artifactId>
-      <!-- Version inherited from parent dependencyManagement: ${kotlin.runtime.version}=1.9.25 -->
+      <!-- Version inherited from parent dependencyManagement: ${kotlin.runtime.version}=1.9.25.
+           stdlib/reflect/script-runtime also default to runtime version via parent DM (bundled-jars
+           override them locally to ${kotlin.version}=1.3.72 for their own legacy compilation). -->
       <exclusions>
         <!-- guava is bundled inside kotlin-compiler fat jar -->
         <exclusion>

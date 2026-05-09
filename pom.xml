@@ -26,6 +26,7 @@
     <surefire.version>3.5.5</surefire.version>
   </properties>
   <modules>
+    <module>bundled-jars/PatchedCoreImpl</module>
     <module>bundled-jars/KotlinIdeCommon</module>
     <module>bundled-jars/KotlinFormatter</module>
     <module>bundled-jars/KotlinConverter</module>
@@ -138,6 +139,18 @@
         <version>${project.version}</version>
       </dependency>
       <dependency>
+        <groupId>io.github.nbplugins</groupId>
+        <artifactId>netbeans-plugin-kotlin-patched-core-impl</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <!-- core/core-impl/util kept at 193 (0.5 setup): the 14 com.intellij.* stubs in
+           Nbm/src/main/java extend 193-era abstract classes (ObjectIntHashMap, MultiMap, ...) and
+           don't compile against 241+ surface. There IS a runtime side-effect: kotlin-compiler:1.9.25's
+           shaded JavaCoreApplicationEnvironment calls methods added in 232+ on the parent class,
+           which 193 lacks → NoSuchMethodError when KotlinEnvironment is initialized at runtime.
+           Tests currently fail because of this; needs separate strategy (shade-strip the offending
+           shaded class, bump JUST core-impl, or add a local override). -->
+      <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>core</artifactId>
         <version>${intellij.platform.193.version}</version>
@@ -147,10 +160,6 @@
         <artifactId>core-impl</artifactId>
         <version>${intellij.platform.193.version}</version>
       </dependency>
-      <!-- util pinned to 193.5964 (older than core's 193.7288.26) because it has
-           TextRangeUtil.intersectsOneOf() called by code-style-impl:241.
-           bundled-jars compile against API surface present in both — they get the
-           same version via DM inheritance. -->
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>util</artifactId>
@@ -185,20 +194,25 @@
         <artifactId>kotlin-compiler</artifactId>
         <version>${kotlin.runtime.version}</version>
       </dependency>
+      <!-- kotlin-stdlib/reflect/script-runtime default to runtime version (1.9.25) for Nbm — its
+           classpath needs classes added in 1.9 (kotlin.enums.EnumEntries etc.) referenced by
+           kotlin-compiler:1.9.25.jar. bundled-jars override to ${kotlin.version}=1.3.72 in their
+           own poms because their kotlin-maven-plugin:1.3.72 cannot inline 1.9.25 stdlib functions
+           (e.g., filterIsInstance) — the embedded 1.3.72 compiler doesn't recognise newer bytecode. -->
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-stdlib</artifactId>
-        <version>${kotlin.version}</version>
+        <version>${kotlin.runtime.version}</version>
       </dependency>
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-script-runtime</artifactId>
-        <version>${kotlin.version}</version>
+        <version>${kotlin.runtime.version}</version>
       </dependency>
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-reflect</artifactId>
-        <version>${kotlin.version}</version>
+        <version>${kotlin.runtime.version}</version>
       </dependency>
       <dependency>
         <groupId>org.jetbrains.intellij.deps</groupId>

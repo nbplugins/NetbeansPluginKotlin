@@ -39,3 +39,7 @@ test-output.txt
 /bundled-jars/IdeaFormatter/target/
 /bundled-jars/OpenapiFormatter/target/
 /bundled-jars/KotlinCompilerIntellijPlatform/target/
+/bundled-jars/PatchedCoreImpl/target/
+
+# Generated module target/ dirs
+**/target/
