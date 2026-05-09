@@ -52,6 +52,9 @@ class NetBeansJavaClassFinder : JavaClassFinder {
         return NetBeansJavaClass(element, project)
     }
 
+    override fun findClasses(request: JavaClassFinder.Request): List<JavaClass> =
+            listOfNotNull(findClass(request))
+
     override fun findPackage(fqName: FqName, mayHaveAnnotations: Boolean): JavaPackage? {
         val pack = project.findPackage(fqName.asString()) ?: return null
 
@@ -59,4 +62,6 @@ class NetBeansJavaClassFinder : JavaClassFinder {
     }
 
     override fun knownClassNamesInPackage(packageFqName: FqName) = knownClassNamesInPackage(packageFqName.asString(), project)
+
+    override fun canComputeKnownClassNamesInPackage(): Boolean = true
 }

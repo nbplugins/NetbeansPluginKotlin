@@ -61,7 +61,8 @@ import org.jetbrains.kotlin.utils.ProjectUtils
 import org.jetbrains.kotlin.utils.KotlinImportInserterHelper
 import org.jetbrains.kotlin.caches.resolve.KotlinCacheService
 import org.jetbrains.kotlin.cli.common.CliModuleVisibilityManagerImpl
-import org.jetbrains.kotlin.codegen.extensions.ClassBuilderInterceptorExtension
+// ClassBuilderInterceptorExtension import removed — kotlin-compiler 1.9 marks it as a K1-only
+// hard error; the corresponding registration in getExtensionsFromCommonXml() is now a no-op.
 import org.jetbrains.kotlin.diagnostics.rendering.DefaultErrorMessages
 import com.intellij.formatting.KotlinLanguageCodeStyleSettingsProvider
 import com.intellij.formatting.KotlinSettingsProvider
@@ -156,7 +157,7 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
                 ServiceManager.getService(project, JavaFileManager::class.java) as CoreJavaFileManager)
             
             val cliTraceHolder = CliTraceHolder()
-            val cliLightClassGenerationSupport = CliLightClassGenerationSupport(cliTraceHolder)
+            val cliLightClassGenerationSupport = CliLightClassGenerationSupport(cliTraceHolder, project)
             registerService(LightClassGenerationSupport::class.java, cliLightClassGenerationSupport)
             registerService(CliLightClassGenerationSupport::class.java, cliLightClassGenerationSupport)
             registerService(CodeAnalyzerInitializer::class.java, cliTraceHolder)
@@ -169,6 +170,12 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
                     referencedFile: com.intellij.openapi.vfs.VirtualFile,
                     referencedPackage: org.jetbrains.kotlin.name.FqName?
                 ): JavaModuleResolver.AccessError? = null
+
+                // Inherited from JavaModuleAnnotationsProvider in 1.9 — Nbm doesn't track JPMS module
+                // annotations, so report none.
+                override fun getAnnotationsForModuleOwnerOfClass(
+                    classId: org.jetbrains.kotlin.name.ClassId
+                ): List<org.jetbrains.kotlin.load.java.structure.JavaAnnotation>? = null
             })
             registerService(BuiltInsReferenceResolver::class.java, BuiltInsReferenceResolver(project))
             registerService(KotlinSourceIndex::class.java, KotlinSourceIndex())
@@ -207,8 +214,10 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
     private fun registerProjectExtensionPoints(area: ExtensionsArea) {
         CoreApplicationEnvironment.registerExtensionPoint(area,
                 PsiTreeChangePreprocessor.EP_NAME, PsiTreeChangePreprocessor::class.java)
+        // PsiElementFinder.EP_NAME → PsiElementFinder.EP in core 232+; the new field is
+        // ProjectExtensionPointName (not ExtensionPointName). Construct by name string.
         CoreApplicationEnvironment.registerExtensionPoint(area,
-                PsiElementFinder.EP_NAME, PsiElementFinder::class.java)
+                ExtensionPointName.create<PsiElementFinder>(PsiElementFinder.EP.name), PsiElementFinder::class.java)
         CoreApplicationEnvironment.registerExtensionPoint(area,
                 JvmElementProvider.EP_NAME, JvmElementProvider::class.java)
     }
@@ -220,8 +229,9 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
                 ExtensionPointName("org.jetbrains.kotlin.defaultErrorMessages"), DefaultErrorMessages.Extension::class.java)
         CoreApplicationEnvironment.registerApplicationExtensionPoint(
                 ExtensionPointName(("org.jetbrains.kotlin.expressionCodegenExtension")), ExpressionCodegenExtension::class.java)
-        CoreApplicationEnvironment.registerApplicationExtensionPoint(
-                ExtensionPointName(("org.jetbrains.kotlin.classBuilderFactoryInterceptorExtension")), ClassBuilderInterceptorExtension::class.java)
+        // classBuilderFactoryInterceptorExtension registration removed: ClassBuilderInterceptorExtension
+        // is now a hard-error K1-only API in kotlin-compiler 1.9. No replacement registered — the
+        // analyzer-only path Nbm uses doesn't generate bytecode.
         CoreApplicationEnvironment.registerApplicationExtensionPoint(
                 ExtensionPointName(("org.jetbrains.kotlin.packageFragmentProviderExtension")), PackageFragmentProviderExtension::class.java)
         CoreApplicationEnvironment.registerApplicationExtensionPoint(CodeStyleSettingsProvider.EXTENSION_POINT_NAME, KotlinSettingsProvider::class.java)

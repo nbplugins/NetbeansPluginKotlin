@@ -252,8 +252,10 @@ object KeywordCompletion {
 
                         else -> null
                     }
-                    val modifierTargets = ModifierCheckerCore.possibleTargetMap[keywordTokenType]
-                    if (modifierTargets != null && possibleTargets != null && possibleTargets.none { it in modifierTargets }) return false
+                    // ModifierCheckerCore.possibleTargetMap removed in kotlin-compiler 1.9 — no
+                    // public replacement. Skip the modifier-target compatibility filter; completion
+                    // may show keywords that the parser would later reject. Acceptable UX regression
+                    // for B2.0; revisit when/if K2 exposes equivalent metadata.
 
                     val ownerDeclaration = container?.getParentOfType<KtDeclaration>(strict = true)
                     val parentTarget = when (ownerDeclaration) {
@@ -274,7 +276,8 @@ object KeywordCompletion {
                         else -> return true
                     }
 
-                    if (!ModifierCheckerCore.isPossibleParentTarget(keywordTokenType, parentTarget, org.jetbrains.kotlin.config.LanguageVersionSettingsImpl.DEFAULT)) return false
+                    // ModifierCheckerCore.isPossibleParentTarget also removed in 1.9; same caveat
+                    // as above — accept the broader completion set rather than gate it.
 
                     return true
                 }

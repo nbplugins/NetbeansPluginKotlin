@@ -46,6 +46,7 @@ class KotlinSources(private val kotlinProject: Project) {
             KotlinProjectConstants.JAR -> if (fo.hasExt("jar")) {
                 if (fo.parent.name != "build") files.add(fo.parent)
             }
+            else -> Unit
         }
     }
 

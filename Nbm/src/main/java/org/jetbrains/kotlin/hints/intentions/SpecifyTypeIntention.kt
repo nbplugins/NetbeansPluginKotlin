@@ -74,9 +74,9 @@ class SpecifyTypeIntention(doc: Document,
 }
 
 fun getTypeForDeclaration(declaration: KtCallableDeclaration, analysisResult: AnalysisResult?): KotlinType {
-    val bindingContext = analysisResult?.bindingContext ?: return ErrorUtils.createErrorType("null type")
+    val bindingContext = analysisResult?.bindingContext ?: return org.jetbrains.kotlin.types.error.ErrorUtils.createErrorType(org.jetbrains.kotlin.types.error.ErrorTypeKind.UNRESOLVED_TYPE, "null type")
 
     val descriptor = bindingContext[BindingContext.DECLARATION_TO_DESCRIPTOR, declaration]
     val type = (descriptor as? CallableDescriptor)?.returnType
-    return type ?: ErrorUtils.createErrorType("null type")
+    return type ?: org.jetbrains.kotlin.types.error.ErrorUtils.createErrorType(org.jetbrains.kotlin.types.error.ErrorTypeKind.UNRESOLVED_TYPE, "null type")
 }

@@ -93,21 +93,23 @@ private fun TypeParameterDescriptor.isVisible(descriptor: DeclarationDescriptor)
 private fun DeclarationDescriptorWithVisibility.isVisible(from: DeclarationDescriptor,
                                                           bindingContext: BindingContext?,
                                                           element: KtSimpleNameExpression?): Boolean {
-    if (Visibilities.isVisibleWithAnyReceiver(this, from)) return true
+    // Visibilities → DescriptorVisibilities in kotlin-compiler 1.9; method signatures gained a
+    // useSpecialRulesForPrivateSealedConstructors parameter (false here).
+    if (org.jetbrains.kotlin.descriptors.DescriptorVisibilities.isVisibleWithAnyReceiver(this, from, false)) return true
     if (bindingContext == null || element == null) return false
-    
+
     val receiverExpression = element.getReceiverExpression()
     if (receiverExpression != null) {
         val receiverType = bindingContext.getType(receiverExpression) ?: return false
         val explicitReceiver = ExpressionReceiver.create(receiverExpression, receiverType, bindingContext)
-        
-        return Visibilities.isVisible(explicitReceiver, this, from)
+
+        return org.jetbrains.kotlin.descriptors.DescriptorVisibilities.isVisible(explicitReceiver, this, from, false)
     } else {
         val resolutionScope = getResolutionScope(element, bindingContext) ?: return false
         resolutionScope.getImplicitReceiversHierarchy().forEach {
-            if (Visibilities.isVisible(it.value, this, from)) return true
+            if (org.jetbrains.kotlin.descriptors.DescriptorVisibilities.isVisible(it.value, this, from, false)) return true
         }
-        
+
         return false
     }
 }

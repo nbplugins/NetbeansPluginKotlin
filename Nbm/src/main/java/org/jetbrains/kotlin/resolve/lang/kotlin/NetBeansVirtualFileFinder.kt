@@ -128,6 +128,8 @@ class NetBeansVirtualFileFinder(private val project: Project,
 
     override fun findMetadataTopLevelClassesInPackage(packageFqName: FqName): Set<String> = emptySet()
 
+    override fun findSourceOrBinaryVirtualFile(classId: ClassId): VirtualFile? = findVirtualFileWithHeader(classId)
+
     private fun findBinaryClass(classId: ClassId, fileName: String): VirtualFile? =
             index.findClass(classId, acceptedRootTypes = JavaRoot.OnlyBinary) { dir, _ ->
                 dir.findChild(fileName)?.check(VirtualFile::isValid)
