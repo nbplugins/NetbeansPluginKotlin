@@ -9,8 +9,9 @@ compiler API, and bring language support to a level comparable to the IDEA plugi
 Key constraints:
 - Existing packages (`org.jetbrains.kotlin.*`) are **not renamed**; new and substantially reworked
   code goes into `io.github.nbkotlinplugin.*`.
-- Kotlin 1.3.72 + BindingContext stay until the K2 migration.
-- Java 17 — runtime for tests (Java 25 breaks the Kotlin Maven plugin).
+- Kotlin 1.3.72 + BindingContext (FE1.0) stay through B2.0 (intermediate bump to 1.9 + IntelliJ 232).
+  K2 Analysis API migration starts in B2.1+ (version 0.7.x).
+- Java 17 — runtime for tests.
 
 ---
 
@@ -23,8 +24,11 @@ compatible version. Not a separate stage — done along the way.
 - NetBeans Platform API (target cluster) — latest stable release
 - Maven plugins (`nbm-maven-plugin`, `maven-compiler-plugin`, etc.) — latest versions
 - Test dependencies (JUnit, etc.) — latest versions
-- `kotlin-compiler`: stays at 1.3.72 until B2, then update to the current K2 version
-- Java source/target: can be raised above 17 after B2 if the ecosystem allows
+- `kotlin-compiler`: stays at 1.3.72 until B2.0 (bumps to 1.9.25, FE1.0 default).
+  Bumps to 2.x current in B2.9 after K2 migration completes.
+- IntelliJ platform: 193 + 241 mix in 0.5.x; bumps to 232 in B2.0; K2 migration in B2.x adds
+  `analysis-api-*-for-ide` artefacts.
+- Java source/target: can be raised above 17 after B2.x if the ecosystem allows.
 
 ---
 
@@ -45,8 +49,20 @@ compatible version. Not a separate stage — done along the way.
 - [x] **A4.10** — `intellij-core`: replaced with `core:193.7288.26` + `core-impl:193.7288.26` (direct Maven deps of Nbm); removed `IntellijCore` wrapper, `PatchingJars`, `patches-src/`, `lib/`
 - [x] **A4.11** — Eliminate `KotlinCompiler` and `KotlinCompilerIntellijPlatform` submodules; use `kotlin-compiler:1.3.72` directly with exclusions; move patched classes (`Extensions`, `ContainerUtilRt`, message bundles) into `Nbm`
 - [x] **B1** — Research K2 Analysis API, choose architectural approach
-- [ ] **B2** — Migrate resolve layer to K2 + switch remaining JARs to `submodules/IntelliJCommunity`
+- [ ] **B2.0** — Bump infrastructure to Kotlin 1.9.25 + IntelliJ 232 (FE1.0 preserved). See [docs/plans/B2.0-bump-1.9.md](plans/B2.0-bump-1.9.md). Ships as 0.6.0.
+- [ ] **B2.1** — K2 Analysis API foundation: `StandaloneAnalysisAPISession`, replace `KotlinEnvironment` boot
+- [ ] **B2.2** — Migrate `resolve/` and `idea/util/` call sites to `analyze {}`
+- [ ] **B2.3** — Migrate `completion/`
+- [ ] **B2.4** — Migrate `diagnostics/` and `highlighter/semanticanalyzer/`
+- [ ] **B2.5** — Migrate `hints/`, `intentions/`, `fixes/`
+- [ ] **B2.6** — Migrate `navigation/`
+- [ ] **B2.7** — Migrate `structurescanner/` and `filesystem/lightclasses/`
+- [ ] **B2.8** — Repackage new code under `io.github.nbkotlinplugin.*`; drop `bundled-jars/Kotlin*` modules
+- [ ] **B2.9** — Drop `kotlin-compiler.jar` shaded; bump to current 2.x; rely on `kotlin-compiler-{common,fir}-for-ide` unshaded
 - [ ] **B3** — Restore and implement missing features
+
+B2.1–B2.9 ship as 0.7.x (each substage is one or more commits on the long-term feature branch;
+release is cut once the last substage merges to `main`).
 
 ---
 
@@ -283,27 +299,71 @@ required at runtime — they are not available as separate Maven artifacts for t
 
 ---
 
-### B2. Replace the Resolve Layer
+### B2.0. Bump Infrastructure to Kotlin 1.9 + IntelliJ 232 (no K2 yet)
 
-- [ ] Replace `BindingContext` → K2 Analysis API across all affected packages
-- [ ] Switch remaining bundled JARs to `submodules/IntelliJCommunity`
-- [ ] Delete `lib/` and `jar-patches/`
-- [ ] Update `kotlin-compiler` to the current K2 version
+**Detailed plan: [docs/plans/B2.0-bump-1.9.md](plans/B2.0-bump-1.9.md)**
 
-Current layer: `BindingContext` (FE1.0, Kotlin 1.3.72).
-Target layer: K2 Analysis API (`KaSession`, `KaSymbol`).
+Ships as **0.6.0**.
+
+A B2.1 attempt that jumped straight from Kotlin 1.3.72 → 2.3.21 + IntelliJ 252 hit a hard wall:
+`kotlin-compiler:2.3.21` ships a shaded `com.intellij.*` snapshot that is **193-era** (a
+regression — see `memory/project_kotlin_compiler_shaded_versions.md`), incompatible with the
+252-era external platform K2 standalone needs. Selective stripping turned into a domino.
+
+`kotlin-compiler:1.9.25` instead has a **232-era** shaded snapshot. Pinning the external IntelliJ
+platform to 232 aligns shaded and external — no conflicts. FE1.0 is still default in 1.9.25, so
+`BindingContext`/`ClassDescriptor` keep working without rewriting Nbm call sites.
+
+**What changes in B2.0:**
+
+- `kotlin.version` 1.3.72 → 1.9.25
+- `intellij.platform.version` 193 + 241 → 232.9921.47
+- `submodules/IntellijCommunity` pin → `idea/232.9921.47`
+- `bundled-jars/Kotlin*` source paths: `submodules/Kotlin/idea/...` → `submodules/IntellijCommunity/plugins/kotlin/...`
+- `<languageVersion>` 1.3 → 1.9
+- Adapt the 14 stubs under `Nbm/src/main/java/com/intellij/**` to 232-era APIs
+
+**What deliberately does not change in B2.0:**
+
+- Nbm Kotlin code uses `BindingContext`, `ClassDescriptor`, `TopDownAnalyzerFacadeForJVM` — stays
+- No K2 standalone session, no `analysis-api-*-for-ide` deps
+- The 28 FE1.0 call sites stay on FE1.0
+
+---
+
+### B2.1–B2.9. Migrate Resolve Layer to K2 (deferred to 0.7.x)
+
+Current layer: `BindingContext` (FE1.0, now Kotlin 1.9.25 after B2.0).
+Target layer: K2 Analysis API (`KaSession`, `KaSymbol`, Kotlin 2.x).
 
 **Principle:** reuse as much code as possible from
 `submodules/IntelliJCommunity/plugins/kotlin`. Write from scratch only the adapters
 to the NetBeans CSL API — what the IDEA plugin does not have by definition.
 
-**Affected packages:**
-- `org.jetbrains.kotlin.resolve/` — replace with K2, reuse from `plugins/kotlin` where possible
-- `org.jetbrains.kotlin.diagnostics/` — rewrite with reuse
-- `org.jetbrains.kotlin.completion/` — rewrite with reuse
-- `org.jetbrains.kotlin.navigation/` — rewrite with reuse
+**B2.1** — K2 Analysis API foundation: add `analysis-api-standalone-for-ide` dep, build
+`StandaloneAnalysisAPISession` per project, replace `KotlinEnvironment` boot. Bumps platform
+deps as required by K2 standalone (likely 252+).
 
-New code goes into `io.github.nbkotlinplugin.*`.
+**B2.2–B2.7** — incrementally migrate the 28 FE1.0 call sites identified in the B1 ADR:
+
+- B2.2 — `resolve/`, `idea/util/`
+- B2.3 — `completion/`
+- B2.4 — `diagnostics/`, `highlighter/semanticanalyzer/`
+- B2.5 — `hints/`, `intentions/`, `fixes/`
+- B2.6 — `navigation/`
+- B2.7 — `structurescanner/`, `filesystem/lightclasses/`
+
+After each substage the substituted package depends on K2 only; `BindingContext` references in
+that package are gone.
+
+**B2.8** — repackage new code under `io.github.nbkotlinplugin.*`; drop `bundled-jars/Kotlin*`
+modules entirely (their classes are no longer used).
+
+**B2.9** — drop `kotlin-compiler.jar` shaded entirely; bump `kotlin.version` to current 2.x;
+rely on `kotlin-compiler-{common,fir}-for-ide` unshaded artifacts plus `analysis-api-*-for-ide`.
+
+**Workflow:** B2.1–B2.9 commits go on the long-term `feature/bump-1.9` branch (renamed when scope
+shifts to K2). Release `0.7.0` is cut only when B2.9 lands and all tests are green.
 
 **K2 benefits:** correct classpath (JPMS), navigation into JDK/stdlib, support for
 all modern language features (value classes, context receivers, etc.).
@@ -324,6 +384,10 @@ all modern language features (value classes, context receivers, etc.).
 
 ## Versioning
 
-- Current branch: `master`, version `0.3.x`
-- After A1: version stays `0.3.x`, new Maven coordinates
-- After B2 (K2): major version `1.0.0`
+- A1: stays `0.3.x`, new Maven coordinates
+- A4 series: `0.4.x` → `0.5.x` (cleanup of bundled JARs)
+- **B2.0** (Kotlin 1.9 + IntelliJ 232 bump, FE1.0 preserved): `0.6.x`
+- **B2.1–B2.9** (K2 migration): `0.7.x` (single release cut after the last substage; intermediate
+  substage commits live on the long-term feature branch and do not ship)
+- B3 (missing features): `0.8.x`+
+- Major version `1.0.0`: when feature parity with the IDEA plugin reached
