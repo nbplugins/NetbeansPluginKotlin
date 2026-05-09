@@ -1,3 +1,6 @@
+- Bumped runtime kotlin-compiler from 1.3.72 to 1.9.25 (B2.0). Bytecode of the Kotlin compiler bundled with the plugin is now ~6 years newer; analysis APIs report richer information.
+- Code formatting, indentation, j2k (Java→Kotlin), and the intentions/quick-fixes that depend on them are temporarily non-functional in this release. The bundled formatter/j2k JARs are still compiled against the older 1.3.72 compiler — at runtime they hit `NoSuchFieldError` / `NoClassDefFoundError` because field signatures and class layouts changed in the new compiler. Tracked for B2.1.
+
 # 0.5.22 (2026-05-08)
 
 - Compiled kotlin-converter from submodule sources (A4.6)
