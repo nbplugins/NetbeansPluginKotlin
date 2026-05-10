@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.6.7-SNAPSHOT</version>
+    <version>0.6.8-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-ide-common</artifactId>
@@ -13,8 +13,7 @@
   <name>Netbeans Plugin Kotlin Ide Common</name>
 
   <dependencies>
-    <!-- IntelliJ Platform Core 193 — replaces lib/intellij-core-1.0.jar (A4.10).
-         Versions inherited from parent dependencyManagement. -->
+    <!-- IntelliJ Platform Core 232 — aligned with kotlin-compiler:1.9.25 shaded era -->
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>core</artifactId>
@@ -25,19 +24,13 @@
       <artifactId>core-impl</artifactId>
       <scope>provided</scope>
     </dependency>
-    <!-- kotlin-compiler version overridden to legacy ${kotlin.version} (1.3.72) for FE1.0
-         1.3-era sources. Parent dependencyManagement defaults to ${kotlin.runtime.version}. -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-compiler</artifactId>
-      <version>${kotlin.version}</version>
     </dependency>
-    <!-- stdlib pinned to legacy ${kotlin.version}=1.3.72: kotlin-maven-plugin:1.3.72 used here
-         can't inline 1.9.25 stdlib functions like filterIsInstance. -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-stdlib</artifactId>
-      <version>${kotlin.version}</version>
     </dependency>
   </dependencies>
 
@@ -84,14 +77,13 @@
         </executions>
       </plugin>
 
-      <!-- Step 3: compile Kotlin sources (plugin version inherited from parent pluginManagement: ${kotlin.version}) -->
+      <!-- Step 3: compile Kotlin sources with kotlin-maven-plugin:1.9.25 (overrides parent default 1.3.72) -->
       <plugin>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-maven-plugin</artifactId>
+        <version>${kotlin.runtime.version}</version>
         <configuration>
-          <languageVersion>1.3</languageVersion>
-          <apiVersion>1.3</apiVersion>
-          <jvmTarget>11</jvmTarget>
+          <jvmTarget>17</jvmTarget>
           <args>
             <arg>-Xskip-metadata-version-check</arg>
           </args>
@@ -113,8 +105,8 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <configuration>
-          <source>11</source>
-          <target>11</target>
+          <source>17</source>
+          <target>17</target>
           <compilerArgument>-proc:none</compilerArgument>
         </configuration>
       </plugin>

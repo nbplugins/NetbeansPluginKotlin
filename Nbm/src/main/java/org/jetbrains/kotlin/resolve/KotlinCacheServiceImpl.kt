@@ -5,11 +5,14 @@ import com.intellij.psi.PsiFile
 import org.jetbrains.kotlin.analyzer.AnalysisResult
 import org.jetbrains.kotlin.analyzer.ModuleInfo
 import org.jetbrains.kotlin.caches.resolve.KotlinCacheService
+import org.jetbrains.kotlin.caches.resolve.PlatformAnalysisSettings
 import org.jetbrains.kotlin.container.ComponentProvider
 import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
 import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptor
+import org.jetbrains.kotlin.diagnostics.DiagnosticSink
 import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParser
+import org.jetbrains.kotlin.idea.FrontendInternals
 import org.jetbrains.kotlin.idea.resolve.ResolutionFacade
 import org.jetbrains.kotlin.platform.TargetPlatform
 import org.jetbrains.kotlin.psi.KtAnnotated
@@ -28,10 +31,15 @@ class KotlinCacheServiceImpl(private val ideaProject: Project, val project: NBPr
         return KotlinSimpleResolutionFacade(ideaProject, listOf(file), project)
     }
 
-    override fun getResolutionFacade(elements: List<KtElement>, platform: TargetPlatform): ResolutionFacade =
+    override fun getResolutionFacadeWithForcedPlatform(elements: List<KtElement>, platform: TargetPlatform): ResolutionFacade =
             getResolutionFacade(elements)
 
+    override fun getResolutionFacade(element: KtElement): ResolutionFacade =
+            KotlinSimpleResolutionFacade(ideaProject, listOf(element), project)
+
     override fun getResolutionFacadeByModuleInfo(moduleInfo: ModuleInfo, platform: TargetPlatform): ResolutionFacade? = null
+
+    override fun getResolutionFacadeByModuleInfo(moduleInfo: ModuleInfo, settings: PlatformAnalysisSettings): ResolutionFacade? = null
 
     override fun getSuppressionCache(): KotlinSuppressCache = object : KotlinSuppressCache() {
         override fun getSuppressionAnnotations(annotated: PsiElement): List<AnnotationDescriptor> {
@@ -48,11 +56,12 @@ class KotlinCacheServiceImpl(private val ideaProject: Project, val project: NBPr
             KotlinSimpleResolutionFacade(ideaProject, elements, project)
 }
 
+@OptIn(FrontendInternals::class)
 class KotlinSimpleResolutionFacade(
         override val project: Project,
         private val elements: List<KtElement>,
         private val nbProject: NBProject) : ResolutionFacade {
-    
+
     override fun analyze(elements: Collection<KtElement>, bodyResolveMode: BodyResolveMode): BindingContext {
         if (elements.isEmpty()) {
             return BindingContext.EMPTY
@@ -73,12 +82,13 @@ class KotlinSimpleResolutionFacade(
         return KotlinParser.getAnalysisResult(ktFile, nbProject)?.analysisResult?.bindingContext ?: BindingContext.EMPTY
     }
 
-    override fun analyzeWithAllCompilerChecks(elements: Collection<KtElement>): AnalysisResult {
+    override fun analyzeWithAllCompilerChecks(elements: Collection<KtElement>, callback: DiagnosticSink.DiagnosticsCallback?): AnalysisResult {
         val files = elements.map { it.containingKtFile }.toSet()
         if (files.isEmpty()) throw IllegalStateException("Elements should not be empty")
         return KotlinAnalyzer.analyzeFiles(nbProject, files).analysisResult
     }
 
+    @FrontendInternals
     override fun <T : Any> tryGetFrontendService(element: PsiElement, serviceClass: Class<T>): T? {
         val ktFile = (element as? KtElement)?.containingKtFile ?: return null
         return try {
@@ -86,26 +96,29 @@ class KotlinSimpleResolutionFacade(
         } catch (e: Exception) { null }
     }
 
+    @FrontendInternals
     override fun <T : Any> getFrontendService(element: PsiElement, serviceClass: Class<T>): T {
         throw UnsupportedOperationException()
     }
 
+    @FrontendInternals
     override fun <T : Any> getFrontendService(serviceClass: Class<T>): T {
         val files = elements.map { it.containingKtFile }.toSet()
         if (files.isEmpty()) throw IllegalStateException("Elements should not be empty")
-
-        val componentProvider = KotlinAnalyzer.analyzeFiles(nbProject, files).componentProvider
-
-        return componentProvider.getService(serviceClass)
+        return KotlinAnalyzer.analyzeFiles(nbProject, files).componentProvider.getService(serviceClass)
     }
 
+    @FrontendInternals
     override fun <T : Any> getFrontendService(moduleDescriptor: ModuleDescriptor, serviceClass: Class<T>): T {
         throw UnsupportedOperationException()
     }
 
+    @FrontendInternals
     override fun <T : Any> getIdeService(serviceClass: Class<T>): T {
         throw UnsupportedOperationException()
     }
+
+    override fun getResolverForProject() = throw UnsupportedOperationException()
 }
 
 @Suppress("UNCHECKED_CAST") fun <T : Any> ComponentProvider.getService(request: Class<T>): T =

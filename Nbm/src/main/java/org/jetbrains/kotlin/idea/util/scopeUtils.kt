@@ -16,6 +16,7 @@
 
 @file:JvmName("ScopeUtils")
 
+@file:OptIn(org.jetbrains.kotlin.idea.FrontendInternals::class)
 package org.jetbrains.kotlin.idea.util
 
 import com.intellij.psi.PsiElement

@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin</artifactId>
-  <version>0.6.7-SNAPSHOT</version>
+  <version>0.6.8-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin</name>
   <properties>
@@ -30,7 +30,6 @@
   </properties>
   <modules>
     <module>bundled-jars/PatchedCoreImpl</module>
-    <module>bundled-jars/KotlinIdeCommon</module>
     <module>bundled-jars/KotlinConverter</module>
     <module>Nbm</module>
   </modules>
@@ -130,13 +129,28 @@
     <dependencies>
       <!-- Bundled JARs -->
       <dependency>
-        <groupId>io.github.nbplugins</groupId>
-        <artifactId>netbeans-plugin-kotlin-ide-common</artifactId>
-        <version>${project.version}</version>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>formatter</artifactId>
+        <version>231-1.9.20-506-IJ8109.175</version>
       </dependency>
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
-        <artifactId>formatter</artifactId>
+        <artifactId>base-fe10-analysis</artifactId>
+        <version>231-1.9.20-506-IJ8109.175</version>
+      </dependency>
+      <dependency>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>base-fe10-code-insight</artifactId>
+        <version>231-1.9.20-506-IJ8109.175</version>
+      </dependency>
+      <dependency>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>base-fe10-obsolete-compat</artifactId>
+        <version>231-1.9.20-506-IJ8109.175</version>
+      </dependency>
+      <dependency>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>base-psi</artifactId>
         <version>231-1.9.20-506-IJ8109.175</version>
       </dependency>
       <dependency>

@@ -52,13 +52,15 @@ compatible version. Not a separate stage — done along the way.
 - [x] **B2** — Bump `kotlin-compiler` 1.3.72 → 1.9.25 (FE1.0 preserved). See [docs/plans/B2.0-bump-1.9.md](plans/B2.0-bump-1.9.md). Ships as 0.6.x.
 - [x] **B3** — Bump IntelliJ `core`/`core-impl`/`util` 193 → 232 (`code-style` stays 241); rebase `PatchedCoreImpl` on 232 (not deleted — external 232 ≠ shaded 232 in kotlin-compiler). PR #36.
 - [x] **B4** — Replace `KotlinFormatter` source module with binary artifact `org.jetbrains.kotlin:formatter:231-1.9.20-506-IJ8109.175`; re-enable formatting/indentation tests. PR #37.
-- [ ] **B5** — Repoint `KotlinIdeCommon` → `submodules/IntellijCommunity@232`; re-enable intentions/quickfixes tests
-- [ ] **B6** — Repoint `KotlinConverter` → `submodules/IntellijCommunity@232`; re-enable J2K/diagnostics tests
-- [ ] **C** — K2 Analysis API migration (FE1.0 → `KaSession`). Ships as 0.7.x. See [docs/adr/B1-k2-analysis-api-approach.md](adr/B1-k2-analysis-api-approach.md).
-- [ ] **D** — Restore and implement missing features
+- [x] **B5** — Replace `KotlinIdeCommon` source module with binary artifacts (`base-fe10-analysis/code-insight/obsolete-compat/base-psi:231-1.9.20-506-IJ8109.175`); re-enable intentions/quickfixes tests. 163 tests pass.
+- [ ] **B6** — Repoint `KotlinConverter` → `submodules/IntellijCommunity@232` (no binary artifact available for j2k); re-enable J2K/diagnostics tests
+- [ ] **C** — K2 Analysis API migration within Kotlin 1.9.25: bump `base-fe10-*` → `232-1.9.20-dev-1010-IJ9999` (FE1.0 over K2), then migrate call sites BindingContext → `KaSession`. Ships as 0.7.x.
+- [ ] **D** — Bump compiler to 2.x: drop shaded `kotlin-compiler:1.9.25`, use `kotlin-compiler-fir-for-ide:2.x`. Ships as 0.8.x.
+- [ ] **E** — Restore and implement missing features
 
 B3–B6 ship as 0.6.x on `feature/kotlin-compiler-only`; single PR after B6 passes all 169 tests.
 Stage C ships as 0.7.x on a long-term feature branch; release cut after all substages merge.
+Stage D ships as 0.8.x.
 
 ---
 
@@ -332,16 +334,22 @@ Gate: 154 tests pass.
 
 ---
 
-### B5. Repoint KotlinIdeCommon → IntellijCommunity 232
+### B5. Replace KotlinIdeCommon with binary artifacts ✓ done
 
-- Source paths: `submodules/Kotlin/idea/ide-common/src` →
-  `submodules/IntellijCommunity/plugins/kotlin/base/fe10/analysis/src` +
-  `plugins/kotlin/base/analysis/src` + `plugins/kotlin/base/util/src`
-- Bump kotlin-maven-plugin in KotlinIdeCommon to 1.9.25
-- Re-validate strip list (8 excluded classes may have moved packages)
-- Re-enable `IntentionsTest` (8 methods) and `QuickFixesTest` (1 method)
+Source compilation abandoned — 232-era `base-fe10-analysis/src` mixes K2 API classes
+that can't compile without K2 Analysis API deps. Used 4 pre-built JARs from JetBrains Space
+(`packages.jetbrains.team/maven/p/ki/maven`):
 
-Gate: ~163 tests pass.
+- `org.jetbrains.kotlin:base-fe10-analysis:231-1.9.20-506-IJ8109.175`
+- `org.jetbrains.kotlin:base-fe10-code-insight:231-1.9.20-506-IJ8109.175`
+- `org.jetbrains.kotlin:base-fe10-obsolete-compat:231-1.9.20-506-IJ8109.175`
+- `org.jetbrains.kotlin:base-psi:231-1.9.20-506-IJ8109.175`
+
+Nbm source adaptations: `ImportInsertHelper` / `KotlinCacheService` / `ResolutionFacade` API changes
+(231 era); `@OptIn(FrontendInternals::class)` on service methods; `NotPropertyList.kt` added (missing
+from 231 JARs); `jvmTarget` bumped 11 → 17. Re-enabled 8 + 1 = 9 tests.
+
+Gate: 163 tests pass.
 
 ---
 
@@ -357,31 +365,43 @@ Gate: all 169 tests pass.
 
 ---
 
-## Track C — K2 Analysis API Migration (deferred to 0.7.x)
+## Track C — K2 Analysis API Migration within Kotlin 1.9.25 (deferred to 0.7.x)
 
-Current layer after B2–B6: `BindingContext` (FE1.0, Kotlin 1.9.25).
-Target layer: K2 Analysis API (`KaSession`, `KaSymbol`, Kotlin 2.x).
+Starting point after B6: `BindingContext` (FE1.0), `kotlin-compiler:1.9.25`.
+Target after C: `KaSession`/`KaSymbol` (K2 Analysis API), still `kotlin-compiler:1.9.25`.
 
-ADR: `docs/adr/B1-k2-analysis-api-approach.md` (approach: `analysis-api-standalone-for-ide`).
+**Strategy:**
+1. **C1** — Bump `base-fe10-*` artifacts `231-1.9.20-506-IJ8109.175` → `232-1.9.20-dev-1010-IJ9999`.
+   In this snapshot FE1.0 is implemented on top of K2 internally; `BindingContext` call sites still
+   compile and work. Add `analysis-api-*-for-ide` to classpath. Verify: all tests pass, no call site changes.
+2. **C2** — Set up `StandaloneAnalysisAPISession` alongside existing `KotlinEnvironment`
+   (`analysis-api-standalone-for-ide`). Both analysis paths available simultaneously.
+3. **C3** — Migrate `resolve/`, `idea/util/` — `BindingContext` → `analyze { }` / `KaSession`
+4. **C4** — Migrate `completion/`
+5. **C5** — Migrate `diagnostics/`, `highlighter/semanticanalyzer/`
+6. **C6** — Migrate `hints/`, `intentions/`, `fixes/`
+7. **C7** — Migrate `navigation/`
+8. **C8** — Migrate `structurescanner/`, `filesystem/lightclasses/`
+9. **C9** — Remove `KotlinEnvironment` and all remaining `BindingContext` fallback code
+
+ADR: `docs/adr/B1-k2-analysis-api-approach.md`.
 Detailed plan: `docs/plans/C1-k2-foundation.md` (to be written when stage C begins).
-
-**Principle:** reuse code from `submodules/IntelliJCommunity/plugins/kotlin`; write from scratch
-only the NetBeans CSL API adapters.
-
-Substages (each on the long-term K2 feature branch; 0.7.0 released after the last one):
-- **C1** — K2 foundation: `analysis-api-standalone-for-ide`, `StandaloneAnalysisAPISession`, replace `KotlinEnvironment`
-- **C2** — Migrate `resolve/`, `idea/util/` call sites to `analyze {}`
-- **C3** — Migrate `completion/`
-- **C4** — Migrate `diagnostics/`, `highlighter/semanticanalyzer/`
-- **C5** — Migrate `hints/`, `intentions/`, `fixes/`
-- **C6** — Migrate `navigation/`
-- **C7** — Migrate `structurescanner/`, `filesystem/lightclasses/`
-- **C8** — Repackage new code under `io.github.nbkotlinplugin.*`; drop `bundled-jars/Kotlin*`
-- **C9** — Drop shaded `kotlin-compiler`; bump to 2.x; rely on unshaded `kotlin-compiler-*-for-ide`
 
 ---
 
-## Track D — Restore and Implement Missing Features
+## Track D — Bump Compiler to K2 (deferred to 0.8.x)
+
+Starting point after C: K2 Analysis API, still `kotlin-compiler:1.9.25` shaded.
+Target: `kotlin-compiler-fir-for-ide:2.x`, unshaded.
+
+- **D1** — Replace `kotlin-compiler:1.9.25` with `kotlin-compiler-fir-for-ide:2.x`; remove shaded
+  `com.intellij.*` exclusions; align IntelliJ platform deps to matching 2.x era
+- **D2** — Remove `PatchedCoreImpl` and remaining compatibility stubs made obsolete by 2.x
+- **D3** — Verify all tests pass; update `CLAUDE.md` key versions
+
+---
+
+## Track E — Restore and Implement Missing Features
 
 - [ ] Find Usages (Alt+F7) — implement via `IndexSearcher`
 - [ ] Go to Declaration (Ctrl+B) — implement `DeclarationFinder`
@@ -398,6 +418,7 @@ Substages (each on the long-term K2 feature branch; 0.7.0 released after the las
 - A1: stays `0.3.x`, new Maven coordinates
 - A4 series: `0.4.x` → `0.5.x` (cleanup of bundled JARs)
 - **B2–B6** (Kotlin 1.9.25 + IntelliJ 232 bump, FE1.0 preserved): `0.6.x`
-- **C1–C9** (K2 migration): `0.7.x` (single release cut after C9 lands)
-- D (missing features): `0.8.x`+
+- **C1–C9** (K2 Analysis API migration, Kotlin 1.9.25): `0.7.x`
+- **D1–D3** (bump compiler to K2 2.x): `0.8.x`
+- **E** (missing features): `0.9.x`+
 - Major version `1.0.0`: when feature parity with the IDEA plugin reached

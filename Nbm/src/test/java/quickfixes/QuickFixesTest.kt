@@ -57,6 +57,6 @@ class QuickFixesTest : KotlinTestCase("Quick Fixes test", "quickfixes") {
     
     fun testRemoveUselessElvisFix() = doTest("removeUselessElvis", RemoveUselessElvisFix::class.java)
     
-    fun disabled_testImplementMembersFix() = doTest("implementMembers", ImplementMembersFix::class.java)
+    fun testImplementMembersFix() = doTest("implementMembers", ImplementMembersFix::class.java)
     
 }

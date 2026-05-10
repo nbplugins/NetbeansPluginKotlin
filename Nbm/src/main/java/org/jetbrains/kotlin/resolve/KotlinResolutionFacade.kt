@@ -22,6 +22,8 @@ import org.jetbrains.kotlin.model.KotlinEnvironment
 import org.jetbrains.kotlin.analyzer.AnalysisResult
 import org.jetbrains.kotlin.container.ComponentProvider
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
+import org.jetbrains.kotlin.diagnostics.DiagnosticSink
+import org.jetbrains.kotlin.idea.FrontendInternals
 import org.jetbrains.kotlin.idea.resolve.ResolutionFacade
 import org.jetbrains.kotlin.psi.KtDeclaration
 import org.jetbrains.kotlin.psi.KtElement
@@ -30,34 +32,39 @@ import org.jetbrains.kotlin.container.getService
 import org.netbeans.api.project.Project as NBProject
 
 /*
-
   @author Alexander.Baratynski
   Created on Sep 9, 2016
 */
-
+@OptIn(FrontendInternals::class)
 class KotlinResolutionFacade(private val kotlinProject: NBProject,
                              private val componentProvider: ComponentProvider,
                              override val moduleDescriptor: ModuleDescriptor) : ResolutionFacade {
     override fun analyze(elements: Collection<KtElement>, bodyResolveMode: BodyResolveMode) = throw UnsupportedOperationException()
-    
 
     override fun resolveToDescriptor(declaration: KtDeclaration, bodyResolveMode: BodyResolveMode) = throw UnsupportedOperationException()
-    
+
     override val project: Project
         get() = KotlinEnvironment.getEnvironment(kotlinProject).project
 
     override fun analyze(element: KtElement, bodyResolveMode: BodyResolveMode): BindingContext = throw UnsupportedOperationException()
 
-    override fun analyzeWithAllCompilerChecks(elements: Collection<KtElement>): AnalysisResult = throw UnsupportedOperationException()
+    override fun analyzeWithAllCompilerChecks(elements: Collection<KtElement>, callback: DiagnosticSink.DiagnosticsCallback?): AnalysisResult =
+        throw UnsupportedOperationException()
 
+    @FrontendInternals
     override fun <T : Any> tryGetFrontendService(element: PsiElement, serviceClass: Class<T>): T? = throw UnsupportedOperationException()
 
+    @FrontendInternals
     override fun <T : Any> getFrontendService(element: PsiElement, serviceClass: Class<T>): T = throw UnsupportedOperationException()
 
+    @FrontendInternals
     override fun <T : Any> getFrontendService(serviceClass: Class<T>): T = componentProvider.getService(serviceClass)
 
+    @FrontendInternals
     override fun <T : Any> getFrontendService(moduleDescriptor: ModuleDescriptor, serviceClass: Class<T>): T = throw UnsupportedOperationException()
 
+    @FrontendInternals
     override fun <T : Any> getIdeService(serviceClass: Class<T>): T = throw UnsupportedOperationException()
 
+    override fun getResolverForProject() = throw UnsupportedOperationException()
 }

@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.6.7-SNAPSHOT</version>
+    <version>0.6.8-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-nbm</artifactId>
@@ -38,7 +38,7 @@
         <configuration>
           <languageVersion>${kotlin.runtime.languageVersion}</languageVersion>
           <apiVersion>${kotlin.runtime.languageVersion}</apiVersion>
-          <jvmTarget>11</jvmTarget>
+          <jvmTarget>17</jvmTarget>
           <args>
             <arg>-Xskip-metadata-version-check</arg>
           </args>
@@ -155,10 +155,22 @@
       <artifactId>netbeans-plugin-kotlin-patched-core-impl</artifactId>
     </dependency>
 
-    <!-- Bundled JARs (installed by bundled-jars/* modules) -->
+    <!-- Bundled JARs -->
     <dependency>
-      <groupId>io.github.nbplugins</groupId>
-      <artifactId>netbeans-plugin-kotlin-ide-common</artifactId>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>base-fe10-analysis</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>base-fe10-code-insight</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>base-fe10-obsolete-compat</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>base-psi</artifactId>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>

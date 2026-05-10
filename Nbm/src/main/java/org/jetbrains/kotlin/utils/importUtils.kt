@@ -16,32 +16,41 @@
  *******************************************************************************/
 package org.jetbrains.kotlin.utils
 
+import com.intellij.psi.PsiClass
 import org.jetbrains.kotlin.idea.util.ImportInsertHelper
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.idea.util.ImportDescriptorResult
 import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
 import org.jetbrains.kotlin.resolve.ImportPath
 import java.util.Comparator
-import org.jetbrains.kotlin.idea.imports.ImportPathComparator
 import org.jetbrains.kotlin.resolve.jvm.platform.JvmPlatformAnalyzerServices
 import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.config.LanguageVersionSettingsImpl
 
 class KotlinImportInserterHelper : ImportInsertHelper() {
-    override val importSortComparator: Comparator<ImportPath> = ImportPathComparator
-    
-    override fun importDescriptor(file: KtFile, descriptor: DeclarationDescriptor, forceAllUnderImport: Boolean): ImportDescriptorResult {
+    override fun getImportSortComparator(contextFile: KtFile): Comparator<ImportPath> = compareBy { it.toString() }
+
+    override fun importDescriptor(
+        element: KtElement,
+        descriptor: DeclarationDescriptor,
+        runImmediately: Boolean,
+        forceAllUnderImport: Boolean,
+        aliasName: Name?
+    ): ImportDescriptorResult = throw UnsupportedOperationException()
+
+    override fun importPsiClass(element: KtElement, psiClass: PsiClass, forceAllUnderImport: Boolean): ImportDescriptorResult =
         throw UnsupportedOperationException()
-    }
-    
+
     override fun isImportedWithLowPriorityDefaultImport(importPath: ImportPath, contextFile: KtFile): Boolean = false
 
     override fun isImportedWithDefault(importPath: ImportPath, contextFile: KtFile): Boolean {
         val defaultImports = JvmPlatformAnalyzerServices.getDefaultImports(LanguageVersionSettingsImpl.DEFAULT, true)
         return importPath.isImported(defaultImports)
     }
-    
-    override fun mayImportOnShortenReferences(descriptor: DeclarationDescriptor) = false
+
+    override fun mayImportOnShortenReferences(descriptor: DeclarationDescriptor, contextFile: KtFile): Boolean = false
 }
 
 fun FqName.isImported(importPath: ImportPath, skipAliasedImports: Boolean = true): Boolean = when {

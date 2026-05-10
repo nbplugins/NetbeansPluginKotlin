@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+@file:OptIn(org.jetbrains.kotlin.idea.FrontendInternals::class)
 package org.jetbrains.kotlin.idea.codeInsight
 
 import com.intellij.psi.PsiElement

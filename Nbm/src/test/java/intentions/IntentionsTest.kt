@@ -57,17 +57,17 @@ class IntentionsTest : KotlinTestCase("Intentions test", "intentions") {
 
     fun testToInfix() = doTest("toInfix", ToInfixIntention::class.java)
 
-    fun disabled_testSpecifyType() = doTest("specifyType", SpecifyTypeIntention::class.java)
+    fun testSpecifyType() = doTest("specifyType", SpecifyTypeIntention::class.java)
 
     fun testAddValToConstructorParameter() = doTest("addValToConstructorParameter", AddValToConstructorParameterIntention::class.java)
 
-    fun disabled_testChangeReturnType() = doTest("changeReturnType", ChangeReturnTypeIntention::class.java)
+    fun testChangeReturnType() = doTest("changeReturnType", ChangeReturnTypeIntention::class.java)
 
-    fun disabled_testConvertToSealedClass() = doTest("convertToSealedClass", ConvertEnumToSealedClassIntention::class.java)
+    fun testConvertToSealedClass() = doTest("convertToSealedClass", ConvertEnumToSealedClassIntention::class.java)
 
-    fun disabled_testConvertPropertyInitializerToGetter() = doTest("convertPropertyInitializerToGetter", ConvertPropertyInitializerToGetterIntention::class.java)
+    fun testConvertPropertyInitializerToGetter() = doTest("convertPropertyInitializerToGetter", ConvertPropertyInitializerToGetterIntention::class.java)
 
-    fun disabled_testConvertToBlockBody() = doTest("convertToBlockBody", ConvertToBlockBodyIntention::class.java)
+    fun testConvertToBlockBody() = doTest("convertToBlockBody", ConvertToBlockBodyIntention::class.java)
 
     fun testConvertToStringTemplate() = doTest("convertToStringTemplate", ConvertToStringTemplateIntention::class.java)
 
@@ -75,9 +75,9 @@ class IntentionsTest : KotlinTestCase("Intentions test", "intentions") {
  
     fun testConvertTwoComparisonsToRangeCheck() = doTest("convertTwoComparisons", ConvertTwoComparisonsToRangeCheckIntention::class.java)
     
-    fun disabled_testMergeIfsIntention() = doTest("mergeIfs", MergeIfsIntention::class.java)
+    fun testMergeIfsIntention() = doTest("mergeIfs", MergeIfsIntention::class.java)
     
-    fun disabled_testRemoveBraces() = doTest("removeBraces", RemoveBracesIntention::class.java)
+    fun testRemoveBraces() = doTest("removeBraces", RemoveBracesIntention::class.java)
     
     fun testRemoveParenthesesFromLambdaCall() = doTest("removeParenthesesFromLambdaCall", RemoveEmptyParenthesesFromLambdaCallIntention::class.java)
     
@@ -89,7 +89,7 @@ class IntentionsTest : KotlinTestCase("Intentions test", "intentions") {
  
     fun testReplaceSizeCheckWithIsNotEmpty() = doTest("replaceSizeCheckWithIsNotEmpty", ReplaceSizeCheckWithIsNotEmptyIntention::class.java)
  
-    fun disabled_testSplitIf() = doTest("splitIf", SplitIfIntention::class.java)
+    fun testSplitIf() = doTest("splitIf", SplitIfIntention::class.java)
     
     fun testConvertToConcatenatedString() = doTest("convertToConcatenatedString", ConvertToConcatenatedStringIntention::class.java)
 
