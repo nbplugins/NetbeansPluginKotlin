@@ -23,6 +23,7 @@ import com.intellij.lang.Language;
 import com.intellij.psi.codeStyle.CodeStyleSettingsCustomizable;
 import com.intellij.psi.codeStyle.CommonCodeStyleSettings;
 import com.intellij.psi.codeStyle.LanguageCodeStyleSettingsProvider;
+import org.jetbrains.kotlin.idea.formatter.KotlinCommonCodeStyleSettings;
 import org.jetbrains.kotlin.idea.KotlinLanguage;
 
 public class KotlinLanguageCodeStyleSettingsProvider extends LanguageCodeStyleSettingsProvider {
@@ -53,8 +54,7 @@ public class KotlinLanguageCodeStyleSettingsProvider extends LanguageCodeStyleSe
     
     @Override
     public CommonCodeStyleSettings getDefaultCommonSettings() {
-        CommonCodeStyleSettings commonSettings = 
-                new CommonCodeStyleSettings(getLanguage());
+        KotlinCommonCodeStyleSettings commonSettings = new KotlinCommonCodeStyleSettings();
         commonSettings.initIndentOptions();
         return commonSettings;
     }

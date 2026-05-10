@@ -17,12 +17,6 @@
  ******************************************************************************
  */
 
-// B2.0 (compiler-only experiment): tests prefixed with `disabled_` are skipped because
-// kotlin-bundled-jars are still built against kotlin-compiler:1.3.72; their bytecode
-// references KtTokens.FUN_KEYWORD with type KtKeywordToken, while at runtime
-// kotlin-compiler:1.9.25 declares it as KtModifierKeywordToken — getstatic mismatch →
-// NoSuchFieldError on KotlinFormatter init. Re-enable once formatter is recompiled
-// against 1.9.25 (deferred to B2.1 or later).
 
 package formatting
 
@@ -54,40 +48,40 @@ class FormattingTest : KotlinTestCase("Formatting test", "formatting") {
         assertEquals(after, formattedCode)
     }
 
-    fun disabled_testBlockCommentBeforeDeclaration() = doTest("blockCommentBeforeDeclaration.kt")
+    fun testBlockCommentBeforeDeclaration() = doTest("blockCommentBeforeDeclaration.kt")
 
-    fun disabled_testClassesAndPropertiesFormatTest() = doTest("classesAndPropertiesFormatTest.kt")
+    fun testClassesAndPropertiesFormatTest() = doTest("classesAndPropertiesFormatTest.kt")
 
-    fun disabled_testCommentOnTheLastLineOfLambda() = doTest("commentOnTheLastLineOfLambda.kt")
+    fun testCommentOnTheLastLineOfLambda() = doTest("commentOnTheLastLineOfLambda.kt")
 
-    fun disabled_testIndentInDoWhile() = doTest("indentInDoWhile.kt")
+    fun testIndentInDoWhile() = doTest("indentInDoWhile.kt")
 
-    fun disabled_testIndentInIfExpressionBlock() = doTest("indentInIfExpressionBlock.kt")
+    fun testIndentInIfExpressionBlock() = doTest("indentInIfExpressionBlock.kt")
 
-    fun disabled_testIndentInPropertyAccessor() = doTest("indentInPropertyAccessor.kt")
+    fun testIndentInPropertyAccessor() = doTest("indentInPropertyAccessor.kt")
 
-    fun disabled_testIndentInWhenEntry() = doTest("indentInWhenEntry.kt")
+    fun testIndentInWhenEntry() = doTest("indentInWhenEntry.kt")
 
-    fun disabled_testInitIndent() = doTest("initIndent.kt")
+    fun testInitIndent() = doTest("initIndent.kt")
 
-    fun disabled_testLambdaInBlock() = doTest("lambdaInBlock.kt")
+    fun testLambdaInBlock() = doTest("lambdaInBlock.kt")
 
-    fun disabled_testNewLineAfterImportsAndPackage() = doTest("newLineAfterImportsAndPackage.kt")
+    fun testNewLineAfterImportsAndPackage() = doTest("newLineAfterImportsAndPackage.kt")
 
-    fun disabled_testObjectsAndLocalFunctionsFormat() = doTest("objectsAndLocalFunctionsFormatTest.kt")
+    fun testObjectsAndLocalFunctionsFormat() = doTest("objectsAndLocalFunctionsFormatTest.kt")
 
-    fun disabled_testPackageFunctions() = doTest("packageFunctionsFormatTest.kt")
+    fun testPackageFunctions() = doTest("packageFunctionsFormatTest.kt")
 
-    fun disabled_testClassInBlockComment() = doTest("withBlockComments.kt")
+    fun testClassInBlockComment() = doTest("withBlockComments.kt")
 
-    fun disabled_testJavaDoc() = doTest("withJavaDoc.kt")
+    fun testJavaDoc() = doTest("withJavaDoc.kt")
 
-    fun disabled_testLineComments() = doTest("withLineComments.kt")
+    fun testLineComments() = doTest("withLineComments.kt")
 
-    fun disabled_testMutableVariable() = doTest("withMutableVariable.kt")
+    fun testMutableVariable() = doTest("withMutableVariable.kt")
 
-    fun disabled_testWhitespaceBeforeBrace() = doTest("withWhitespaceBeforeBrace.kt")
+    fun testWhitespaceBeforeBrace() = doTest("withWhitespaceBeforeBrace.kt")
 
-    fun disabled_testWhithoutComments() = doTest("withoutComments.kt")
+    fun testWhithoutComments() = doTest("withoutComments.kt")
 
 }

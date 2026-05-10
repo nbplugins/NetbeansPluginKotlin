@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin</artifactId>
-  <version>0.6.4-SNAPSHOT</version>
+  <version>0.6.7-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin</name>
   <properties>
@@ -31,7 +31,6 @@
   <modules>
     <module>bundled-jars/PatchedCoreImpl</module>
     <module>bundled-jars/KotlinIdeCommon</module>
-    <module>bundled-jars/KotlinFormatter</module>
     <module>bundled-jars/KotlinConverter</module>
     <module>Nbm</module>
   </modules>
@@ -43,6 +42,10 @@
     <repository>
       <id>jetbrains-intellij-releases</id>
       <url>https://www.jetbrains.com/intellij-repository/releases/</url>
+    </repository>
+    <repository>
+      <id>jetbrains-kotlin-ide</id>
+      <url>https://maven.pkg.jetbrains.space/kotlin/p/kotlin/kotlin-ide/</url>
     </repository>
   </repositories>
   <build>
@@ -132,9 +135,9 @@
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.github.nbplugins</groupId>
-        <artifactId>netbeans-plugin-kotlin-formatter</artifactId>
-        <version>${project.version}</version>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>formatter</artifactId>
+        <version>231-1.9.20-506-IJ8109.175</version>
       </dependency>
       <dependency>
         <groupId>io.github.nbplugins</groupId>

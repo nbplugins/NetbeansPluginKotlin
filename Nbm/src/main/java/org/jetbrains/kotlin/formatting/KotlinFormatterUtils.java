@@ -28,8 +28,18 @@ import java.lang.reflect.Proxy;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiElement;
+import com.intellij.lang.Language;
 import com.intellij.psi.codeStyle.CodeStyleSettings;
+import com.intellij.psi.codeStyle.CommonCodeStyleSettings;
 import com.intellij.psi.codeStyle.CommonCodeStyleSettings.IndentOptions;
+import com.intellij.psi.codeStyle.CustomCodeStyleSettings;
+import com.intellij.psi.codeStyle.DocCommentSettings;
+import com.intellij.psi.codeStyle.LanguageCodeStyleProvider;
+import java.util.Collections;
+import java.util.Set;
+import org.jetbrains.kotlin.idea.KotlinLanguage;
+import org.jetbrains.kotlin.idea.core.formatter.KotlinCodeStyleSettings;
+import org.jetbrains.kotlin.idea.formatter.KotlinCommonCodeStyleSettings;
 import com.intellij.util.text.CharArrayUtil;
 import org.jetbrains.kotlin.formatting.KotlinFormatter.KotlinSpacingBuilderUtilImpl;
 import org.jetbrains.kotlin.idea.formatter.KotlinSpacingRulesKt;
@@ -45,8 +55,25 @@ import org.netbeans.api.project.Project;
  */
 public class KotlinFormatterUtils {
     
-    private static final CodeStyleSettings settings = new CodeStyleSettings(true);
-    
+    private static final CodeStyleSettings settings;
+
+    static {
+        settings = new CodeStyleSettings(true);
+        // Register KotlinCommonCodeStyleSettings so that CodeStyleSettings.getCommonSettings(KotlinLanguage)
+        // returns a KotlinCommonCodeStyleSettings instance (required by codeStyleUtils.kt cast).
+        settings.registerCommonSettings(new LanguageCodeStyleProvider() {
+            @Override public Language getLanguage() { return KotlinLanguage.INSTANCE; }
+            @Override public CommonCodeStyleSettings getDefaultCommonSettings() {
+                KotlinCommonCodeStyleSettings s = new KotlinCommonCodeStyleSettings();
+                s.initIndentOptions();
+                return s;
+            }
+            @Override public DocCommentSettings getDocCommentSettings(CodeStyleSettings s) { return DocCommentSettings.DEFAULTS; }
+            @Override public Set<String> getSupportedFields() { return Collections.emptySet(); }
+            @Override public CustomCodeStyleSettings createCustomSettings(CodeStyleSettings s) { return new KotlinCodeStyleSettings(s); }
+        });
+    }
+
     public static CodeStyleSettings getSettings() {
         return settings;
     }

@@ -18,7 +18,6 @@ package org.jetbrains.kotlin.reformatting
 
 import javax.swing.text.Document
 import org.jetbrains.kotlin.formatting.KotlinFormatterUtils
-import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.navigation.netbeans.moveCaretToOffset
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.api.project.Project
@@ -33,18 +32,7 @@ fun format(doc: Document, offset: Int, proj: Project? = null) {
 
     val project = proj ?: ProjectUtils.getKotlinProjectForFileObject(file)
     val code = parsedFile.text
-    // B2.0 (compiler-only): KotlinFormatter is bytecode-incompat with kotlin-compiler 1.9.25
-    // (NoSuchFieldError on KtTokens.FUN_KEYWORD). Swallow so reformat-triggering intentions
-    // don't pop SEVERE errors at the user; the document stays unmodified.
-    val formattedCode = try {
-        KotlinFormatterUtils.formatCode(code, parsedFile.name, project, "\n")
-    } catch (e: NoSuchFieldError) {
-        KotlinLogger.INSTANCE.logWarning("KotlinFormatter disabled by 1.9.25 binary incompat: ${e.message}")
-        return
-    } catch (e: NoClassDefFoundError) {
-        KotlinLogger.INSTANCE.logWarning("KotlinFormatter disabled by 1.9.25 binary incompat: ${e.message}")
-        return
-    }
+    val formattedCode = KotlinFormatterUtils.formatCode(code, parsedFile.name, project, "\n")
     doc.remove(0, doc.length)
     doc.insertString(0, formattedCode, null)
     doc.moveCursorTo(offset)
