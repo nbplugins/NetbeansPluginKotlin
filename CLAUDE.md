@@ -179,11 +179,14 @@ avoid conflicts with bundled 193-era JARs. The following stubs live in `Nbm/src/
 | `CodeStyleSettingsService` | `com.intellij.psi.codeStyle` | Runtime; `getInstance()` returns no-op (empty factory lists) |
 | `CustomCodeStyleSettingsManager` | `com.intellij.psi.codeStyle` | Runtime; `getCustomSettings()` uses reflection to create settings |
 | `Formatter` | `com.intellij.formatting` | Runtime; `getInstance()` returns `new FormatterImpl()` singleton |
-| `DynamicBundle` | `com.intellij` | Runtime; stub for `core:241` i18n bundle (no dynamic plugin support needed) |
+| `DynamicBundle` | `com.intellij` | Runtime; stub for `core:241` i18n bundle — supports both `DynamicBundle(Class,String)` (241-era) and `DynamicBundle(String)` (1.9.25-era) constructors |
 | `ConcurrentCollectionFactory` | `com.intellij.concurrency` | Runtime; delegates to `ContainerUtil` (193-era) factory methods |
-| `ObjectIntHashMap` | `com.intellij.util.containers` | Runtime; extends `TObjectIntHashMap` AND implements `ObjectIntMap` (241 casts it to interface) |
-| `ObjectUtils` | `com.intellij.util` | Runtime; adds `binarySearch(int,int,IntIntFunction)` (needed by `MarkerProduction` in kotlin-compiler) and `binarySearch(int,int,IntUnaryOperator)` (needed by `code-style-impl:241`); placed in main module JAR to take classloader priority over `ext/util.jar` |
+| `ObjectIntHashMap` | `com.intellij.util.containers` | Runtime; extends `TObjectIntHashMap` AND implements `ObjectIntMap` (241 casts it to interface); adds `containsKey(Object)` absent from 1.9.25 shaded version |
+| `ObjectIntMap` | `com.intellij.util.containers` | Runtime; interface stub with `get`, `put`, `containsKey` — 1.9.25 shaded version only has `get`/`put` |
+| `ObjectUtils` | `com.intellij.util` | Runtime; adds `binarySearch(int,int,IntUnaryOperator)` (needed by `code-style-impl:241`) and `reachabilityFence(Object)` (no-op, absent in 1.9.25); placed in main module JAR to take classloader priority over `ext/util.jar` |
 | `Extensions` | `com.intellij.openapi.extensions` | Runtime; adds `getExtensions(ExtensionPointName)` missing from kotlin-compiler's embedded stub; placed in main module JAR to take classloader priority |
+| `MultiMap` | `com.intellij.util.containers` | Runtime; full replacement — 1.9.25 shaded version lacks `createConcurrent()`, `createLinkedSet()`, `createConcurrentSet()`, `isEmpty()`, `containsKey()`, `values()`, `size()`, etc.; uses `java.util.*` instead of missing `CollectionFactory`/`LinkedMultiMap` |
+| `FormatTextRanges` | `com.intellij.formatting` | Runtime; replaces code-style-impl:241's version — uses `Collections.sort` instead of `ContainerUtil.sorted(Collection,Comparator)` absent in 1.9.25 |
 | `ContainerUtilRt` | `com.intellij.util.containers` | Runtime; copied from `submodules/IntellijCommunity` via generated-sources; kotlin-compiler's embedded version lacks `newArrayList()` |
 
 These JARs are built by the `bundled-jars/*` reactor modules and passed to `Nbm` automatically.

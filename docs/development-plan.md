@@ -51,7 +51,7 @@ compatible version. Not a separate stage — done along the way.
 - [x] **B1** — Research K2 Analysis API, choose architectural approach
 - [x] **B2** — Bump `kotlin-compiler` 1.3.72 → 1.9.25 (FE1.0 preserved). See [docs/plans/B2.0-bump-1.9.md](plans/B2.0-bump-1.9.md). Ships as 0.6.x.
 - [x] **B3** — Bump IntelliJ `core`/`core-impl`/`util` 193 → 232 (`code-style` stays 241); rebase `PatchedCoreImpl` on 232 (not deleted — external 232 ≠ shaded 232 in kotlin-compiler). PR #36.
-- [ ] **B4** — Repoint `KotlinFormatter` → `submodules/IntellijCommunity@232`; re-enable formatting/indentation tests
+- [x] **B4** — Replace `KotlinFormatter` source module with binary artifact `org.jetbrains.kotlin:formatter:231-1.9.20-506-IJ8109.175`; re-enable formatting/indentation tests. PR #37.
 - [ ] **B5** — Repoint `KotlinIdeCommon` → `submodules/IntellijCommunity@232`; re-enable intentions/quickfixes tests
 - [ ] **B6** — Repoint `KotlinConverter` → `submodules/IntellijCommunity@232`; re-enable J2K/diagnostics tests
 - [ ] **C** — K2 Analysis API migration (FE1.0 → `KaSession`). Ships as 0.7.x. See [docs/adr/B1-k2-analysis-api-approach.md](adr/B1-k2-analysis-api-approach.md).
@@ -315,15 +315,20 @@ Gate: 120/120 tests pass; no regressions.
 
 ---
 
-### B4. Repoint KotlinFormatter → IntellijCommunity 232
+### B4. Replace KotlinFormatter with binary artifact ✓ done (PR #37)
 
-- Pin `submodules/IntellijCommunity` → `idea/232.9921.47`
-- Source path: `submodules/Kotlin/idea/formatter/src` → `submodules/IntellijCommunity/plugins/kotlin/formatter/src`
-- Bump kotlin-maven-plugin in KotlinFormatter to 1.9.25
-- Remove `try/catch (NoSuchFieldError)` fallbacks in `KotlinIndentTask.kt` and `formatUtils.kt`
-- Re-enable `FormattingTest` (18 methods) and `IndentationTest` (16 methods)
+Instead of repointing to IntellijCommunity 232 sources, used ready binary artifact
+`org.jetbrains.kotlin:formatter:231-1.9.20-506-IJ8109.175` from JetBrains Space Maven repo.
 
-Gate: ~154 tests pass.
+- Deleted `bundled-jars/KotlinFormatter` entirely
+- Added JetBrains Space repo and `org.jetbrains.kotlin:formatter` binary dependency
+- Added runtime stubs bridging 241-era formatter API against kotlin-compiler:1.9.25 shaded classes:
+  `DynamicBundle`, `FormatTextRanges`, `MultiMap`, `ObjectIntMap`/`ObjectIntHashMap`,
+  `ObjectUtils` (+`reachabilityFence`), `misc/registry.properties`
+- Removed `try/catch (NoSuchFieldError)` fallbacks in `KotlinIndentTask.kt` and `formatUtils.kt`
+- Re-enabled 36 formatting/indentation tests
+
+Gate: 154 tests pass.
 
 ---
 
