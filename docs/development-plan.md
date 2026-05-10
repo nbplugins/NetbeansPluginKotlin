@@ -50,7 +50,7 @@ compatible version. Not a separate stage — done along the way.
 - [x] **A4.11** — Eliminate `KotlinCompiler` and `KotlinCompilerIntellijPlatform` submodules; use `kotlin-compiler:1.3.72` directly with exclusions; move patched classes (`Extensions`, `ContainerUtilRt`, message bundles) into `Nbm`
 - [x] **B1** — Research K2 Analysis API, choose architectural approach
 - [x] **B2** — Bump `kotlin-compiler` 1.3.72 → 1.9.25 (FE1.0 preserved). See [docs/plans/B2.0-bump-1.9.md](plans/B2.0-bump-1.9.md). Ships as 0.6.x.
-- [ ] **B3** — Bump IntelliJ `core`/`core-impl`/`util` 193 → 232 (`code-style` stays 241); remove `PatchedCoreImpl`
+- [x] **B3** — Bump IntelliJ `core`/`core-impl`/`util` 193 → 232 (`code-style` stays 241); rebase `PatchedCoreImpl` on 232 (not deleted — external 232 ≠ shaded 232 in kotlin-compiler). PR #36.
 - [ ] **B4** — Repoint `KotlinFormatter` → `submodules/IntellijCommunity@232`; re-enable formatting/indentation tests
 - [ ] **B5** — Repoint `KotlinIdeCommon` → `submodules/IntellijCommunity@232`; re-enable intentions/quickfixes tests
 - [ ] **B6** — Repoint `KotlinConverter` → `submodules/IntellijCommunity@232`; re-enable J2K/diagnostics tests
@@ -301,14 +301,17 @@ still compiled from `submodules/Kotlin@v1.3.72`); fixed in B4–B6.
 
 ---
 
-### B3. Bump IntelliJ core 193 → 232; remove PatchedCoreImpl
+### B3. Bump IntelliJ core 193 → 232; rebase PatchedCoreImpl ✓ done (PR #36)
 
 - Bump `core`, `core-impl`, `util` from 193.7288.26 → 232.9921.47 in parent `pom.xml`
 - `code-style`, `code-style-impl` stay at 241.194
-- Delete `bundled-jars/PatchedCoreImpl` module
-- Adapt stubs under `Nbm/src/main/java/com/intellij/**` to 232-era APIs
+- `PatchedCoreImpl` rebased from 193 → 232 (same strip-overlap approach; NOT deleted because
+  `core-impl:232.9921.47` release and the 232-era snapshot shaded inside `kotlin-compiler:1.9.25`
+  differ — `CoreApplicationEnvironment` diverged enough to break test init if the external JAR wins)
+- Added `VfsBundle` stub (`com.intellij.openapi.vfs`) — removed from `core:232`, used by `BuiltInsReferenceResolver`
+- `bundled-jars/*` still compile against `core:193` (unchanged until B4–B6)
 
-Gate: 120 tests still pass; no regressions.
+Gate: 120/120 tests pass; no regressions.
 
 ---
 
