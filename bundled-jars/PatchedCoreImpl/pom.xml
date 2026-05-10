@@ -5,19 +5,19 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.6.3-SNAPSHOT</version>
+    <version>0.6.4-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-patched-core-impl</artifactId>
   <packaging>jar</packaging>
   <name>Netbeans Plugin Kotlin Patched Core-Impl</name>
   <description>
-    Repacks com.jetbrains.intellij.platform:{core, core-impl, util}:193 with EVERY class
+    Repacks com.jetbrains.intellij.platform:{core, core-impl, util}:232 with EVERY class
     that ALSO exists in kotlin-compiler:1.9.25 stripped out. After repacking, the
-    kotlin-compiler:1.9.25 shaded ~232-era versions of those classes become the sole source
+    kotlin-compiler:1.9.25 shaded versions of those classes become the sole source
     on the classpath — internally consistent with the rest of the shaded com.intellij.*
-    universe. Classes unique to 193 (not in kotlin-compiler) survive and are still available
-    for the Nbm stubs and code-style:241 to call.
+    universe. Classes unique to 232 (not in kotlin-compiler) survive and are still
+    available for the Nbm stubs and code-style:241 to call.
   </description>
 
   <dependencies>
@@ -25,16 +25,19 @@
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>core</artifactId>
+      <version>${intellij.platform.232.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>core-impl</artifactId>
+      <version>${intellij.platform.232.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>util</artifactId>
+      <version>${intellij.platform.232.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
@@ -76,7 +79,7 @@
                        dest="${project.build.directory}/kc-com-intellij">
                   <patternset includes="com/intellij/**"/>
                 </unzip>
-                <!-- 2. Unzip the three 193 jars into target/classes (fresh) -->
+                <!-- 2. Unzip the three 232 jars into target/classes (fresh) -->
                 <delete dir="${project.build.directory}/classes" quiet="true"/>
                 <mkdir dir="${project.build.directory}/classes"/>
                 <unzip src="${com.jetbrains.intellij.platform:core:jar}"
@@ -86,7 +89,7 @@
                 <unzip src="${com.jetbrains.intellij.platform:util:jar}"
                        dest="${project.build.directory}/classes"/>
                 <!-- 3. Delete from target/classes every file whose path appears in
-                     kc-com-intellij — overlap removed; unique-to-193 entries survive. -->
+                     kc-com-intellij — overlap removed; unique-to-232 entries survive. -->
                 <delete>
                   <fileset dir="${project.build.directory}/classes">
                     <present targetdir="${project.build.directory}/kc-com-intellij" present="both"/>

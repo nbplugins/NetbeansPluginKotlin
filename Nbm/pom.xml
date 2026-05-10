@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.6.3-SNAPSHOT</version>
+    <version>0.6.4-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-nbm</artifactId>
@@ -145,12 +145,11 @@
     </plugins>
   </build>
   <dependencies>
-    <!-- IntelliJ Platform 193 (core+core-impl+util) replaced by netbeans-plugin-kotlin-patched-core-impl.
-         The patched jar contains all 193 classes EXCEPT those that also exist in
-         kotlin-compiler:1.9.25 — for those, kotlin-compiler's shaded 232-era versions take over,
-         so the API surface is internally consistent for kotlin-compiler bytecode that calls
-         methods added in 232+ (CoreApplicationEnvironment.registerApplicationDynamicExtensionPoint,
-         ApplicationManager.setApplication(Application, Supplier, Disposable), etc.). -->
+    <!-- IntelliJ Platform 232 (core+core-impl+util) via PatchedCoreImpl.
+         PatchedCoreImpl repacks the three 232 JARs with all classes that also exist in
+         kotlin-compiler:1.9.25 stripped out — kotlin-compiler's internally consistent
+         shaded snapshot wins at runtime; 232-unique classes are available for stubs and
+         code-style:241. This replaces the old 193-based PatchedCoreImpl from B2. -->
     <dependency>
       <groupId>io.github.nbplugins</groupId>
       <artifactId>netbeans-plugin-kotlin-patched-core-impl</artifactId>
