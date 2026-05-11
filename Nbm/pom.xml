@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.6.8-SNAPSHOT</version>
+    <version>0.6.9-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-nbm</artifactId>
@@ -31,10 +31,6 @@
       <plugin>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-maven-plugin</artifactId>
-        <!-- Override parent pluginManagement default (${kotlin.version}=1.3.72) because Nbm now
-             depends on kotlin-compiler:${kotlin.runtime.version}=1.9.25, whose .kotlin_module
-             metadata format is unreadable by the 1.3.72 plugin. -->
-        <version>${kotlin.runtime.version}</version>
         <configuration>
           <languageVersion>${kotlin.runtime.languageVersion}</languageVersion>
           <apiVersion>${kotlin.runtime.languageVersion}</apiVersion>

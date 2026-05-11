@@ -15,11 +15,6 @@
  *
  *******************************************************************************/
 
-// B2.0 (compiler-only experiment): tests prefixed with `disabled_` are skipped because
-// j2k bundled-jar is still built against kotlin-compiler:1.3.72 and its bytecode loses
-// classes/methods removed in 1.9.25 (org.jetbrains.kotlin.j2k.TypeFlavorCalculator etc.) →
-// NoClassDefFoundError. Re-enable once j2k is recompiled against 1.9.25.
-
 package j2k
 
 import javaproject.JavaProject
@@ -35,7 +30,7 @@ class J2KTest : KotlinTestCase("Converter test", "j2k") {
         val javaFile = dir.getFileObject("$fileName.java")
         val doc = getDocumentForFileObject(dir, "$fileName.java")
         Java2KotlinConverter.convert(doc, project, javaFile)
-        
+
         val kotlinDoc = getDocumentForFileObject(dir, "$fileName.kt")
         val afterDoc = getDocumentForFileObject(dir, "$fileName.after")
         val kotlinText = kotlinDoc.getText(0, kotlinDoc.length)
@@ -43,14 +38,14 @@ class J2KTest : KotlinTestCase("Converter test", "j2k") {
         assertEquals(afterText, kotlinText)
     }
 
-    fun disabled_testSimpleCase() = doTest("simple")
+    fun testSimpleCase() = doTest("simple")
 
-    fun disabled_testWithStaticMethods() = doTest("withStaticMethod")
+    fun testWithStaticMethods() = doTest("withStaticMethod")
 
-    fun disabled_testMixed() = doTest("mixed")
+    fun testMixed() = doTest("mixed")
 
-    fun disabled_testWithInnerClass() = doTest("withInnerClass")
+    fun testWithInnerClass() = doTest("withInnerClass")
 
-    fun disabled_testInterface() = doTest("interface")
+    fun testInterface() = doTest("interface")
 
 }

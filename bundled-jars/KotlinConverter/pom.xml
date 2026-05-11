@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.6.8-SNAPSHOT</version>
+    <version>0.6.9-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-converter</artifactId>
@@ -13,8 +13,7 @@
   <name>Netbeans Plugin Kotlin Converter</name>
 
   <dependencies>
-    <!-- IntelliJ Platform Core 193 — replaces lib/intellij-core-1.0.jar (A4.10).
-         Versions inherited from parent dependencyManagement. -->
+    <!-- IntelliJ Platform Core 232 — version inherited from parent dependencyManagement. -->
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>core</artifactId>
@@ -25,19 +24,15 @@
       <artifactId>core-impl</artifactId>
       <scope>provided</scope>
     </dependency>
-    <!-- kotlin-compiler version overridden to legacy ${kotlin.version} (1.3.72) for FE1.0
-         1.3-era sources. Parent dependencyManagement defaults to ${kotlin.runtime.version}. -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-compiler</artifactId>
-      <version>${kotlin.version}</version>
+      <version>${kotlin.runtime.version}</version>
     </dependency>
-    <!-- stdlib pinned to legacy ${kotlin.version}=1.3.72: kotlin-maven-plugin:1.3.72 used here
-         can't inline 1.9.25 stdlib functions like filterIsInstance. -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-stdlib</artifactId>
-      <version>${kotlin.version}</version>
+      <version>${kotlin.runtime.version}</version>
     </dependency>
   </dependencies>
 
@@ -45,7 +40,7 @@
     <!-- Include j2k message bundles in the JAR -->
     <resources>
       <resource>
-        <directory>${project.basedir}/../../submodules/Kotlin/j2k/resources</directory>
+        <directory>${project.basedir}/../../submodules/IntellijCommunity/plugins/kotlin/j2k/old/resources</directory>
       </resource>
     </resources>
 
@@ -65,16 +60,16 @@
                 <mkdir dir="${project.build.directory}/generated-sources/converter/src/org/jetbrains/kotlin/j2k/ast"/>
                 <mkdir dir="${project.build.directory}/generated-sources/converter/src/org/jetbrains/kotlin/j2k/usageProcessing"/>
                 <mkdir dir="${project.build.directory}/generated-sources/converter/src/org/jetbrains/kotlin/idea/j2k"/>
-                <mkdir dir="${project.build.directory}/generated-sources/converter/src/org/jetbrains/kotlin/idea/core/util"/>
-                <mkdir dir="${project.build.directory}/generated-sources/converter/src/org/jetbrains/kotlin/idea/util/application"/>
                 <mkdir dir="${project.build.directory}/generated-sources/converter/src/org/jetbrains/kotlin/util"/>
+                <mkdir dir="${project.build.directory}/generated-sources/converter/src/com/intellij/psi"/>
+                <mkdir dir="${project.build.directory}/generated-sources/converter/src/com/intellij/refactoring/suggested"/>
               </target>
             </configuration>
           </execution>
         </executions>
       </plugin>
 
-      <!-- Step 2: copy j2k source files from submodules/Kotlin (v1.3.72) -->
+      <!-- Step 2: copy j2k source files from submodules/IntellijCommunity (232-era) -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-resources-plugin</artifactId>
@@ -88,7 +83,7 @@
               <overwrite>true</overwrite>
               <resources>
                 <resource>
-                  <directory>${project.basedir}/../../submodules/Kotlin/j2k/src</directory>
+                  <directory>${project.basedir}/../../submodules/IntellijCommunity/plugins/kotlin/j2k/old/src</directory>
                   <includes>
                     <include>org/jetbrains/kotlin/j2k/AfterConversionPass.kt</include>
                     <include>org/jetbrains/kotlin/j2k/AnnotationConverter.kt</include>
@@ -160,7 +155,7 @@
                 </resource>
                 <!-- DocCommentConverter and EmptyDocCommentConverter -->
                 <resource>
-                  <directory>${project.basedir}/../../submodules/Kotlin/idea/idea-core/src</directory>
+                  <directory>${project.basedir}/../../submodules/IntellijCommunity/plugins/kotlin/frontend-independent/src</directory>
                   <includes>
                     <include>org/jetbrains/kotlin/idea/j2k/DocCommentConverter.kt</include>
                   </includes>
@@ -168,25 +163,25 @@
                 </resource>
                 <!-- AbstractKotlinBundle -->
                 <resource>
-                  <directory>${project.basedir}/../../submodules/Kotlin/idea/ide-common/src</directory>
+                  <directory>${project.basedir}/../../submodules/IntellijCommunity/plugins/kotlin/base/util/src</directory>
                   <includes>
                     <include>org/jetbrains/kotlin/util/AbstractKotlinBundle.kt</include>
                   </includes>
                   <filtering>false</filtering>
                 </resource>
-                <!-- range extension on TextRange/PsiElement -->
+                <!-- PsiTypes — thin wrapper around deprecated PsiType.* constants, absent from core:232 JAR -->
                 <resource>
-                  <directory>${project.basedir}/../../submodules/Kotlin/idea/idea-core/src</directory>
+                  <directory>${project.basedir}/../../submodules/IntellijCommunity/java/java-psi-api/src</directory>
                   <includes>
-                    <include>org/jetbrains/kotlin/idea/core/util/RangeUtils.kt</include>
+                    <include>com/intellij/psi/PsiTypes.java</include>
                   </includes>
                   <filtering>false</filtering>
                 </resource>
-                <!-- runReadAction extension (file is in util/ but package is util.application — Kotlin allows this) -->
+                <!-- RangeMarker.range extension, used by JavaToKotlinConverter -->
                 <resource>
-                  <directory>${project.basedir}/../../submodules/Kotlin/idea/idea-analysis/src</directory>
+                  <directory>${project.basedir}/../../submodules/IntellijCommunity/platform/lang-api/src</directory>
                   <includes>
-                    <include>org/jetbrains/kotlin/idea/util/ApplicationUtils.kt</include>
+                    <include>com/intellij/refactoring/suggested/Utils.kt</include>
                   </includes>
                   <filtering>false</filtering>
                 </resource>
@@ -196,57 +191,7 @@
         </executions>
       </plugin>
 
-      <!-- Step 3: patch JavaToKotlinConverter.kt — emptyList() type inference regressed in 1.3 strict mode -->
-      <plugin>
-        <groupId>com.google.code.maven-replacer-plugin</groupId>
-        <artifactId>replacer</artifactId>
-        <executions>
-          <execution>
-            <id>patch-java-to-kotlin-converter</id>
-            <phase>generate-sources</phase>
-            <goals><goal>replace</goal></goals>
-            <configuration>
-              <file>${project.build.directory}/generated-sources/converter/src/org/jetbrains/kotlin/j2k/JavaToKotlinConverter.kt</file>
-              <replacements>
-                <replacement>
-                  <token>return@runReadAction emptyList\(\)</token>
-                  <value>return@runReadAction emptyList&lt;com.intellij.psi.PsiElement&gt;()</value>
-                </replacement>
-              </replacements>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-
-      <!-- Step 4: patch ApplicationUtils.kt — runWriteAction uses generic Application.runWriteAction<T>
-           which doesn't exist in our IntelliJ version (only Runnable overload); replace with cast -->
-      <plugin>
-        <groupId>com.google.code.maven-replacer-plugin</groupId>
-        <artifactId>replacer</artifactId>
-        <executions>
-          <execution>
-            <id>patch-application-utils</id>
-            <phase>generate-sources</phase>
-            <goals><goal>replace</goal></goals>
-            <configuration>
-              <file>${project.build.directory}/generated-sources/converter/src/org/jetbrains/kotlin/idea/util/ApplicationUtils.kt</file>
-              <replacements>
-                <replacement>
-                  <token>fun &lt;T&gt; runWriteAction\(action: \(\) -&gt; T\): T \{[^}]+\}</token>
-                  <value>@Suppress("UNCHECKED_CAST")
-fun &lt;T&gt; runWriteAction(action: () -&gt; T): T {
-    var result: T = null as T
-    ApplicationManager.getApplication().runWriteAction(Runnable { result = action() })
-    return result
-}</value>
-                </replacement>
-              </replacements>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-
-      <!-- Step 5: register generated-sources as source root -->
+      <!-- Step 3: register generated-sources as source root (Kotlin + Java) -->
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>build-helper-maven-plugin</artifactId>
@@ -254,7 +199,9 @@ fun &lt;T&gt; runWriteAction(action: () -&gt; T): T {
           <execution>
             <id>add-converter-source-root</id>
             <phase>generate-sources</phase>
-            <goals><goal>add-source</goal></goals>
+            <goals>
+              <goal>add-source</goal>
+            </goals>
             <configuration>
               <sources>
                 <source>${project.build.directory}/generated-sources/converter/src</source>
@@ -264,14 +211,12 @@ fun &lt;T&gt; runWriteAction(action: () -&gt; T): T {
         </executions>
       </plugin>
 
-      <!-- Step 6: compile Kotlin sources (plugin version inherited from parent pluginManagement: ${kotlin.version}) -->
+      <!-- Step 4: compile Kotlin sources with 1.9.25 -->
       <plugin>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-maven-plugin</artifactId>
         <configuration>
-          <languageVersion>1.3</languageVersion>
-          <apiVersion>1.3</apiVersion>
-          <jvmTarget>11</jvmTarget>
+          <jvmTarget>17</jvmTarget>
           <args>
             <arg>-Xskip-metadata-version-check</arg>
           </args>
@@ -288,14 +233,17 @@ fun &lt;T&gt; runWriteAction(action: () -&gt; T): T {
         </executions>
       </plugin>
 
-      <!-- Step 7: Java compilation (no Java sources, keeps consistency) -->
+      <!-- Step 5: Java compilation (PsiTypes.java from generated-sources) -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <configuration>
-          <source>11</source>
-          <target>11</target>
+          <source>17</source>
+          <target>17</target>
           <compilerArgument>-proc:none</compilerArgument>
+          <includes>
+            <include>com/intellij/psi/PsiTypes.java</include>
+          </includes>
         </configuration>
       </plugin>
     </plugins>

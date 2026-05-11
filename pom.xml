@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin</artifactId>
-  <version>0.6.8-SNAPSHOT</version>
+  <version>0.6.9-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin</name>
   <properties>
@@ -90,12 +90,13 @@
           <artifactId>replacer</artifactId>
           <version>1.5.3</version>
         </plugin>
-        <!-- Default kotlin-maven-plugin = legacy ${kotlin.version} (1.3.72) for bundled-jars.
-             Nbm overrides via <version>${kotlin.runtime.version}</version> (1.9.25). -->
+        <!-- kotlin-maven-plugin default = ${kotlin.runtime.version} (1.9.25).
+             KotlinConverter is the only bundled-jars module still compiling Kotlin (B6+);
+             KotlinFormatter and KotlinIdeCommon are now binary artifacts. -->
         <plugin>
           <groupId>org.jetbrains.kotlin</groupId>
           <artifactId>kotlin-maven-plugin</artifactId>
-          <version>${kotlin.version}</version>
+          <version>${kotlin.runtime.version}</version>
         </plugin>
         <plugin>
           <groupId>org.apache.netbeans.utilities</groupId>
@@ -172,23 +173,23 @@
         <artifactId>netbeans-plugin-kotlin-patched-core-impl</artifactId>
         <version>${project.version}</version>
       </dependency>
-      <!-- core/core-impl/util at 193 — default for bundled-jars/* (1.3.72-era sources).
-           PatchedCoreImpl uses 232 (managed separately with explicit version in its pom).
-           Nbm uses PatchedCoreImpl which provides the 232-stripped runtime classes. -->
+      <!-- core/core-impl/util at 232 — era-aligned with kotlin-compiler:1.9.25 shaded snapshot.
+           PatchedCoreImpl has explicit 232 versions in its own pom (unchanged).
+           KotlinConverter (only remaining bundled-jar that compiles Kotlin) picks this up. -->
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>core</artifactId>
-        <version>${intellij.platform.193.version}</version>
+        <version>${intellij.platform.232.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>core-impl</artifactId>
-        <version>${intellij.platform.193.version}</version>
+        <version>${intellij.platform.232.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>util</artifactId>
-        <version>${intellij.platform.193.util.version}</version>
+        <version>${intellij.platform.232.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
