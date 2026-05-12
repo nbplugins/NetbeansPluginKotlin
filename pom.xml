@@ -33,6 +33,13 @@
     <module>Nbm</module>
   </modules>
   <repositories>
+    <!-- Central declared first so kotlin-compiler (and other Maven-Central-published artifacts)
+         come from the public release build, not from JetBrains' internal IntelliJ build repo
+         which may carry stripped/different variants of the same coordinates. -->
+    <repository>
+      <id>central</id>
+      <url>https://repo.maven.apache.org/maven2</url>
+    </repository>
     <repository>
       <id>jetbrains-intellij-dependencies</id>
       <url>https://packages.jetbrains.team/maven/p/ij/intellij-dependencies/</url>
