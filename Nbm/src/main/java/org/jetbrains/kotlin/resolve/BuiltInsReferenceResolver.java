@@ -116,7 +116,7 @@ public class BuiltInsReferenceResolver {
 
         StorageComponentContainer container = InjectionKt.createContainerForLazyResolve(
                 newModuleContext, declarationFactory,
-                new BindingTraceContext(), JvmPlatforms.INSTANCE.getUnspecifiedJvmPlatform(),
+                new BindingTraceContext(myProject), JvmPlatforms.INSTANCE.getUnspecifiedJvmPlatform(),
                 JvmPlatformAnalyzerServices.INSTANCE, CompilerEnvironment.INSTANCE,
                 LanguageVersionSettingsImpl.DEFAULT);
         ResolveSession resolveSession = container.create(ResolveSession.class);

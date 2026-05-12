@@ -168,6 +168,39 @@
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>base-psi</artifactId>
     </dependency>
+    <!-- K2 Analysis API foundation (C1) — classpath only; no call sites yet (C2+).
+         Base artifacts without -for-ide are not published publicly (IntelliJ-internal),
+         so all transitive deps are excluded; the -for-ide JARs themselves are the implementation. -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-standalone-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-fe10-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-k2-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-impl-base-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-platform-interface-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>code-style</artifactId>
@@ -214,7 +247,7 @@
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-compiler</artifactId>
-      <!-- Version inherited from parent dependencyManagement: ${kotlin.runtime.version}=1.9.25.
+      <!-- Version inherited from parent dependencyManagement: ${kotlin.runtime.version}=2.0.21.
            stdlib/reflect/script-runtime also default to runtime version via parent DM (bundled-jars
            override them locally to ${kotlin.version}=1.3.72 for their own legacy compilation). -->
       <exclusions>

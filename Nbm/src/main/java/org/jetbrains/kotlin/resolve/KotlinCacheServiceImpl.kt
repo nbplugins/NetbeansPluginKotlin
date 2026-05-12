@@ -41,7 +41,7 @@ class KotlinCacheServiceImpl(private val ideaProject: Project, val project: NBPr
 
     override fun getResolutionFacadeByModuleInfo(moduleInfo: ModuleInfo, settings: PlatformAnalysisSettings): ResolutionFacade? = null
 
-    override fun getSuppressionCache(): KotlinSuppressCache = object : KotlinSuppressCache() {
+    override fun getSuppressionCache(): KotlinSuppressCache = object : KotlinSuppressCache(ideaProject) {
         override fun getSuppressionAnnotations(annotated: PsiElement): List<AnnotationDescriptor> {
             if (annotated !is KtAnnotated) return emptyList()
             val context = KotlinParser.getAnalysisResult(annotated.containingKtFile, project)

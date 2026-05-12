@@ -91,8 +91,6 @@ import org.netbeans.api.project.Project as NBProject
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCliJavaFileManagerImpl
 import com.intellij.openapi.util.SystemInfo
 import org.jetbrains.kotlin.resolve.jvm.modules.JavaModuleResolver
-import org.jetbrains.kotlin.resolve.ModuleAnnotationsResolver
-import org.jetbrains.kotlin.cli.jvm.compiler.CliModuleAnnotationsResolver
 import org.jetbrains.kotlin.resolve.jvm.KotlinJavaPsiFacade
 import org.jetbrains.kotlin.cli.jvm.index.SingleJavaFileRootsIndex
 
@@ -105,6 +103,17 @@ private fun setIdeaIoUseFallback() {
     if (osName.contains("win")) {
         System.getProperties().setProperty("idea.io.use.nio2", java.lang.Boolean.TRUE.toString())
     }
+}
+
+// kotlin-compiler 2.0.21: EarlyAccessRegistryManager.<clinit> calls PathManager.getConfigPath()
+// during PluginEnabler.<clinit>, which is triggered by CoreApplicationEnvironment.<init>.
+// Without idea.config.path set, PathManager.getHomePath() throws RuntimeException.
+// Point to a temp dir so the registry manager can operate in headless mode.
+private val IDEA_CONFIG_DIR_SET: Boolean by lazy {
+    if (System.getProperty("idea.config.path") == null) {
+        System.setProperty("idea.config.path", java.io.File(System.getProperty("java.io.tmpdir"), "kotlin-nb-idea-config").absolutePath)
+    }
+    true
 }
 
 class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable: Disposable) {
@@ -137,6 +146,7 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
 
         setIdeaIoUseFallback()
                 
+        @Suppress("UNUSED_EXPRESSION") IDEA_CONFIG_DIR_SET
         applicationEnvironment = createJavaCoreApplicationEnvironment(disposable)
         projectEnvironment = object : JavaCoreProjectEnvironment(disposable, applicationEnvironment) {
             override fun preregisterServices() {
@@ -156,13 +166,12 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
             registerService(CoreJavaFileManager::class.java,
                 ServiceManager.getService(project, JavaFileManager::class.java) as CoreJavaFileManager)
             
-            val cliTraceHolder = CliTraceHolder()
+            val cliTraceHolder = CliTraceHolder(project)
             val cliLightClassGenerationSupport = CliLightClassGenerationSupport(cliTraceHolder, project)
             registerService(LightClassGenerationSupport::class.java, cliLightClassGenerationSupport)
             registerService(CliLightClassGenerationSupport::class.java, cliLightClassGenerationSupport)
             registerService(CodeAnalyzerInitializer::class.java, cliTraceHolder)
             registerService(KotlinLightClassManager::class.java, KotlinLightClassManager(kotlinProject))
-            registerService(ModuleAnnotationsResolver::class.java, CliModuleAnnotationsResolver())
             registerService(KotlinJavaPsiFacade::class.java, KotlinJavaPsiFacade(this))
             registerService(JavaModuleResolver::class.java, object : JavaModuleResolver {
                 override fun checkAccessibility(
@@ -277,6 +286,20 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
             registerFileType(KotlinFileType.INSTANCE, "kt")
             registerParserDefinition(KotlinParserDefinition())
             application.registerService(KotlinBinaryClassCache::class.java, KotlinBinaryClassCache())
+            // 2.0.21: GlobalSearchScope.filesScope calls VfsUtilCore.createCompactVirtualFileSet which
+            // requires VirtualFileSetFactory registered as an application service.
+            application.registerService(
+                com.intellij.openapi.vfs.VirtualFileSetFactory::class.java,
+                object : com.intellij.openapi.vfs.VirtualFileSetFactory {
+                    override fun createCompactVirtualFileSet() = HashSetVirtualFileSet()
+                    override fun createCompactVirtualFileSet(files: Collection<com.intellij.openapi.vfs.VirtualFile>) = HashSetVirtualFileSet(files)
+                }
+            )
+            // 2.0.21: LanguageLevel resolution asks this service; return null (unknown) in standalone mode.
+            application.registerService(
+                com.intellij.pom.java.InternalPersistentJavaLanguageLevelReaderService::class.java,
+                com.intellij.pom.java.InternalPersistentJavaLanguageLevelReaderService { null }
+            )
         }
 
         return env
@@ -311,7 +334,13 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
     fun getVirtualFileInJar(pathToJar: String, relativePath: String): VirtualFile? {
         val decodedPathToJar = URLDecoder.decode(pathToJar, "UTF-8") ?: pathToJar
         val decodedRelativePath = URLDecoder.decode(relativePath, "UTF-8") ?: relativePath
-        
+
         return applicationEnvironment.jarFileSystem.findFileByPath("$decodedPathToJar!/$decodedRelativePath")
     }
+}
+
+private class HashSetVirtualFileSet(
+    files: Collection<com.intellij.openapi.vfs.VirtualFile> = emptyList()
+) : java.util.HashSet<com.intellij.openapi.vfs.VirtualFile>(files), com.intellij.openapi.vfs.VirtualFileSet {
+    override fun freeze() {}
 }

@@ -46,7 +46,7 @@ object NetBeansAnalyzerFacadeForJVM {
 
         val environment = KotlinEnvironment.getEnvironment(kotlinProject)
         val configuration = environment.configuration
-        val trace = CliBindingTrace()
+        val trace = CliBindingTrace(project)
 
         val packagePartProviderFn: (GlobalSearchScope) -> PackagePartProvider = { _ ->
             KotlinPackagePartProvider(kotlinProject)

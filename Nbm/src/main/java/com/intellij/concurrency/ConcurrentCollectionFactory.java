@@ -45,10 +45,29 @@ public final class ConcurrentCollectionFactory {
         return Collections.newSetFromMap(new ConcurrentHashMap<>(initialCapacity, loadFactor, concurrencyLevel));
     }
     public static <V> ConcurrentLongObjectMap<V> createConcurrentLongObjectMap() {
-        return ContainerUtil.createConcurrentLongObjectMap();
+        return new SimpleConcurrentLongObjectMap<>();
     }
     public static <V> ConcurrentLongObjectMap<V> createConcurrentLongObjectMap(int initialCapacity) {
-        return ContainerUtil.createConcurrentLongObjectMap();
+        return new SimpleConcurrentLongObjectMap<>();
+    }
+
+    private static final class SimpleConcurrentLongObjectMap<V> implements ConcurrentLongObjectMap<V> {
+        private final ConcurrentHashMap<Long, V> map = new ConcurrentHashMap<>();
+        @Override public V put(long key, V value) { return map.put(key, value); }
+        @Override public V get(long key) { return map.get(key); }
+        @Override public V remove(long key) { return map.remove(key); }
+        @Override public V putIfAbsent(long key, V value) { return map.putIfAbsent(key, value); }
+        @Override public Iterable<ConcurrentLongObjectMap.LongEntry<V>> entries() {
+            java.util.List<ConcurrentLongObjectMap.LongEntry<V>> result = new java.util.ArrayList<>();
+            for (java.util.Map.Entry<Long, V> e : map.entrySet()) {
+                final long k = e.getKey(); final V v = e.getValue();
+                result.add(new ConcurrentLongObjectMap.LongEntry<V>() {
+                    @Override public long getKey() { return k; }
+                    @Override public V getValue() { return v; }
+                });
+            }
+            return result;
+        }
     }
     public static <V> ConcurrentIntObjectMap<V> createConcurrentIntObjectMap() {
         return ContainerUtil.createConcurrentIntObjectMap();

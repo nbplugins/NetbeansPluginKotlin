@@ -91,7 +91,7 @@ class NetBeansJavaClass(elementHandle: ElemHandle<TypeElement>, project: Project
     override val isFromSource: Boolean = false
     override val isRecord: Boolean = false
     override val isSealed: Boolean = false
-    override val permittedTypes: Collection<org.jetbrains.kotlin.load.java.structure.JavaClassifierType> = emptyList()
+    override val permittedTypes: Sequence<org.jetbrains.kotlin.load.java.structure.JavaClassifierType> = emptySequence()
     override val recordComponents: Collection<org.jetbrains.kotlin.load.java.structure.JavaRecordComponent> = emptyList()
 
     override val lightClassOriginKind = null
