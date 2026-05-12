@@ -31,25 +31,34 @@ object KotlinMockProject {
     private fun createHelper(): AntProjectHelper? {
         val userDirectory = FileUtil.toFileObject(Places.getUserDirectory())
         val projectName = "ktFilesWithoutProject"
-        
-        if (userDirectory.getFileObject(projectName) == null) {
-            try {
+
+        val projectDir = userDirectory.getFileObject(projectName)
+            ?: try {
                 userDirectory.createFolder(projectName)
             } catch (ex: IOException) {
                 return null
             }
+
+        return try {
+            ProjectGenerator.createProject(projectDir, "org.netbeans.modules.java.j2seproject")
+        } catch (ex: IllegalArgumentException) {
+            // project already registered at this directory — find it directly
+            null
         }
-        return ProjectGenerator.createProject(userDirectory, "org.netbeans.modules.java.j2seproject")
     }
 
     fun getMockProject(): Project? {
         if (project == null) {
             try {
-                val helper = createHelper() ?: return null
-                project = ProjectManager.getDefault().findProject(helper.projectDirectory)
+                val helper = createHelper()
+                val userDirectory = FileUtil.toFileObject(Places.getUserDirectory())
+                val projectDir = helper?.projectDirectory
+                    ?: userDirectory.getFileObject("ktFilesWithoutProject")
+                    ?: return null
+                project = ProjectManager.getDefault().findProject(projectDir)
             } catch (ex: IOException) {}
         }
-        
+
         return project
     }
 

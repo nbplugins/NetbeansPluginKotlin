@@ -48,6 +48,12 @@ Build version is computed from git tags by CI:
 - Base tag `MAJOR.MINOR` (e.g. `0.4`) + commit count from it → `MAJOR.MINOR.N` (e.g. `0.4.13`)
 - `pom.xml` holds `MAJOR.MINOR.0-SNAPSHOT` — only MAJOR.MINOR matters to CI; patch and SNAPSHOT suffix are ignored
 
+**Always bump the version with Maven, never by editing pom.xml files manually:**
+```bash
+mvn versions:set -DnewVersion=0.6.10-SNAPSHOT -DgenerateBackupPoms=false
+```
+This updates the root pom and all child modules atomically.
+
 ### Release cycle
 
 A release has an explicit **start** and **finish**:
