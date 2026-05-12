@@ -53,7 +53,7 @@ compatible version. Not a separate stage — done along the way.
 - [x] **B3** — Bump IntelliJ `core`/`core-impl`/`util` 193 → 232 (`code-style` stays 241); rebase `PatchedCoreImpl` on 232 (not deleted — external 232 ≠ shaded 232 in kotlin-compiler). PR #36.
 - [x] **B4** — Replace `KotlinFormatter` source module with binary artifact `org.jetbrains.kotlin:formatter:231-1.9.20-506-IJ8109.175`; re-enable formatting/indentation tests. PR #37.
 - [x] **B5** — Replace `KotlinIdeCommon` source module with binary artifacts (`base-fe10-analysis/code-insight/obsolete-compat/base-psi:231-1.9.20-506-IJ8109.175`); re-enable intentions/quickfixes tests. 163 tests pass.
-- [ ] **B6** — Repoint `KotlinConverter` → `submodules/IntellijCommunity@232` (no binary artifact available for j2k); re-enable J2K/diagnostics tests
+- [x] **B6** — Repoint `KotlinConverter` → `submodules/IntellijCommunity@232` (no binary artifact available for j2k); re-enable J2K/diagnostics tests
 - [ ] **C** — K2 Analysis API migration within Kotlin 1.9.25: bump `base-fe10-*` → `232-1.9.20-dev-1010-IJ9999` (FE1.0 over K2), then migrate call sites BindingContext → `KaSession`. Ships as 0.7.x.
 - [ ] **D** — Bump compiler to 2.x: drop shaded `kotlin-compiler:1.9.25`, use `kotlin-compiler-fir-for-ide:2.x`. Ships as 0.8.x.
 - [ ] **E** — Restore and implement missing features

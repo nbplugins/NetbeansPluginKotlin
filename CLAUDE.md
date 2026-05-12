@@ -281,8 +281,7 @@ grep "jdk.unsupported" /usr/lib/apache-netbeans/etc/netbeans.conf
 ```
 
 ## Key Versions
-- Kotlin compiler (Maven): 1.3.72
-- Bundled JARs compiled against: Kotlin 1.1.1 (hence the patches)
+- Kotlin compiler (Maven): 1.9.25
 - NetBeans target: RELEASE230 (23.0)
 - Java source/target: 17
 - Java runtime for tests: must use Java 17 (Java 25 breaks the Kotlin Maven plugin's `JavaVersion.parse()`)
