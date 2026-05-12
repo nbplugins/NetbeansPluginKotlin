@@ -365,24 +365,34 @@ Gate: all 169 tests pass.
 
 ---
 
-## Track C — K2 Analysis API Migration within Kotlin 1.9.25 (deferred to 0.7.x)
+## Track C — K2 Analysis API Migration (deferred to 0.7.x)
 
 Starting point after B6: `BindingContext` (FE1.0), `kotlin-compiler:1.9.25`.
-Target after C: `KaSession`/`KaSymbol` (K2 Analysis API), still `kotlin-compiler:1.9.25`.
+Target after C9: `KaSession`/`KaSymbol` (K2 Analysis API), `kotlin-compiler:2.0.21`.
 
 **Strategy:**
-1. **C1** — Bump `base-fe10-*` artifacts `231-1.9.20-506-IJ8109.175` → `232-1.9.20-dev-1010-IJ9999`.
-   In this snapshot FE1.0 is implemented on top of K2 internally; `BindingContext` call sites still
-   compile and work. Add `analysis-api-*-for-ide` to classpath. Verify: all tests pass, no call site changes.
-2. **C2** — Set up `StandaloneAnalysisAPISession` alongside existing `KotlinEnvironment`
+1. **C1** ✓ done (PR #42) — Bump `kotlin-compiler` `1.9.25` → `2.0.21`. Add `analysis-api-*-for-ide:2.0.21`
+   to classpath. Fix FE1.0 call sites for 2.0.21 API changes. Verify: all 169 tests pass, no
+   analysis call-site changes yet. `submodules/Kotlin` stays at 1.9.25 (K2 Analysis API runtime is
+   provided by the `-for-ide` JARs, not by the submodule sources).
+2. **C2** — Bump submodules and platform JARs to 242-era:
+   - `submodules/Kotlin` → `v2.0.21`; update `KotlinIdeCommon/pom.xml` source path
+     (`Kotlin/idea/ide-common/src` → `IntellijCommunity/plugins/kotlin/base/fe10/analysis/src`)
+   - `submodules/IntellijCommunity` → `idea/242.x`; update `KotlinConverter/pom.xml` source path
+     (`j2k/old/src` → `j2k/k1.old/src`)
+   - Bump binary platform JARs `core`, `core-impl`, `base-fe10-*` from 232-era to 242-era
+   - Strip/stub any new 242-era classes that conflict with kotlin-compiler 2.0.21 shaded 232-era
+     `com.intellij.*` (the shaded era stays 232; external platform moves to 242 — resolve conflicts)
+   - Verify: all tests pass, no analysis call-site changes yet.
+3. **C3** — Set up `StandaloneAnalysisAPISession` alongside existing `KotlinEnvironment`
    (`analysis-api-standalone-for-ide`). Both analysis paths available simultaneously.
-3. **C3** — Migrate `resolve/`, `idea/util/` — `BindingContext` → `analyze { }` / `KaSession`
-4. **C4** — Migrate `completion/`
-5. **C5** — Migrate `diagnostics/`, `highlighter/semanticanalyzer/`
-6. **C6** — Migrate `hints/`, `intentions/`, `fixes/`
-7. **C7** — Migrate `navigation/`
-8. **C8** — Migrate `structurescanner/`, `filesystem/lightclasses/`
-9. **C9** — Remove `KotlinEnvironment` and all remaining `BindingContext` fallback code
+4. **C4** — Migrate `resolve/`, `idea/util/` — `BindingContext` → `analyze { }` / `KaSession`
+5. **C5** — Migrate `completion/`
+6. **C6** — Migrate `diagnostics/`, `highlighter/semanticanalyzer/`
+7. **C7** — Migrate `hints/`, `intentions/`, `fixes/`
+8. **C8** — Migrate `navigation/`
+9. **C9** — Migrate `structurescanner/`, `filesystem/lightclasses/`
+10. **C10** — Remove `KotlinEnvironment` and all remaining `BindingContext` fallback code
 
 ADR: `docs/adr/B1-k2-analysis-api-approach.md`.
 Detailed plan: `docs/plans/C1-k2-foundation.md` (to be written when stage C begins).
@@ -418,7 +428,7 @@ Target: `kotlin-compiler-fir-for-ide:2.x`, unshaded.
 - A1: stays `0.3.x`, new Maven coordinates
 - A4 series: `0.4.x` → `0.5.x` (cleanup of bundled JARs)
 - **B2–B6** (Kotlin 1.9.25 + IntelliJ 232 bump, FE1.0 preserved): `0.6.x`
-- **C1–C9** (K2 Analysis API migration, Kotlin 1.9.25): `0.7.x`
+- **C1–C10** (K2 Analysis API migration, kotlin-compiler 2.0.21): `0.7.x`
 - **D1–D3** (bump compiler to K2 2.x): `0.8.x`
 - **E** (missing features): `0.9.x`+
 - Major version `1.0.0`: when feature parity with the IDEA plugin reached
