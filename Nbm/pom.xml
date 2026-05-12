@@ -152,21 +152,45 @@
     </dependency>
 
     <!-- Bundled JARs -->
+    <!-- kotlin-compiler-*-for-ide:1.9.20-506 are transitive deps of base-fe10-* per the
+         jetbrains-kotlin-ide-hosted real POMs. Exclude them: kotlin-compiler:2.0.21 already
+         provides all the same classes, and the older fat JARs contain CliTraceHolder without
+         the (Project) constructor, causing NoSuchMethodError at runtime. -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>base-fe10-analysis</artifactId>
+      <exclusions>
+        <exclusion><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-compiler-common-for-ide</artifactId></exclusion>
+        <exclusion><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-compiler-fe10-for-ide</artifactId></exclusion>
+        <exclusion><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-compiler-ir-for-ide</artifactId></exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>base-fe10-code-insight</artifactId>
+      <exclusions>
+        <exclusion><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-compiler-common-for-ide</artifactId></exclusion>
+        <exclusion><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-compiler-fe10-for-ide</artifactId></exclusion>
+        <exclusion><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-compiler-ir-for-ide</artifactId></exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>base-fe10-obsolete-compat</artifactId>
+      <exclusions>
+        <exclusion><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-compiler-common-for-ide</artifactId></exclusion>
+        <exclusion><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-compiler-fe10-for-ide</artifactId></exclusion>
+        <exclusion><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-compiler-ir-for-ide</artifactId></exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>base-psi</artifactId>
+      <exclusions>
+        <exclusion><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-compiler-common-for-ide</artifactId></exclusion>
+        <exclusion><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-compiler-fe10-for-ide</artifactId></exclusion>
+        <exclusion><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-compiler-ir-for-ide</artifactId></exclusion>
+      </exclusions>
     </dependency>
     <!-- K2 Analysis API foundation (C1) — classpath only; no call sites yet (C2+).
          Base artifacts without -for-ide are not published publicly (IntelliJ-internal),
