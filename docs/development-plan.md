@@ -368,7 +368,7 @@ Gate: all 169 tests pass.
 ## Track C — K2 Analysis API Migration (deferred to 0.7.x)
 
 Starting point after B6: `BindingContext` (FE1.0), `kotlin-compiler:1.9.25`.
-Target after C9: `KaSession`/`KaSymbol` (K2 Analysis API), `kotlin-compiler:2.0.21`.
+Target after C11: `KaSession`/`KaSymbol` (K2 Analysis API), `kotlin-compiler:2.0.21`.
 
 **Strategy:**
 1. **C1** ✓ done (PR #42) — Bump `kotlin-compiler` `1.9.25` → `2.0.21`. Add `analysis-api-*-for-ide:2.0.21`
@@ -382,19 +382,26 @@ Target after C9: `KaSession`/`KaSymbol` (K2 Analysis API), `kotlin-compiler:2.0.
    - Add CoreImpl and KotlinCompiler reactor modules
    - `KotlinConverter/pom.xml` and `submodules/IntellijCommunity` unchanged (stay at 232-era)
    - Verify: all tests pass, no analysis call-site changes yet.
-3. **C3** — Bump `submodules/IntellijCommunity` → `idea/242.x`; update KotlinConverter sources:
-   - Update `KotlinConverter/pom.xml` source path (`j2k/old/src` → `j2k/k1.old/src` + `j2k/shared/src`)
-   - Resolve 242-era k1.old deps on Java Analysis plugin (`DfaUtil`, `NullabilityUtil`) — stub or workaround
-   - Verify: all tests pass.
-4. **C4** — Set up `StandaloneAnalysisAPISession` alongside existing `KotlinEnvironment`
+3. **C3** — Set up `StandaloneAnalysisAPISession` alongside existing `KotlinEnvironment`
    (`analysis-api-standalone-for-ide`). Both analysis paths available simultaneously.
-5. **C5** — Migrate `resolve/`, `idea/util/` — `BindingContext` → `analyze { }` / `KaSession`
-6. **C6** — Migrate `completion/`
-7. **C7** — Migrate `diagnostics/`, `highlighter/semanticanalyzer/`
-8. **C8** — Migrate `hints/`, `intentions/`, `fixes/`
-9. **C9** — Migrate `navigation/`
-10. **C10** — Migrate `structurescanner/`, `filesystem/lightclasses/`
-11. **C11** — Remove `KotlinEnvironment` and all remaining `BindingContext` fallback code
+4. **C4** — Migrate `resolve/`, `idea/util/` — `BindingContext` → `analyze { }` / `KaSession`
+5. **C5** — Migrate `completion/`
+6. **C6** — Migrate `diagnostics/`, `highlighter/semanticanalyzer/`
+7. **C7** — Migrate `hints/`, `intentions/`, `fixes/`
+8. **C8** — Migrate `navigation/`
+9. **C9** — Migrate `structurescanner/`, `filesystem/lightclasses/`
+10. **C10** — Remove `KotlinEnvironment` and all remaining `BindingContext` fallback code; remove
+    `KotlinIdeCommon` module (all `base-fe10-*` deps eliminated with FE1.0 code)
+11. **C11** — Bump `submodules/IntellijCommunity` → `idea/242.x`; update KotlinConverter sources
+    (only remaining user of the submodule):
+    - Update `KotlinConverter/pom.xml` source path (`j2k/old/src` → `j2k/k1.old/src` + `j2k/shared/src`)
+    - Resolve 242-era k1.old deps on Java Analysis plugin (`DfaUtil`, `NullabilityUtil`) — stub or workaround
+    - Verify: all tests pass.
+
+**Note on C3 ordering:** `submodules/IntellijCommunity` intentionally stays at 232-era through C3–C10.
+Both `KotlinIdeCommon` (compiles `base/fe10/analysis/src`) and `KotlinConverter` (compiles `j2k/old/src`)
+build successfully against 242 platform JARs from 232-era sources — verified after C2. Bumping
+`submodules/IntellijCommunity` is deferred to C11, when `KotlinConverter` is the only remaining user.
 
 ADR: `docs/adr/B1-k2-analysis-api-approach.md`.
 Detailed plan: `docs/plans/C1-k2-foundation.md` (to be written when stage C begins).
