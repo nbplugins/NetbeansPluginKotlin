@@ -218,9 +218,13 @@
         </exclusion>
       </exclusions>
     </dependency>
+    <!-- formatter's real JetBrains POM declares kotlin-compiler-common-for-ide:1.9.20-506 as a
+         runtime dep — that fat JAR contains ClassId without Companion, causing NoSuchFieldError
+         when mixed with kotlin-compiler:2.0.21. Locally the POM was install:file minimal (no deps). -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>formatter</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
