@@ -48,6 +48,13 @@
       <id>jetbrains-intellij-releases</id>
       <url>https://www.jetbrains.com/intellij-repository/releases/</url>
     </repository>
+    <!-- ki/maven listed before jetbrains-kotlin-ide: hosts the thin base-fe10-* JARs (511 classes each).
+         jetbrains-kotlin-ide has fat JAR variants (2.8 MB) that embed old compiler classes and cause
+         NoSuchFieldError: Companion at runtime when mixed with kotlin-compiler:2.0.21. -->
+    <repository>
+      <id>jetbrains-kotlin-ki</id>
+      <url>https://packages.jetbrains.team/maven/p/ki/maven/</url>
+    </repository>
     <repository>
       <id>jetbrains-kotlin-ide</id>
       <url>https://maven.pkg.jetbrains.space/kotlin/p/kotlin/kotlin-ide/</url>
