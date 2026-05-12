@@ -343,4 +343,6 @@ private class HashSetVirtualFileSet(
     files: Collection<com.intellij.openapi.vfs.VirtualFile> = emptyList()
 ) : java.util.HashSet<com.intellij.openapi.vfs.VirtualFile>(files), com.intellij.openapi.vfs.VirtualFileSet {
     override fun freeze() {}
+    override fun freezed(): MutableSet<com.intellij.openapi.vfs.VirtualFile> = java.util.Collections.unmodifiableSet(this)
+    override fun process(processor: com.intellij.util.Processor<in com.intellij.openapi.vfs.VirtualFile>): Boolean = all { processor.process(it) }
 }

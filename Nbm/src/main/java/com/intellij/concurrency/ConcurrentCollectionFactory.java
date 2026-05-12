@@ -56,7 +56,19 @@ public final class ConcurrentCollectionFactory {
         @Override public V put(long key, V value) { return map.put(key, value); }
         @Override public V get(long key) { return map.get(key); }
         @Override public V remove(long key) { return map.remove(key); }
+        @Override public boolean remove(long key, V value) { return map.remove(key, value); }
+        @Override public V replace(long key, V value) { return map.replace(key, value); }
+        @Override public boolean replace(long key, V oldValue, V newValue) { return map.replace(key, oldValue, newValue); }
+        @Override public V cacheOrGet(long key, V value) { V v = map.putIfAbsent(key, value); return v != null ? v : value; }
         @Override public V putIfAbsent(long key, V value) { return map.putIfAbsent(key, value); }
+        @Override public boolean containsKey(long key) { return map.containsKey(key); }
+        @Override public boolean containsValue(V value) { return map.containsValue(value); }
+        @Override public void clear() { map.clear(); }
+        @Override public int size() { return map.size(); }
+        @Override public boolean isEmpty() { return map.isEmpty(); }
+        @Override public long[] keys() { return map.keySet().stream().mapToLong(Long::longValue).toArray(); }
+        @Override public java.util.Iterator<V> elements() { return map.values().iterator(); }
+        @Override public java.util.Collection<V> values() { return map.values(); }
         @Override public Iterable<ConcurrentLongObjectMap.LongEntry<V>> entries() {
             java.util.List<ConcurrentLongObjectMap.LongEntry<V>> result = new java.util.ArrayList<>();
             for (java.util.Map.Entry<Long, V> e : map.entrySet()) {

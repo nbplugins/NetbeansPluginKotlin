@@ -58,7 +58,7 @@ public class KotlinFormatterUtils {
     private static final CodeStyleSettings settings;
 
     static {
-        settings = new CodeStyleSettings(true);
+        settings = new CodeStyleSettings();
         // Register KotlinCommonCodeStyleSettings so that CodeStyleSettings.getCommonSettings(KotlinLanguage)
         // returns a KotlinCommonCodeStyleSettings instance (required by codeStyleUtils.kt cast).
         settings.registerCommonSettings(new LanguageCodeStyleProvider() {
