@@ -93,6 +93,68 @@ Commit messages must also start with a past-tense verb (e.g. "Fixed ...", "Added
 
 When finishing a release by adding `# MAJOR.MINOR` to CHANGELOG.md, the commit message must be `"Requested release MAJOR.MINOR"` (not `"Released MAJOR.MINOR"`).
 
+## Coding Standards
+
+### Package naming
+
+All **new** plugin classes (not existing legacy code) go in `io.github.nbplugins.kotlin.nbm.*`.
+Sub-package mirrors the feature area, e.g.:
+- `io.github.nbplugins.kotlin.nbm.resolve` — analysis session management
+- `io.github.nbplugins.kotlin.nbm.completion` — code completion
+- `io.github.nbplugins.kotlin.nbm.diagnostics` — error/warning reporting
+
+### Documentation
+
+Every public class and every public method must have a KDoc (Kotlin) or Javadoc (Java) comment
+that explains: purpose, parameters, and return value. Non-obvious private helpers also get a
+short comment explaining the *why*.
+
+### Unit tests
+
+Every new class must have a corresponding unit test class.
+
+**Test location and naming mirrors the source tree:**
+
+| Source | Test |
+|--------|------|
+| `src/main/java/io/github/nbplugins/kotlin/nbm/resolve/Foo.kt` | `src/test/java/io/github/nbplugins/kotlin/nbm/resolve/FooTest.kt` |
+
+Every public method of a new class must have at least one test method in the corresponding test
+class. Test classes extend `utils.KotlinTestCase` (or `org.netbeans.junit.NbTestCase` directly
+for infrastructure tests that don't need a project).
+
+### MVC separation
+
+Separate concerns into three layers:
+- **Model / Service** — analysis logic, data structures; no NetBeans UI APIs.
+- **View** — NetBeans nodes, editor annotations, UI panels; no direct analysis calls.
+- **Controller** — wires model to view; handles NetBeans lifecycle events.
+
+New classes must be placed in the layer that matches their responsibility.
+
+---
+
+## Pre-commit Checklist
+
+Before every commit, in order:
+
+1. **Run unit tests** — all tests must pass:
+   ```bash
+   JAVA_HOME=/usr/lib/jvm/java-17-temurin-jdk mvn clean test
+   ```
+
+2. **Build the plugin** — must produce a `.nbm` without errors:
+   ```bash
+   JAVA_HOME=/usr/lib/jvm/java-17-temurin-jdk mvn clean package -DskipTests
+   ```
+
+3. **Propose a manual test plan** — based on what changed, list the concrete steps for the user
+   to verify in a running NetBeans. Wait for the user to confirm that manual testing passed.
+
+4. **Commit and open PR only after** manual testing is confirmed successful.
+
+---
+
 ## Build Commands
 
 All commands run from the **repository root** (multi-module build):

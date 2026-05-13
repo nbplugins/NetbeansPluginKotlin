@@ -34,6 +34,7 @@ import com.intellij.core.CoreApplicationEnvironment
 import com.intellij.core.CoreJavaFileManager
 import com.intellij.core.JavaCoreProjectEnvironment
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreApplicationEnvironment
+import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
 import com.intellij.mock.MockProject
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.ServiceManager
@@ -120,7 +121,14 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
 
     companion object {
         val CACHED_ENVIRONMENT = hashMapOf<NBProject, KotlinEnvironment>()
-        
+
+        /**
+         * Guards one-time application-level setup (file types, services, extension points).
+         * The IntelliJ application environment is shared across all KotlinEnvironment instances
+         * and the K2 StandaloneAnalysisAPISession; registrations must happen exactly once.
+         */
+        @Volatile private var appSetupDone = false
+
         @Synchronized fun getEnvironment(kotlinProject: NBProject): KotlinEnvironment {
             if (!CACHED_ENVIRONMENT.containsKey(kotlinProject)) {
                 CACHED_ENVIRONMENT.put(kotlinProject, KotlinEnvironment(kotlinProject, Disposer.newDisposable()))
@@ -219,10 +227,10 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
         )
 
         ExpressionCodegenExtension.Companion.registerExtensionPoint(project)
-        
-        getExtensionsFromCommonXml()
-        getExtensionsFromKotlin2JvmXml()
-        
+
+        // getExtensionsFrom*Xml register app-level EPs and instances; moved to
+        // registerOnceAppSetup so they are called only once across all projects.
+
         CACHED_ENVIRONMENT.put(kotlinProject, this)
         KotlinLogger.INSTANCE.logInfo("KotlinEnvironment init: ${(System.nanoTime() - startTime)} ns")
     }
@@ -277,37 +285,67 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
         }
     }
     
+    /**
+     * Initialises the shared IntelliJ application environment using getOrCreate, so that
+     * the K2 [org.jetbrains.kotlin.analysis.api.standalone.StandaloneAnalysisAPISession]
+     * can later reuse the same application instance without conflict.
+     *
+     * All app-level registrations are delegated to [registerOnceAppSetup], which is guarded
+     * by [appSetupDone] and executes at most once per JVM lifetime.
+     *
+     * @param disposable lifecycle owner; the app env's own lifecycle is managed by getOrCreate
+     * @return the shared [CoreApplicationEnvironment]
+     */
     private fun createJavaCoreApplicationEnvironment(disposable: Disposable): CoreApplicationEnvironment {
-        val env = KotlinCoreApplicationEnvironment.create(disposable, false)
-        registerAppExtensionPoints()
-
-        with (env) {
-            registerFileType(PlainTextFileType.INSTANCE, "xml")
-            registerFileType(KotlinFileType.INSTANCE, "kt")
-            registerParserDefinition(KotlinParserDefinition())
-            application.registerService(KotlinBinaryClassCache::class.java, KotlinBinaryClassCache())
-            // 2.0.21: GlobalSearchScope.filesScope calls VfsUtilCore.createCompactVirtualFileSet which
-            // requires VirtualFileSetFactory registered as an application service.
-            application.registerService(
-                com.intellij.openapi.vfs.VirtualFileSetFactory::class.java,
-                object : com.intellij.openapi.vfs.VirtualFileSetFactory {
-                    override fun createCompactVirtualFileSet() = HashSetVirtualFileSet()
-                    override fun createCompactVirtualFileSet(files: Collection<com.intellij.openapi.vfs.VirtualFile>) = HashSetVirtualFileSet(files)
-                }
-            )
-            // 2.0.21: LanguageLevel resolution asks this service; return null (unknown) in standalone mode.
-            application.registerService(
-                com.intellij.pom.java.InternalPersistentJavaLanguageLevelReaderService::class.java,
-                com.intellij.pom.java.InternalPersistentJavaLanguageLevelReaderService { null }
-            )
-        }
-
+        val env = KotlinCoreEnvironment.getOrCreateApplicationEnvironmentForProduction(
+            disposable, CompilerConfiguration()
+        )
+        registerOnceAppSetup(env)
         return env
+    }
+
+    /**
+     * Registers file types, application services, and extension points exactly once.
+     *
+     * Guarded by [appSetupDone]: subsequent [KotlinEnvironment] instances (opened for
+     * different NBProjects) share the same application environment and must not re-register.
+     *
+     * @param env the shared application environment
+     */
+    private fun registerOnceAppSetup(env: KotlinCoreApplicationEnvironment) {
+        synchronized(KotlinEnvironment::class.java) {
+            if (appSetupDone) return
+            registerAppExtensionPoints()
+            with(env) {
+                registerFileType(PlainTextFileType.INSTANCE, "xml")
+                registerFileType(KotlinFileType.INSTANCE, "kt")
+                registerParserDefinition(KotlinParserDefinition())
+                application.registerService(KotlinBinaryClassCache::class.java, KotlinBinaryClassCache())
+                // 2.0.21: GlobalSearchScope.filesScope calls VfsUtilCore.createCompactVirtualFileSet which
+                // requires VirtualFileSetFactory registered as an application service.
+                application.registerService(
+                    com.intellij.openapi.vfs.VirtualFileSetFactory::class.java,
+                    object : com.intellij.openapi.vfs.VirtualFileSetFactory {
+                        override fun createCompactVirtualFileSet() = HashSetVirtualFileSet()
+                        override fun createCompactVirtualFileSet(files: Collection<com.intellij.openapi.vfs.VirtualFile>) = HashSetVirtualFileSet(files)
+                    }
+                )
+                // 2.0.21: LanguageLevel resolution asks this service; return null (unknown) in standalone mode.
+                application.registerService(
+                    com.intellij.pom.java.InternalPersistentJavaLanguageLevelReaderService::class.java,
+                    com.intellij.pom.java.InternalPersistentJavaLanguageLevelReaderService { null }
+                )
+            }
+            // App-level EPs and extension instances — must also be registered only once.
+            getExtensionsFromCommonXml()
+            getExtensionsFromKotlin2JvmXml()
+            appSetupDone = true
+        }
     }
 
     private fun registerAppExtensionPoints() {
         // KotlinCoreApplicationEnvironment already registers ContainerProvider, ClassFileDecompilers,
-        // PsiAugmentProvider, JavaMainMethodProvider — only register what it doesn't
+        // PsiAugmentProvider, JavaMainMethodProvider — only register what it doesn't.
         CoreApplicationEnvironment.registerExtensionPoint(Extensions.getRootArea(), ClsCustomNavigationPolicy.EP_NAME,
                 ClsCustomNavigationPolicy::class.java)
     }

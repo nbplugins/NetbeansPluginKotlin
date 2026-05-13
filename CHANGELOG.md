@@ -1,3 +1,5 @@
+- Added K2 Analysis API session infrastructure (`KotlinAnalysisAPISession`) alongside the existing K1 path; both analysis backends are now available simultaneously
+
 # 0.6.8 (2026-05-12)
 
 - Upgraded maximum supported Kotlin version from 1.3 to 1.9.
