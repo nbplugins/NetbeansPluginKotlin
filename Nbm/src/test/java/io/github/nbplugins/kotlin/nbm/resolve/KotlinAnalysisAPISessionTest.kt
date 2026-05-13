@@ -19,7 +19,7 @@ package io.github.nbplugins.kotlin.nbm.resolve
 import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.components.KaDiagnosticCheckerFilter
-import org.jetbrains.kotlin.utils.ProjectUtils
+import org.jetbrains.kotlin.psi.KtFile
 import utils.KotlinTestCase
 
 /**
@@ -66,17 +66,21 @@ class KotlinAnalysisAPISessionTest : KotlinTestCase("K2 Analysis API session", "
     /**
      * Smoke test: runs K2 diagnostics analysis on an existing test file.
      * Verifies that [analyze] completes without throwing and returns a non-null collection.
+     *
+     * Uses a KtFile from the K2 session's own [StandaloneAnalysisAPISession.modulesWithFiles]
+     * rather than a K1 KtFile; the top-level [analyze] function requires a KtFile that
+     * belongs to the K2 project.
      */
     @OptIn(KaExperimentalApi::class)
     fun testDiagnosticsAnalysisRunsWithoutException() {
-        val fo = dir.getFileObject("checkTypeMismatch.kt")
-        assertNotNull("Test file checkTypeMismatch.kt must exist in the diagnostics directory", fo)
-
-        val ktFile = ProjectUtils.getKtFile(fo)
-        assertNotNull("KtFile must be parseable", ktFile)
-
         val wrapper = KotlinAnalysisAPISession.getSession(project)
-        val diagnostics = analyze(ktFile) {
+        val ktFile = wrapper.session.modulesWithFiles.values
+            .flatten()
+            .filterIsInstance<KtFile>()
+            .firstOrNull { it.name == "checkTypeMismatch.kt" }
+        assertNotNull("checkTypeMismatch.kt must be in the K2 session's source module", ktFile)
+
+        val diagnostics = analyze(ktFile!!) {
             ktFile.diagnostics(KaDiagnosticCheckerFilter.ONLY_COMMON_CHECKERS)
         }
         assertNotNull("Diagnostics collection must not be null", diagnostics)

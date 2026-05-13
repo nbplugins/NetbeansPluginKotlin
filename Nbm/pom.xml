@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.7.1-SNAPSHOT</version>
+    <version>0.7.2-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-nbm</artifactId>
@@ -205,6 +205,20 @@
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>analysis-api-platform-interface-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlinx</groupId>
+      <artifactId>kotlinx-serialization-core-jvm</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>low-level-api-fir-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>symbol-light-classes-for-ide</artifactId>
       <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>

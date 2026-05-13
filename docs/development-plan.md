@@ -382,7 +382,7 @@ Target after C11: `KaSession`/`KaSymbol` (K2 Analysis API), `kotlin-compiler:2.0
    - Add CoreImpl and KotlinCompiler reactor modules
    - `KotlinConverter/pom.xml` and `submodules/IntellijCommunity` unchanged (stay at 232-era)
    - Verify: all tests pass, no analysis call-site changes yet.
-3. **C3** — Set up `StandaloneAnalysisAPISession` alongside existing `KotlinEnvironment`
+3. ✅ **C3** — Set up `StandaloneAnalysisAPISession` alongside existing `KotlinEnvironment`
    (`analysis-api-standalone-for-ide`). Both analysis paths available simultaneously.
 4. **C4** — Migrate `resolve/`, `idea/util/` — `BindingContext` → `analyze { }` / `KaSession`
 5. **C5** — Migrate `completion/`

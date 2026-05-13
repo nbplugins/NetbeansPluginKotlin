@@ -268,9 +268,14 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
     }
     
     private fun getExtensionsFromKotlin2JvmXml() {
-        Extensions.getRootArea()
-            .getExtensionPoint<DefaultErrorMessages.Extension>(ExtensionPointName("org.jetbrains.kotlin.defaultErrorMessages"))
-            .registerExtension(DefaultErrorMessagesJvm())
+        // K2 app env uses plugin-descriptor classloaders that may not include kotlin-compiler.jar.
+        // Swallow ClassLoader failures: DefaultErrorMessagesJvm is only used for K1 error text
+        // rendering, not for analysis correctness or error detection.
+        try {
+            Extensions.getRootArea()
+                .getExtensionPoint<DefaultErrorMessages.Extension>(ExtensionPointName("org.jetbrains.kotlin.defaultErrorMessages"))
+                .registerExtension(DefaultErrorMessagesJvm())
+        } catch (_: Exception) {}
     }
     
     fun configureClasspath(kotlinProject: NBProject) {
