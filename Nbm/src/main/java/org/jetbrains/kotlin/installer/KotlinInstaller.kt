@@ -26,11 +26,15 @@ import org.openide.windows.WindowManager
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper.isMavenProject
 import org.jetbrains.kotlin.projectsextensions.maven.MavenHelper
+import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
+import io.github.nbplugins.kotlin.nbm.startup.FakeIntellijHome
 import org.openide.modules.ModuleInstall
 
 class KotlinInstaller : ModuleInstall() {
 
-    override fun restored() {        
+    override fun restored() {
+        FakeIntellijHome.StartingUp().run()
+        KotlinAnalysisAPISession.initApplicationEnvironment()
         WindowManager.getDefault().invokeWhenUIReady { 
             ProjectUtils.checkKtHome()
             WindowManager.getDefault().registry.addPropertyChangeListener listener@{

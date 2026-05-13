@@ -24,7 +24,6 @@ import org.jetbrains.kotlin.config.ApiVersion
 import org.jetbrains.kotlin.config.LanguageVersion
 import org.jetbrains.kotlin.config.LanguageVersionSettingsImpl
 import org.jetbrains.kotlin.log.KotlinLogger
-import org.jetbrains.kotlin.model.KotlinEnvironment
 import org.jetbrains.kotlin.platform.jvm.JvmPlatforms
 import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper
 import org.jetbrains.kotlin.utils.ProjectUtils
@@ -36,9 +35,9 @@ import java.nio.file.Path
  * Manages a K2 Analysis API session ([StandaloneAnalysisAPISession]) for a single NetBeans project.
  *
  * One instance is created per open [NBProject] and cached for the project's lifetime
- * (see [getSession]). The session shares the IntelliJ application environment with the K1
- * [KotlinEnvironment]: [KotlinEnvironment.getEnvironment] is called first to ensure the shared
- * app env is created via `getOrCreate`, after which `buildStandaloneAnalysisAPISession` reuses it.
+ * (see [getSession]). The IntelliJ application environment is initialised at plugin startup
+ * by [io.github.nbplugins.kotlin.nbm.startup.FakeIntellijHome.startUp], which satisfies the
+ * `PathManager.getHomePath()` requirement before `buildStandaloneAnalysisAPISession` is called.
  *
  * This class belongs to the **service/model** layer and must not reference NetBeans UI APIs.
  *
@@ -59,11 +58,6 @@ class KotlinAnalysisAPISession private constructor(nbProject: NBProject) {
 
     init {
         val startTime = System.nanoTime()
-
-        // Ensure the shared IntelliJ application environment is created by K1 first.
-        // KotlinEnvironment.getEnvironment uses getOrCreate, so buildStandaloneAnalysisAPISession
-        // will reuse the same application instead of creating a conflicting second instance.
-        KotlinEnvironment.getEnvironment(nbProject)
 
         val binaryJars: List<Path> = collectBinaryJars(nbProject)
         val sourceRoots: List<Path> = collectSourceRoots(nbProject)
@@ -101,6 +95,45 @@ class KotlinAnalysisAPISession private constructor(nbProject: NBProject) {
 
     companion object {
         private val cache = hashMapOf<NBProject, KotlinAnalysisAPISession>()
+
+        @Volatile private var appEnvInitialized = false
+
+        /**
+         * A session retained solely to keep the K2 application environment alive.
+         *
+         * Discarding it would allow its Disposable to be finalized, which could tear down
+         * services registered on the shared application. Kept as a strong reference.
+         */
+        @Volatile private var initSession: StandaloneAnalysisAPISession? = null
+
+        /**
+         * Initialises the K2 standalone application environment exactly once, without
+         * binding it to a specific NetBeans project.
+         *
+         * Must be called before [KotlinEnvironment.getEnvironment] is first invoked, so that
+         * [KotlinCoreEnvironment.getOrCreateApplicationEnvironmentForProduction] reuses the
+         * already-created application environment and skips `PluginDescriptorLoader.loadForCoreEnv`
+         * (which causes [ClassNotFoundException] for inner classes in plugin descriptor XML).
+         *
+         * Safe to call multiple times; subsequent calls are no-ops.
+         */
+        @Synchronized
+        fun initApplicationEnvironment() {
+            if (appEnvInitialized) return
+            initSession = buildStandaloneAnalysisAPISession {
+                buildKtModuleProvider {
+                    platform = JvmPlatforms.unspecifiedJvmPlatform
+                    addModule(buildKtSourceModule {
+                        moduleName = "nbkotlin-app-env-init"
+                        languageVersionSettings = LanguageVersionSettingsImpl(
+                            LanguageVersion.KOTLIN_2_0, ApiVersion.KOTLIN_2_0
+                        )
+                        platform = JvmPlatforms.unspecifiedJvmPlatform
+                    })
+                }
+            }
+            appEnvInitialized = true
+        }
 
         /**
          * Returns the cached [KotlinAnalysisAPISession] for [nbProject], creating and caching
@@ -146,11 +179,10 @@ class KotlinAnalysisAPISession private constructor(nbProject: NBProject) {
          * @return list of source root [Path]s, or an empty list if none are available
          */
         private fun collectSourceRoots(nbProject: NBProject): List<Path> =
-            KotlinProjectHelper.INSTANCE
-                .getExtendedClassPath(nbProject)
+            with(KotlinProjectHelper) { nbProject.getExtendedClassPath() }
                 ?.getProjectSourcesClassPath(ClassPath.SOURCE)
                 ?.entries()
-                ?.mapNotNull { entry ->
+                ?.mapNotNull { entry: org.netbeans.api.java.classpath.ClassPath.Entry ->
                     try { Path.of(entry.url.toURI()) } catch (_: Exception) { null }
                 }
                 ?: emptyList()

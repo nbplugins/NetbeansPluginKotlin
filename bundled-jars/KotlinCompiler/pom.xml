@@ -23,19 +23,46 @@
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>core</artifactId>
-      <version>${intellij.platform.242.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>core-impl</artifactId>
-      <version>${intellij.platform.242.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>util</artifactId>
-      <version>${intellij.platform.242.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>extensions</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>diagnostic</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>util-base</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>util-class-loader</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>util-rt</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>util-xml-dom</artifactId>
       <scope>provided</scope>
     </dependency>
     <dependency>
@@ -82,6 +109,30 @@
                   <patternset includes="com/intellij/**"/>
                 </unzip>
                 <unzip src="${com.jetbrains.intellij.platform:util:jar}"
+                       dest="${project.build.directory}/p242-com-intellij">
+                  <patternset includes="com/intellij/**"/>
+                </unzip>
+                <unzip src="${com.jetbrains.intellij.platform:extensions:jar}"
+                       dest="${project.build.directory}/p242-com-intellij">
+                  <patternset includes="com/intellij/**"/>
+                </unzip>
+                <unzip src="${com.jetbrains.intellij.platform:diagnostic:jar}"
+                       dest="${project.build.directory}/p242-com-intellij">
+                  <patternset includes="com/intellij/**"/>
+                </unzip>
+                <unzip src="${com.jetbrains.intellij.platform:util-base:jar}"
+                       dest="${project.build.directory}/p242-com-intellij">
+                  <patternset includes="com/intellij/**"/>
+                </unzip>
+                <unzip src="${com.jetbrains.intellij.platform:util-class-loader:jar}"
+                       dest="${project.build.directory}/p242-com-intellij">
+                  <patternset includes="com/intellij/**"/>
+                </unzip>
+                <unzip src="${com.jetbrains.intellij.platform:util-rt:jar}"
+                       dest="${project.build.directory}/p242-com-intellij">
+                  <patternset includes="com/intellij/**"/>
+                </unzip>
+                <unzip src="${com.jetbrains.intellij.platform:util-xml-dom:jar}"
                        dest="${project.build.directory}/p242-com-intellij">
                   <patternset includes="com/intellij/**"/>
                 </unzip>

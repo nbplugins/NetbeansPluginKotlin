@@ -320,21 +320,25 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
                 registerFileType(PlainTextFileType.INSTANCE, "xml")
                 registerFileType(KotlinFileType.INSTANCE, "kt")
                 registerParserDefinition(KotlinParserDefinition())
-                application.registerService(KotlinBinaryClassCache::class.java, KotlinBinaryClassCache())
-                // 2.0.21: GlobalSearchScope.filesScope calls VfsUtilCore.createCompactVirtualFileSet which
-                // requires VirtualFileSetFactory registered as an application service.
-                application.registerService(
-                    com.intellij.openapi.vfs.VirtualFileSetFactory::class.java,
-                    object : com.intellij.openapi.vfs.VirtualFileSetFactory {
-                        override fun createCompactVirtualFileSet() = HashSetVirtualFileSet()
-                        override fun createCompactVirtualFileSet(files: Collection<com.intellij.openapi.vfs.VirtualFile>) = HashSetVirtualFileSet(files)
-                    }
-                )
-                // 2.0.21: LanguageLevel resolution asks this service; return null (unknown) in standalone mode.
-                application.registerService(
-                    com.intellij.pom.java.InternalPersistentJavaLanguageLevelReaderService::class.java,
-                    com.intellij.pom.java.InternalPersistentJavaLanguageLevelReaderService { null }
-                )
+                // K2's buildStandaloneAnalysisAPISession registers these services first when the
+                // K2 session is created before a K1 KotlinEnvironment. Catch duplicate-key errors
+                // so K1 picks up the already-initialised application environment created by K2.
+                try { application.registerService(KotlinBinaryClassCache::class.java, KotlinBinaryClassCache()) } catch (_: Exception) {}
+                try {
+                    application.registerService(
+                        com.intellij.openapi.vfs.VirtualFileSetFactory::class.java,
+                        object : com.intellij.openapi.vfs.VirtualFileSetFactory {
+                            override fun createCompactVirtualFileSet() = HashSetVirtualFileSet()
+                            override fun createCompactVirtualFileSet(files: Collection<com.intellij.openapi.vfs.VirtualFile>) = HashSetVirtualFileSet(files)
+                        }
+                    )
+                } catch (_: Exception) {}
+                try {
+                    application.registerService(
+                        com.intellij.pom.java.InternalPersistentJavaLanguageLevelReaderService::class.java,
+                        com.intellij.pom.java.InternalPersistentJavaLanguageLevelReaderService { null }
+                    )
+                } catch (_: Exception) {}
             }
             // App-level EPs and extension instances — must also be registered only once.
             getExtensionsFromCommonXml()

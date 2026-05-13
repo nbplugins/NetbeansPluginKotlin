@@ -13,15 +13,18 @@
   <name>Netbeans Plugin Kotlin Converter</name>
 
   <dependencies>
-    <!-- IntelliJ Platform Core 232 — version inherited from parent dependencyManagement. -->
+    <!-- IntelliJ Platform Core 232 — explicit override; KotlinConverter compiles j2k sources
+         against 232-era API; default in dependencyManagement is 242. -->
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>core</artifactId>
+      <version>${intellij.platform.232.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>core-impl</artifactId>
+      <version>${intellij.platform.232.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>

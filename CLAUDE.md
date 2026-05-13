@@ -155,6 +155,13 @@ Before every commit, in order:
 
 ---
 
+## Maven Dependency Rules
+
+**All dependency versions must be declared in the root `pom.xml` `<dependencyManagement>` section.**
+Never add a `<version>` tag directly in a module `pom.xml` unless it is an explicit override (exception to the default rule), and document why.
+
+**Version policy for multi-version artifacts:** The default version in `dependencyManagement` must be the most current (242-era). Older versions used by specific submodules (e.g., `KotlinConverter` uses `core:232`) are declared explicitly in those submodule pom.xml files as documented exceptions.
+
 ## Build Commands
 
 All commands run from the **repository root** (multi-module build):

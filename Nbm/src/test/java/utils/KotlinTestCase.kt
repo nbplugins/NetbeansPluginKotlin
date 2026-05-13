@@ -16,6 +16,8 @@
  *******************************************************************************/
 package utils
 
+import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
+import io.github.nbplugins.kotlin.nbm.startup.FakeIntellijHome
 import javaproject.JavaProject
 import org.netbeans.api.project.Project
 import org.netbeans.junit.NbTestCase
@@ -29,6 +31,12 @@ abstract class KotlinTestCase(name: String, dirName: String) : NbTestCase(name) 
     init {
         project = JavaProject.javaProject
         dir = project.projectDirectory.getFileObject("src").getFileObject(dirName)
+    }
+
+    override fun setUp() {
+        super.setUp()
+        FakeIntellijHome.startUp()
+        KotlinAnalysisAPISession.initApplicationEnvironment()
     }
     
     fun testProjectCreation() {

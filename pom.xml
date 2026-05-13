@@ -156,32 +156,32 @@
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>analysis-api-for-ide</artifactId>
-        <version>2.0.21</version>
+        <version>2.1.20</version>
       </dependency>
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>analysis-api-standalone-for-ide</artifactId>
-        <version>2.0.21</version>
+        <version>2.1.20</version>
       </dependency>
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>analysis-api-fe10-for-ide</artifactId>
-        <version>2.0.21</version>
+        <version>2.1.20</version>
       </dependency>
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>analysis-api-k2-for-ide</artifactId>
-        <version>2.0.21</version>
+        <version>2.1.20</version>
       </dependency>
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>analysis-api-impl-base-for-ide</artifactId>
-        <version>2.0.21</version>
+        <version>2.1.20</version>
       </dependency>
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>analysis-api-platform-interface-for-ide</artifactId>
-        <version>2.0.21</version>
+        <version>2.1.20</version>
       </dependency>
       <!-- Bundled JARs -->
       <dependency>
@@ -225,21 +225,21 @@
         <artifactId>netbeans-plugin-kotlin-compiler</artifactId>
         <version>${project.version}</version>
       </dependency>
-      <!-- core/core-impl/util at 232 — used by KotlinConverter (compiles j2k/k1.old sources) -->
+      <!-- core/core-impl/util default to 242 (C2+ era). KotlinConverter overrides to 232 explicitly. -->
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>core</artifactId>
-        <version>${intellij.platform.232.version}</version>
+        <version>${intellij.platform.242.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>core-impl</artifactId>
-        <version>${intellij.platform.232.version}</version>
+        <version>${intellij.platform.242.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>util</artifactId>
-        <version>${intellij.platform.232.version}</version>
+        <version>${intellij.platform.242.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
@@ -259,6 +259,41 @@
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>concurrency</artifactId>
+        <version>${intellij.platform.242.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.jetbrains.intellij.platform</groupId>
+        <artifactId>extensions</artifactId>
+        <version>${intellij.platform.242.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.jetbrains.intellij.platform</groupId>
+        <artifactId>diagnostic</artifactId>
+        <version>${intellij.platform.242.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.jetbrains.intellij.platform</groupId>
+        <artifactId>diagnostic-telemetry</artifactId>
+        <version>${intellij.platform.242.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.jetbrains.intellij.platform</groupId>
+        <artifactId>util-base</artifactId>
+        <version>${intellij.platform.242.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.jetbrains.intellij.platform</groupId>
+        <artifactId>util-class-loader</artifactId>
+        <version>${intellij.platform.242.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.jetbrains.intellij.platform</groupId>
+        <artifactId>util-rt</artifactId>
+        <version>${intellij.platform.242.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.jetbrains.intellij.platform</groupId>
+        <artifactId>util-xml-dom</artifactId>
         <version>${intellij.platform.242.version}</version>
       </dependency>
       <!-- kotlin-compiler runtime version: B2.0 'compiler-only' bumps just this one artifact

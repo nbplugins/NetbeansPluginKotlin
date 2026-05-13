@@ -16,6 +16,7 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.resolve
 
+import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.components.KaDiagnosticCheckerFilter
 import org.jetbrains.kotlin.utils.ProjectUtils
@@ -66,6 +67,7 @@ class KotlinAnalysisAPISessionTest : KotlinTestCase("K2 Analysis API session", "
      * Smoke test: runs K2 diagnostics analysis on an existing test file.
      * Verifies that [analyze] completes without throwing and returns a non-null collection.
      */
+    @OptIn(KaExperimentalApi::class)
     fun testDiagnosticsAnalysisRunsWithoutException() {
         val fo = dir.getFileObject("checkTypeMismatch.kt")
         assertNotNull("Test file checkTypeMismatch.kt must exist in the diagnostics directory", fo)
