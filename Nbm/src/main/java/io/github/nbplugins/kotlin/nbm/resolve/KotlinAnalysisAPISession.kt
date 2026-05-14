@@ -25,6 +25,7 @@ import org.jetbrains.kotlin.config.LanguageVersion
 import org.jetbrains.kotlin.config.LanguageVersionSettingsImpl
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.platform.jvm.JvmPlatforms
+import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.api.java.classpath.ClassPath
@@ -56,11 +57,22 @@ class KotlinAnalysisAPISession private constructor(nbProject: NBProject) {
      */
     val session: StandaloneAnalysisAPISession
 
+    /**
+     * `true` when the session was initialised with at least one binary JAR on the classpath.
+     *
+     * K2 diagnostics are only reliable when binary dependencies are available; without them,
+     * every external reference appears unresolved and produces false-positive errors.
+     * [KotlinParserResult.getDiagnostics] checks this flag before using K2 as the primary
+     * diagnostics source.
+     */
+    val hasDependencies: Boolean
+
     init {
         val startTime = System.nanoTime()
 
         val binaryJars: List<Path> = collectBinaryJars(nbProject)
         val sourceRoots: List<Path> = collectSourceRoots(nbProject)
+        hasDependencies = binaryJars.isNotEmpty()
 
         session = buildStandaloneAnalysisAPISession {
             buildKtModuleProvider {
@@ -187,4 +199,20 @@ class KotlinAnalysisAPISession private constructor(nbProject: NBProject) {
                 }
                 ?: emptyList()
     }
+
+    /**
+     * Returns the K2 [KtFile] owned by this session whose virtual file path equals [path],
+     * or `null` if no source file with that path is registered in this session's source module.
+     *
+     * Use the returned [KtFile] — never a K1 [KtFile] from [KotlinEnvironment] — with
+     * [org.jetbrains.kotlin.analysis.api.analyze] blocks.
+     *
+     * @param path absolute path of the source file
+     * @return the K2-session-owned [KtFile], or `null` if not found
+     */
+    fun getKtFileForPath(path: String): KtFile? =
+        session.modulesWithFiles.values
+            .flatten()
+            .filterIsInstance<KtFile>()
+            .firstOrNull { it.virtualFile?.path == path }
 }

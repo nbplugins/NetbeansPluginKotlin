@@ -85,4 +85,35 @@ class KotlinAnalysisAPISessionTest : KotlinTestCase("K2 Analysis API session", "
         }
         assertNotNull("Diagnostics collection must not be null", diagnostics)
     }
+
+    /**
+     * Verifies that [KotlinAnalysisAPISession.getKtFileForPath] returns the K2 [KtFile]
+     * when a source file with the given path is registered in the session's source module.
+     */
+    fun testGetKtFileForPath_returnsFileForRegisteredSource() {
+        val wrapper = KotlinAnalysisAPISession.getSession(project)
+        // Find any registered K2 KtFile to get a known-good path
+        val anyK2File = wrapper.session.modulesWithFiles.values
+            .flatten()
+            .filterIsInstance<KtFile>()
+            .firstOrNull()
+        assertNotNull("Session must have at least one registered KtFile", anyK2File)
+
+        val path = anyK2File!!.virtualFile?.path
+        assertNotNull("K2 KtFile must have a virtualFile path", path)
+
+        val result = wrapper.getKtFileForPath(path!!)
+        assertNotNull("getKtFileForPath must return the KtFile for a registered path", result)
+        assertEquals("Returned KtFile must have the requested path", path, result!!.virtualFile?.path)
+    }
+
+    /**
+     * Verifies that [KotlinAnalysisAPISession.getKtFileForPath] returns `null`
+     * for a path that is not registered in the session.
+     */
+    fun testGetKtFileForPath_returnsNullForUnknownPath() {
+        val wrapper = KotlinAnalysisAPISession.getSession(project)
+        val result = wrapper.getKtFileForPath("/nonexistent/path/file.kt")
+        assertNull("getKtFileForPath must return null for an unknown path", result)
+    }
 }

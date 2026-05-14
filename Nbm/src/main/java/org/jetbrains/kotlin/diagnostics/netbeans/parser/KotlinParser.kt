@@ -17,6 +17,7 @@
 package org.jetbrains.kotlin.diagnostics.netbeans.parser
 
 import javax.swing.event.ChangeListener
+import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper.isScanning
 import org.jetbrains.kotlin.resolve.AnalysisResultWithProvider
@@ -115,8 +116,16 @@ class KotlinParser : Parser() {
             return null
         }
 
-        KotlinLogger.INSTANCE.logInfo("KotlinParser.getResult($taskName): returning KotlinParserResult for $foPath")
-        return KotlinParserResult(snapshot, result, ktFile, snapshot.source.fileObject, project)
+        val kaKtFile = runCatching {
+            val wrapper = KotlinAnalysisAPISession.getSession(project)
+            if (wrapper.hasDependencies) wrapper.getKtFileForPath(ktFile.virtualFile.path) else null
+        }.getOrNull()
+
+        KotlinLogger.INSTANCE.logInfo(
+            "KotlinParser.getResult($taskName): returning KotlinParserResult for $foPath " +
+            "(kaKtFile=${if (kaKtFile != null) "available" else "null (no deps or not found)"})"
+        )
+        return KotlinParserResult(snapshot, result, ktFile, snapshot.source.fileObject, project, kaKtFile)
     }
 
     override fun addChangeListener(changeListener: ChangeListener) {}
