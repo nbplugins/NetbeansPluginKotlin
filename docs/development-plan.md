@@ -384,8 +384,8 @@ Target after C11: `KaSession`/`KaSymbol` (K2 Analysis API), `kotlin-compiler:2.0
    - Verify: all tests pass, no analysis call-site changes yet.
 3. ✅ **C3** — Set up `StandaloneAnalysisAPISession` alongside existing `KotlinEnvironment`
    (`analysis-api-standalone-for-ide`). Both analysis paths available simultaneously.
-4. **C4** — Migrate `resolve/`, `idea/util/` — `BindingContext` → `analyze { }` / `KaSession`
-5. **C5** — Migrate `completion/`
+4. ✅ **C4** — Migrate `resolve/`, `idea/util/` — `BindingContext` → `analyze { }` / `KaSession`
+5. ✅ **C5** — Migrate `completion/` — K2 primary path (`KaCompletionProvider`, `KaCompletionProposalFactory`); K1 fallback preserved. Fixed `collectBinaryJars` to handle `file:`-prefixed `!/`-suffixed classpath URLs from NetBeans Maven integration.
 6. **C6** — Migrate `diagnostics/`, `highlighter/semanticanalyzer/`
 7. **C7** — Migrate `hints/`, `intentions/`, `fixes/`
 8. **C8** — Migrate `navigation/`

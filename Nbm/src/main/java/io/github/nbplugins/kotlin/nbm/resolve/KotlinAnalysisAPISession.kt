@@ -172,14 +172,22 @@ class KotlinAnalysisAPISession private constructor(nbProject: NBProject) {
         /**
          * Collects binary JAR paths from the project classpath.
          *
-         * Only `.jar` files that exist on disk are included; directory roots and
-         * `!/`-suffixed virtual paths used by the K1 classpath are excluded.
+         * Normalises each entry: strips a leading `file:` scheme and a trailing `!/`
+         * (the NetBeans Maven integration returns `jar:file:/path/to.jar!/`-style strings
+         * whose `.getPath()` still has the `file:` prefix and `!/` suffix).
+         * Only entries whose normalised path ends in `.jar` and exist on disk are included.
          *
          * @param nbProject the NetBeans project
          * @return list of existing JAR [Path]s
          */
         private fun collectBinaryJars(nbProject: NBProject): List<Path> =
             ProjectUtils.getClasspath(nbProject)
+                .map { raw ->
+                    var s = raw
+                    if (s.startsWith("file:")) s = s.removePrefix("file:")
+                    if (s.endsWith("!/")) s = s.removeSuffix("!/")
+                    s
+                }
                 .filter { it.endsWith(".jar") }
                 .map { Path.of(it) }
                 .filter { it.toFile().exists() }

@@ -16,7 +16,11 @@
  *******************************************************************************/
 package org.jetbrains.kotlin.completion
 
+import io.github.nbplugins.kotlin.nbm.completion.KaCodeCompletionResult
+import io.github.nbplugins.kotlin.nbm.completion.KaCompletionProposalFactory
+import io.github.nbplugins.kotlin.nbm.completion.KaCompletionProvider
 import java.util.concurrent.Callable
+import org.jetbrains.kotlin.log.KotlinLogger
 import javax.swing.text.Document
 import javax.swing.text.JTextComponent
 import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParserResult
@@ -63,12 +67,29 @@ class KotlinCodeCompletionHandler : CodeCompletionHandler2 {
     override fun complete(context: CodeCompletionContext): CodeCompletionResult? {
         val parserResult = context.parserResult as? KotlinParserResult ?: return null
         val file = parserResult.snapshot.source.fileObject
-
         val doc = ProjectUtils.getDocumentFromFileObject(file)
         val caretOffset = context.caretOffset
-        val analysisResultWithProvider = parserResult.analysisResult ?: return null
         val prefix = context.prefix ?: ""
 
+        // K2 primary path: use Analysis API when a K2-session KtFile is available
+        val kaKtFile = parserResult.kaKtFile
+        if (kaKtFile != null) {
+            val identOffset = (caretOffset - prefix.length).coerceAtLeast(0)
+            val k2Proposals = KaCompletionProvider.getSymbolsAt(kaKtFile, caretOffset, prefix)
+                .mapNotNull { KaCompletionProposalFactory.toProposal(it, identOffset, prefix) }
+            KotlinLogger.INSTANCE.logInfo(
+                "K2 completion for ${file.name}: ${k2Proposals.size} proposal(s), prefix='$prefix'"
+            )
+            if (k2Proposals.isNotEmpty()) {
+                return KaCodeCompletionResult(doc, k2Proposals)
+            }
+        }
+
+        // K1 fallback: BindingContext / ReferenceVariantsHelper
+        KotlinLogger.INSTANCE.logInfo(
+            "K1 completion fallback for ${file.name}: kaKtFile=${kaKtFile != null}, prefix='$prefix'"
+        )
+        val analysisResultWithProvider = parserResult.analysisResult ?: return null
         return KotlinCodeCompletionResult(doc, caretOffset, analysisResultWithProvider, prefix)
     }
 

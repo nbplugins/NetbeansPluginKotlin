@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin</artifactId>
-  <version>0.7.5-SNAPSHOT</version>
+  <version>0.7.7-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin</name>
   <properties>
@@ -45,10 +45,12 @@
     <repository>
       <id>jetbrains-intellij-dependencies</id>
       <url>https://packages.jetbrains.team/maven/p/ij/intellij-dependencies/</url>
+      <snapshots><enabled>false</enabled></snapshots>
     </repository>
     <repository>
       <id>jetbrains-intellij-releases</id>
       <url>https://www.jetbrains.com/intellij-repository/releases/</url>
+      <snapshots><enabled>false</enabled></snapshots>
     </repository>
     <!-- ki/maven listed before jetbrains-kotlin-ide: hosts the thin base-fe10-* JARs (511 classes each).
          jetbrains-kotlin-ide has fat JAR variants (2.8 MB) that embed old compiler classes and cause
@@ -56,10 +58,12 @@
     <repository>
       <id>jetbrains-kotlin-ki</id>
       <url>https://packages.jetbrains.team/maven/p/ki/maven/</url>
+      <snapshots><enabled>false</enabled></snapshots>
     </repository>
     <repository>
       <id>jetbrains-kotlin-ide</id>
       <url>https://maven.pkg.jetbrains.space/kotlin/p/kotlin/kotlin-ide/</url>
+      <snapshots><enabled>false</enabled></snapshots>
     </repository>
   </repositories>
   <build>
