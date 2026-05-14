@@ -59,6 +59,14 @@ public class MultiMap<K, V> implements Serializable {
     public MultiMap(int initialCapacity, float loadFactor) {
         myMap = createMap(initialCapacity, loadFactor);
     }
+
+    @SuppressWarnings("unchecked")
+    public MultiMap(@NotNull Map<? extends K, ? extends Collection<?>> map) {
+        this();
+        for (Map.Entry<? extends K, ? extends Collection<?>> e : map.entrySet()) {
+            myMap.put(e.getKey(), (Collection<V>) e.getValue());
+        }
+    }
     
     @NotNull
     protected Map<K, Collection<V>> createMap() {

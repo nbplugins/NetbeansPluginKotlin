@@ -16,6 +16,7 @@
  *******************************************************************************/
 package org.jetbrains.kotlin.highlighter.semanticanalyzer
 
+import io.github.nbplugins.kotlin.nbm.highlighter.KaSemanticHighlightingVisitor
 import org.jetbrains.kotlin.analyzer.AnalysisResult
 import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParserResult
 import org.jetbrains.kotlin.diagnostics.Errors
@@ -61,13 +62,27 @@ class KotlinSemanticAnalyzer : SemanticAnalyzer<KotlinParserResult>() {
             return
         }
 
-        val analysisResult = result.analysisResult?.analysisResult
-        if (analysisResult == null) {
-            KotlinLogger.INSTANCE.logWarning("KotlinSemanticAnalyzer.run: analysisResult is null")
-            return
+        val kaKtFile = result.kaKtFile
+        if (kaKtFile != null) {
+            // K2 path (primary)
+            runCatching {
+                val visitor = KaSemanticHighlightingVisitor(kaKtFile)
+                highlighting.putAll(visitor.computeHighlightingRanges())
+            }.onFailure { ex ->
+                KotlinLogger.INSTANCE.logWarning("K2 semantic highlighting failed: $ex")
+                // Fall through to K1 fallback below
+                val analysisResult = result.analysisResult?.analysisResult
+                if (analysisResult != null) highlight(analysisResult, result.ktFile)
+            }
+        } else {
+            // K1 fallback when K2 session is unavailable
+            val analysisResult = result.analysisResult?.analysisResult
+            if (analysisResult == null) {
+                KotlinLogger.INSTANCE.logWarning("KotlinSemanticAnalyzer.run: analysisResult is null")
+                return
+            }
+            highlight(analysisResult, result.ktFile)
         }
-
-        highlight(analysisResult, result.ktFile)
         KotlinLogger.INSTANCE.logInfo("KotlinSemanticAnalyzer.run: produced ${highlighting.size} highlight ranges")
     }
 
