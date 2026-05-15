@@ -178,6 +178,31 @@ mvn nbm:cluster-app -pl Nbm    # Create a NetBeans test cluster for manual testi
 Running `mvn clean test` or `mvn clean package` from the root reactor builds `bundled-jars/*`
 modules first and passes them to `Nbm` automatically — no prior `mvn install` needed.
 
+### Fast iteration (do NOT add `clean` on every build)
+
+The `bundled-jars/CoreImpl` and `bundled-jars/KotlinCompiler` modules repack large
+binary JARs (KotlinCompiler unzips/zips ~24k files, 142 MB). An up-to-date guard makes
+a **no-clean** rebuild reuse the existing repacked JARs untouched (verified byte-identical):
+
+```bash
+# Daily loop while working on Nbm code (C7, etc.) — bundled-jars reused in ~2 s,
+# only Nbm recompiles:
+JAVA_HOME=/usr/lib/jvm/java-17-temurin-jdk mvn package -DskipTests
+
+# Use clean ONLY when: a bundled-jar dependency version changed in pom.xml,
+# after a git pull touching bundled-jars, or to force a pristine state:
+JAVA_HOME=/usr/lib/jvm/java-17-temurin-jdk mvn clean package -DskipTests
+```
+
+`clean` deletes `target/` (the `repack.stamp` + repacked JAR) → bundled-jars do the
+full unzip/strip/jar again. **Habitually typing `mvn clean package` every iteration
+defeats the speed-up.** A stale/partial state is always fixable with one `mvn clean package`.
+
+How it works: an Ant `<uptodate>` guard skips the unzip/strip and builds the JAR via
+Ant `<jar>` only when inputs changed; `maven-jar-plugin`'s `default-jar` is unbound
+(`phase=none`) so it neither re-zips nor scans the 24k files; `gmavenplus-plugin`
+points Maven at the JAR so the reactor and `mvn install` resolve the module.
+
 ## Architecture
 
 The plugin integrates with NetBeans via the **CSL (Colored Syntax Language) API** using the MIME type `text/x-kt`. The entry point is `KotlinLanguage.java` which registers all language services.

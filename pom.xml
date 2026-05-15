@@ -104,6 +104,23 @@
           <artifactId>exec-maven-plugin</artifactId>
           <version>3.5.0</version>
         </plugin>
+        <!-- Used by the repack bundled-jars (CoreImpl, KotlinCompiler) to set the
+             project's main artifact file when maven-jar-plugin's default-jar is
+             unbound: the JAR is built by Ant <jar> inside antrun (guarded by an
+             up-to-date check), so Maven must be told where the artifact is for
+             reactor/install resolution. -->
+        <plugin>
+          <groupId>org.codehaus.gmavenplus</groupId>
+          <artifactId>gmavenplus-plugin</artifactId>
+          <version>3.0.2</version>
+          <dependencies>
+            <dependency>
+              <groupId>org.apache.groovy</groupId>
+              <artifactId>groovy</artifactId>
+              <version>4.0.22</version>
+            </dependency>
+          </dependencies>
+        </plugin>
         <plugin>
           <groupId>com.google.code.maven-replacer-plugin</groupId>
           <artifactId>replacer</artifactId>
