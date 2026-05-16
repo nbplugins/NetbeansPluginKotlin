@@ -16,6 +16,7 @@
  *******************************************************************************/
 package org.jetbrains.kotlin.navigation.netbeans
 
+import io.github.nbplugins.kotlin.nbm.navigation.KaNavigationUtils
 import javax.swing.text.Document
 import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParser
 import org.jetbrains.kotlin.psi.*
@@ -48,15 +49,34 @@ fun getSmartCastHover(offset: Int): String? {
 
 fun getToolTip(referenceExpression: KtReferenceExpression?,
                doc: Document, offset: Int): String {
-    val smartCast = getSmartCastHover(offset) ?: ""
+    val file = referenceExpression?.let { ProjectUtils.getFileObjectForDocument(doc) }
+    val project = file?.let {
+        ProjectUtils.getKotlinProjectForFileObject(it) ?: ProjectUtils.getValidProject()
+    }
+
+    // K2 primary path for smart cast hover.
+    val k2Expression = referenceExpression?.let { ref ->
+        (ref as? KtSimpleNameExpression) ?: ref.children.filterIsInstance<KtSimpleNameExpression>().firstOrNull()
+    }
+    val smartCast = if (k2Expression != null && file != null && project != null) {
+        KaNavigationUtils.getSmartCastDescription(k2Expression, project, file) ?: getSmartCastHover(offset) ?: ""
+    } else {
+        getSmartCastHover(offset) ?: ""
+    }
+
     referenceExpression ?: return smartCast
-    
-    val file = ProjectUtils.getFileObjectForDocument(doc) ?: return smartCast
-    val project = ProjectUtils.getKotlinProjectForFileObject(file) ?: ProjectUtils.getValidProject() ?: return smartCast
-    
+    if (file == null || project == null) return smartCast
+
+    // K2 primary path for declaration tooltip.
+    val k2Tooltip = KaNavigationUtils.renderDeclarationTooltip(referenceExpression, project, file)
+    if (k2Tooltip != null) {
+        return "$k2Tooltip${if (smartCast.isNotEmpty()) "\n\n$smartCast" else ""}"
+    }
+
+    // K1 fallback.
     val navigationData = getNavigationData(referenceExpression, project) ?: return smartCast
     val sourceElement = navigationData.sourceElement
-    
+
     when (sourceElement) {
         is KotlinSourceElement -> {
             val descriptor = navigationData.descriptor
@@ -65,15 +85,15 @@ fun getToolTip(referenceExpression: KtReferenceExpression?,
         is NetBeansJavaSourceElement -> {
             val handle = sourceElement.getElementBinding()
             val javaDoc = handle.getJavaDoc(project)?.let { "\n\n$it" } ?: ""
-            
+
             val element = sourceElement.javaElement
             when (element) {
                 is NetBeansJavaClass -> return "${element.presentation()}$javaDoc"
                 is NetBeansJavaMember<*> -> return "${element.presentation()}$javaDoc"
             }
-            
+
         }
     }
-    
+
     return ""
 }

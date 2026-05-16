@@ -18,6 +18,7 @@
  */
 package org.jetbrains.kotlin.navigation.netbeans
 
+import io.github.nbplugins.kotlin.nbm.navigation.KaNavigationUtils
 import org.jetbrains.kotlin.descriptors.SourceElement
 import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
 import org.jetbrains.kotlin.psi.KtReferenceExpression
@@ -60,6 +61,11 @@ import org.jetbrains.kotlin.descriptors.MemberDescriptor
 import org.jetbrains.kotlin.resolve.NetBeansDescriptorUtils
 
 fun navigate(referenceExpression: KtReferenceExpression, project: Project, file: FileObject): Pair<Document, Int>? {
+    // K2 primary path: resolve via Analysis API to a source PSI element.
+    val k2Psi = KaNavigationUtils.resolveToSourcePsi(referenceExpression, project, file)
+    if (k2Psi != null) return gotoKotlinDeclaration(k2Psi, referenceExpression, file)
+
+    // K1 fallback: resolve via BindingContext.
     val data = getNavigationData(referenceExpression, project) ?: return null
     return gotoElement(data.sourceElement, data.descriptor, referenceExpression, project, file)
 }
