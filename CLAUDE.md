@@ -102,6 +102,7 @@ Sub-package mirrors the feature area, e.g.:
 - `io.github.nbplugins.kotlin.nbm.resolve` — analysis session management
 - `io.github.nbplugins.kotlin.nbm.completion` — code completion
 - `io.github.nbplugins.kotlin.nbm.diagnostics` — error/warning reporting
+- `io.github.nbplugins.kotlin.nbm.hints` — K2 hints, intentions, quick-fixes
 
 ### Documentation
 
@@ -185,7 +186,7 @@ binary JARs (KotlinCompiler unzips/zips ~24k files, 142 MB). An up-to-date guard
 a **no-clean** rebuild reuse the existing repacked JARs untouched (verified byte-identical):
 
 ```bash
-# Daily loop while working on Nbm code (C7, etc.) — bundled-jars reused in ~2 s,
+# Daily loop while working on Nbm code (C8, etc.) — bundled-jars reused in ~2 s,
 # only Nbm recompiles:
 JAVA_HOME=/usr/lib/jvm/java-17-temurin-jdk mvn package -DskipTests
 
