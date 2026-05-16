@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin</artifactId>
-  <version>0.7.13-SNAPSHOT</version>
+  <version>0.7.25-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin</name>
   <properties>
@@ -105,10 +105,9 @@
           <version>3.5.0</version>
         </plugin>
         <!-- Used by the repack bundled-jars (CoreImpl, KotlinCompiler) to set the
-             project's main artifact file when maven-jar-plugin's default-jar is
-             unbound: the JAR is built by Ant <jar> inside antrun (guarded by an
-             up-to-date check), so Maven must be told where the artifact is for
-             reactor/install resolution. -->
+             project's main artifact file when maven-jar-plugin is statically skipped:
+             the JAR is built by Ant <jar> inside antrun (guarded by an up-to-date
+             check), so Maven must be told where the artifact is for reactor/install. -->
         <plugin>
           <groupId>org.codehaus.gmavenplus</groupId>
           <artifactId>gmavenplus-plugin</artifactId>

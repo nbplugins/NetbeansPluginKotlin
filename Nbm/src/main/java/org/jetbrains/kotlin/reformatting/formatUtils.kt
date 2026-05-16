@@ -28,11 +28,11 @@ import javax.swing.SwingUtilities
 fun format(doc: Document, offset: Int, proj: Project? = null) {
     val file = ProjectUtils.getFileObjectForDocument(doc) ?: return
 
-    val parsedFile = ProjectUtils.getKtFile(doc.getText(0, doc.length), file) ?: return
-
+    // Use the document's current text directly so that edits applied just before
+    // format() are not lost if the PSI cache still holds the pre-edit version.
+    val currentText = doc.getText(0, doc.length)
     val project = proj ?: ProjectUtils.getKotlinProjectForFileObject(file)
-    val code = parsedFile.text
-    val formattedCode = KotlinFormatterUtils.formatCode(code, parsedFile.name, project, "\n")
+    val formattedCode = KotlinFormatterUtils.formatCode(currentText, file.name, project, "\n")
     doc.remove(0, doc.length)
     doc.insertString(0, formattedCode, null)
     doc.moveCursorTo(offset)

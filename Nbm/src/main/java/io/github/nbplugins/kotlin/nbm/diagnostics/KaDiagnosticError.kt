@@ -32,27 +32,27 @@ import org.openide.filesystems.FileObject
  * @param fileObject the NetBeans file containing the diagnostic
  */
 class KaDiagnosticError(
-    private val diagnostic: KaDiagnosticWithPsi<*>,
+    val kaDiagnostic: KaDiagnosticWithPsi<*>,
     private val fileObject: FileObject,
 ) : Badging {
 
-    override fun showExplorerBadge(): Boolean = diagnostic.severity == KaSeverity.ERROR
+    override fun showExplorerBadge(): Boolean = kaDiagnostic.severity == KaSeverity.ERROR
 
-    override fun getDisplayName(): String = diagnostic.defaultMessage
+    override fun getDisplayName(): String = kaDiagnostic.defaultMessage
 
     override fun getDescription(): String = ""
 
-    override fun getKey(): String = diagnostic.factoryName
+    override fun getKey(): String = kaDiagnostic.factoryName
 
     override fun getFile(): FileObject = fileObject
 
-    override fun getStartPosition(): Int = diagnostic.textRanges.firstOrNull()?.startOffset ?: 0
+    override fun getStartPosition(): Int = kaDiagnostic.textRanges.firstOrNull()?.startOffset ?: 0
 
-    override fun getEndPosition(): Int = diagnostic.textRanges.firstOrNull()?.endOffset ?: 0
+    override fun getEndPosition(): Int = kaDiagnostic.textRanges.firstOrNull()?.endOffset ?: 0
 
     override fun isLineError(): Boolean = startPosition == endPosition
 
-    override fun getSeverity(): Severity = when (diagnostic.severity) {
+    override fun getSeverity(): Severity = when (kaDiagnostic.severity) {
         KaSeverity.ERROR   -> Severity.ERROR
         KaSeverity.WARNING -> Severity.WARNING
         KaSeverity.INFO    -> Severity.INFO

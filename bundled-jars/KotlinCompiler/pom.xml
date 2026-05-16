@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.7.13-SNAPSHOT</version>
+    <version>0.7.25-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-compiler</artifactId>
@@ -98,10 +98,10 @@
             <configuration>
               <target xmlns:unless="ant:unless">
                 <!--
-                  Repack-skip mechanism.  maven-jar-plugin's default-jar execution is
-                  unbound for this module (see <plugin> below); the JAR is built here
-                  by Ant <jar> instead.  gmavenplus then points the Maven artifact at
-                  it.  Everything below is guarded by repack.uptodate so a no-clean
+                  Repack-skip mechanism (variant A).  maven-jar-plugin is statically
+                  skipped for this module (see <plugin> config below); the JAR is built
+                  here by Ant <jar> instead.  gmavenplus then points the Maven artifact
+                  at it.  Everything below is guarded by repack.uptodate so a no-clean
                   rebuild is near-instant: the existing JAR is reused untouched.
 
                   repack.uptodate := repack.stamp is newer than every source JAR
@@ -190,7 +190,7 @@
                 </delete>
                 <!-- 4. Cleanup the side dir. -->
                 <delete dir="${project.build.directory}/p242-com-intellij" quiet="true" unless:set="repack.uptodate"/>
-                <!-- 5. Build the JAR here (maven-jar-plugin's default-jar is unbound). -->
+                <!-- 5. Build the JAR here (maven-jar-plugin is statically skipped). -->
                 <jar destfile="${project.build.directory}/${project.build.finalName}.jar"
                      basedir="${project.build.directory}/classes"
                      unless:set="repack.uptodate"/>

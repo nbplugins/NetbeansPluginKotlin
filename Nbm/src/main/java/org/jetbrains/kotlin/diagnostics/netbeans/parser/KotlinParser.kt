@@ -16,6 +16,8 @@
  *******************************************************************************/
 package org.jetbrains.kotlin.diagnostics.netbeans.parser
 
+import java.beans.PropertyChangeListener
+import java.util.Collections
 import javax.swing.event.ChangeListener
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.log.KotlinLogger
@@ -28,6 +30,8 @@ import org.netbeans.api.java.source.SourceUtils
 import org.netbeans.api.project.Project
 import org.netbeans.modules.parsing.api.*
 import org.netbeans.modules.parsing.spi.*
+import org.openide.filesystems.FileObject
+import org.openide.loaders.DataObject
 
 class KotlinParser : Parser() {
 
@@ -37,12 +41,12 @@ class KotlinParser : Parser() {
 
         var project: Project? = null
             private set
-        
+
         var analysisResult: AnalysisResultWithProvider? = null
-        
+
         @JvmStatic fun getAnalysisResult(ktFile: KtFile,
                                          proj: Project) = if (ktFile upToDate file) analysisResult else analyze(ktFile, proj)
-        
+
         private fun analyze(ktFile: KtFile,
                             proj: Project): AnalysisResultWithProvider? {
             project = proj
@@ -50,10 +54,39 @@ class KotlinParser : Parser() {
             return KotlinAnalyzer.analyzeFile(proj, ktFile)
                 .also { analysisResult = it }
         }
-        
-        private infix fun KtFile.upToDate(ktFile: KtFile?) = 
+
+        private infix fun KtFile.upToDate(ktFile: KtFile?) =
                 virtualFile.path == ktFile?.virtualFile?.path && text == ktFile.text
-        
+
+        // Tracks files that already have a save listener registered.
+        private val saveListenedPaths: MutableSet<String> = Collections.synchronizedSet(HashSet())
+
+        /**
+         * Registers a one-time [DataObject.PROP_MODIFIED] listener for [fo] so that whenever
+         * the file transitions from modified → saved (e.g. after Ctrl+Z + Ctrl+S), the K2
+         * session is invalidated and the next parse cycle picks up the disk content.
+         *
+         * Without this, applying a quick fix saves stubs to disk and invalidates the session,
+         * but a subsequent Ctrl+Z + Ctrl+S leaves the session valid with the old (fixed) disk
+         * content, so the ABSTRACT_MEMBER_NOT_IMPLEMENTED hint never reappears.
+         */
+        internal fun ensureSaveListener(fo: FileObject, proj: Project) {
+            val path = fo.path ?: return
+            if (!saveListenedPaths.add(path)) return
+            runCatching {
+                val dob = DataObject.find(fo)
+                val listener = PropertyChangeListener { event ->
+                    if (DataObject.PROP_MODIFIED == event.propertyName && event.newValue == false) {
+                        KotlinLogger.INSTANCE.logInfo("KotlinParser: file saved ($path), invalidating K2 session")
+                        KotlinAnalysisAPISession.invalidate(proj)
+                    }
+                }
+                dob.addPropertyChangeListener(listener)
+            }.onFailure {
+                // DataObject not available (e.g. in test environment) — safe to ignore.
+                saveListenedPaths.remove(path)
+            }
+        }
     }
 
     private lateinit var snapshot: Snapshot
@@ -80,6 +113,7 @@ class KotlinParser : Parser() {
             KotlinLogger.INSTANCE.logInfo("KotlinParser.parse: project scanning, skipping ${fo?.path}")
             return
         }
+        if (fo != null) ensureSaveListener(fo, project)
         if (cancel) {
             KotlinLogger.INSTANCE.logInfo("KotlinParser.parse: cancel flag set before analysis, skipping ${fo?.path}")
             return

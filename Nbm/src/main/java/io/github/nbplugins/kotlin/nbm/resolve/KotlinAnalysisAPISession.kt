@@ -44,7 +44,22 @@ import java.nio.file.Path
  *
  * @param nbProject the NetBeans project this session analyses
  */
-class KotlinAnalysisAPISession private constructor(nbProject: NBProject) {
+class KotlinAnalysisAPISession private constructor(
+    moduleName: String,
+    binaryJars: List<Path>,
+    sourceRoots: List<Path>
+) {
+    /**
+     * Secondary constructor that derives [moduleName], [binaryJars], and [sourceRoots]
+     * from a NetBeans project.  This is the normal production path.
+     *
+     * @param nbProject the NetBeans project this session analyses
+     */
+    private constructor(nbProject: NBProject) : this(
+        moduleName = nbProject.projectDirectory.name,
+        binaryJars = collectBinaryJars(nbProject),
+        sourceRoots = collectSourceRoots(nbProject)
+    )
 
     /**
      * The underlying K2 standalone analysis session.
@@ -70,8 +85,6 @@ class KotlinAnalysisAPISession private constructor(nbProject: NBProject) {
     init {
         val startTime = System.nanoTime()
 
-        val binaryJars: List<Path> = collectBinaryJars(nbProject)
-        val sourceRoots: List<Path> = collectSourceRoots(nbProject)
         hasDependencies = binaryJars.isNotEmpty()
 
         session = buildStandaloneAnalysisAPISession {
@@ -87,7 +100,7 @@ class KotlinAnalysisAPISession private constructor(nbProject: NBProject) {
                 }
 
                 addModule(buildKtSourceModule {
-                    moduleName = nbProject.projectDirectory.name
+                    this.moduleName = moduleName
                     languageVersionSettings = LanguageVersionSettingsImpl(
                         LanguageVersion.KOTLIN_2_0, ApiVersion.KOTLIN_2_0
                     )
@@ -99,7 +112,7 @@ class KotlinAnalysisAPISession private constructor(nbProject: NBProject) {
         }
 
         KotlinLogger.INSTANCE.logInfo(
-            "KotlinAnalysisAPISession init for '${nbProject.projectDirectory.name}': " +
+            "KotlinAnalysisAPISession init for '$moduleName': " +
             "${(System.nanoTime() - startTime)} ns, " +
             "${binaryJars.size} binary jars, ${sourceRoots.size} source roots"
         )
@@ -168,6 +181,42 @@ class KotlinAnalysisAPISession private constructor(nbProject: NBProject) {
         fun disposeAll() {
             cache.clear()
         }
+
+        /**
+         * Removes the cached session for [nbProject] so the next [getSession] call creates a
+         * fresh session from the current on-disk sources.
+         *
+         * Call after an in-editor modification (e.g. after a hint's [KaApplicableIntention.implement]
+         * has edited the document and the file has been saved), so that the subsequent parse picks
+         * up the updated K2 PSI rather than the stale pre-edit tree.
+         *
+         * @param nbProject the project whose cached session should be invalidated
+         */
+        @Synchronized
+        fun invalidate(nbProject: NBProject) {
+            cache.remove(nbProject)
+        }
+
+        /**
+         * Creates a [KotlinAnalysisAPISession] with an explicit list of binary JARs and
+         * source roots, bypassing project-classpath resolution.
+         *
+         * Intended for **tests only**: use this when the NetBeans test project has no
+         * binary dependencies configured (e.g. `projForTest` has no Kotlin stdlib), but the
+         * test still needs a fully functional K2 session with stdlib on the classpath.
+         *
+         * The returned session is NOT cached in [cache]; the caller owns its lifetime.
+         *
+         * @param moduleName  name to assign to the K2 source module
+         * @param binaryJars  binary JAR dependencies (e.g. kotlin-stdlib)
+         * @param sourceRoots source roots to include in the module
+         * @return a new [KotlinAnalysisAPISession] configured with the supplied JARs
+         */
+        fun createWithJars(
+            moduleName: String,
+            binaryJars: List<Path>,
+            sourceRoots: List<Path>
+        ): KotlinAnalysisAPISession = KotlinAnalysisAPISession(moduleName, binaryJars, sourceRoots)
 
         /**
          * Collects binary JAR paths from the project classpath.

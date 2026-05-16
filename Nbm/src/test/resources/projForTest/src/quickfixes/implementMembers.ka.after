@@ -1,0 +1,9 @@
+package quickfixes
+
+class InterfaceImpl : Interface {
+override fun someFunc(): Int { TODO("Not yet implemented") }
+}
+
+interface Interface {
+    fun someFunc(): Int
+}
