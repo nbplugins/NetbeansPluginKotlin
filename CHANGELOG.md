@@ -1,3 +1,4 @@
+- Added code folding for Kotlin files: collapse/expand (+/-) controls in the editor gutter for the import list, comments and code blocks, with the fold types listed in Tools > Options > Editor > Folding.
 - Added K2 Analysis API session infrastructure (`KotlinAnalysisAPISession`) alongside the existing K1 path; both analysis backends are now available simultaneously
 
 # 0.6.8 (2026-05-12)

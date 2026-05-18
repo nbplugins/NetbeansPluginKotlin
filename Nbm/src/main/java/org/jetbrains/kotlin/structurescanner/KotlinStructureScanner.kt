@@ -16,6 +16,7 @@
  *******************************************************************************/
 package org.jetbrains.kotlin.structurescanner
 
+import io.github.nbplugins.kotlin.nbm.structurescanner.KaStructureScanner
 import org.netbeans.modules.csl.api.OffsetRange
 import org.netbeans.modules.csl.api.StructureItem
 import org.netbeans.modules.csl.api.StructureScanner
@@ -30,17 +31,23 @@ import org.netbeans.modules.csl.api.StructureScanner.Configuration
 class KotlinStructureScanner : StructureScanner {
 
     override fun getConfiguration() = Configuration(true, true)
-    
+
     override fun scan(info: ParserResult): List<StructureItem> {
         val file = info.snapshot.source.fileObject ?: return emptyList()
-        val context = (info as KotlinParserResult).analysisResult?.analysisResult?.bindingContext ?: return emptyList()
-        
+        // K2 primary path
+        val project = ProjectUtils.getKotlinProjectForFileObject(file)
+        if (project != null) {
+            val k2Items = KaStructureScanner.getStructureItems(file, project)
+            if (k2Items != null) return k2Items
+        }
+        // K1 fallback
+        val context = (info as KotlinParserResult).analysisResult?.analysisResult?.bindingContext
+            ?: return emptyList()
         return structureItems(file, context)
     }
     
     override fun folds(info: ParserResult): Map<String, List<OffsetRange>> {
         val file = info.snapshot.source.fileObject ?: return emptyMap()
-        
         return foldMap(file)
     }
     
@@ -62,7 +69,6 @@ class KotlinStructureScanner : StructureScanner {
     fun foldMap(file: FileObject): Map<String, List<OffsetRange>> {
         if (ProjectUtils.getKotlinProjectForFileObject(file) == null) return emptyMap()
         val ktFile = ProjectUtils.getKtFile(file) ?: return emptyMap()
-        
         return KotlinFoldingVisitor(ktFile).computeFolds()
     }
     

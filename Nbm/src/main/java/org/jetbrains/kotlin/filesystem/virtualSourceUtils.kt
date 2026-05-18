@@ -16,6 +16,7 @@
  *******************************************************************************/
 package org.jetbrains.kotlin.filesystem
 
+import io.github.nbplugins.kotlin.nbm.filesystem.KaLightClassGenerator
 import java.io.File
 import org.jetbrains.kotlin.builder.KotlinPsiManager
 import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParser
@@ -42,7 +43,7 @@ fun translate(files: Iterable<File>, result: VirtualSourceProvider.Result) {
     } else files.mapNotNull { FileUtil.toFileObject(FileUtil.normalizeFile(it)) }
 
     val project = filesToTranslate.firstOrNull()?.let { ProjectUtils.getKotlinProjectForFileObject(it) } ?: return
-    
+
     if (filesToTranslate.size == KotlinPsiManager.getFilesByProject(project, false).size) {
         if (KotlinVirtualSourceProvider.isFullyTranslated(project)) return else KotlinVirtualSourceProvider.translated(project)
         val startTime = System.nanoTime()
@@ -54,21 +55,37 @@ fun translate(files: Iterable<File>, result: VirtualSourceProvider.Result) {
         return
     }
 
-    filesToTranslate.translate(result)
+    filesToTranslate.translate(result, proj = project)
 }
 
 private fun List<FileObject>.translate(result: VirtualSourceProvider.Result,
                                        analysisResult: AnalysisResultWithProvider? = null,
-                                       proj: Project? = null) = map { Pair(it, it.byteCode(analysisResult, proj)) }
-        .filter { it.second.isNotEmpty() }
-        .forEach {
-            val stubs = JavaStubGenerator.gen(it.second)
-            stubs.forEach { (first, code) ->
-                val packageName = first.name.substringBeforeLast("/")
-
-                result.add(FileUtil.toFile(it.first), packageName, it.first.name, code)
+                                       proj: Project? = null) {
+    forEach { file ->
+        // K2 primary path: generate Java stubs directly from K2 symbols when session is available.
+        val project = proj ?: ProjectUtils.getKotlinProjectForFileObject(file)
+        if (project != null) {
+            val k2Stubs = KaLightClassGenerator.getJavaStubs(file, project)
+            if (k2Stubs != null) {
+                val ktFile = ProjectUtils.getKtFile(file)
+                val packageName = ktFile?.packageFqName?.asString()?.replace(".", "/") ?: ""
+                k2Stubs.forEach { (className, code) ->
+                    result.add(FileUtil.toFile(file), packageName, className, code)
+                }
+                return@forEach
             }
         }
+        // K1 fallback: compile to bytecode and decompile via ASM.
+        val byteCode = file.byteCode(analysisResult, proj)
+        if (byteCode.isNotEmpty()) {
+            val stubs = JavaStubGenerator.gen(byteCode)
+            stubs.forEach { (classNode, code) ->
+                val packageName = classNode.name.substringBeforeLast("/")
+                result.add(FileUtil.toFile(file), packageName, file.name, code)
+            }
+        }
+    }
+}
 
 private fun File?.skipTranslating(): Boolean {
     if (this == null) return true

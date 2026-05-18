@@ -206,7 +206,7 @@ points Maven at the JAR so the reactor and `mvn install` resolve the module.
 
 ## Architecture
 
-The plugin integrates with NetBeans via the **CSL (Colored Syntax Language) API** using the MIME type `text/x-kt`. The entry point is `KotlinLanguage.java` which registers all language services.
+The plugin integrates with NetBeans via the **CSL (Colored Syntax Language) API** using the MIME type `text/x-kotlin`. The entry point is `KotlinLanguage.java` which registers all language services.
 
 ### Mixed-Language Codebase
 - **Java** (`~67 files`): NetBeans integration layer — service registrations, API adapters, and entry points

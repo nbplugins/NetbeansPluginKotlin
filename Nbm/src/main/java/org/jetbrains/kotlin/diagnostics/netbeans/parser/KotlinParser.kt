@@ -144,10 +144,11 @@ class KotlinParser : Parser() {
             KotlinLogger.INSTANCE.logWarning("KotlinParser.getResult($taskName): ktFile null (snapshot=$foPath companion=$filePath)")
             return null
         }
+        // K1 analysis may be null when only K2 is available; still return a result so that
+        // fold scanning, structure scanning, and other tasks that don't need K1 can proceed.
         val result = getAnalysisResult(ktFile, project)
         if (result == null) {
-            KotlinLogger.INSTANCE.logWarning("KotlinParser.getResult($taskName): analysisResult is null")
-            return null
+            KotlinLogger.INSTANCE.logWarning("KotlinParser.getResult($taskName): K1 analysisResult is null; returning K2-only result")
         }
 
         val kaKtFile = runCatching {

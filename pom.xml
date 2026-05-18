@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin</artifactId>
-  <version>0.7.26-SNAPSHOT</version>
+  <version>0.7.38-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin</name>
   <properties>
@@ -27,6 +27,7 @@
     <jetbrains.annotations.version>26.0.2</jetbrains.annotations.version>
     <nbm.maven.plugin.version>14.4</nbm.maven.plugin.version>
     <surefire.version>3.5.5</surefire.version>
+    <maven.compiler.release>17</maven.compiler.release>
   </properties>
   <modules>
     <module>bundled-jars/CoreImpl</module>
