@@ -24,7 +24,7 @@ import com.intellij.psi.impl.PsiFileFactoryImpl
 import java.io.IOException
 import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper.checkProject
 import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper.getKotlinSources
-import org.jetbrains.kotlin.model.KotlinEnvironment
+import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.model.KotlinLightVirtualFile
 import org.jetbrains.kotlin.project.KotlinProjectConstants
 import org.jetbrains.kotlin.utils.KotlinMockProject
@@ -59,7 +59,7 @@ object KotlinPsiManager {
             return null
         }
         
-        val project = KotlinEnvironment.getEnvironment(kotlinProject).project
+        val project = KotlinAnalysisAPISession.getSession(kotlinProject).session.project
         val virtualFile = KotlinLightVirtualFile(file, text)
         virtualFile.charset = CharsetToolkit.UTF8_CHARSET
         val psiFileFactory = PsiFileFactory.getInstance(project) as PsiFileFactoryImpl
@@ -126,7 +126,7 @@ object KotlinPsiManager {
            
         if (kotlinProject == null) kotlinProject = KotlinMockProject.getMockProject() ?: return null
         
-        val project = KotlinEnvironment.getEnvironment(kotlinProject).project
+        val project = KotlinAnalysisAPISession.getSession(kotlinProject).session.project
         val psiFileFactory = PsiFileFactory.getInstance(project) as PsiFileFactoryImpl
         
         return psiFileFactory.createFileFromText(KotlinLanguage.INSTANCE, sourceCode) as KtFile

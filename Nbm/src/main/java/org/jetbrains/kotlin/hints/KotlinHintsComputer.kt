@@ -35,17 +35,10 @@ class KotlinHintsComputer(val parserResult: KotlinParserResult) : KtVisitor<Unit
         element.acceptChildren(this)
     }
     
-    override fun visitSimpleNameExpression(expression: KtSimpleNameExpression, data: Any?) {
-        getSmartCastHover(expression, parserResult)?.let { hints.add(it) }
-    }
-    
     private fun KtElement.inspections() = listOf(
             RemoveEmptyPrimaryConstructorInspection(parserResult, this),
             RemoveEmptyClassBodyInspection(parserResult, this),
-            ConvertToStringTemplateInspection(parserResult, this),
-            ConvertTryFinallyToUseCallInspection(parserResult, this),
-            RemoveEmptySecondaryConstructorInspection(parserResult, this),
-            ReplaceSizeCheckWithIsNotEmptyInspection(parserResult, this)
+            RemoveEmptySecondaryConstructorInspection(parserResult, this)
     )
             .filter(Inspection::isApplicable)
             .map { it.hint(parserResult.snapshot.source.fileObject) }

@@ -16,7 +16,7 @@
  ****************************************************************************** */
 package org.jetbrains.kotlin.projectsextensions
 
-import org.jetbrains.kotlin.model.KotlinEnvironment
+import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.project.KotlinProjectConstants
 import org.jetbrains.kotlin.projectsextensions.gradle.classpath.GradleExtendedClassPath
 import org.jetbrains.kotlin.projectsextensions.j2se.classpath.J2SEExtendedClassPathProvider
@@ -133,7 +133,7 @@ object KotlinProjectHelper {
         
         updateFullClassPath()
         JavaEnvironment.updateClasspathInfo(this)
-        KotlinEnvironment.updateKotlinEnvironment(this)
+        KotlinAnalysisAPISession.invalidate(this)
     }
     
     private fun getJavaFilesByProject(project: Project) = project.getKotlinSources()

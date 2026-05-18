@@ -416,3 +416,6 @@ fun generateKeywordProposals(identifierPart: String,
         }
     }.map { KeywordCompletionProposal(it, offset, prefix) }
 }
+
+private fun applicableNameFor(prefix: String, completion: String) =
+    completion.startsWith(prefix) || completion.lowercase().startsWith(prefix)

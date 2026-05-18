@@ -20,10 +20,9 @@ import com.intellij.psi.PsiElement
 import javax.swing.text.Document
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.hints.atomicChange
-import org.jetbrains.kotlin.hints.intentions.isOne
-import org.jetbrains.kotlin.hints.intentions.isZero
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtBinaryExpression
+import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtExpression
 import org.jetbrains.kotlin.psi.KtFile
@@ -104,6 +103,9 @@ private fun org.jetbrains.kotlin.analysis.api.types.KaType.isSubtypeOfCollection
     val fqn = classSymbol.classId?.asFqNameString() ?: return false
     return fqn.startsWith("kotlin.collections")
 }
+
+private fun KtElement?.isZero() = this?.text == "0"
+private fun KtElement?.isOne() = this?.text == "1"
 
 private fun getTargetExpression(element: KtBinaryExpression): KtExpression? = when (element.operationToken) {
     KtTokens.EXCLEQ -> when {

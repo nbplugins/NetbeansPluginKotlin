@@ -20,7 +20,7 @@ import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.lang.reflect.Method;
 import org.jetbrains.kotlin.log.KotlinLogger;
-import org.jetbrains.kotlin.model.KotlinEnvironment;
+import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession;
 import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper;
 import org.netbeans.api.progress.ProgressHandle;
 import org.netbeans.api.progress.ProgressHandleFactory;
@@ -58,12 +58,12 @@ public class MavenProjectOpenedHook extends ProjectOpenedHook{
                                     ProgressHandleFactory.createHandle("Loading Kotlin environment");
                                 progressBar.start();
                                 try {
-                                    KotlinEnvironment.Companion.getEnvironment(project);
+                                    KotlinAnalysisAPISession.Companion.getSession(project);
                                 } catch (Throwable ex) {
-                                    KotlinLogger.INSTANCE.logWarning("KotlinEnvironment init failed: " + ex
+                                    KotlinLogger.INSTANCE.logWarning("KotlinAnalysisAPISession init failed: " + ex
                                             + (ex.getCause() != null ? "\n  Caused by: " + ex.getCause() : ""));
                                     java.util.logging.Logger.getLogger(MavenProjectOpenedHook.class.getName())
-                                            .log(java.util.logging.Level.WARNING, "KotlinEnvironment init failed", ex);
+                                            .log(java.util.logging.Level.WARNING, "KotlinAnalysisAPISession init failed", ex);
                                 } finally {
                                     progressBar.finish();
                                     progressHandleRun = false;

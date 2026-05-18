@@ -17,13 +17,9 @@
 package org.jetbrains.kotlin.highlighter.semanticanalyzer
 
 import io.github.nbplugins.kotlin.nbm.highlighter.KaSemanticHighlightingVisitor
-import org.jetbrains.kotlin.analyzer.AnalysisResult
 import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParserResult
-import org.jetbrains.kotlin.diagnostics.Errors
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper.isScanning
-import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.language.Priorities
 import org.netbeans.modules.csl.api.ColoringAttributes
 import org.netbeans.modules.csl.api.OffsetRange
@@ -32,18 +28,10 @@ import org.netbeans.modules.parsing.spi.Scheduler
 import org.netbeans.modules.parsing.spi.SchedulerEvent
 
 class KotlinSemanticAnalyzer : SemanticAnalyzer<KotlinParserResult>() {
-    
+
     private var cancel = false
     private val highlighting = hashMapOf<OffsetRange, Set<ColoringAttributes>>()
-    
-    private fun highlightDeprecatedElements(bindingContext: BindingContext, ktFile: KtFile) = 
-            bindingContext.diagnostics
-                    .filter { it.factory == Errors.DEPRECATION }
-                    .filter { it.psiFile == ktFile }
-                    .map { OffsetRange(it.textRanges.first().startOffset,
-                            it.textRanges.first().endOffset) }
-                    .forEach { highlighting.put(it, KotlinHighlightingAttributes.DEPRECATED.styleKey) }
-    
+
     override fun getPriority() = Priorities.SEMANTIC_ANALYZER_PRIORITY
 
     override fun getHighlights() = highlighting
@@ -63,39 +51,21 @@ class KotlinSemanticAnalyzer : SemanticAnalyzer<KotlinParserResult>() {
         }
 
         val kaKtFile = result.kaKtFile
-        if (kaKtFile != null) {
-            // K2 path (primary)
-            runCatching {
-                val visitor = KaSemanticHighlightingVisitor(kaKtFile)
-                highlighting.putAll(visitor.computeHighlightingRanges())
-            }.onFailure { ex ->
-                KotlinLogger.INSTANCE.logWarning("K2 semantic highlighting failed: $ex")
-                // Fall through to K1 fallback below
-                val analysisResult = result.analysisResult?.analysisResult
-                if (analysisResult != null) highlight(analysisResult, result.ktFile)
-            }
-        } else {
-            // K1 fallback when K2 session is unavailable
-            val analysisResult = result.analysisResult?.analysisResult
-            if (analysisResult == null) {
-                KotlinLogger.INSTANCE.logWarning("KotlinSemanticAnalyzer.run: analysisResult is null")
-                return
-            }
-            highlight(analysisResult, result.ktFile)
+        if (kaKtFile == null) {
+            KotlinLogger.INSTANCE.logWarning("KotlinSemanticAnalyzer.run: kaKtFile is null, skipping")
+            return
         }
+
+        runCatching {
+            val visitor = KaSemanticHighlightingVisitor(kaKtFile)
+            highlighting.putAll(visitor.computeHighlightingRanges())
+        }.onFailure { ex ->
+            KotlinLogger.INSTANCE.logWarning("K2 semantic highlighting failed: $ex")
+        }
+
         KotlinLogger.INSTANCE.logInfo("KotlinSemanticAnalyzer.run: produced ${highlighting.size} highlight ranges")
     }
 
-    fun highlight(analysisResult: AnalysisResult, ktFile: KtFile) {
-        try {
-            val highlightingVisitor = KotlinSemanticHighlightingVisitor(ktFile, analysisResult)
-            highlighting.putAll(highlightingVisitor.computeHighlightingRanges())
-            highlightDeprecatedElements(analysisResult.bindingContext, ktFile)
-        } catch (ex: Throwable) {
-            KotlinLogger.INSTANCE.logWarning("KotlinSemanticAnalyzer.highlight failed: $ex")
-        }
-    }
-    
     override fun cancel() {
         cancel = true
     }

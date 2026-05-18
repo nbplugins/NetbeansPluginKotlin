@@ -19,7 +19,6 @@ package io.github.nbplugins.kotlin.nbm.hints.fixes
 import io.github.nbplugins.kotlin.nbm.diagnostics.KaDiagnosticError
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.builder.KotlinPsiManager
-import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParser
 import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParserResult
 import org.jetbrains.kotlin.psi.KtFile
 import utils.KotlinTestCase
@@ -46,8 +45,7 @@ class KaQuickFixTest : KotlinTestCase("KaQuickFix", "quickfixes") {
     private fun getAnyK2Error(kaKtFile: KtFile): KaDiagnosticError? {
         val file = dir.getFileObject("implementMembers.kt") ?: return null
         val ktFile = KotlinPsiManager.getParsedFile(file) ?: return null
-        val resultWithProvider = KotlinParser.getAnalysisResult(ktFile, project) ?: return null
-        val parserResult = KotlinParserResult(null, resultWithProvider, ktFile, file, project, kaKtFile)
+        val parserResult = KotlinParserResult(null, ktFile, file, project, kaKtFile)
         return parserResult.getDiagnostics().filterIsInstance(KaDiagnosticError::class.java).firstOrNull()
     }
 

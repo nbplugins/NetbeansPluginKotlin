@@ -24,7 +24,6 @@ import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtParameter
 import org.jetbrains.kotlin.psi.KtProperty
-import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.modules.refactoring.api.Problem
 import org.netbeans.modules.refactoring.api.RenameRefactoring
 import org.netbeans.modules.refactoring.spi.ProgressProviderAdapter
@@ -33,17 +32,7 @@ import org.netbeans.modules.refactoring.spi.RefactoringPlugin
 
 class KotlinRenameRefactoring(val refactoring: RenameRefactoring) : ProgressProviderAdapter(), RefactoringPlugin {
     
-    override fun prepare(bag: RefactoringElementsBag): Problem? {
-        val newName = refactoring.newName
-        val fo = ProjectUtils.getFileObjectForDocument(refactoring.refactoringSource.lookup(StyledDocument::class.java)) ?: return null
-        val psi = refactoring.refactoringSource.lookup(PsiElement::class.java)
-        
-        val renameMap = getRenameRefactoringMap(fo, psi, newName)
-        bag.registerTransaction(transaction(renameMap))
-        bag.session.doRefactoring(true)
-        
-        return null
-    }
+    override fun prepare(bag: RefactoringElementsBag): Problem? = null
 
     override fun checkParameters() = null
 

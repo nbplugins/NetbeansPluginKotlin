@@ -19,7 +19,7 @@
 package org.jetbrains.kotlin.projectsextensions.j2se;
 
 import org.jetbrains.kotlin.projectsextensions.j2se.buildextender.KotlinBuildExtender;
-import org.jetbrains.kotlin.model.KotlinEnvironment;
+import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession;
 import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper;
 import org.netbeans.api.progress.ProgressHandle;
 import org.netbeans.api.progress.ProgressHandleFactory;
@@ -49,7 +49,7 @@ public class J2SEProjectOpenedHook extends ProjectOpenedHook {
                         final ProgressHandle progressBar
                                 = ProgressHandleFactory.createHandle("Loading Kotlin environment");
                         progressBar.start();
-                        KotlinEnvironment.Companion.getEnvironment(project);
+                        KotlinAnalysisAPISession.Companion.getSession(project);
                         progressBar.finish();
                     }
                 };

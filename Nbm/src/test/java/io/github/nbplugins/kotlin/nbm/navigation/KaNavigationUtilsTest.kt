@@ -16,8 +16,10 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.navigation
 
+import com.intellij.psi.PsiElement
+import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.navigation.getReferenceExpression as getRefPsiElement
-import org.jetbrains.kotlin.navigation.references.getReferenceExpression
+import org.jetbrains.kotlin.psi.KtReferenceExpression
 import utils.KotlinTestCase
 import utils.getCaret
 import utils.getDocumentForFileObject
@@ -40,7 +42,7 @@ class KaNavigationUtilsTest : KotlinTestCase("KaNavigationUtils test", "navigati
         val psi = getRefPsiElement(doc, offset)
         assertNotNull("PSI element at caret must be found", psi)
 
-        val refExpr = psi!!.getReferenceExpression()
+        val refExpr = psi!!.toReferenceExpression()
         assertNotNull("Reference expression must be found", refExpr)
 
         val file = dir.getFileObject("checkNavigationToFunction.kt")
@@ -60,7 +62,7 @@ class KaNavigationUtilsTest : KotlinTestCase("KaNavigationUtils test", "navigati
         val psi = getRefPsiElement(doc, offset)
         assertNotNull("PSI element at caret must be found", psi)
 
-        val refExpr = psi!!.getReferenceExpression()
+        val refExpr = psi!!.toReferenceExpression()
         assertNotNull("Reference expression must be found", refExpr)
 
         val file = dir.getFileObject("checkNavigationToClass.kt")
@@ -78,7 +80,7 @@ class KaNavigationUtilsTest : KotlinTestCase("KaNavigationUtils test", "navigati
         val doc = getDocumentForFileObject(dir, "checkNavigationToFunction.kt")
         val offset = getCaret(doc) + "<caret>".length + 1
         val psi = getRefPsiElement(doc, offset) ?: return
-        val refExpr = psi.getReferenceExpression() ?: return
+        val refExpr = psi.toReferenceExpression() ?: return
 
         val file = dir.getFileObject("checkNavigationToFunction.kt")
         assertNotNull("FileObject must exist", file)
@@ -88,3 +90,7 @@ class KaNavigationUtilsTest : KotlinTestCase("KaNavigationUtils test", "navigati
         assertTrue("Tooltip must be non-empty", tooltip!!.isNotEmpty())
     }
 }
+
+private fun PsiElement.toReferenceExpression(): KtReferenceExpression? =
+    PsiTreeUtil.getNonStrictParentOfType(this, KtReferenceExpression::class.java)
+

@@ -21,11 +21,7 @@ import org.netbeans.modules.csl.api.OffsetRange
 import org.netbeans.modules.csl.api.StructureItem
 import org.netbeans.modules.csl.api.StructureScanner
 import org.netbeans.modules.csl.spi.ParserResult
-import org.openide.filesystems.FileObject
-import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.utils.ProjectUtils
-import org.jetbrains.kotlin.psi.*
-import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParserResult
 import org.netbeans.modules.csl.api.StructureScanner.Configuration
 
 class KotlinStructureScanner : StructureScanner {
@@ -34,42 +30,19 @@ class KotlinStructureScanner : StructureScanner {
 
     override fun scan(info: ParserResult): List<StructureItem> {
         val file = info.snapshot.source.fileObject ?: return emptyList()
-        // K2 primary path
-        val project = ProjectUtils.getKotlinProjectForFileObject(file)
-        if (project != null) {
-            val k2Items = KaStructureScanner.getStructureItems(file, project)
-            if (k2Items != null) return k2Items
-        }
-        // K1 fallback
-        val context = (info as KotlinParserResult).analysisResult?.analysisResult?.bindingContext
-            ?: return emptyList()
-        return structureItems(file, context)
+        val project = ProjectUtils.getKotlinProjectForFileObject(file) ?: return emptyList()
+        return KaStructureScanner.getStructureItems(file, project) ?: emptyList()
     }
-    
+
     override fun folds(info: ParserResult): Map<String, List<OffsetRange>> {
         val file = info.snapshot.source.fileObject ?: return emptyMap()
         return foldMap(file)
     }
-    
-    fun structureItems(file: FileObject, context: BindingContext): List<StructureItem> {
-        if (ProjectUtils.getKotlinProjectForFileObject(file) == null) return emptyList()
-        
-        val ktFile = ProjectUtils.getKtFile(file) ?: return emptyList()
-        
-        return ktFile.declarations.mapNotNull {
-            when(it) {
-                is KtClassOrObject -> KotlinClassStructureItem(it, false, context)
-                is KtNamedFunction -> KotlinFunctionStructureItem(it, false, context)
-                is KtProperty -> KotlinPropertyStructureItem(it, false, context)
-                else -> null
-            }
-        }
-    }
-    
-    fun foldMap(file: FileObject): Map<String, List<OffsetRange>> {
+
+    fun foldMap(file: org.openide.filesystems.FileObject): Map<String, List<OffsetRange>> {
         if (ProjectUtils.getKotlinProjectForFileObject(file) == null) return emptyMap()
         val ktFile = ProjectUtils.getKtFile(file) ?: return emptyMap()
         return KotlinFoldingVisitor(ktFile).computeFolds()
     }
-    
+
 }

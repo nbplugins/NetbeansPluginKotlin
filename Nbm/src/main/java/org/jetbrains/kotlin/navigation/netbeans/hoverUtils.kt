@@ -18,35 +18,17 @@ package org.jetbrains.kotlin.navigation.netbeans
 
 import io.github.nbplugins.kotlin.nbm.navigation.KaNavigationUtils
 import javax.swing.text.Document
-import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParser
 import org.jetbrains.kotlin.psi.*
-import org.jetbrains.kotlin.renderer.DescriptorRenderer
-import org.jetbrains.kotlin.resolve.BindingContext
-import org.jetbrains.kotlin.resolve.lang.java.getJavaDoc
-import org.jetbrains.kotlin.resolve.lang.java.resolver.NetBeansJavaSourceElement
-import org.jetbrains.kotlin.resolve.lang.java.structure.*
-import org.jetbrains.kotlin.resolve.source.KotlinSourceElement
-import org.jetbrains.kotlin.psi.psiUtil.getNonStrictParentOfType
 import org.jetbrains.kotlin.utils.ProjectUtils
 
-fun getSmartCastHover(offset: Int): String? {
-    val ktFile = KotlinParser.file ?: return null
-    val analysisResult = KotlinParser.analysisResult ?: return null
-    val bindingContext = analysisResult.analysisResult.bindingContext
-    
-    val element = ktFile.findElementAt(offset)
-    val expression = element?.getNonStrictParentOfType(KtSimpleNameExpression::class.java) ?: return null
-    val parentExpression = expression.parent
-    
-    if (parentExpression is KtThisExpression || parentExpression is KtSuperExpression) return null
-
-    bindingContext[BindingContext.REFERENCE_TARGET, expression] ?: return null
-
-    val smartCast = bindingContext.get(BindingContext.SMARTCAST, expression)
-    
-    return smartCast?.defaultType?.let { "Smart cast to ${DescriptorRenderer.FQ_NAMES_IN_TYPES.renderType(it)}" }
-}
-
+/**
+ * Returns the tooltip string for a hover over [referenceExpression], or an empty string if nothing
+ * meaningful can be shown. Uses the K2 Analysis API exclusively.
+ *
+ * @param referenceExpression the PSI reference under the cursor, or null
+ * @param doc the editor document
+ * @param offset the caret offset (unused; kept for interface compatibility)
+ */
 fun getToolTip(referenceExpression: KtReferenceExpression?,
                doc: Document, offset: Int): String {
     val file = referenceExpression?.let { ProjectUtils.getFileObjectForDocument(doc) }
@@ -54,46 +36,20 @@ fun getToolTip(referenceExpression: KtReferenceExpression?,
         ProjectUtils.getKotlinProjectForFileObject(it) ?: ProjectUtils.getValidProject()
     }
 
-    // K2 primary path for smart cast hover.
     val k2Expression = referenceExpression?.let { ref ->
         (ref as? KtSimpleNameExpression) ?: ref.children.filterIsInstance<KtSimpleNameExpression>().firstOrNull()
     }
     val smartCast = if (k2Expression != null && file != null && project != null) {
-        KaNavigationUtils.getSmartCastDescription(k2Expression, project, file) ?: getSmartCastHover(offset) ?: ""
-    } else {
-        getSmartCastHover(offset) ?: ""
-    }
+        KaNavigationUtils.getSmartCastDescription(k2Expression, project, file) ?: ""
+    } else ""
 
     referenceExpression ?: return smartCast
     if (file == null || project == null) return smartCast
 
-    // K2 primary path for declaration tooltip.
     val k2Tooltip = KaNavigationUtils.renderDeclarationTooltip(referenceExpression, project, file)
     if (k2Tooltip != null) {
         return "$k2Tooltip${if (smartCast.isNotEmpty()) "\n\n$smartCast" else ""}"
     }
 
-    // K1 fallback.
-    val navigationData = getNavigationData(referenceExpression, project) ?: return smartCast
-    val sourceElement = navigationData.sourceElement
-
-    when (sourceElement) {
-        is KotlinSourceElement -> {
-            val descriptor = navigationData.descriptor
-            return "${descriptor.toString().substringBefore(" defined in")}${if (smartCast != "") "\n\n$smartCast" else ""}"
-        }
-        is NetBeansJavaSourceElement -> {
-            val handle = sourceElement.getElementBinding()
-            val javaDoc = handle.getJavaDoc(project)?.let { "\n\n$it" } ?: ""
-
-            val element = sourceElement.javaElement
-            when (element) {
-                is NetBeansJavaClass -> return "${element.presentation()}$javaDoc"
-                is NetBeansJavaMember<*> -> return "${element.presentation()}$javaDoc"
-            }
-
-        }
-    }
-
-    return ""
+    return smartCast
 }

@@ -19,7 +19,6 @@ package io.github.nbplugins.kotlin.nbm.hints.fixes
 import io.github.nbplugins.kotlin.nbm.diagnostics.KaDiagnosticError
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.builder.KotlinPsiManager
-import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParser
 import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParserResult
 import org.jetbrains.kotlin.psi.KtFile
 import utils.KotlinTestCase
@@ -68,8 +67,7 @@ class KaImplementMembersFixTest : KotlinTestCase("KaImplementMembersFix", "quick
     private fun getK2Error(kaKtFile: KtFile, factoryName: String, fileName: String = "implementMembers"): KaDiagnosticError? {
         val file = dir.getFileObject("$fileName.kt") ?: return null
         val ktFile = KotlinPsiManager.getParsedFile(file) ?: return null
-        val resultWithProvider = KotlinParser.getAnalysisResult(ktFile, project) ?: return null
-        val parserResult = KotlinParserResult(null, resultWithProvider, ktFile, file, project, kaKtFile)
+        val parserResult = KotlinParserResult(null, ktFile, file, project, kaKtFile)
         return parserResult.getDiagnostics()
             .filterIsInstance(KaDiagnosticError::class.java)
             .firstOrNull { it.getKey() == factoryName }
@@ -79,8 +77,7 @@ class KaImplementMembersFixTest : KotlinTestCase("KaImplementMembersFix", "quick
     private fun getK2Diagnostics(kaKtFile: KtFile, fileName: String): List<KaDiagnosticError> {
         val file = dir.getFileObject("$fileName.kt") ?: return emptyList()
         val ktFile = KotlinPsiManager.getParsedFile(file) ?: return emptyList()
-        val resultWithProvider = KotlinParser.getAnalysisResult(ktFile, project) ?: return emptyList()
-        val parserResult = KotlinParserResult(null, resultWithProvider, ktFile, file, project, kaKtFile)
+        val parserResult = KotlinParserResult(null, ktFile, file, project, kaKtFile)
         return parserResult.getDiagnostics().filterIsInstance(KaDiagnosticError::class.java)
     }
 
@@ -144,8 +141,7 @@ class KaImplementMembersFixTest : KotlinTestCase("KaImplementMembersFix", "quick
         val kaKtFile = getKaKtFileOrSkip(file.path) ?: return
 
         val ktFile = KotlinPsiManager.getParsedFile(file) ?: return
-        val resultWithProvider = KotlinParser.getAnalysisResult(ktFile, project) ?: return
-        val parserResult = KotlinParserResult(null, resultWithProvider, ktFile, file, project, kaKtFile)
+        val parserResult = KotlinParserResult(null, ktFile, file, project, kaKtFile)
         val error = parserResult.getDiagnostics()
             .filterIsInstance(KaDiagnosticError::class.java)
             .firstOrNull { it.getKey() != "ABSTRACT_MEMBER_NOT_IMPLEMENTED"

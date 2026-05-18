@@ -19,19 +19,21 @@
     </fontcolor>
     
     <!--"semantic" highlighting:-->
-    <fontcolor name="mod-field" default="field"/>
+    <fontcolor name="mod-field" foreColor="660E7A">
+        <font style="bold"/>
+    </fontcolor>
     <fontcolor name="mod-local-variable"/>
     <fontcolor name="mod-parameter"/> 
     <fontcolor name="mod-static" >
         <font style="bold+italic" />
     </fontcolor>
     <fontcolor name="mod-type-parameter-use" foreColor="20999D" />
-    <fontcolor name="mod-annotation-type" foreColor="blue"/>
+    <fontcolor name="mod-annotation-type" foreColor="808000"/>
     <fontcolor name="mod-enum">
         <font style="bold" />
     </fontcolor>
     <fontcolor name="mod-interface"/>
-    <fontcolor name="mod-class" default="class"/>
+    <fontcolor name="mod-class"/>
     <fontcolor name="mod-declaration">
         <font style="bold" />
     </fontcolor>

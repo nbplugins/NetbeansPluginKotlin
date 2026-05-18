@@ -28,14 +28,14 @@ import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChangeReturnTypeIntenti
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertToBlockBodyIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertToExpressionBodyIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertTryFinallyToUseCallIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveEmptyClassBodyIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveEmptyPrimaryConstructorIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveExplicitTypeIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaReplaceSizeCheckWithIsNotEmptyIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaSpecifyTypeIntention
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.psiUtil.elementsInRange
 import org.jetbrains.kotlin.log.KotlinLogger
-import org.jetbrains.kotlin.hints.fixes.*
-import org.jetbrains.kotlin.hints.intentions.*
 import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinError
 import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParserResult
 import org.netbeans.modules.csl.api.*
@@ -69,59 +69,15 @@ class KotlinHintsProvider : HintsProvider {
                 KaConvertToExpressionBodyIntention(doc, kaKtFile, psi),
                 KaChangeReturnTypeIntention(doc, kaKtFile, psi),
                 KaConvertTryFinallyToUseCallIntention(doc, kaKtFile, psi),
-                KaReplaceSizeCheckWithIsNotEmptyIntention(doc, kaKtFile, psi)
+                KaReplaceSizeCheckWithIsNotEmptyIntention(doc, kaKtFile, psi),
+                KaRemoveEmptyClassBodyIntention(doc, kaKtFile, psi),
+                KaRemoveEmptyPrimaryConstructorIntention(doc, kaKtFile, psi)
             ).filter { it.isApplicable(psi.textRange.startOffset) }
         }
 
         private fun KaDiagnosticError.listOfK2QuickFixes(kaKtFile: KtFile): List<KaQuickFix> = listOf(
             KaImplementMembersFix(this, kaKtFile)
         ).filter(KaQuickFix::isApplicable)
-
-        // ── K1 fallback path ─────────────────────────────────────────────────
-
-        private fun listOfK1Intentions(parserResult: KotlinParserResult,
-                                       psi: PsiElement) = parserResult.let {
-            Pair(it.snapshot.source.getDocument(false), it.analysisResult?.analysisResult)
-        }.let {
-            listOf(
-                    RemoveExplicitTypeIntention(it.first, it.second, psi),
-                    SpecifyTypeIntention(it.first, it.second, psi),
-                    ConvertToBlockBodyIntention(it.first, it.second, psi),
-                    ConvertToExpressionBodyIntention(it.first, it.second, psi),
-                    ChangeReturnTypeIntention(it.first, it.second, psi),
-                    ConvertTryFinallyToUseCallIntention(it.first, it.second, psi),
-                    ConvertForEachToForLoopIntention(it.first, it.second, psi),
-                    ConvertEnumToSealedClassIntention(it.first, it.second, psi),
-                    AddValToConstructorParameterIntention(it.first, it.second, psi),
-                    ConvertPropertyInitializerToGetterIntention(it.first, it.second, psi),
-                    ConvertToConcatenatedStringIntention(it.first, it.second, psi),
-                    ConvertToStringTemplateIntention(it.first, it.second, psi),
-                    ConvertTwoComparisonsToRangeCheckIntention(it.first, it.second, psi),
-                    MergeIfsIntention(it.first, it.second, psi),
-                    RemoveBracesIntention(it.first, it.second, psi),
-                    SplitIfIntention(it.first, it.second, psi),
-                    ToInfixIntention(it.first, it.second, psi),
-                    RemoveEmptyClassBodyIntention(it.first, it.second, psi),
-                    RemoveEmptyParenthesesFromLambdaCallIntention(it.first, it.second, psi),
-                    RemoveEmptyPrimaryConstructorIntention(it.first, it.second, psi),
-                    RemoveEmptySecondaryConstructorIntention(it.first, it.second, psi),
-                    ReplaceSizeCheckWithIsNotEmptyIntention(it.first, it.second, psi)
-            ).filter { it.isApplicable(psi.textRange.startOffset) }
-        }
-
-        private fun KotlinError.listOfK1QuickFixes(parserResult: KotlinParserResult) = listOf(
-                RemoveUselessElvisFix(this, parserResult),
-                ImplementMembersFix(this, parserResult),
-                AutoImportFix(this, parserResult),
-                RemoveUselessCastFix(this, parserResult),
-                RemoveUnnecessarySafeCallFix(this, parserResult)
-        ).filter(KotlinQuickFix::isApplicable)
-
-        private val RuleContext.k1QuickFixes
-            get() = parserResult.diagnostics
-                    .filterIsInstance(KotlinError::class.java)
-                    .flatMap { it.listOfK1QuickFixes(parserResult as KotlinParserResult) }
-                    .map(KotlinQuickFix::createHint)
 
         private fun RuleContext.k2QuickFixList(kaKtFile: KtFile): List<KaQuickFix> =
             parserResult.diagnostics
@@ -167,10 +123,8 @@ class KotlinHintsProvider : HintsProvider {
         val lineNumber = NbDocument.findLineNumber(doc, offset)
         val lastLine = NbDocument.findLineNumber(doc, doc.length)
 
-        if (lineNumber == lastLine) return
-
         val lineStartOffset = NbDocument.findLineOffset(doc, lineNumber)
-        val lineEndOffset = NbDocument.findLineOffset(doc, lineNumber + 1)
+        val lineEndOffset = if (lineNumber < lastLine) NbDocument.findLineOffset(doc, lineNumber + 1) else doc.length
 
         val kaKtFile = parserResult.kaKtFile
 
@@ -193,9 +147,7 @@ class KotlinHintsProvider : HintsProvider {
                             .map { fix -> wrapWithInvalidate(fix, fileObject) }
                         KotlinLogger.INSTANCE.logInfo("K2 suggestions at offset=${psi.textRange.startOffset}: kaPsi=${kaPsi.javaClass.simpleName}, fixes=${k2fixes.size} [${k2fixes.joinToString { it.description }}]")
                         k2fixes
-                    } else {
-                        listOfK1Intentions(parserResult, psi)
-                    }
+                    } else emptyList()
                     fixes.map { fix ->
                         Hint(
                             KotlinRule(HintSeverity.CURRENT_LINE_WARNING),
@@ -230,16 +182,6 @@ class KotlinHintsProvider : HintsProvider {
                 })
                 addAll(hintsComputer.hints)
                 addAll(KaUnusedImportsComputer(parserResult, kaKtFile).getUnusedImports())
-            }
-        } else {
-            // K1 fallback path
-            val hintsComputer = KotlinHintsComputer(parserResult)
-            val unusedComputer = UnusedImportsComputer(parserResult)
-            ktFile.accept(hintsComputer)
-            with(hints) {
-                addAll(ruleContext.k1QuickFixes)
-                addAll(hintsComputer.hints)
-                addAll(unusedComputer.getUnusedImports())
             }
         }
     }

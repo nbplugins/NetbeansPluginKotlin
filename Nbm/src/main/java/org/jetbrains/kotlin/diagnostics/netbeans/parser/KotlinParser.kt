@@ -22,8 +22,6 @@ import javax.swing.event.ChangeListener
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper.isScanning
-import org.jetbrains.kotlin.resolve.AnalysisResultWithProvider
-import org.jetbrains.kotlin.resolve.KotlinAnalyzer
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.jetbrains.kotlin.psi.KtFile
 import org.netbeans.api.java.source.SourceUtils
@@ -37,26 +35,7 @@ class KotlinParser : Parser() {
 
     companion object {
         var file: KtFile? = null
-            private set
-
         var project: Project? = null
-            private set
-
-        var analysisResult: AnalysisResultWithProvider? = null
-
-        @JvmStatic fun getAnalysisResult(ktFile: KtFile,
-                                         proj: Project) = if (ktFile upToDate file) analysisResult else analyze(ktFile, proj)
-
-        private fun analyze(ktFile: KtFile,
-                            proj: Project): AnalysisResultWithProvider? {
-            project = proj
-            file = ktFile
-            return KotlinAnalyzer.analyzeFile(proj, ktFile)
-                .also { analysisResult = it }
-        }
-
-        private infix fun KtFile.upToDate(ktFile: KtFile?) =
-                virtualFile.path == ktFile?.virtualFile?.path && text == ktFile.text
 
         // Tracks files that already have a save listener registered.
         private val saveListenedPaths: MutableSet<String> = Collections.synchronizedSet(HashSet())
@@ -65,10 +44,6 @@ class KotlinParser : Parser() {
          * Registers a one-time [DataObject.PROP_MODIFIED] listener for [fo] so that whenever
          * the file transitions from modified → saved (e.g. after Ctrl+Z + Ctrl+S), the K2
          * session is invalidated and the next parse cycle picks up the disk content.
-         *
-         * Without this, applying a quick fix saves stubs to disk and invalidates the session,
-         * but a subsequent Ctrl+Z + Ctrl+S leaves the session valid with the old (fixed) disk
-         * content, so the ABSTRACT_MEMBER_NOT_IMPLEMENTED hint never reappears.
          */
         internal fun ensureSaveListener(fo: FileObject, proj: Project) {
             val path = fo.path ?: return
@@ -122,9 +97,9 @@ class KotlinParser : Parser() {
         try {
             KotlinLogger.INSTANCE.logInfo("KotlinParser.parse: building KtFile for ${fo?.path}")
             val ktFile = ProjectUtils.getKtFile(snapshot.text.toString(), fo)
-            KotlinLogger.INSTANCE.logInfo("KotlinParser.parse: starting analysis for ${fo?.path}")
-            val result = getAnalysisResult(ktFile, project)
-            KotlinLogger.INSTANCE.logInfo("KotlinParser.parse: analysis finished for ${fo?.path}, result=${result != null}")
+            Companion.project = project
+            Companion.file = ktFile
+            KotlinLogger.INSTANCE.logInfo("KotlinParser.parse: done for ${fo?.path}")
         } catch (ex: Throwable) {
             KotlinLogger.INSTANCE.logException("KotlinParser.parse failed for ${fo?.path}", ex)
         }
@@ -144,12 +119,6 @@ class KotlinParser : Parser() {
             KotlinLogger.INSTANCE.logWarning("KotlinParser.getResult($taskName): ktFile null (snapshot=$foPath companion=$filePath)")
             return null
         }
-        // K1 analysis may be null when only K2 is available; still return a result so that
-        // fold scanning, structure scanning, and other tasks that don't need K1 can proceed.
-        val result = getAnalysisResult(ktFile, project)
-        if (result == null) {
-            KotlinLogger.INSTANCE.logWarning("KotlinParser.getResult($taskName): K1 analysisResult is null; returning K2-only result")
-        }
 
         val kaKtFile = runCatching {
             val wrapper = KotlinAnalysisAPISession.getSession(project)
@@ -160,7 +129,7 @@ class KotlinParser : Parser() {
             "KotlinParser.getResult($taskName): returning KotlinParserResult for $foPath " +
             "(kaKtFile=${if (kaKtFile != null) "available" else "null (no deps or not found)"})"
         )
-        return KotlinParserResult(snapshot, result, ktFile, snapshot.source.fileObject, project, kaKtFile)
+        return KotlinParserResult(snapshot, ktFile, snapshot.source.fileObject, project, kaKtFile)
     }
 
     override fun addChangeListener(changeListener: ChangeListener) {}

@@ -6,6 +6,7 @@ import org.jetbrains.kotlin.psi.KtSimpleNameExpression
 import org.jetbrains.kotlin.psi.psiUtil.isImportDirectiveExpression
 import org.jetbrains.kotlin.descriptors.SourceElement
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
+import org.jetbrains.kotlin.resolve.source.KotlinSourceElement
 
 interface SearchFilter {
     fun isApplicable(jetElement: KtElement): Boolean
@@ -15,8 +16,8 @@ interface SearchFilterAfterResolve {
     fun isApplicable(sourceElement: KtElement, originElement: KtElement): Boolean
     
     fun isApplicable(sourceElements: List<SourceElement>, originElement: KtElement): Boolean {
-        val kotlinElements = getKotlinElements(sourceElements)
-        return  kotlinElements.any { isApplicable(it, originElement) }
+        val kotlinElements = sourceElements.filterIsInstance<KotlinSourceElement>().map { it.psi }
+        return kotlinElements.any { isApplicable(it, originElement) }
     }
 }
 

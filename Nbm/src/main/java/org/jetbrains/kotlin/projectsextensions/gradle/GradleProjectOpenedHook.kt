@@ -16,7 +16,7 @@
  *******************************************************************************/
 package org.jetbrains.kotlin.projectsextensions.gradle
 
-import org.jetbrains.kotlin.model.KotlinEnvironment
+import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper
 import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper.doInitialScan
 import org.netbeans.api.progress.ProgressHandleFactory
@@ -35,7 +35,7 @@ class GradleProjectOpenedHook(private val project: Project) : ProjectOpenedHook(
             KotlinProjectHelper.postTask(Runnable {
                 val progressBar = ProgressHandleFactory.createHandle("Loading Kotlin environment")
                 progressBar.start()
-                KotlinEnvironment.getEnvironment(project)
+                KotlinAnalysisAPISession.getSession(project)
                 progressBar.finish()
             })
             

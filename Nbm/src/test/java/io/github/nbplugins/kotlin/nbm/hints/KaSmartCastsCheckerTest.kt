@@ -18,7 +18,6 @@ package io.github.nbplugins.kotlin.nbm.hints
 
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.builder.KotlinPsiManager
-import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParser
 import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParserResult
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
@@ -51,15 +50,7 @@ class KaSmartCastsCheckerTest : KotlinTestCase("KaSmartCastsChecker", "semantic"
         val kaKtFile = getKaKtFileOrSkip(file.path) ?: return
 
         val ktFile = KotlinPsiManager.getParsedFile(file)!!
-        val analysisResult = KotlinParser.getAnalysisResult(ktFile, project)
-        val parserResult = KotlinParserResult(
-            null,
-            analysisResult,
-            ktFile,
-            file,
-            project,
-            kaKtFile
-        )
+        val parserResult = KotlinParserResult(null, ktFile, file, project, kaKtFile)
 
         // Find the first simple name expression in the file
         val expr = ktFile.findDescendantOfType<KtSimpleNameExpression>() ?: return

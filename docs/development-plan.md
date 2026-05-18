@@ -390,9 +390,23 @@ Target after C11: `KaSession`/`KaSymbol` (K2 Analysis API), `kotlin-compiler:2.0
 7. ✅ **C7** — Migrate `hints/`, `intentions/`, `fixes/` — K2 primary path (`KaImplementMembersFix`, 7 K2 intentions, `KaUnusedImportsComputer`); K1 fallback preserved. Fixed hint-not-disappearing bug (wrapWithInvalidate for quick-fixes) and duplicate-member bug (declaredMemberScope filter). Registered DataObject save listener so hints reappear after Ctrl+Z + Ctrl+S.
 8. ✅ **C8** — Migrate `navigation/` — K2 primary path (`KaNavigationUtils`: `resolveToSourcePsi`, `renderDeclarationTooltip`, `getSmartCastDescription`); K1 fallback preserved in `navigate()` and `getToolTip()`.
 9. ✅ **C9** — Migrate `structurescanner/`, `filesystem/lightclasses/`. Added code folding (+/− controls, `KotlinFoldTypeProvider`); K2 Navigator panel (`KaStructureScanner`); `KaLightClassGenerator`. PR #52.
-10. **C10** — Remove `KotlinEnvironment` and all remaining `BindingContext` fallback code; remove
-    `KotlinIdeCommon` module (all `base-fe10-*` deps eliminated with FE1.0 code)
-11. **C11** — Bump `submodules/IntellijCommunity` → `idea/242.x`; update KotlinConverter sources
+10. ✅ **C10** — Remove `KotlinEnvironment` and all remaining `BindingContext` fallback code; remove
+    `KotlinIdeCommon` module (all `base-fe10-*` deps eliminated with FE1.0 code). Added temporary
+    `FirIncompatibleClassExpressionChecker` workaround for KT-75035/KT-83463 (null source crash);
+    ported `KaRemoveEmptyClassBodyIntention`, `KaRemoveEmptyPrimaryConstructorIntention`; fixed
+    last-line `computeSuggestions` skip bug.
+11. **C11** — Editor UX polish (pure K2 path improvements):
+    - **FunctionCallHighlighter**: add `FUNCTION_CALL`, `EXTENSION_FUNCTION_CALL`,
+      `PACKAGE_FUNCTION_CALL`, `SUSPEND_FUNCTION_CALL`, `CONSTRUCTOR_CALL` to
+      `KotlinHighlightingAttributes`; implement in `KaSemanticHighlightingVisitor.highlightSimpleName()`
+      via `KaFunctionSymbol` branch (currently `else -> {}`).
+    - **Hover tooltip** (plain hover): implement CSL `Documentation` provider that calls
+      `KaNavigationUtils.renderDeclarationTooltip()` and register in `layer.xml`.
+    - **Completion filtering**: member-access completion shows top-level Kotlin stdlib functions
+      alongside object members; filter out package-scope symbols when completing after dot receiver.
+    - **False positive `QUALIFIED_EXPRESSION_WITHOUT_SELECTOR`**: investigate and suppress or fix
+      the spurious K2 diagnostic on valid code (e.g. `x.length` as statement).
+12. **C12** — Bump `submodules/IntellijCommunity` → `idea/242.x`; update KotlinConverter sources
     (only remaining user of the submodule):
     - Update `KotlinConverter/pom.xml` source path (`j2k/old/src` → `j2k/k1.old/src` + `j2k/shared/src`)
     - Resolve 242-era k1.old deps on Java Analysis plugin (`DfaUtil`, `NullabilityUtil`) — stub or workaround
@@ -401,7 +415,7 @@ Target after C11: `KaSession`/`KaSymbol` (K2 Analysis API), `kotlin-compiler:2.0
 **Note on C3 ordering:** `submodules/IntellijCommunity` intentionally stays at 232-era through C3–C10.
 Both `KotlinIdeCommon` (compiles `base/fe10/analysis/src`) and `KotlinConverter` (compiles `j2k/old/src`)
 build successfully against 242 platform JARs from 232-era sources — verified after C2. Bumping
-`submodules/IntellijCommunity` is deferred to C11, when `KotlinConverter` is the only remaining user.
+`submodules/IntellijCommunity` is deferred to C12, when `KotlinConverter` is the only remaining user.
 
 ADR: `docs/adr/B1-k2-analysis-api-approach.md`.
 Detailed plan: `docs/plans/C1-k2-foundation.md` (to be written when stage C begins).
@@ -437,7 +451,7 @@ Target: `kotlin-compiler-fir-for-ide:2.x`, unshaded.
 - A1: stays `0.3.x`, new Maven coordinates
 - A4 series: `0.4.x` → `0.5.x` (cleanup of bundled JARs)
 - **B2–B6** (Kotlin 1.9.25 + IntelliJ 232 bump, FE1.0 preserved): `0.6.x`
-- **C1–C10** (K2 Analysis API migration, kotlin-compiler 2.0.21): `0.7.x`
+- **C1–C12** (K2 Analysis API migration + polish, kotlin-compiler 2.0.21): `0.7.x`
 - **D1–D3** (bump compiler to K2 2.x): `0.8.x`
 - **E** (missing features): `0.9.x`+
 - Major version `1.0.0`: when feature parity with the IDEA plugin reached

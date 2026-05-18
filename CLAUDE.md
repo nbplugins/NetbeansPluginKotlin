@@ -376,7 +376,20 @@ grep "jdk.unsupported" /usr/lib/apache-netbeans/etc/netbeans.conf
 ```
 
 ## Key Versions
-- Kotlin compiler (Maven): 1.9.25
+- Kotlin compiler (Maven): 1.9.25 (with Analysis API 2.0.21 overlay from `base-analysis-api-platform-*`)
 - NetBeans target: RELEASE230 (23.0)
 - Java source/target: 17
 - Java runtime for tests: must use Java 17 (Java 25 breaks the Kotlin Maven plugin's `JavaVersion.parse()`)
+- **K2 Analysis API**: all language features run exclusively via `KaSession` / `analyze {}` (C10 complete — K1/FE1.0/BindingContext code removed)
+
+## K2-Only Architecture (post-C10)
+
+As of C10, all K1 fallback code (`KotlinEnvironment`, `BindingContext`, `AnalysisResultWithProvider`,
+`KotlinCacheServiceImpl`, `resolve/lang/java/`, etc.) has been removed. Every feature runs exclusively
+through the K2 Analysis API (`StandaloneAnalysisAPISession`).
+
+**Known workarounds in place:**
+- `Nbm/src/main/java/org/jetbrains/kotlin/fir/analysis/checkers/expression/FirIncompatibleClassExpressionChecker.java`
+  — temporary patch for KT-75035/KT-83463 (`source must not be null` crash in K2 2.0.21 when
+  checking FIR nodes with inferred types). **Remove this file** once `kotlin-compiler` is upgraded
+  to ≥ 2.1.20.

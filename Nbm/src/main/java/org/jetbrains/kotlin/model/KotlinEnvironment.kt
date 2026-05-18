@@ -56,7 +56,6 @@ import com.intellij.psi.impl.compiled.ClsCustomNavigationPolicy
 import com.intellij.psi.impl.file.impl.JavaFileManager
 import org.jetbrains.kotlin.filesystem.KotlinLightClassManager
 import org.jetbrains.kotlin.resolve.BuiltInsReferenceResolver
-import org.jetbrains.kotlin.resolve.KotlinCacheServiceImpl
 import org.jetbrains.kotlin.resolve.KotlinSourceIndex
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.jetbrains.kotlin.utils.KotlinImportInserterHelper
@@ -196,7 +195,6 @@ class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable
             })
             registerService(BuiltInsReferenceResolver::class.java, BuiltInsReferenceResolver(project))
             registerService(KotlinSourceIndex::class.java, KotlinSourceIndex())
-            registerService(KotlinCacheService::class.java, KotlinCacheServiceImpl(project, kotlinProject))
             registerService(VirtualFileFinderFactory::class.java, NetBeansVirtualFileFinderFactory(kotlinProject))
             registerService(ImportInsertHelper::class.java, KotlinImportInserterHelper())
 

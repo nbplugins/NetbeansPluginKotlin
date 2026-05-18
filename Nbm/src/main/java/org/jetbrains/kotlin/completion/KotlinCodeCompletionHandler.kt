@@ -85,12 +85,7 @@ class KotlinCodeCompletionHandler : CodeCompletionHandler2 {
             }
         }
 
-        // K1 fallback: BindingContext / ReferenceVariantsHelper
-        KotlinLogger.INSTANCE.logInfo(
-            "K1 completion fallback for ${file.name}: kaKtFile=${kaKtFile != null}, prefix='$prefix'"
-        )
-        val analysisResultWithProvider = parserResult.analysisResult ?: return null
-        return KotlinCodeCompletionResult(doc, caretOffset, analysisResultWithProvider, prefix)
+        return null
     }
 
 }
