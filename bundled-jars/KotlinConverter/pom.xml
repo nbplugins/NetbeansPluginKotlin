@@ -214,7 +214,7 @@
         </executions>
       </plugin>
 
-      <!-- Step 4: compile Kotlin sources with 1.9.25 -->
+      <!-- Step 4: compile Kotlin sources; D2 replaces this module with binary artifact entirely -->
       <plugin>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-maven-plugin</artifactId>
