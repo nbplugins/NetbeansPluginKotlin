@@ -417,8 +417,11 @@ Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstrea
   `kotlin.runtime.languageVersion` 1.9 → 2.2; upgraded `gmavenplus-plugin` to 4.2.0 + Groovy 4.0.32
   (Java 25 support). `languageVersion` stays 2.2 until context-receivers → context-parameters
   migration in D5. Bundled analysis runtime stays at 2.0.21. PR #56.
-- **D2** (`refactor/d2-j2k-binary`) — Replace `KotlinConverter` sources with `j2k-new` binary
-  artifact; remove `submodules/IntellijCommunity` from the build entirely.
+- ✅ **D2** (`refactor/d2-remove-submodules`) — No public `j2k-new` binary artifact exists; removed
+  `KotlinConverter` module from reactor and `netbeans-plugin-kotlin-converter` dep from Nbm;
+  stubbed `Java2KotlinConverter` (shows "not available" dialog); removed `J2KTest`; configured
+  `submodules/IntellijCommunity` as sparse (root-only checkout); added `util:193` as provided dep
+  to supply `gnu.trove.*` at compile time. J2K will be reimplemented in E6.
 - **D3** (`refactor/d3-kotlin-compiler-ir-for-ide`) — Replace `kotlin-compiler:2.0.21` (shaded) with
   `kotlin-compiler-ir-for-ide:2.3.20-ij253-52`; remove shaded `com.intellij.*` exclusions.
 - **D4** (`refactor/d4-platform-253`) — Bump platform JARs: `core`/`core-impl`/`util` 232 → 253;
@@ -446,7 +449,9 @@ Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstrea
 - **E3** — Go to Declaration (Ctrl+B) — implement `DeclarationFinder`
 - **E4** — Rename refactoring — rewrite
 - **E5** — Debugger — rewrite via reflection (bypass Friend-restricted module)
-- **E6** — J2K (Java→Kotlin) — wire up the action, verify the converter
+- **E6** — J2K (Java→Kotlin) — reimplement converter using K2 Analysis API (`j2k/new` from
+  `submodules/IntellijCommunity` or an equivalent binary artifact once published); wire up
+  `Java2KotlinConverter` (currently stubbed since D2) and re-enable `J2KTest`
 - **E7** — Create function quick fix — implement
 
 ---

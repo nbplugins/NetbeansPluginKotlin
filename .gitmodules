@@ -1,6 +1,8 @@
 [submodule "submodules/IntellijCommunity"]
 	path = submodules/IntellijCommunity
 	url = https://github.com/JetBrains/intellij-community
+	ignore = dirty
 [submodule "submodules/Kotlin"]
 	path = submodules/Kotlin
 	url = https://github.com/JetBrains/kotlin
+	ignore = dirty

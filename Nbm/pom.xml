@@ -151,6 +151,16 @@
       <artifactId>netbeans-plugin-kotlin-core-impl</artifactId>
     </dependency>
 
+    <!-- util:193 — compile-only; provides gnu.trove.* classes needed by ObjectIntHashMap
+         and MultiMap stubs. At runtime, gnu.trove is supplied by kotlin-compiler:2.0.21's
+         shaded 193-era platform copy. -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>util</artifactId>
+      <version>${intellij.platform.193.util.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
     <!-- Bundled JARs (base-fe10-* and base-psi): ALL transitive deps excluded.
          The jetbrains-kotlin-ide-hosted real POMs declare many transitive deps (kotlin-compiler-*-for-ide,
          platform JARs, etc.) that conflict with kotlin-compiler:2.0.21 at runtime. Our manually installed
@@ -265,10 +275,7 @@
         </exclusion>
       </exclusions>
     </dependency>
-    <dependency>
-      <groupId>io.github.nbplugins</groupId>
-      <artifactId>netbeans-plugin-kotlin-converter</artifactId>
-    </dependency>
+
     <!-- KotlinCompiler: kotlin-compiler:2.0.21 with 2084 com/intellij classes that overlap
          with platform:242 stripped out. The 242-era versions of those classes are provided
          by netbeans-plugin-kotlin-core-impl. No transitive exclusions needed — the wrapper

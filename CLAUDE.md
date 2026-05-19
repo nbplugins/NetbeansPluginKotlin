@@ -161,7 +161,7 @@ Before every commit, in order:
 **All dependency versions must be declared in the root `pom.xml` `<dependencyManagement>` section.**
 Never add a `<version>` tag directly in a module `pom.xml` unless it is an explicit override (exception to the default rule), and document why.
 
-**Version policy for multi-version artifacts:** The default version in `dependencyManagement` must be the most current (242-era). Older versions used by specific submodules (e.g., `KotlinConverter` uses `core:232`) are declared explicitly in those submodule pom.xml files as documented exceptions.
+**Version policy for multi-version artifacts:** The default version in `dependencyManagement` must be the most current (242-era). Older versions used by specific submodules are declared explicitly in those submodule pom.xml files as documented exceptions.
 
 ## Build Commands
 
@@ -220,9 +220,9 @@ Nbm/                     ← main plugin module (packaging=nbm)
   pom.xml
   src/                   ← plugin source and tests
 bundled-jars/            ← grouping dir (no pom); each submodule produces one JAR
-  KotlinIdeCommon/
-  KotlinFormatter/
-  KotlinConverter/
+  KotlinIdeCommon/       ← not in reactor (replaced by base-fe10-* binary artifacts in B5)
+  KotlinFormatter/       ← not in reactor (replaced by formatter binary artifact in B4)
+  KotlinConverter/       ← not in reactor (removed in D2; J2K reimplemented in E6)
 patches/                 ← replacement class sources for bundled-jars modules (StubBasedPsiElementBase, AtomicFieldUpdater, picocontainer)
 ```
 
@@ -251,19 +251,16 @@ patches/                 ← replacement class sources for bundled-jars modules 
 
 #### bundled-jars/* submodule summary
 
-| Submodule | What it does |
-|-----------|-------------|
-| **KotlinFormatter** | Compiles 12 files from `submodules/Kotlin/idea/formatter/`, patches `ReflectionUtil.copyFields` (inlined) |
-| **KotlinConverter** | Compiles 55+ files from `submodules/Kotlin/j2k/`, patches 2 sites (type inference, `runWriteAction`) |
-| **KotlinIdeCommon** | Compiles all of `submodules/Kotlin/idea/ide-common/src/`, excludes 8 classes overridden by the plugin |
+| Submodule | What it does | Status |
+|-----------|-------------|--------|
+| **KotlinFormatter** | Compiled 12 files from `submodules/Kotlin/idea/formatter/` | Replaced by `org.jetbrains.kotlin:formatter:231-*` binary (B4) |
+| **KotlinConverter** | Compiled 55+ files from `submodules/IntellijCommunity/plugins/kotlin/j2k/old/` | Removed from reactor (D2); J2K reimplemented in E6 |
+| **KotlinIdeCommon** | Compiled `submodules/IntellijCommunity/plugins/kotlin/base/fe10/analysis/src/` | Replaced by `base-fe10-*` binary artifacts (B5) |
 
 Several capabilities depend on bundled custom JARs (not from Maven Central):
-- `kotlin-ide-common.jar` — JetBrains IDE tooling (compiled from `submodules/Kotlin` sources since A4.7)
+- `kotlin-ide-common.jar` — replaced by `base-fe10-analysis/code-insight/obsolete-compat/base-psi:231-*` binary artifacts (B5)
 - IntelliJ platform core — provided by `com.jetbrains.intellij.platform:core:193.7288.26` +
   `core-impl:193.7288.26` as direct Maven dependencies of Nbm (since A4.10; replaces old `lib/intellij-core-1.0.jar`)
-
-`kotlin-formatter.jar` (A4.3), `kotlin-converter.jar` (A4.6), and `kotlin-ide-common.jar` (A4.7)
-are compiled from `submodules/Kotlin` sources and no longer live in `lib/`.
 
 Formatter infrastructure (A4.9): `openapi-formatter.jar` and `idea-formatter.jar` replaced by
 `com.jetbrains.intellij.platform:code-style:241.194` and `code-style-impl:241.194` (direct Maven

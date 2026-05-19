@@ -36,7 +36,6 @@
   <modules>
     <module>bundled-jars/CoreImpl</module>
     <module>bundled-jars/KotlinCompiler</module>
-    <module>bundled-jars/KotlinConverter</module>
     <module>Nbm</module>
   </modules>
   <repositories>
@@ -243,11 +242,7 @@
         <artifactId>base-psi</artifactId>
         <version>231-1.9.20-506-IJ8109.175</version>
       </dependency>
-      <dependency>
-        <groupId>io.github.nbplugins</groupId>
-        <artifactId>netbeans-plugin-kotlin-converter</artifactId>
-        <version>${project.version}</version>
-      </dependency>
+
       <!-- Reactor wrapper JARs (C2+) -->
       <dependency>
         <groupId>io.github.nbplugins</groupId>
