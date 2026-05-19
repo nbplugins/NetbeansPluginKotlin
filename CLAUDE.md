@@ -141,12 +141,12 @@ Before every commit, in order:
 
 1. **Run unit tests** — all tests must pass:
    ```bash
-   JAVA_HOME=/usr/lib/jvm/java-17-temurin-jdk mvn clean test
+   mvn clean test
    ```
 
 2. **Build the plugin** — must produce a `.nbm` without errors:
    ```bash
-   JAVA_HOME=/usr/lib/jvm/java-17-temurin-jdk mvn clean package -DskipTests
+   mvn clean package -DskipTests
    ```
 
 3. **Propose a manual test plan** — based on what changed, list the concrete steps for the user
@@ -186,13 +186,13 @@ binary JARs (KotlinCompiler unzips/zips ~24k files, 142 MB). An up-to-date guard
 a **no-clean** rebuild reuse the existing repacked JARs untouched (verified byte-identical):
 
 ```bash
-# Daily loop while working on Nbm code (C8, etc.) — bundled-jars reused in ~2 s,
+# Daily loop while working on Nbm code — bundled-jars reused in ~2 s,
 # only Nbm recompiles:
-JAVA_HOME=/usr/lib/jvm/java-17-temurin-jdk mvn package -DskipTests
+mvn package -DskipTests
 
 # Use clean ONLY when: a bundled-jar dependency version changed in pom.xml,
 # after a git pull touching bundled-jars, or to force a pristine state:
-JAVA_HOME=/usr/lib/jvm/java-17-temurin-jdk mvn clean package -DskipTests
+mvn clean package -DskipTests
 ```
 
 `clean` deletes `target/` (the `repack.stamp` + repacked JAR) → bundled-jars do the
@@ -319,10 +319,10 @@ place them in `~/.m2/repository/com/jetbrains/intellij/platform/<artifact>/<vers
 
 **Правило разрешения конфликтов версий классов:** При конфликте двух версий одного класса из разных JAR-файлов — всегда стрипить **старую** версию, оставлять **новую**. Если новый код вызывает метод, отсутствующий в старом классе — добавить метод в старый класс (stub в `Nbm/src/main/java/`, главный JAR загружается первым и перекрывает `ext/*.jar`).
 
-**Running tests** (must use Java 17 — Java 25 breaks the Kotlin Maven plugin; Xvfb is started automatically by Maven on display :99):
+**Running tests** (Xvfb is started automatically by Maven on display :99):
 
 ```bash
-JAVA_HOME=/usr/lib/jvm/java-17-temurin-jdk mvn clean test
+mvn clean test
 ```
 
 ### Plugin Registration
@@ -376,10 +376,11 @@ grep "jdk.unsupported" /usr/lib/apache-netbeans/etc/netbeans.conf
 ```
 
 ## Key Versions
-- Kotlin compiler (Maven): 1.9.25 (with Analysis API 2.0.21 overlay from `base-analysis-api-platform-*`)
+- Kotlin compiler plugin (`kotlin.compile.version`): 2.2.21
+- Kotlin bundled runtime (`kotlin.runtime.version`): 2.0.21 (with Analysis API 2.0.21)
+- Kotlin language/API version (`kotlin.runtime.languageVersion`): 2.2 (capped until context-receivers → context-parameters migration in D5)
 - NetBeans target: RELEASE230 (23.0)
 - Java source/target: 17
-- Java runtime for tests: must use Java 17 (Java 25 breaks the Kotlin Maven plugin's `JavaVersion.parse()`)
 - **K2 Analysis API**: all language features run exclusively via `KaSession` / `analyze {}` (C10 complete — K1/FE1.0/BindingContext code removed)
 
 ## K2-Only Architecture (post-C10)

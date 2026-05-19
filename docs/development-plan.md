@@ -412,9 +412,11 @@ Target: `kotlin-compiler-ir-for-ide:2.3.20-ij253-52` unshaded, platform era 253,
 
 Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstream/main`.
 
-- **D1** (`refactor/d1-bump-kotlin-compile-version`) — Decouple `kotlin-maven-plugin` from bundled
-  runtime: add `kotlin.compile.version=2.3.20` property; change `pluginManagement` to use it; pin
-  `KotlinConverter` to `${kotlin.runtime.version}` explicitly. Bundled analysis runtime stays at 2.0.21.
+- ✅ **D1** (`refactor/d1-bump-kotlin-compile-version`) — Decouple `kotlin-maven-plugin` from bundled
+  runtime: added `kotlin.compile.version=2.2.21`; pluginManagement uses it; bumped
+  `kotlin.runtime.languageVersion` 1.9 → 2.2; upgraded `gmavenplus-plugin` to 4.2.0 + Groovy 4.0.32
+  (Java 25 support). `languageVersion` stays 2.2 until context-receivers → context-parameters
+  migration in D5. Bundled analysis runtime stays at 2.0.21. PR #56.
 - **D2** (`refactor/d2-j2k-binary`) — Replace `KotlinConverter` sources with `j2k-new` binary
   artifact; remove `submodules/IntellijCommunity` from the build entirely.
 - **D3** (`refactor/d3-kotlin-compiler-ir-for-ide`) — Replace `kotlin-compiler:2.0.21` (shaded) with
