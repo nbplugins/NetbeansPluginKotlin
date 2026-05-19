@@ -55,7 +55,7 @@ compatible version. Not a separate stage — done along the way.
 - [x] **B5** — Replace `KotlinIdeCommon` source module with binary artifacts (`base-fe10-analysis/code-insight/obsolete-compat/base-psi:231-1.9.20-506-IJ8109.175`); re-enable intentions/quickfixes tests. 163 tests pass.
 - [x] **B6** — Repoint `KotlinConverter` → `submodules/IntellijCommunity@232` (no binary artifact available for j2k); re-enable J2K/diagnostics tests
 - [x] **C** — K2 Analysis API migration (C1–C10 complete). Ships as 0.7.x.
-- [ ] **D** — Platform and compiler upgrade to era 253 / Kotlin 2.3.20. Ships as 0.8.x.
+- [ ] **D** — Compiler upgrade to kotlin-compiler-ir-for-ide 2.3.21 + analysis-api 2.3.21 (D3+D5 ✅); platform 253 upgrade (D4) deferred. Ships as 0.8.x.
 - [ ] **E** — Editor UX polish and missing features. Ships as 0.9.x+.
 
 B3–B6 ship as 0.6.x on `feature/kotlin-compiler-only`; single PR after B6 passes all 169 tests.
@@ -404,11 +404,12 @@ ADR: `docs/adr/B1-k2-analysis-api-approach.md`.
 
 ---
 
-## Track D — Platform and Compiler Upgrade to Era 253 / Kotlin 2.3.20 (0.8.x)
+## Track D — Platform and Compiler Upgrade to Era 253 / Kotlin 2.3.21 (0.8.x)
 
 Starting point after C10: K2 Analysis API, `kotlin-compiler:2.0.21` shaded (193-era com.intellij.*),
-platform `core`/`core-impl`/`util` at 232, `code-style` at 241.
-Target: `kotlin-compiler-ir-for-ide:2.3.20-ij253-52` unshaded, platform era 253, `analysis-api` 2.3.20.
+platform `core`/`core-impl`/`util` at 242, `code-style` at 241.
+Target: `kotlin-compiler-ir-for-ide:2.3.21` unshaded, platform era 242 (unchanged — see D3/D5 note),
+`analysis-api` 2.3.21.
 
 Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstream/main`.
 
@@ -416,18 +417,23 @@ Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstrea
   runtime: added `kotlin.compile.version=2.2.21`; pluginManagement uses it; bumped
   `kotlin.runtime.languageVersion` 1.9 → 2.2; upgraded `gmavenplus-plugin` to 4.2.0 + Groovy 4.0.32
   (Java 25 support). `languageVersion` stays 2.2 until context-receivers → context-parameters
-  migration in D5. Bundled analysis runtime stays at 2.0.21. PR #56.
+  migration. PR #56.
 - ✅ **D2** (`refactor/d2-remove-submodules`) — No public `j2k-new` binary artifact exists; removed
   `KotlinConverter` module from reactor and `netbeans-plugin-kotlin-converter` dep from Nbm;
   stubbed `Java2KotlinConverter` (shows "not available" dialog); removed `J2KTest`; configured
-  `submodules/IntellijCommunity` as sparse (root-only checkout); added `util:193` as provided dep
-  to supply `gnu.trove.*` at compile time. J2K will be reimplemented in E6.
-- **D3** (`refactor/d3-kotlin-compiler-ir-for-ide`) — Replace `kotlin-compiler:2.0.21` (shaded) with
-  `kotlin-compiler-ir-for-ide:2.3.20-ij253-52`; remove shaded `com.intellij.*` exclusions.
-- **D4** (`refactor/d4-platform-253`) — Bump platform JARs: `core`/`core-impl`/`util` 232 → 253;
-  `code-style`/`code-style-impl` 241 → 253.
-- **D5** (`refactor/d5-analysis-api-2.3.20`) — Bump `analysis-api-*-for-ide` 2.0.21 → 2.3.20; remove
-  `FirIncompatibleClassExpressionChecker` workaround (KT-75035 fixed in ≥ 2.1.20).
+  `submodules/IntellijCommunity` as sparse (root-only checkout). J2K will be reimplemented in E6. PR #57.
+- ✅ **D3+D5** (`refactor/d3-d4-compiler-platform-253`) — Replace `kotlin-compiler:2.0.21` (shaded)
+  with `kotlin-compiler-ir-for-ide:2.3.21` (unshaded); bump `analysis-api-*-for-ide` 2.0.21 → 2.3.21;
+  remove `FirIncompatibleClassExpressionChecker` workaround (KT-75035 fixed in ≥ 2.1.20).
+  New `KotlinCompilerCliBase` module extracts all classes absent from `-for-ide` and platform JARs
+  (set-difference from fat `kotlin-compiler.jar`); `CoreImpl` repacks platform 242 as before.
+  Explicit new runtime deps: `kotlinx-collections-immutable-jvm:0.3.7`, `caffeine:3.1.8`.
+  `Registry` stub updated to expose `Companion` inner class (analysis-api 2.3.21 requirement).
+  Note: D4 (platform 242 → 253) deferred — all published `analysis-api-*-for-ide` versions use
+  the old 242-era `PathResolver(4-arg)` API, incompatible with 252/253 platform.
+- **D4** (`refactor/d4-platform-253`) — Bump platform JARs: `core`/`core-impl`/`util` 242 → 253;
+  `code-style`/`code-style-impl` 241 → 253. Blocked until a compatible `analysis-api-*-for-ide`
+  artifact targeting 253-era platform is published.
 - **D6** (`refactor/d6-cleanup`) — Remove `PatchedCoreImpl` and compatibility stubs made obsolete by
   the unshaded compiler.
 
@@ -462,6 +468,6 @@ Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstrea
 - A4 series: `0.4.x` → `0.5.x` (cleanup of bundled JARs)
 - **B2–B6** (Kotlin 1.9.25 + IntelliJ 232 bump, FE1.0 preserved): `0.6.x`
 - **C1–C10** (K2 Analysis API migration, kotlin-compiler 2.0.21): `0.7.x` ✓
-- **D1–D6** (platform era 253, kotlin-compiler-ir-for-ide 2.3.20): `0.8.x`
+- **D1–D6** (kotlin-compiler-ir-for-ide 2.3.21, analysis-api 2.3.21; D4 platform 253 deferred): `0.8.x`
 - **E1–E7** (editor UX polish + missing features): `0.9.x`+
 - Major version `1.0.0`: when feature parity with the IDEA plugin reached

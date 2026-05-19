@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.8.0-SNAPSHOT</version>
+    <version>0.8.2-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-nbm</artifactId>
@@ -142,28 +142,36 @@
     </plugins>
   </build>
   <dependencies>
+    <!-- cli/jvm/compiler classes (KotlinCoreEnvironment, CompatKt, etc.) extracted from
+         kotlin-compiler by the KotlinCompilerCliBase wrapper module. Required by
+         analysis-api-standalone-for-ide but absent from the Maven -for-ide artifacts. -->
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-compiler-cli-base</artifactId>
+    </dependency>
     <!-- IntelliJ Platform 242 (core+core-impl+util) via CoreImpl.
-         CoreImpl repacks the three 242 JARs into one — all 3796 com/intellij classes
-         provided as-is. The 2084 overlap with kotlin-compiler:2.0.21 shading is resolved
-         by KotlinCompiler (which strips those 2084 classes from kotlin-compiler). -->
+         CoreImpl repacks the 242 JARs into one — all com/intellij classes provided as-is. -->
     <dependency>
       <groupId>io.github.nbplugins</groupId>
       <artifactId>netbeans-plugin-kotlin-core-impl</artifactId>
     </dependency>
 
-    <!-- util:193 — compile-only; provides gnu.trove.* classes needed by ObjectIntHashMap
-         and MultiMap stubs. At runtime, gnu.trove is supplied by kotlin-compiler:2.0.21's
-         shaded 193-era platform copy. -->
+
+    <!-- kotlinx-collections-immutable: compile dep of core:242 (Language.transitiveDialects).
+         Formerly provided by the shaded kotlin-compiler fat JAR; now needed explicitly. -->
     <dependency>
-      <groupId>com.jetbrains.intellij.platform</groupId>
-      <artifactId>util</artifactId>
-      <version>${intellij.platform.193.util.version}</version>
-      <scope>provided</scope>
+      <groupId>org.jetbrains.kotlinx</groupId>
+      <artifactId>kotlinx-collections-immutable-jvm</artifactId>
+    </dependency>
+    <!-- caffeine: runtime dep of analysis-api-platform-interface-for-ide (KotlinCachingPackageProviderFactory). -->
+    <dependency>
+      <groupId>com.github.ben-manes.caffeine</groupId>
+      <artifactId>caffeine</artifactId>
     </dependency>
 
     <!-- Bundled JARs (base-fe10-* and base-psi): ALL transitive deps excluded.
          The jetbrains-kotlin-ide-hosted real POMs declare many transitive deps (kotlin-compiler-*-for-ide,
-         platform JARs, etc.) that conflict with kotlin-compiler:2.0.21 at runtime. Our manually installed
+         platform JARs, etc.) that conflict with our runtime. Our manually installed
          versions have minimal POMs with no deps — this exclusion matches that baseline on CI. -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
@@ -276,18 +284,35 @@
       </exclusions>
     </dependency>
 
-    <!-- KotlinCompiler: kotlin-compiler:2.0.21 with 2084 com/intellij classes that overlap
-         with platform:242 stripped out. The 242-era versions of those classes are provided
-         by netbeans-plugin-kotlin-core-impl. No transitive exclusions needed — the wrapper
-         POM declares all deps as provided. -->
+    <!-- D3+D4+D5: kotlin-compiler-common-for-ide (Kotlin PSI, FIR frontend, descriptors, etc.)
+         + kotlin-compiler-ir-for-ide (IR backend). Both are unshaded — no com/intellij classes.
+         All transitive deps excluded: platform 253 and analysis-api are declared explicitly above. -->
     <dependency>
-      <groupId>io.github.nbplugins</groupId>
-      <artifactId>netbeans-plugin-kotlin-compiler</artifactId>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-compiler-common-for-ide</artifactId>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-compiler-ir-for-ide</artifactId>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains</groupId>
       <artifactId>annotations</artifactId>
       <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.ow2.asm</groupId>
+      <artifactId>asm-tree</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.ow2.asm</groupId>
+      <artifactId>asm-util</artifactId>
     </dependency>
     <!-- NetBeans API -->
     <dependency>

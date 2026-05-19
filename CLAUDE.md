@@ -374,8 +374,9 @@ grep "jdk.unsupported" /usr/lib/apache-netbeans/etc/netbeans.conf
 
 ## Key Versions
 - Kotlin compiler plugin (`kotlin.compile.version`): 2.2.21
-- Kotlin bundled runtime (`kotlin.runtime.version`): 2.0.21 (with Analysis API 2.0.21)
-- Kotlin language/API version (`kotlin.runtime.languageVersion`): 2.2 (capped until context-receivers → context-parameters migration in D5)
+- Kotlin bundled runtime (`kotlin.runtime.version`): 2.3.21 — `kotlin-compiler-ir-for-ide:2.3.21` (unshaded) + Analysis API 2.3.21 (D3+D5 complete)
+- Kotlin language/API version (`kotlin.runtime.languageVersion`): 2.2 (capped until context-receivers → context-parameters migration)
+- IntelliJ Platform era: 242 (D4 platform 253 upgrade deferred — no compatible `analysis-api-*-for-ide` artifact exists for 253)
 - NetBeans target: RELEASE230 (23.0)
 - Java source/target: 17
 - **K2 Analysis API**: all language features run exclusively via `KaSession` / `analyze {}` (C10 complete — K1/FE1.0/BindingContext code removed)
@@ -387,7 +388,6 @@ As of C10, all K1 fallback code (`KotlinEnvironment`, `BindingContext`, `Analysi
 through the K2 Analysis API (`StandaloneAnalysisAPISession`).
 
 **Known workarounds in place:**
-- `Nbm/src/main/java/org/jetbrains/kotlin/fir/analysis/checkers/expression/FirIncompatibleClassExpressionChecker.java`
-  — temporary patch for KT-75035/KT-83463 (`source must not be null` crash in K2 2.0.21 when
-  checking FIR nodes with inferred types). **Remove this file** once `kotlin-compiler` is upgraded
-  to ≥ 2.1.20.
+- `Registry.java` stub in `Nbm/src/main/java/com/intellij/openapi/util/registry/` exposes a `Companion`
+  inner class so that `analysis-api:2.3.21` code accessing `Registry.Companion` at runtime finds the
+  expected field. The stub takes classloader precedence over the Kotlin `Registry` in `KotlinCompilerCliBase`.

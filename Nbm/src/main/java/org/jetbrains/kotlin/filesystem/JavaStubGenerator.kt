@@ -17,13 +17,13 @@
 package org.jetbrains.kotlin.filesystem
 
 import kotlin.Pair
-import org.jetbrains.org.objectweb.asm.ClassReader
-import org.jetbrains.org.objectweb.asm.Opcodes
-import org.jetbrains.org.objectweb.asm.tree.ClassNode
-import org.jetbrains.org.objectweb.asm.tree.MethodNode
-import org.jetbrains.org.objectweb.asm.tree.FieldNode
-import org.jetbrains.org.objectweb.asm.signature.SignatureReader
-import org.jetbrains.org.objectweb.asm.util.TraceSignatureVisitor
+import org.objectweb.asm.ClassReader
+import org.objectweb.asm.Opcodes
+import org.objectweb.asm.tree.ClassNode
+import org.objectweb.asm.tree.MethodNode
+import org.objectweb.asm.tree.FieldNode
+import org.objectweb.asm.signature.SignatureReader
+import org.objectweb.asm.util.TraceSignatureVisitor
 
 object JavaStubGenerator {
 

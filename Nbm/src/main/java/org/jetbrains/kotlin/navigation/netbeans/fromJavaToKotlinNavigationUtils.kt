@@ -23,16 +23,13 @@ import javax.lang.model.element.ElementKind
 import javax.swing.text.Document
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.jetbrains.kotlin.fileClasses.JvmFileClassUtil
-import org.jetbrains.kotlin.filesystem.lightclasses.LightClassBuilderFactory
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.psi.*
-import org.jetbrains.kotlin.resolve.lang.java.ElementHandleFieldContainingClassSearcher
-import org.jetbrains.kotlin.resolve.lang.java.ElementHandleNameSearcher
-import org.jetbrains.kotlin.resolve.lang.java.ElementHandleSimpleNameSearcher
-import org.jetbrains.kotlin.resolve.lang.java.ElementSearcher
+import org.netbeans.api.java.source.CompilationController
+import org.netbeans.api.java.source.ElementHandle
 import org.netbeans.api.java.source.JavaSource
 import org.netbeans.api.java.source.SourceUtils
-import org.netbeans.api.java.source.ElementHandle
+import org.netbeans.api.java.source.Task
 import org.netbeans.api.project.Project
 import org.openide.util.Exceptions
 
@@ -186,16 +183,7 @@ fun equalsNames(ktElement: KtElement?, element: ElementHandle<*>?, doc: Document
         return equalsForProperty(ktElement, second)
     }
     
-    if (first != second) return false
-
-    val ktSignatures: Set<Pair<String, String>> =
-            ktElement.getUserData(LightClassBuilderFactory.JVM_SIGNATURE) ?: return true
-    if (ktSignatures.isEmpty())  return true
-
-    val signatures = SourceUtils.getJVMSignature(element).toList()
-
-    ktSignatures.firstOrNull { signatures.contains(it.first) } ?: return false
-    return true
+    return first == second
 }
 
 private fun equalsForProperty(ktProperty: KtValVarKeywordOwner, simpleName: String): Boolean {
@@ -209,7 +197,7 @@ private fun equalsForProperty(ktProperty: KtValVarKeywordOwner, simpleName: Stri
         if (simpleName.startsWith("is")) it else {
             if (simpleName.length <= 3) return false
             val withoutGetOrSet = it.substring(3)
-            withoutGetOrSet.replaceRange(0, 1, withoutGetOrSet.first().toLowerCase().toString())
+            withoutGetOrSet.replaceRange(0, 1, withoutGetOrSet.first().lowercaseChar().toString())
         }
     }
     
@@ -246,5 +234,42 @@ private fun getTypeFqName(element: PsiElement?) = when (element) {
 private open class KtAllVisitor : KtVisitorVoid() {
     override fun visitElement(element: PsiElement) {
         element.acceptChildren(this)
+    }
+}
+
+private class ElementSearcher(val offset: Int) : Task<CompilationController> {
+    var element: ElementHandle<*>? = null
+    override fun run(info: CompilationController) {
+        info.toPhase(JavaSource.Phase.ELEMENTS_RESOLVED)
+        val treePath = info.treeUtilities.pathFor(offset)
+        val elem = info.trees.getElement(treePath) ?: return
+        if (elem.kind != ElementKind.LOCAL_VARIABLE) element = ElementHandle.create(elem)
+    }
+}
+
+private class ElementHandleNameSearcher(val handle: ElementHandle<*>) : Task<CompilationController> {
+    lateinit var name: org.jetbrains.kotlin.name.Name
+    override fun run(info: CompilationController) {
+        info.toPhase(JavaSource.Phase.ELEMENTS_RESOLVED)
+        val elem = handle.resolve(info) ?: return
+        name = org.jetbrains.kotlin.name.Name.identifier(elem.simpleName.toString())
+    }
+}
+
+private class ElementHandleSimpleNameSearcher(val handle: ElementHandle<*>) : Task<CompilationController> {
+    var simpleName: String? = null
+    override fun run(info: CompilationController) {
+        info.toPhase(JavaSource.Phase.ELEMENTS_RESOLVED)
+        val elem = handle.resolve(info) ?: return
+        simpleName = elem.simpleName.toString()
+    }
+}
+
+private class ElementHandleFieldContainingClassSearcher(val handle: ElementHandle<*>) : Task<CompilationController> {
+    lateinit var containingClass: ElementHandle<*>
+    override fun run(info: CompilationController) {
+        info.toPhase(JavaSource.Phase.ELEMENTS_RESOLVED)
+        val elem = handle.resolve(info) ?: return
+        containingClass = ElementHandle.create(elem.enclosingElement)
     }
 }

@@ -16,378 +16,60 @@
  *******************************************************************************/
 package org.jetbrains.kotlin.model
 
-import com.intellij.codeInsight.ExternalAnnotationsManager
-import com.intellij.codeInsight.InferredAnnotationsManager
-import org.jetbrains.kotlin.resolve.lang.kotlin.NetBeansVirtualFileFinderFactory
-import java.io.File
-import org.jetbrains.kotlin.asJava.classes.KtLightClassForFacade
-import org.jetbrains.kotlin.asJava.LightClassGenerationSupport
-import org.jetbrains.kotlin.cli.jvm.compiler.CliLightClassGenerationSupport
-import org.jetbrains.kotlin.codegen.extensions.ExpressionCodegenExtension
-import org.jetbrains.kotlin.load.kotlin.KotlinBinaryClassCache
-import org.jetbrains.kotlin.parsing.KotlinParserDefinition
-import org.jetbrains.kotlin.resolve.CodeAnalyzerInitializer
-import com.intellij.codeInsight.ContainerProvider
-import com.intellij.codeInsight.NullableNotNullManager
-import com.intellij.codeInsight.runner.JavaMainMethodProvider
-import com.intellij.core.CoreApplicationEnvironment
-import com.intellij.core.CoreJavaFileManager
-import com.intellij.core.JavaCoreProjectEnvironment
-import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreApplicationEnvironment
-import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
-import com.intellij.mock.MockProject
-import com.intellij.openapi.Disposable
-import com.intellij.openapi.components.ServiceManager
-import com.intellij.openapi.extensions.ExtensionPointName
-import com.intellij.openapi.extensions.Extensions
-import com.intellij.openapi.extensions.ExtensionsArea
-import com.intellij.openapi.fileTypes.PlainTextFileType
-import com.intellij.openapi.util.Disposer
-import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.psi.PsiElementFinder
-import com.intellij.psi.PsiManager
-import com.intellij.psi.augment.PsiAugmentProvider
-import com.intellij.psi.codeStyle.CodeStyleSettingsProvider
-import com.intellij.psi.codeStyle.LanguageCodeStyleSettingsProvider
-import com.intellij.psi.compiled.ClassFileDecompilers
-import com.intellij.lang.jvm.facade.JvmElementProvider
-import com.intellij.psi.impl.PsiTreeChangePreprocessor
-import com.intellij.psi.impl.compiled.ClsCustomNavigationPolicy
-import com.intellij.psi.impl.file.impl.JavaFileManager
+import com.intellij.openapi.project.Project
+import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.filesystem.KotlinLightClassManager
-import org.jetbrains.kotlin.resolve.BuiltInsReferenceResolver
-import org.jetbrains.kotlin.resolve.KotlinSourceIndex
-import org.jetbrains.kotlin.utils.ProjectUtils
-import org.jetbrains.kotlin.utils.KotlinImportInserterHelper
-import org.jetbrains.kotlin.caches.resolve.KotlinCacheService
-import org.jetbrains.kotlin.cli.common.CliModuleVisibilityManagerImpl
-// ClassBuilderInterceptorExtension import removed — kotlin-compiler 1.9 marks it as a K1-only
-// hard error; the corresponding registration in getExtensionsFromCommonXml() is now a no-op.
-import org.jetbrains.kotlin.diagnostics.rendering.DefaultErrorMessages
-import com.intellij.formatting.KotlinLanguageCodeStyleSettingsProvider
-import com.intellij.formatting.KotlinSettingsProvider
-import java.net.URLDecoder
-import org.jetbrains.kotlin.cli.jvm.index.JavaRoot
-import org.jetbrains.kotlin.cli.jvm.index.JvmDependenciesIndexImpl
-import org.jetbrains.kotlin.cli.jvm.compiler.MockExternalAnnotationsManager
-import org.jetbrains.kotlin.cli.jvm.compiler.MockInferredAnnotationsManager
-import org.jetbrains.kotlin.idea.KotlinFileType
-import org.jetbrains.kotlin.config.CommonConfigurationKeys
-import org.jetbrains.kotlin.config.CompilerConfiguration
-import org.jetbrains.kotlin.config.JvmAnalysisFlags
-import org.jetbrains.kotlin.config.LanguageVersionSettingsImpl
-import org.jetbrains.kotlin.config.ApiVersion
-import org.jetbrains.kotlin.config.LanguageVersion
-import org.jetbrains.kotlin.idea.util.ImportInsertHelper
-import org.jetbrains.kotlin.js.resolve.diagnostics.DefaultErrorMessagesJs
-import org.jetbrains.kotlin.load.kotlin.VirtualFileFinderFactory
-import org.jetbrains.kotlin.cli.jvm.compiler.CliTraceHolder
-import org.jetbrains.kotlin.load.kotlin.ModuleVisibilityManager
-import org.jetbrains.kotlin.log.KotlinLogger
-import org.jetbrains.kotlin.resolve.diagnostics.DiagnosticSuppressor
-import org.jetbrains.kotlin.resolve.jvm.diagnostics.DefaultErrorMessagesJvm
-import org.jetbrains.kotlin.resolve.jvm.extensions.PackageFragmentProviderExtension
 import org.netbeans.api.project.Project as NBProject
-import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCliJavaFileManagerImpl
-import com.intellij.openapi.util.SystemInfo
-import org.jetbrains.kotlin.resolve.jvm.modules.JavaModuleResolver
-import org.jetbrains.kotlin.resolve.jvm.KotlinJavaPsiFacade
-import org.jetbrains.kotlin.cli.jvm.index.SingleJavaFileRootsIndex
 
-// Copied from kotlin eclipse plugin to avoid "Could not find installation home path".
-// Touches SystemInfo to detect Windows; on JDK 17+ with core 232+ SystemInfo's version-parsing
-// throws IllegalArgumentException for version strings like "25.0.1" (Java 25). Use a plain
-// System.getProperty("os.name") check instead — no static init of SystemInfo triggered.
-private fun setIdeaIoUseFallback() {
-    val osName = System.getProperty("os.name", "").lowercase()
-    if (osName.contains("win")) {
-        System.getProperties().setProperty("idea.io.use.nio2", java.lang.Boolean.TRUE.toString())
-    }
-}
+/**
+ * Thin wrapper around the K2 [KotlinAnalysisAPISession] that provides access to the
+ * IntelliJ [Project] for plugin features such as the formatter and light-class manager.
+ *
+ * All K1 environment setup (JavaRoot, JvmDependenciesIndex, CliTraceHolder, etc.) has been
+ * removed — the K2 standalone session manages classpath scanning internally.
+ *
+ * @param nbProject the NetBeans project this environment represents
+ */
+class KotlinEnvironment private constructor(val nbProject: NBProject) {
 
-// kotlin-compiler 2.0.21: EarlyAccessRegistryManager.<clinit> calls PathManager.getConfigPath()
-// during PluginEnabler.<clinit>, which is triggered by CoreApplicationEnvironment.<init>.
-// Without idea.config.path set, PathManager.getHomePath() throws RuntimeException.
-// Point to a temp dir so the registry manager can operate in headless mode.
-private val IDEA_CONFIG_DIR_SET: Boolean by lazy {
-    if (System.getProperty("idea.config.path") == null) {
-        System.setProperty("idea.config.path", java.io.File(System.getProperty("java.io.tmpdir"), "kotlin-nb-idea-config").absolutePath)
-    }
-    true
-}
+    /**
+     * The IntelliJ [Project] backing this environment, sourced from the K2 analysis session.
+     *
+     * Callers (formatter, light-class manager) use this to look up project services.
+     */
+    val project: Project
+        get() = KotlinAnalysisAPISession.getSession(nbProject).session.project
 
-class KotlinEnvironment private constructor(kotlinProject: NBProject, disposable: Disposable) {
+    /**
+     * Light-class manager for this project.  Stored here instead of as an IntelliJ project
+     * service because [Project.registerService] is not exposed by the 253-era interface.
+     */
+    val lightClassManager: KotlinLightClassManager = KotlinLightClassManager(nbProject)
 
     companion object {
-        val CACHED_ENVIRONMENT = hashMapOf<NBProject, KotlinEnvironment>()
+
+        private val cache = hashMapOf<NBProject, KotlinEnvironment>()
 
         /**
-         * Guards one-time application-level setup (file types, services, extension points).
-         * The IntelliJ application environment is shared across all KotlinEnvironment instances
-         * and the K2 StandaloneAnalysisAPISession; registrations must happen exactly once.
+         * Returns the cached [KotlinEnvironment] for [kotlinProject], creating and caching it
+         * on the first call.
+         *
+         * @param kotlinProject the NetBeans project
+         * @return the environment for that project
          */
-        @Volatile private var appSetupDone = false
+        @Synchronized
+        fun getEnvironment(kotlinProject: NBProject): KotlinEnvironment =
+            cache.getOrPut(kotlinProject) { KotlinEnvironment(kotlinProject) }
 
-        @Synchronized fun getEnvironment(kotlinProject: NBProject): KotlinEnvironment {
-            if (!CACHED_ENVIRONMENT.containsKey(kotlinProject)) {
-                CACHED_ENVIRONMENT.put(kotlinProject, KotlinEnvironment(kotlinProject, Disposer.newDisposable()))
-            }
-            
-            return CACHED_ENVIRONMENT[kotlinProject]!!
-        }
-        
-        @Synchronized fun updateKotlinEnvironment(kotlinProject: NBProject) = getEnvironment(kotlinProject).configureClasspath(kotlinProject)
-    }
-
-    val applicationEnvironment: CoreApplicationEnvironment
-    private val projectEnvironment: JavaCoreProjectEnvironment
-    val project: MockProject
-    val roots = hashSetOf<JavaRoot>()
-    
-    val index by lazy { JvmDependenciesIndexImpl(roots.toList()) }
-    
-    val configuration = CompilerConfiguration()
-    
-    init {
-        val startTime = System.nanoTime()
-
-        setIdeaIoUseFallback()
-                
-        @Suppress("UNUSED_EXPRESSION") IDEA_CONFIG_DIR_SET
-        applicationEnvironment = createJavaCoreApplicationEnvironment(disposable)
-        projectEnvironment = object : JavaCoreProjectEnvironment(disposable, applicationEnvironment) {
-            override fun preregisterServices() {
-                // Extensions.getArea(Project) removed in core 232+; ProjectImpl exposes
-                // extensionArea directly. CoreProjectEnvironment.project is a MockProject
-                // / ProjectImpl that has it.
-                registerProjectExtensionPoints(project.extensionArea)
-            }
-            
-            override fun createCoreFileManager() = KotlinCliJavaFileManagerImpl(PsiManager.getInstance(project))
-        }
-        project = projectEnvironment.project
-        
-        with (project) {
-            registerService(ModuleVisibilityManager::class.java, CliModuleVisibilityManagerImpl(true))
-            registerService(NullableNotNullManager::class.java, KotlinNullableNotNullManager(kotlinProject, project))
-            registerService(CoreJavaFileManager::class.java,
-                ServiceManager.getService(project, JavaFileManager::class.java) as CoreJavaFileManager)
-            
-            val cliTraceHolder = CliTraceHolder(project)
-            val cliLightClassGenerationSupport = CliLightClassGenerationSupport(cliTraceHolder, project)
-            registerService(LightClassGenerationSupport::class.java, cliLightClassGenerationSupport)
-            registerService(CliLightClassGenerationSupport::class.java, cliLightClassGenerationSupport)
-            registerService(CodeAnalyzerInitializer::class.java, cliTraceHolder)
-            registerService(KotlinLightClassManager::class.java, KotlinLightClassManager(kotlinProject))
-            registerService(KotlinJavaPsiFacade::class.java, KotlinJavaPsiFacade(this))
-            registerService(JavaModuleResolver::class.java, object : JavaModuleResolver {
-                override fun checkAccessibility(
-                    fileFromOurModule: com.intellij.openapi.vfs.VirtualFile?,
-                    referencedFile: com.intellij.openapi.vfs.VirtualFile,
-                    referencedPackage: org.jetbrains.kotlin.name.FqName?
-                ): JavaModuleResolver.AccessError? = null
-
-                // Inherited from JavaModuleAnnotationsProvider in 1.9 — Nbm doesn't track JPMS module
-                // annotations, so report none.
-                override fun getAnnotationsForModuleOwnerOfClass(
-                    classId: org.jetbrains.kotlin.name.ClassId
-                ): List<org.jetbrains.kotlin.load.java.structure.JavaAnnotation>? = null
-            })
-            registerService(BuiltInsReferenceResolver::class.java, BuiltInsReferenceResolver(project))
-            registerService(KotlinSourceIndex::class.java, KotlinSourceIndex())
-            registerService(VirtualFileFinderFactory::class.java, NetBeansVirtualFileFinderFactory(kotlinProject))
-            registerService(ImportInsertHelper::class.java, KotlinImportInserterHelper())
-
-            registerService(ExternalAnnotationsManager::class.java, MockExternalAnnotationsManager())
-            registerService(InferredAnnotationsManager::class.java, MockInferredAnnotationsManager())
-            // 232+ requires JavaElementSourceFactory as project service — used by
-            // kotlin-compiler:1.9.25's resolution code in JavaElementImpl. JavaFixedElementSourceFactory
-            // is the default impl shipped inside kotlin-compiler.
-            registerService(
-                org.jetbrains.kotlin.load.java.structure.impl.source.JavaElementSourceFactory::class.java,
-                org.jetbrains.kotlin.load.java.structure.impl.source.JavaFixedElementSourceFactory()
-            )
-        }
-        
-        configuration.put<String>(CommonConfigurationKeys.MODULE_NAME, project.name)
-        configuration.put(CommonConfigurationKeys.LANGUAGE_VERSION_SETTINGS,
-            LanguageVersionSettingsImpl(LanguageVersion.KOTLIN_1_3, ApiVersion.KOTLIN_1_3,
-                mapOf(JvmAnalysisFlags.suppressMissingBuiltinsError to true)))
-
-        configureClasspath(kotlinProject)
-
-        val javaFileManager = ServiceManager.getService(project, JavaFileManager::class.java) as KotlinCliJavaFileManagerImpl
-        javaFileManager.initialize(
-            index,
-            emptyList(),
-            SingleJavaFileRootsIndex(emptyList()),
-            true
-        )
-
-        ExpressionCodegenExtension.Companion.registerExtensionPoint(project)
-
-        // getExtensionsFrom*Xml register app-level EPs and instances; moved to
-        // registerOnceAppSetup so they are called only once across all projects.
-
-        CACHED_ENVIRONMENT.put(kotlinProject, this)
-        KotlinLogger.INSTANCE.logInfo("KotlinEnvironment init: ${(System.nanoTime() - startTime)} ns")
-    }
-    
-    private fun registerProjectExtensionPoints(area: ExtensionsArea) {
-        // EP_NAME → EP for PsiTreeChangePreprocessor and PsiElementFinder in core 232+; new fields
-        // are ProjectExtensionPointName, not ExtensionPointName. Reconstruct by string name.
-        CoreApplicationEnvironment.registerExtensionPoint(area,
-                ExtensionPointName.create<PsiTreeChangePreprocessor>(PsiTreeChangePreprocessor.EP.name), PsiTreeChangePreprocessor::class.java)
-        CoreApplicationEnvironment.registerExtensionPoint(area,
-                ExtensionPointName.create<PsiElementFinder>(PsiElementFinder.EP.name), PsiElementFinder::class.java)
-        CoreApplicationEnvironment.registerExtensionPoint(area,
-                JvmElementProvider.EP_NAME, JvmElementProvider::class.java)
-    }
-    
-    private fun getExtensionsFromCommonXml() {
-        CoreApplicationEnvironment.registerApplicationExtensionPoint(
-                ExtensionPointName("org.jetbrains.kotlin.diagnosticSuppressor"), DiagnosticSuppressor::class.java)
-        CoreApplicationEnvironment.registerApplicationExtensionPoint(
-                ExtensionPointName("org.jetbrains.kotlin.defaultErrorMessages"), DefaultErrorMessages.Extension::class.java)
-        CoreApplicationEnvironment.registerApplicationExtensionPoint(
-                ExtensionPointName(("org.jetbrains.kotlin.expressionCodegenExtension")), ExpressionCodegenExtension::class.java)
-        // classBuilderFactoryInterceptorExtension registration removed: ClassBuilderInterceptorExtension
-        // is now a hard-error K1-only API in kotlin-compiler 1.9. No replacement registered — the
-        // analyzer-only path Nbm uses doesn't generate bytecode.
-        CoreApplicationEnvironment.registerApplicationExtensionPoint(
-                ExtensionPointName(("org.jetbrains.kotlin.packageFragmentProviderExtension")), PackageFragmentProviderExtension::class.java)
-        CoreApplicationEnvironment.registerApplicationExtensionPoint(CodeStyleSettingsProvider.EXTENSION_POINT_NAME, KotlinSettingsProvider::class.java)
-        CoreApplicationEnvironment.registerApplicationExtensionPoint(LanguageCodeStyleSettingsProvider.EP_NAME, KotlinLanguageCodeStyleSettingsProvider::class.java)
-        
-        with (Extensions.getRootArea()) {
-            getExtensionPoint(CodeStyleSettingsProvider.EXTENSION_POINT_NAME).registerExtension(KotlinSettingsProvider())
-            getExtensionPoint(LanguageCodeStyleSettingsProvider.EP_NAME).registerExtension(KotlinLanguageCodeStyleSettingsProvider())
+        /**
+         * Clears the cached environment for [kotlinProject] so the next call to
+         * [getEnvironment] creates a fresh instance.
+         *
+         * @param kotlinProject the project whose environment should be invalidated
+         */
+        @Synchronized
+        fun updateKotlinEnvironment(kotlinProject: NBProject) {
+            cache.remove(kotlinProject)
         }
     }
-    
-    private fun getExtensionsFromKotlin2JvmXml() {
-        // K2 app env uses plugin-descriptor classloaders that may not include kotlin-compiler.jar.
-        // Swallow ClassLoader failures: DefaultErrorMessagesJvm is only used for K1 error text
-        // rendering, not for analysis correctness or error detection.
-        try {
-            Extensions.getRootArea()
-                .getExtensionPoint<DefaultErrorMessages.Extension>(ExtensionPointName("org.jetbrains.kotlin.defaultErrorMessages"))
-                .registerExtension(DefaultErrorMessagesJvm())
-        } catch (_: Exception) {}
-    }
-    
-    fun configureClasspath(kotlinProject: NBProject) {
-        val classpath = ProjectUtils.getClasspath(kotlinProject)
-        KotlinLogger.INSTANCE.logInfo("Project ${kotlinProject.projectDirectory.path} classpath is $classpath")
-        classpath.forEach {
-            if (it.endsWith("!/")) {
-                addToClasspath(it.split("!/")[0].substringAfter("file:"), null)
-            } else {
-                addToClasspath(it, null)
-            }
-        }
-    }
-    
-    /**
-     * Initialises the shared IntelliJ application environment using getOrCreate, so that
-     * the K2 [org.jetbrains.kotlin.analysis.api.standalone.StandaloneAnalysisAPISession]
-     * can later reuse the same application instance without conflict.
-     *
-     * All app-level registrations are delegated to [registerOnceAppSetup], which is guarded
-     * by [appSetupDone] and executes at most once per JVM lifetime.
-     *
-     * @param disposable lifecycle owner; the app env's own lifecycle is managed by getOrCreate
-     * @return the shared [CoreApplicationEnvironment]
-     */
-    private fun createJavaCoreApplicationEnvironment(disposable: Disposable): CoreApplicationEnvironment {
-        val env = KotlinCoreEnvironment.getOrCreateApplicationEnvironmentForProduction(
-            disposable, CompilerConfiguration()
-        )
-        registerOnceAppSetup(env)
-        return env
-    }
-
-    /**
-     * Registers file types, application services, and extension points exactly once.
-     *
-     * Guarded by [appSetupDone]: subsequent [KotlinEnvironment] instances (opened for
-     * different NBProjects) share the same application environment and must not re-register.
-     *
-     * @param env the shared application environment
-     */
-    private fun registerOnceAppSetup(env: KotlinCoreApplicationEnvironment) {
-        synchronized(KotlinEnvironment::class.java) {
-            if (appSetupDone) return
-            registerAppExtensionPoints()
-            with(env) {
-                registerFileType(PlainTextFileType.INSTANCE, "xml")
-                registerFileType(KotlinFileType.INSTANCE, "kt")
-                registerParserDefinition(KotlinParserDefinition())
-                // K2's buildStandaloneAnalysisAPISession registers these services first when the
-                // K2 session is created before a K1 KotlinEnvironment. Catch duplicate-key errors
-                // so K1 picks up the already-initialised application environment created by K2.
-                try { application.registerService(KotlinBinaryClassCache::class.java, KotlinBinaryClassCache()) } catch (_: Exception) {}
-                try {
-                    application.registerService(
-                        com.intellij.openapi.vfs.VirtualFileSetFactory::class.java,
-                        object : com.intellij.openapi.vfs.VirtualFileSetFactory {
-                            override fun createCompactVirtualFileSet() = HashSetVirtualFileSet()
-                            override fun createCompactVirtualFileSet(files: Collection<com.intellij.openapi.vfs.VirtualFile>) = HashSetVirtualFileSet(files)
-                        }
-                    )
-                } catch (_: Exception) {}
-                try {
-                    application.registerService(
-                        com.intellij.pom.java.InternalPersistentJavaLanguageLevelReaderService::class.java,
-                        com.intellij.pom.java.InternalPersistentJavaLanguageLevelReaderService { null }
-                    )
-                } catch (_: Exception) {}
-            }
-            // App-level EPs and extension instances — must also be registered only once.
-            getExtensionsFromCommonXml()
-            getExtensionsFromKotlin2JvmXml()
-            appSetupDone = true
-        }
-    }
-
-    private fun registerAppExtensionPoints() {
-        // KotlinCoreApplicationEnvironment already registers ContainerProvider, ClassFileDecompilers,
-        // PsiAugmentProvider, JavaMainMethodProvider — only register what it doesn't.
-        CoreApplicationEnvironment.registerExtensionPoint(Extensions.getRootArea(), ClsCustomNavigationPolicy.EP_NAME,
-                ClsCustomNavigationPolicy::class.java)
-    }
-    
-    private fun addToClasspath(path: String, rootType: JavaRoot.RootType?) {
-        val file = File(path)
-        if (file.isFile) {
-            val jarFile = applicationEnvironment.jarFileSystem.findFileByPath("$path!/") ?: return
-            projectEnvironment.addJarToClassPath(file)
-            val type = rootType ?: JavaRoot.RootType.BINARY
-            
-            roots.add(JavaRoot(jarFile, type, null))
-        } else {
-            val root = applicationEnvironment.localFileSystem.findFileByPath(path) ?: return
-            projectEnvironment.addSourcesToClasspath(root)
-            val type = rootType ?: JavaRoot.RootType.SOURCE
-            
-            roots.add(JavaRoot(root, type, null))
-        }
-    }
-    
-    fun getVirtualFile(location: String) = applicationEnvironment.localFileSystem.findFileByPath(location)
-
-    fun getVirtualFileInJar(pathToJar: String, relativePath: String): VirtualFile? {
-        val decodedPathToJar = URLDecoder.decode(pathToJar, "UTF-8") ?: pathToJar
-        val decodedRelativePath = URLDecoder.decode(relativePath, "UTF-8") ?: relativePath
-
-        return applicationEnvironment.jarFileSystem.findFileByPath("$decodedPathToJar!/$decodedRelativePath")
-    }
-}
-
-private class HashSetVirtualFileSet(
-    files: Collection<com.intellij.openapi.vfs.VirtualFile> = emptyList()
-) : java.util.HashSet<com.intellij.openapi.vfs.VirtualFile>(files), com.intellij.openapi.vfs.VirtualFileSet {
-    override fun freeze() {}
-    override fun freezed(): MutableSet<com.intellij.openapi.vfs.VirtualFile> = java.util.Collections.unmodifiableSet(this)
-    override fun process(processor: com.intellij.util.Processor<in com.intellij.openapi.vfs.VirtualFile>): Boolean = all { processor.process(it) }
 }

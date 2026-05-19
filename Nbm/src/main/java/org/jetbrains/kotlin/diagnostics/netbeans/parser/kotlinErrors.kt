@@ -16,44 +16,25 @@
  *******************************************************************************/
 package org.jetbrains.kotlin.diagnostics.netbeans.parser
 
-import org.jetbrains.kotlin.diagnostics.Diagnostic
-import org.jetbrains.kotlin.diagnostics.rendering.DefaultErrorMessages
 import org.netbeans.modules.csl.api.Error.Badging
 import org.netbeans.modules.csl.api.Severity
 import org.openide.filesystems.FileObject
 import com.intellij.psi.PsiErrorElement
-import org.jetbrains.kotlin.diagnostics.Severity as KotlinSeverity
 
-class KotlinError(val diagnostic: Diagnostic, val fileObject: FileObject) : Badging {
-
-    val psi = diagnostic.psiElement
-
-    override fun toString() = diagnostic.toString()
-
-    override fun showExplorerBadge() = diagnostic.severity == KotlinSeverity.ERROR
-
-    override fun getDisplayName() = DefaultErrorMessages.render(diagnostic)
-
+/**
+ * Placeholder for the K1-era diagnostic wrapper. Never instantiated at runtime (K2-only since C10).
+ * Kept as a compile-time type for legacy quick-fix classes pending removal in the E-track.
+ */
+class KotlinError private constructor() : Badging {
+    override fun showExplorerBadge() = false
+    override fun getDisplayName() = ""
     override fun getDescription() = ""
-
     override fun getKey() = ""
-
-    override fun getFile() = fileObject
-
-    override fun getStartPosition() = diagnostic.textRanges[0].startOffset
-
-    override fun getEndPosition() = diagnostic.textRanges[0].endOffset
-
-    override fun isLineError() = startPosition - endPosition == 0
-
-    override fun getSeverity() = when (diagnostic.severity) {
-        KotlinSeverity.ERROR -> Severity.ERROR
-        KotlinSeverity.WARNING -> Severity.WARNING
-        KotlinSeverity.INFO -> Severity.INFO
-        else -> null
-    }
-
-
+    override fun getFile(): FileObject = throw UnsupportedOperationException()
+    override fun getStartPosition() = 0
+    override fun getEndPosition() = 0
+    override fun isLineError() = false
+    override fun getSeverity() = Severity.ERROR
     override fun getParameters() = null
 }
 

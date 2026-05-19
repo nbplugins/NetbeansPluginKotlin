@@ -21,7 +21,6 @@ import com.intellij.psi.PsiElement
 import javax.swing.text.Document
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.renderer.types.impl.KaTypeRendererForSource
-import org.jetbrains.kotlin.analysis.api.types.KaType
 import org.jetbrains.kotlin.hints.atomicChange
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtExpression
@@ -51,7 +50,6 @@ class KaChangeReturnTypeIntention(
 ) : KaApplicableIntention(doc, kaKtFile, psi) {
 
     private var function: KtFunction? = null
-    private var newReturnType: KaType? = null
     private var renderedType: String = ""
 
     override fun isApplicable(caretOffset: Int): Boolean {
@@ -72,24 +70,17 @@ class KaChangeReturnTypeIntention(
             if (returnExpr.returnedExpression == null) return false
         }
 
-        val (exprType, funcReturnType) = analyze(kaKtFile) {
-            val et = expression.expressionType ?: return@analyze null to null
-            val ft = ktFunction.returnType
-            et to ft
+        return analyze(kaKtFile) {
+            val exprType = expression.expressionType ?: return@analyze false
+            val funcReturnType = ktFunction.returnType
+
+            // Not applicable when expression type already matches the declared return type
+            if (exprType.semanticallyEquals(funcReturnType)) return@analyze false
+
+            function = ktFunction
+            renderedType = exprType.render(KaTypeRendererForSource.WITH_SHORT_NAMES, Variance.INVARIANT)
+            true
         }
-
-        if (exprType == null || funcReturnType == null) return false
-
-        // Applicable when the expression type differs from the declared return type
-        val typesMatch = analyze(kaKtFile) { exprType.isEqualTo(funcReturnType) }
-        if (typesMatch) return false
-
-        function = ktFunction
-        newReturnType = exprType
-        renderedType = analyze(kaKtFile) {
-            exprType.render(KaTypeRendererForSource.WITH_SHORT_NAMES, Variance.INVARIANT)
-        }
-        return true
     }
 
     override fun getDescription(): String {

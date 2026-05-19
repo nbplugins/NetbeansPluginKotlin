@@ -17,30 +17,19 @@
 package org.jetbrains.kotlin.hints
 
 import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParserResult
-import org.jetbrains.kotlin.hints.intentions.*
 import org.jetbrains.kotlin.psi.*
 import org.netbeans.modules.csl.api.Hint
 
+/** Visits the whole file and collects file-wide K2 hints. */
 class KotlinHintsComputer(val parserResult: KotlinParserResult) : KtVisitor<Unit, Any?>() {
 
     val hints = arrayListOf<Hint>()
-    
+
     override fun visitKtFile(ktFile: KtFile, data: Any?) {
         ktFile.acceptChildren(this)
     }
-    
+
     override fun visitKtElement(element: KtElement, data: Any?) {
-        hints.addAll(element.inspections())
-        
         element.acceptChildren(this)
     }
-    
-    private fun KtElement.inspections() = listOf(
-            RemoveEmptyPrimaryConstructorInspection(parserResult, this),
-            RemoveEmptyClassBodyInspection(parserResult, this),
-            RemoveEmptySecondaryConstructorInspection(parserResult, this)
-    )
-            .filter(Inspection::isApplicable)
-            .map { it.hint(parserResult.snapshot.source.fileObject) }
-        
 }

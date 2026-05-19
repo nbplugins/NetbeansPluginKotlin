@@ -18,7 +18,6 @@ package structurescanner
 
 import javaproject.JavaProject
 import org.jetbrains.kotlin.builder.KotlinPsiManager
-import org.jetbrains.kotlin.resolve.KotlinAnalyzer
 import org.jetbrains.kotlin.structurescanner.*
 import org.netbeans.api.project.Project
 import org.netbeans.modules.csl.api.StructureItem

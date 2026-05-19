@@ -98,8 +98,7 @@ private fun KtExpression.isSizeOrLengthK2(): Boolean {
 
 context(org.jetbrains.kotlin.analysis.api.KaSession)
 private fun org.jetbrains.kotlin.analysis.api.types.KaType.isSubtypeOfCollectionOrMap(): Boolean {
-    // Check if the receiver is Collection, Map, or their subtypes via the expanded class symbol
-    val classSymbol = expandedClassSymbol ?: return false
+    val classSymbol = (this as? org.jetbrains.kotlin.analysis.api.types.KaClassType)?.symbol ?: return false
     val fqn = classSymbol.classId?.asFqNameString() ?: return false
     return fqn.startsWith("kotlin.collections")
 }

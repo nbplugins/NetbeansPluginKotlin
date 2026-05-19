@@ -20,8 +20,9 @@ import io.github.nbplugins.kotlin.nbm.diagnostics.KaDiagnosticError
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.components.KaDiagnosticCheckerFilter
 import org.jetbrains.kotlin.analysis.api.diagnostics.KaSeverity
+import com.intellij.psi.PsiErrorElement
+import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.log.KotlinLogger
-import org.jetbrains.kotlin.resolve.AnalyzingUtils
 import org.jetbrains.kotlin.psi.KtFile
 import org.netbeans.api.project.Project
 import org.netbeans.modules.csl.api.Error
@@ -67,6 +68,6 @@ class KotlinParserResult(
             }
         }
         // Syntax errors from the PSI parser always included
-        addAll(AnalyzingUtils.getSyntaxErrorRanges(ktFile).map { KotlinSyntaxError(it, file) })
+        addAll(PsiTreeUtil.collectElementsOfType(ktFile, PsiErrorElement::class.java).map { KotlinSyntaxError(it, file) })
     }
 }

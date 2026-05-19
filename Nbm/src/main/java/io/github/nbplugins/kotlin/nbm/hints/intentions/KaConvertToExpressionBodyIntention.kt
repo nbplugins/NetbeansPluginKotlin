@@ -23,10 +23,10 @@ import javax.swing.text.Document
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.psi.KtDeclarationWithInitializer
 import org.jetbrains.kotlin.hints.atomicChange
-import org.jetbrains.kotlin.hints.intentions.anyDescendantOfType
-import org.jetbrains.kotlin.hints.intentions.hasResultingIfWithoutElse
-import org.jetbrains.kotlin.hints.intentions.resultingWhens
 import org.jetbrains.kotlin.lexer.KtTokens
+import org.jetbrains.kotlin.psi.KtIfExpression
+import org.jetbrains.kotlin.psi.KtWhenExpression
+import org.jetbrains.kotlin.psi.psiUtil.anyDescendantOfType
 import org.jetbrains.kotlin.psi.KtBlockExpression
 import org.jetbrains.kotlin.psi.KtConstructor
 import org.jetbrains.kotlin.psi.KtDeclarationWithBody
@@ -146,5 +146,22 @@ class KaConvertToExpressionBodyIntention(
                 statement
             }
         }
+    }
+}
+
+private fun KtExpression.hasResultingIfWithoutElse(): Boolean =
+    anyDescendantOfType<KtIfExpression> { it.`else` == null }
+
+private fun KtExpression.resultingWhens(): List<KtWhenExpression> =
+    buildList { collectResultingWhens(this@resultingWhens, this) }
+
+private fun collectResultingWhens(expression: KtExpression, result: MutableList<KtWhenExpression>) {
+    when (expression) {
+        is KtWhenExpression -> result.add(expression)
+        is KtIfExpression -> {
+            expression.then?.let { collectResultingWhens(it, result) }
+            expression.`else`?.let { collectResultingWhens(it, result) }
+        }
+        else -> {}
     }
 }

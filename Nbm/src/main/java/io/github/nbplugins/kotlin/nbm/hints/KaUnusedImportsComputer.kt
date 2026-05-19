@@ -14,84 +14,30 @@
  * limitations under the License.
  *
  *******************************************************************************/
-@file:OptIn(org.jetbrains.kotlin.analysis.api.KaIdeApi::class)
 package io.github.nbplugins.kotlin.nbm.hints
 
-import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParserResult
-import org.jetbrains.kotlin.language.Priorities
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtImportDirective
-import org.jetbrains.kotlin.hints.KotlinRule
 import org.netbeans.modules.csl.api.Hint
 import org.netbeans.modules.csl.api.HintFix
-import org.netbeans.modules.csl.api.HintSeverity
-import org.netbeans.modules.csl.api.OffsetRange
 
 /**
- * K2 Analysis API port of [org.jetbrains.kotlin.hints.UnusedImportsComputer].
+ * K2 Analysis API port of unused-import detection.
  *
- * Uses [org.jetbrains.kotlin.analysis.api.components.KaImportOptimizer.analyseImports] to
- * determine which import directives are not referenced in the file body.  An import is
- * considered unused when its fully-qualified name is absent from [usedDeclarations] AND its
- * short name is not among [unresolvedNames] (unresolved names are kept to avoid false positives).
+ * KaImportOptimizer is absent from analysis-api-for-ide:2.3.20-ij253-119; import analysis
+ * is disabled until a compatible API is available (tracked in D5 follow-up).
  *
  * @param parserResult the parser result providing file metadata and document
  * @param kaKtFile K2-session-owned [KtFile] for this file
  */
 class KaUnusedImportsComputer(
-    private val parserResult: KotlinParserResult,
-    private val kaKtFile: KtFile
+    @Suppress("UNUSED_PARAMETER") private val parserResult: KotlinParserResult,
+    @Suppress("UNUSED_PARAMETER") private val kaKtFile: KtFile
 ) {
 
-    /**
-     * Returns a list of [Hint] objects for each unused import directive.
-     *
-     * Each hint includes a [KaUnusedImportHintFix] that removes the import from the document.
-     *
-     * @return list of warning-level hints for unused imports
-     */
-    fun getUnusedImports(): List<Hint> {
-        val unusedImports = mutableListOf<KtImportDirective>()
-
-        analyze(kaKtFile) {
-            val result = runCatching { analyseImports(kaKtFile) }.getOrNull() ?: return@analyze
-            val usedDeclarations = result.usedDeclarations
-            val unresolvedNames = result.unresolvedNames
-
-            for (directive in kaKtFile.importDirectives) {
-                val importPath = directive.importPath ?: continue
-                if (importPath.isAllUnder) continue  // star imports are handled conservatively
-
-                val fqName = importPath.fqName
-                val shortName = importPath.importedName ?: continue
-
-                // Keep import if its short name is among unresolved names (avoids false positives).
-                if (shortName in unresolvedNames) continue
-
-                // Import is used if usedDeclarations contains an entry for this FQ name
-                // with the short name in its value set.
-                val isUsed = usedDeclarations[fqName]?.contains(shortName) == true
-                if (!isUsed) unusedImports.add(directive)
-            }
-        }
-
-        // Map kaKtFile directives back to parserResult.ktFile directives by text range
-        // to ensure document offsets are from the live document tree.
-        val ktImports = parserResult.ktFile.importDirectives.associateBy { it.textRange }
-
-        return unusedImports.mapNotNull { kaDirective ->
-            val directive = ktImports[kaDirective.textRange] ?: kaDirective
-            Hint(
-                KotlinRule(HintSeverity.WARNING),
-                "Unused import: ${directive.importedFqName}",
-                parserResult.snapshot.source.fileObject,
-                OffsetRange(directive.textRange.startOffset, directive.textRange.endOffset),
-                listOf(KaUnusedImportHintFix(parserResult, directive)),
-                Priorities.HINT_PRIORITY
-            )
-        }
-    }
+    /** Returns an empty list; import analysis unavailable in this API build. */
+    fun getUnusedImports(): List<Hint> = emptyList()
 }
 
 /**

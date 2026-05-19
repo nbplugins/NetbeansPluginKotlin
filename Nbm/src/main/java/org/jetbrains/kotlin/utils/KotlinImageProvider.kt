@@ -17,13 +17,6 @@
 package org.jetbrains.kotlin.utils
 
 import javax.swing.ImageIcon
-import org.jetbrains.kotlin.descriptors.ClassDescriptor
-import org.jetbrains.kotlin.descriptors.ClassKind
-import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
-import org.jetbrains.kotlin.descriptors.FunctionDescriptor
-import org.jetbrains.kotlin.descriptors.VariableDescriptor
-import org.jetbrains.kotlin.descriptors.PackageFragmentDescriptor
-import org.jetbrains.kotlin.descriptors.PackageViewDescriptor
 import org.openide.util.ImageUtilities
 
 object KotlinImageProvider {
@@ -32,21 +25,4 @@ object KotlinImageProvider {
 
     val typeImage = ImageIcon(ImageUtilities.loadImage("${imagesLocation}class.png"))
     val functionImage = ImageIcon(ImageUtilities.loadImage("${imagesLocation}method.png"))
-    
-    private fun getImageIcon(name: String) = ImageIcon(ImageUtilities.loadImage("$imagesLocation$name"))
-
-    fun getImage(descriptor: DeclarationDescriptor?) = when (descriptor) {
-        is ClassDescriptor -> {
-            when (descriptor.kind) {
-                ClassKind.ANNOTATION_CLASS -> getImageIcon("annotation.png")
-                ClassKind.ENUM_CLASS -> getImageIcon("enum.png")
-                ClassKind.INTERFACE -> getImageIcon("interface.png")
-                else -> getImageIcon("class.png")
-            }
-        }
-        is FunctionDescriptor -> getImageIcon("method.png")
-        is VariableDescriptor -> getImageIcon("field.png")
-        is PackageFragmentDescriptor, is PackageViewDescriptor -> getImageIcon("package.png")
-        else -> null
-    }
 }

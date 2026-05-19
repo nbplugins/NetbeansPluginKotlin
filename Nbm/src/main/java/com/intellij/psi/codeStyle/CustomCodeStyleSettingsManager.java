@@ -1,6 +1,5 @@
 package com.intellij.psi.codeStyle;
 
-import org.jdom.Element;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -70,8 +69,8 @@ class CustomCodeStyleSettingsManager {
         return Collections.unmodifiableCollection(myCustomSettings.values());
     }
 
-    void readExternal(Element element) {}
-    void writeExternal(Element element, CodeStyleSettings settings) {}
+    void readExternal(Object element) {}
+    void writeExternal(Object element, CodeStyleSettings settings) {}
 
     private <T extends CustomCodeStyleSettings> T createViaReflection(Class<T> cls) {
         try {

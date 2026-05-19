@@ -16,7 +16,6 @@
  *******************************************************************************/
 package org.jetbrains.kotlin.filesystem
 
-import com.intellij.openapi.components.ServiceManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import java.io.File
@@ -39,10 +38,8 @@ import org.netbeans.api.project.Project as NBProject
 class KotlinLightClassManager(private val project: NBProject) {
 
     companion object {
-        fun getInstance(project: NBProject): KotlinLightClassManager {
-            val ideaProject = KotlinEnvironment.getEnvironment(project).project
-            return ServiceManager.getService(ideaProject, KotlinLightClassManager::class.java)
-        }
+        fun getInstance(project: NBProject): KotlinLightClassManager =
+            KotlinEnvironment.getEnvironment(project).lightClassManager
 
         fun getInternalName(classOrObject: KtClassOrObject): String? {
             val fullFqName = classOrObject.fqName ?: return null

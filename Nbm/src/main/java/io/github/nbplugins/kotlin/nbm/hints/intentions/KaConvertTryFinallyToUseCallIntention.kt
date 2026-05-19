@@ -61,7 +61,7 @@ class KaConvertTryFinallyToUseCallIntention(
         if (element.catchClauses.isNotEmpty()) return false
 
         return analyze(kaKtFile) {
-            val call = finallyExpression.resolveCall()?.successfulFunctionCallOrNull() ?: return@analyze false
+            val call = finallyExpression.resolveToCall()?.successfulFunctionCallOrNull() ?: return@analyze false
             val symbol = call.symbol
             if (symbol.callableId?.callableName?.asString() != "close") return@analyze false
             // Ensure there's a receiver (this.close() or resource.close())
@@ -73,7 +73,7 @@ class KaConvertTryFinallyToUseCallIntention(
             val receiverExpr = (finallyExpression as? KtQualifiedExpression)?.receiverExpression
             if (receiverExpr is KtThisExpression) return@analyze true
             val refExpr = receiverExpr as? KtNameReferenceExpression ?: return@analyze false
-            val varSymbol = refExpr.resolveCall()
+            val varSymbol = refExpr.resolveToCall()
                 ?.let { it as? org.jetbrains.kotlin.analysis.api.resolution.KaVariableAccessCall }
                 ?.partiallyAppliedSymbol?.symbol as? KaVariableSymbol ?: return@analyze false
             !varSymbol.isVal.not()  // must be val (isVal == true)

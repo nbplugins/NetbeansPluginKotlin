@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin</artifactId>
-  <version>0.8.0-SNAPSHOT</version>
+  <version>0.8.2-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin</name>
   <properties>
@@ -13,20 +13,21 @@
     <!-- Legacy Kotlin used for compiling the bundled-jars/* sources (which were
          written for FE1.0 1.3 era). -->
     <kotlin.version>1.3.72</kotlin.version>
-    <!-- Kotlin used by Nbm/* — both the kotlin-maven-plugin (driving Nbm Kotlin
-         compilation) and the kotlin-compiler runtime jar that ships in the .nbm. -->
-    <kotlin.runtime.version>2.0.21</kotlin.runtime.version>
-    <!-- stays 2.2 until context-receivers → context-parameters migration (D5 with analysis-api 2.3) -->
+    <!-- IDE-internal Kotlin artifacts (common-for-ide, ir-for-ide, analysis-api-*-for-ide).
+         D3: 2.0.21 → 2.3.21; platform stays 242, no shaded com/intellij classes. -->
+    <kotlin.runtime.version>2.3.21</kotlin.runtime.version>
+    <!-- stdlib/reflect/script-runtime: same version as the compiler artifacts. -->
+    <kotlin.runtime.stdlib.version>2.3.21</kotlin.runtime.stdlib.version>
+    <!-- stays 2.2 until context-receivers → context-parameters migration -->
     <kotlin.runtime.languageVersion>2.2</kotlin.runtime.languageVersion>
-    <!-- kotlin-maven-plugin version for compiling sources; decoupled from bundled runtime.
-         KotlinConverter pins ${kotlin.runtime.version} explicitly (D2 replaces it entirely). -->
+    <!-- kotlin-maven-plugin version for compiling sources; decoupled from bundled runtime. -->
     <kotlin.compile.version>2.2.21</kotlin.compile.version>
     <!-- 193: default for bundled-jars/* (compiling 1.3.72-era sources) -->
     <intellij.platform.193.version>193.7288.26</intellij.platform.193.version>
     <intellij.platform.193.util.version>193.5964</intellij.platform.193.util.version>
     <!-- 232: used by KotlinConverter (compiles j2k/k1.old sources against 1.3.72-era API) -->
     <intellij.platform.232.version>232.9921.47</intellij.platform.232.version>
-    <!-- 242: main platform era for Nbm, CoreImpl, KotlinCompiler -->
+    <!-- 242: main platform era for Nbm, CoreImpl -->
     <intellij.platform.242.version>242.26775.26</intellij.platform.242.version>
     <jetbrains.annotations.version>26.0.2</jetbrains.annotations.version>
     <nbm.maven.plugin.version>14.4</nbm.maven.plugin.version>
@@ -35,7 +36,7 @@
   </properties>
   <modules>
     <module>bundled-jars/CoreImpl</module>
-    <module>bundled-jars/KotlinCompiler</module>
+    <module>bundled-jars/KotlinCompilerCliBase</module>
     <module>Nbm</module>
   </modules>
   <repositories>
@@ -175,46 +176,47 @@
         <artifactId>kotlin-tooling-core</artifactId>
         <version>1.9.25</version>
       </dependency>
-      <!-- K2 Analysis API (for-ide variants — all transitive deps excluded by the POM) -->
+      <!-- K2 Analysis API (for-ide variants — all transitive deps excluded by the POM).
+           D5: bumped 2.0.21 → 2.3.20-ij253-119 (matches common-for-ide/ir-for-ide/platform 253). -->
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>analysis-api-for-ide</artifactId>
-        <version>2.0.21</version>
+        <version>${kotlin.runtime.version}</version>
       </dependency>
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>analysis-api-standalone-for-ide</artifactId>
-        <version>2.0.21</version>
+        <version>${kotlin.runtime.version}</version>
       </dependency>
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>analysis-api-fe10-for-ide</artifactId>
-        <version>2.0.21</version>
+        <version>${kotlin.runtime.version}</version>
       </dependency>
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>analysis-api-k2-for-ide</artifactId>
-        <version>2.0.21</version>
+        <version>${kotlin.runtime.version}</version>
       </dependency>
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>analysis-api-impl-base-for-ide</artifactId>
-        <version>2.0.21</version>
+        <version>${kotlin.runtime.version}</version>
       </dependency>
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>analysis-api-platform-interface-for-ide</artifactId>
-        <version>2.0.21</version>
+        <version>${kotlin.runtime.version}</version>
       </dependency>
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>low-level-api-fir-for-ide</artifactId>
-        <version>2.0.21</version>
+        <version>${kotlin.runtime.version}</version>
       </dependency>
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>symbol-light-classes-for-ide</artifactId>
-        <version>2.0.21</version>
+        <version>${kotlin.runtime.version}</version>
       </dependency>
       <!-- Bundled JARs -->
       <dependency>
@@ -243,18 +245,38 @@
         <version>231-1.9.20-506-IJ8109.175</version>
       </dependency>
 
-      <!-- Reactor wrapper JARs (C2+) -->
+      <!-- D3+D4+D5: kotlin-compiler-common-for-ide + ir-for-ide replace the kotlin-compiler fat JAR.
+           KotlinCompilerCliBase extracts only cli/jvm/compiler/** from kotlin-compiler — these
+           classes are required by analysis-api-standalone but absent from the Maven -for-ide artifacts
+           (present only in IntelliJ's bundled kotlinc.kotlin-compiler-common.jar). -->
+      <dependency>
+        <groupId>io.github.nbplugins</groupId>
+        <artifactId>netbeans-plugin-kotlin-compiler-cli-base</artifactId>
+        <version>${project.version}</version>
+      </dependency>
       <dependency>
         <groupId>io.github.nbplugins</groupId>
         <artifactId>netbeans-plugin-kotlin-core-impl</artifactId>
         <version>${project.version}</version>
       </dependency>
+      <!-- kotlin-compiler fat JAR: used only by KotlinCompilerCliBase to extract cli/jvm/compiler.
+           Version matches kotlin.runtime.stdlib.version (plain release, not ij-build). -->
       <dependency>
-        <groupId>io.github.nbplugins</groupId>
-        <artifactId>netbeans-plugin-kotlin-compiler</artifactId>
-        <version>${project.version}</version>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-compiler</artifactId>
+        <version>${kotlin.runtime.stdlib.version}</version>
       </dependency>
-      <!-- core/core-impl/util default to 242 (C2+ era). KotlinConverter overrides to 232 explicitly. -->
+      <dependency>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-compiler-common-for-ide</artifactId>
+        <version>${kotlin.runtime.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-compiler-ir-for-ide</artifactId>
+        <version>${kotlin.runtime.version}</version>
+      </dependency>
+      <!-- core/core-impl/util: 242 era. Bundled via CoreImpl wrapper module. -->
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>core</artifactId>
@@ -325,34 +347,21 @@
         <artifactId>util-xml-dom</artifactId>
         <version>${intellij.platform.242.version}</version>
       </dependency>
-      <!-- kotlin-compiler runtime version: B2.0 'compiler-only' bumps just this one artifact
-           from 1.3.72 → 1.9.25; the legacy kotlin-stdlib/reflect/script-runtime stay at
-           ${kotlin.version}=1.3.72 for bundled-jars source compat. Bundled-jars override the
-           kotlin-compiler version to ${kotlin.version} explicitly in their own poms. -->
-      <dependency>
-        <groupId>org.jetbrains.kotlin</groupId>
-        <artifactId>kotlin-compiler</artifactId>
-        <version>${kotlin.runtime.version}</version>
-      </dependency>
-      <!-- kotlin-stdlib/reflect/script-runtime default to runtime version (1.9.25) for Nbm — its
-           classpath needs classes added in 1.9 (kotlin.enums.EnumEntries etc.) referenced by
-           kotlin-compiler:1.9.25.jar. bundled-jars override to ${kotlin.version}=1.3.72 in their
-           own poms because their kotlin-maven-plugin:1.3.72 cannot inline 1.9.25 stdlib functions
-           (e.g., filterIsInstance) — the embedded 1.3.72 compiler doesn't recognise newer bytecode. -->
+      <!-- kotlin-stdlib/reflect/script-runtime: same version as the compiler artifacts. -->
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-stdlib</artifactId>
-        <version>${kotlin.runtime.version}</version>
+        <version>${kotlin.runtime.stdlib.version}</version>
       </dependency>
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-script-runtime</artifactId>
-        <version>${kotlin.runtime.version}</version>
+        <version>${kotlin.runtime.stdlib.version}</version>
       </dependency>
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-reflect</artifactId>
-        <version>${kotlin.runtime.version}</version>
+        <version>${kotlin.runtime.stdlib.version}</version>
       </dependency>
       <dependency>
         <groupId>org.jetbrains.intellij.deps</groupId>
@@ -375,6 +384,21 @@
         <version>0.10.5</version>
       </dependency>
       <dependency>
+        <groupId>org.jetbrains.kotlinx</groupId>
+        <artifactId>kotlinx-collections-immutable-jvm</artifactId>
+        <version>0.3.7</version>
+      </dependency>
+      <dependency>
+        <groupId>org.codehaus.woodstox</groupId>
+        <artifactId>stax2-api</artifactId>
+        <version>4.2.2</version>
+      </dependency>
+      <dependency>
+        <groupId>com.github.ben-manes.caffeine</groupId>
+        <artifactId>caffeine</artifactId>
+        <version>3.1.8</version>
+      </dependency>
+      <dependency>
         <groupId>net.java.dev.jna</groupId>
         <artifactId>jna</artifactId>
         <version>5.17.0</version>
@@ -393,6 +417,19 @@
         <groupId>org.jetbrains.intellij.deps.fastutil</groupId>
         <artifactId>intellij-deps-fastutil</artifactId>
         <version>8.5.11-18</version>
+      </dependency>
+      <!-- ASM bytecode library: JavaStubGenerator uses asm-tree for .class file inspection.
+           Previously used the shaded copy inside kotlin-compiler fat JAR (org.jetbrains.org.objectweb.asm).
+           Now using standard coordinates since common-for-ide does not bundle ASM. -->
+      <dependency>
+        <groupId>org.ow2.asm</groupId>
+        <artifactId>asm-tree</artifactId>
+        <version>9.7</version>
+      </dependency>
+      <dependency>
+        <groupId>org.ow2.asm</groupId>
+        <artifactId>asm-util</artifactId>
+        <version>9.7.1</version>
       </dependency>
       <dependency>
         <groupId>org.jline</groupId>

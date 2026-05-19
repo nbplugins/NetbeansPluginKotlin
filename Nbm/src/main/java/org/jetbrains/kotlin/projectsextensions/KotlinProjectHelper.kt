@@ -22,7 +22,6 @@ import org.jetbrains.kotlin.projectsextensions.gradle.classpath.GradleExtendedCl
 import org.jetbrains.kotlin.projectsextensions.j2se.classpath.J2SEExtendedClassPathProvider
 import org.jetbrains.kotlin.project.KotlinSources
 import org.jetbrains.kotlin.projectsextensions.maven.classpath.MavenExtendedClassPath
-import org.jetbrains.kotlin.resolve.lang.java.JavaEnvironment
 import org.netbeans.api.java.classpath.ClassPath
 import org.netbeans.api.project.Project
 import org.netbeans.spi.java.classpath.support.ClassPathSupport
@@ -51,7 +50,6 @@ object KotlinProjectHelper {
     
     fun Project.doInitialScan() {
         hasJavaFiles.put(this, getJavaFilesByProject(this).isNotEmpty())
-        JavaEnvironment.checkJavaSource(this)
     }
     
     fun Project.checkProject(): Boolean {
@@ -132,7 +130,6 @@ object KotlinProjectHelper {
         }
         
         updateFullClassPath()
-        JavaEnvironment.updateClasspathInfo(this)
         KotlinAnalysisAPISession.invalidate(this)
     }
     

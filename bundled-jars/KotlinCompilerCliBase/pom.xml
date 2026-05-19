@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.github.nbplugins</groupId>
+    <artifactId>netbeans-plugin-kotlin</artifactId>
+    <version>0.8.2-SNAPSHOT</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+  <artifactId>netbeans-plugin-kotlin-compiler-cli-base</artifactId>
+  <packaging>jar</packaging>
+  <name>Netbeans Plugin Kotlin Compiler CLI Base</name>
+  <description>
+    Bundles all classes from kotlin-compiler:2.3.21 that are absent from both the -for-ide
+    thin artifacts and the 242-era Maven platform JARs.  Uses set-difference at build time:
+
+    keep := NOT in (kotlin-compiler-common-for-ide ∪ kotlin-compiler-ir-for-ide)
+              AND NOT in (core:242 ∪ core-impl:242 ∪ util:242 ∪ extensions:242)
+
+    This captures cli/jvm/compiler/**, com/intellij/** (Java-plugin classes absent from
+    published 242 platform), and third-party shaded deps (aalto, stax2, etc.) that were
+    bundled inside the old kotlin-compiler fat JAR but are absent from the thin -for-ide
+    artifacts.
+  </description>
+
+  <dependencies>
+    <!-- Source of the classes to extract. -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-compiler</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- -for-ide artifacts: used only to compute the set-difference for org/jetbrains/kotlin/cli/** -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-compiler-common-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-compiler-ir-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <!-- Platform JARs: used only to compute the set-difference for com/intellij/** -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core-impl</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>util</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>extensions</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Resolve dependency paths into properties -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>resolve-paths</id>
+            <phase>validate</phase>
+            <goals><goal>properties</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.codehaus.gmavenplus</groupId>
+        <artifactId>gmavenplus-plugin</artifactId>
+        <executions>
+          <!-- Extract classes at generate-resources using set-difference. -->
+          <execution>
+            <id>extract-cli-base</id>
+            <phase>generate-resources</phase>
+            <goals><goal>execute</goal></goals>
+            <configuration>
+              <scripts>
+                <script><![CDATA[
+import java.util.zip.*
+import java.nio.file.*
+
+def buildDir = new File(project.build.directory)
+def stamp    = new File(buildDir, 'repack.stamp')
+def outJar   = new File(buildDir, project.build.finalName + '.jar')
+def kcompJar = new File(project.properties['org.jetbrains.kotlin:kotlin-compiler:jar'])
+
+// Fast no-clean guard.
+if (stamp.exists() && outJar.exists() &&
+    stamp.lastModified() >= kcompJar.lastModified()) {
+  log.info('KotlinCompilerCliBase: up-to-date, skipping extraction.')
+  return
+}
+
+// Build entry sets for set-difference.
+def collectEntriesFromFile = { File f ->
+  if (!f?.exists()) return [] as Set
+  def s = new HashSet<String>()
+  new ZipFile(f).withCloseable { zf -> zf.entries().each { s.add(it.name) } }
+  s
+}
+
+// Classes already in -for-ide artifacts (don't override them).
+def forIdeEntries = new HashSet<String>()
+def platformEntries = new HashSet<String>()
+project.artifacts.each { art ->
+  if (art.scope != 'provided') return
+  def file = art.file
+  if (!file?.exists()) return
+  def key = "${art.groupId}:${art.artifactId}"
+  if (key == 'org.jetbrains.kotlin:kotlin-compiler-common-for-ide' ||
+      key == 'org.jetbrains.kotlin:kotlin-compiler-ir-for-ide') {
+    forIdeEntries.addAll(collectEntriesFromFile(file))
+  } else if (key != 'org.jetbrains.kotlin:kotlin-compiler') {
+    // All other provided deps are platform JARs — collect them for exclusion
+    platformEntries.addAll(collectEntriesFromFile(file))
+  }
+}
+
+log.info("KotlinCompilerCliBase: forIde=${forIdeEntries.size()}, platform=${platformEntries.size()}")
+
+// Extract from kotlin-compiler.jar every .class that is not already provided by:
+//   - kotlin-compiler-common-for-ide or kotlin-compiler-ir-for-ide (forIdeEntries)
+//   - platform 242 JARs (platformEntries)
+// This captures cli/**, com/intellij/**, third-party shaded deps (aalto, stax2, etc.)
+// and any other Kotlin runtime classes absent from the -for-ide thin artifacts.
+def classesDir = new File(buildDir, 'classes')
+classesDir.deleteDir()
+classesDir.mkdirs()
+
+// Classes where the fat jar's newer Kotlin version must override the platform's Java version.
+// The platform JAR contains an older Java Registry; analysis-api 2.3.21 requires the Kotlin
+// version (with Registry$Companion) from the fat jar.
+def forceInclude = [
+  'com/intellij/openapi/util/registry/Registry.class',
+  'com/intellij/openapi/util/registry/Registry$1.class',
+  'com/intellij/openapi/util/registry/Registry$2.class',
+] as Set
+
+int extracted = 0
+new ZipFile(kcompJar).withCloseable { zf ->
+  zf.entries().each { e ->
+    def name = e.name
+    if (!name.endsWith('.class')) return
+    boolean keep = forceInclude.contains(name) ||
+                   (!forIdeEntries.contains(name) && !platformEntries.contains(name))
+    if (!keep) return
+
+    def target = new File(classesDir, name)
+    target.parentFile.mkdirs()
+    target.bytes = zf.getInputStream(e).bytes
+    extracted++
+  }
+}
+log.info("KotlinCompilerCliBase: extracted $extracted classes")
+
+// Build the output JAR.
+def zos = new ZipOutputStream(new FileOutputStream(outJar))
+classesDir.eachFileRecurse { f ->
+  if (!f.isFile()) return
+  def rel = classesDir.toURI().relativize(f.toURI()).toString()
+  zos.putNextEntry(new ZipEntry(rel))
+  zos.write(f.bytes)
+  zos.closeEntry()
+}
+zos.close()
+
+stamp.text = new Date().toString()
+log.info("KotlinCompilerCliBase: wrote ${outJar.length()} bytes to ${outJar.name}")
+                ]]></script>
+              </scripts>
+            </configuration>
+          </execution>
+
+          <!-- Point Maven's artifact at the Groovy-produced JAR. -->
+          <execution>
+            <id>set-repack-artifact</id>
+            <phase>package</phase>
+            <goals><goal>execute</goal></goals>
+            <configuration>
+              <scripts>
+                <script>project.artifact.file = new File(project.build.directory, project.build.finalName + '.jar')</script>
+              </scripts>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
+        Unbind maven-jar-plugin: the JAR is produced by Groovy above.
+        phase=none is the only reliable way to disable default-jar.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>default-jar</id>
+            <phase>none</phase>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
