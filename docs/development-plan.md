@@ -54,12 +54,12 @@ compatible version. Not a separate stage — done along the way.
 - [x] **B4** — Replace `KotlinFormatter` source module with binary artifact `org.jetbrains.kotlin:formatter:231-1.9.20-506-IJ8109.175`; re-enable formatting/indentation tests. PR #37.
 - [x] **B5** — Replace `KotlinIdeCommon` source module with binary artifacts (`base-fe10-analysis/code-insight/obsolete-compat/base-psi:231-1.9.20-506-IJ8109.175`); re-enable intentions/quickfixes tests. 163 tests pass.
 - [x] **B6** — Repoint `KotlinConverter` → `submodules/IntellijCommunity@232` (no binary artifact available for j2k); re-enable J2K/diagnostics tests
-- [ ] **C** — K2 Analysis API migration within Kotlin 1.9.25: bump `base-fe10-*` → `232-1.9.20-dev-1010-IJ9999` (FE1.0 over K2), then migrate call sites BindingContext → `KaSession`. Ships as 0.7.x.
-- [ ] **D** — Bump compiler to 2.x: drop shaded `kotlin-compiler:1.9.25`, use `kotlin-compiler-fir-for-ide:2.x`. Ships as 0.8.x.
-- [ ] **E** — Restore and implement missing features
+- [x] **C** — K2 Analysis API migration (C1–C10 complete). Ships as 0.7.x.
+- [ ] **D** — Platform and compiler upgrade to era 253 / Kotlin 2.3.20. Ships as 0.8.x.
+- [ ] **E** — Editor UX polish and missing features. Ships as 0.9.x+.
 
 B3–B6 ship as 0.6.x on `feature/kotlin-compiler-only`; single PR after B6 passes all 169 tests.
-Stage C ships as 0.7.x on a long-term feature branch; release cut after all substages merge.
+Stage C ships as 0.7.x; C1–C10 complete.
 Stage D ships as 0.8.x.
 
 ---
@@ -365,10 +365,10 @@ Gate: all 169 tests pass.
 
 ---
 
-## Track C — K2 Analysis API Migration (deferred to 0.7.x)
+## Track C — K2 Analysis API Migration ✓ complete (0.7.x)
 
 Starting point after B6: `BindingContext` (FE1.0), `kotlin-compiler:1.9.25`.
-Target after C11: `KaSession`/`KaSymbol` (K2 Analysis API), `kotlin-compiler:2.0.21`.
+Target after C10: `KaSession`/`KaSymbol` (K2 Analysis API), `kotlin-compiler:2.0.21`.
 
 **Strategy:**
 1. **C1** ✓ done (PR #42) — Bump `kotlin-compiler` `1.9.25` → `2.0.21`. Add `analysis-api-*-for-ide:2.0.21`
@@ -395,54 +395,57 @@ Target after C11: `KaSession`/`KaSymbol` (K2 Analysis API), `kotlin-compiler:2.0
     `FirIncompatibleClassExpressionChecker` workaround for KT-75035/KT-83463 (null source crash);
     ported `KaRemoveEmptyClassBodyIntention`, `KaRemoveEmptyPrimaryConstructorIntention`; fixed
     last-line `computeSuggestions` skip bug.
-11. **C11** — Editor UX polish (pure K2 path improvements):
-    - **FunctionCallHighlighter**: add `FUNCTION_CALL`, `EXTENSION_FUNCTION_CALL`,
-      `PACKAGE_FUNCTION_CALL`, `SUSPEND_FUNCTION_CALL`, `CONSTRUCTOR_CALL` to
-      `KotlinHighlightingAttributes`; implement in `KaSemanticHighlightingVisitor.highlightSimpleName()`
-      via `KaFunctionSymbol` branch (currently `else -> {}`).
-    - **Hover tooltip** (plain hover): implement CSL `Documentation` provider that calls
-      `KaNavigationUtils.renderDeclarationTooltip()` and register in `layer.xml`.
-    - **Completion filtering**: member-access completion shows top-level Kotlin stdlib functions
-      alongside object members; filter out package-scope symbols when completing after dot receiver.
-    - **False positive `QUALIFIED_EXPRESSION_WITHOUT_SELECTOR`**: investigate and suppress or fix
-      the spurious K2 diagnostic on valid code (e.g. `x.length` as statement).
-12. **C12** — Bump `submodules/IntellijCommunity` → `idea/242.x`; update KotlinConverter sources
-    (only remaining user of the submodule):
-    - Update `KotlinConverter/pom.xml` source path (`j2k/old/src` → `j2k/k1.old/src` + `j2k/shared/src`)
-    - Resolve 242-era k1.old deps on Java Analysis plugin (`DfaUtil`, `NullabilityUtil`) — stub or workaround
-    - Verify: all tests pass.
 
 **Note on C3 ordering:** `submodules/IntellijCommunity` intentionally stays at 232-era through C3–C10.
 Both `KotlinIdeCommon` (compiles `base/fe10/analysis/src`) and `KotlinConverter` (compiles `j2k/old/src`)
-build successfully against 242 platform JARs from 232-era sources — verified after C2. Bumping
-`submodules/IntellijCommunity` is deferred to C12, when `KotlinConverter` is the only remaining user.
+build successfully against 242 platform JARs from 232-era sources — verified after C2.
 
 ADR: `docs/adr/B1-k2-analysis-api-approach.md`.
-Detailed plan: `docs/plans/C1-k2-foundation.md` (to be written when stage C begins).
 
 ---
 
-## Track D — Bump Compiler to K2 (deferred to 0.8.x)
+## Track D — Platform and Compiler Upgrade to Era 253 / Kotlin 2.3.20 (0.8.x)
 
-Starting point after C: K2 Analysis API, still `kotlin-compiler:1.9.25` shaded.
-Target: `kotlin-compiler-fir-for-ide:2.x`, unshaded.
+Starting point after C10: K2 Analysis API, `kotlin-compiler:2.0.21` shaded (193-era com.intellij.*),
+platform `core`/`core-impl`/`util` at 232, `code-style` at 241.
+Target: `kotlin-compiler-ir-for-ide:2.3.20-ij253-52` unshaded, platform era 253, `analysis-api` 2.3.20.
 
-- **D1** — Replace `kotlin-compiler:1.9.25` with `kotlin-compiler-fir-for-ide:2.x`; remove shaded
-  `com.intellij.*` exclusions; align IntelliJ platform deps to matching 2.x era
-- **D2** — Remove `PatchedCoreImpl` and remaining compatibility stubs made obsolete by 2.x
-- **D3** — Verify all tests pass; update `CLAUDE.md` key versions
+Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstream/main`.
+
+- **D1** (`refactor/d1-bump-kotlin-compile-version`) — Decouple `kotlin-maven-plugin` from bundled
+  runtime: add `kotlin.compile.version=2.3.20` property; change `pluginManagement` to use it; pin
+  `KotlinConverter` to `${kotlin.runtime.version}` explicitly. Bundled analysis runtime stays at 2.0.21.
+- **D2** (`refactor/d2-j2k-binary`) — Replace `KotlinConverter` sources with `j2k-new` binary
+  artifact; remove `submodules/IntellijCommunity` from the build entirely.
+- **D3** (`refactor/d3-kotlin-compiler-ir-for-ide`) — Replace `kotlin-compiler:2.0.21` (shaded) with
+  `kotlin-compiler-ir-for-ide:2.3.20-ij253-52`; remove shaded `com.intellij.*` exclusions.
+- **D4** (`refactor/d4-platform-253`) — Bump platform JARs: `core`/`core-impl`/`util` 232 → 253;
+  `code-style`/`code-style-impl` 241 → 253.
+- **D5** (`refactor/d5-analysis-api-2.3.20`) — Bump `analysis-api-*-for-ide` 2.0.21 → 2.3.20; remove
+  `FirIncompatibleClassExpressionChecker` workaround (KT-75035 fixed in ≥ 2.1.20).
+- **D6** (`refactor/d6-cleanup`) — Remove `PatchedCoreImpl` and compatibility stubs made obsolete by
+  the unshaded compiler.
 
 ---
 
-## Track E — Restore and Implement Missing Features
+## Track E — Editor UX Polish and Missing Features (0.9.x+)
 
-- [ ] Find Usages (Alt+F7) — implement via `IndexSearcher`
-- [ ] Go to Declaration (Ctrl+B) — implement `DeclarationFinder`
-- [ ] Navigator (class structure) — rewrite on K2
-- [ ] Rename refactoring — rewrite
-- [ ] Debugger — rewrite via reflection (bypass Friend-restricted module)
-- [ ] J2K (Java→Kotlin) — wire up the action, verify the converter
-- [ ] Create function quick fix — implement
+- **E1** — Editor UX polish (K2-only path improvements):
+  - **FunctionCallHighlighter**: add `FUNCTION_CALL`, `EXTENSION_FUNCTION_CALL`,
+    `PACKAGE_FUNCTION_CALL`, `SUSPEND_FUNCTION_CALL`, `CONSTRUCTOR_CALL` to
+    `KotlinHighlightingAttributes`; implement in `KaSemanticHighlightingVisitor.highlightSimpleName()`
+    via `KaFunctionSymbol` branch.
+  - **Hover tooltip** (plain hover): implement CSL `Documentation` provider that calls
+    `KaNavigationUtils.renderDeclarationTooltip()` and register in `layer.xml`.
+  - **Completion filtering**: filter out package-scope symbols when completing after dot receiver.
+  - **False positive `QUALIFIED_EXPRESSION_WITHOUT_SELECTOR`**: investigate and suppress or fix
+    the spurious K2 diagnostic on valid code (e.g. `x.length` as statement).
+- **E2** — Find Usages (Alt+F7) — implement via `IndexSearcher`
+- **E3** — Go to Declaration (Ctrl+B) — implement `DeclarationFinder`
+- **E4** — Rename refactoring — rewrite
+- **E5** — Debugger — rewrite via reflection (bypass Friend-restricted module)
+- **E6** — J2K (Java→Kotlin) — wire up the action, verify the converter
+- **E7** — Create function quick fix — implement
 
 ---
 
@@ -451,7 +454,7 @@ Target: `kotlin-compiler-fir-for-ide:2.x`, unshaded.
 - A1: stays `0.3.x`, new Maven coordinates
 - A4 series: `0.4.x` → `0.5.x` (cleanup of bundled JARs)
 - **B2–B6** (Kotlin 1.9.25 + IntelliJ 232 bump, FE1.0 preserved): `0.6.x`
-- **C1–C12** (K2 Analysis API migration + polish, kotlin-compiler 2.0.21): `0.7.x`
-- **D1–D3** (bump compiler to K2 2.x): `0.8.x`
-- **E** (missing features): `0.9.x`+
+- **C1–C10** (K2 Analysis API migration, kotlin-compiler 2.0.21): `0.7.x` ✓
+- **D1–D6** (platform era 253, kotlin-compiler-ir-for-ide 2.3.20): `0.8.x`
+- **E1–E7** (editor UX polish + missing features): `0.9.x`+
 - Major version `1.0.0`: when feature parity with the IDEA plugin reached
