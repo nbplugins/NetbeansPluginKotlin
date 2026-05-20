@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.8.6-SNAPSHOT</version>
+    <version>0.8.7-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-nbm</artifactId>
@@ -169,33 +169,10 @@
       <artifactId>caffeine</artifactId>
     </dependency>
 
-    <!-- Bundled JARs (base-fe10-* and base-psi): ALL transitive deps excluded.
-         The jetbrains-kotlin-ide-hosted real POMs declare many transitive deps (kotlin-compiler-*-for-ide,
-         platform JARs, etc.) that conflict with our runtime. Our manually installed
-         versions have minimal POMs with no deps — this exclusion matches that baseline on CI. -->
-    <dependency>
-      <groupId>org.jetbrains.kotlin</groupId>
-      <artifactId>base-fe10-analysis</artifactId>
-      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
-    </dependency>
-    <dependency>
-      <groupId>org.jetbrains.kotlin</groupId>
-      <artifactId>base-fe10-code-insight</artifactId>
-      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
-    </dependency>
-    <dependency>
-      <groupId>org.jetbrains.kotlin</groupId>
-      <artifactId>base-fe10-obsolete-compat</artifactId>
-      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
-    </dependency>
-    <dependency>
-      <groupId>org.jetbrains.kotlin</groupId>
-      <artifactId>base-psi</artifactId>
-      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
-    </dependency>
-    <!-- K2 Analysis API foundation (C1) — classpath only; no call sites yet (C2+).
-         Base artifacts without -for-ide are not published publicly (IntelliJ-internal),
-         so all transitive deps are excluded; the -for-ide JARs themselves are the implementation. -->
+    <!-- K2 Analysis API: transitive non-for-ide compiler modules (analysis-api, low-level-api-fir,
+         psi-api, etc.) are JetBrains-internal and not published on any public repo — they are
+         embedded in the -for-ide fat JARs. *:* exclusions prevent Maven from trying to resolve
+         those missing JARs. -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>analysis-api-for-ide</artifactId>
@@ -204,11 +181,6 @@
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>analysis-api-standalone-for-ide</artifactId>
-      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
-    </dependency>
-    <dependency>
-      <groupId>org.jetbrains.kotlin</groupId>
-      <artifactId>analysis-api-fe10-for-ide</artifactId>
       <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
@@ -250,13 +222,9 @@
         </exclusion>
       </exclusions>
     </dependency>
-    <!-- formatter's real JetBrains POM declares kotlin-compiler-common-for-ide:1.9.20-506 as a
-         runtime dep — that fat JAR contains ClassId without Companion, causing NoSuchFieldError
-         when mixed with kotlin-compiler:2.0.21. Locally the POM was install:file minimal (no deps). -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>formatter</artifactId>
-      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
@@ -285,21 +253,17 @@
     </dependency>
 
     <!-- D3+D4+D5: kotlin-compiler-common-for-ide (Kotlin PSI, FIR frontend, descriptors, etc.)
-         + kotlin-compiler-ir-for-ide (IR backend). Both are unshaded — no com/intellij classes.
-         All transitive deps excluded: platform 253 and analysis-api are declared explicitly above. -->
+         + kotlin-compiler-ir-for-ide (IR backend). Both are unshaded fat JARs; their transitive
+         deps (psi-api, ir.tree, etc.) are JetBrains-internal and not published on any public repo. -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-compiler-common-for-ide</artifactId>
-      <exclusions>
-        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
-      </exclusions>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-compiler-ir-for-ide</artifactId>
-      <exclusions>
-        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
-      </exclusions>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains</groupId>
