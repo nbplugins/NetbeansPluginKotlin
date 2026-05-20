@@ -169,28 +169,34 @@
       <artifactId>caffeine</artifactId>
     </dependency>
 
-    <!-- K2 Analysis API: each -for-ide artifact's POM declares its non-for-ide counterpart
-         with *:* self-exclusions, so only pure-Kotlin runtime deps (caffeine, kotlinx-*, etc.)
-         flow through — no IntelliJ platform JARs. -->
+    <!-- K2 Analysis API: transitive non-for-ide compiler modules (analysis-api, low-level-api-fir,
+         psi-api, etc.) are JetBrains-internal and not published on any public repo — they are
+         embedded in the -for-ide fat JARs. *:* exclusions prevent Maven from trying to resolve
+         those missing JARs. -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>analysis-api-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>analysis-api-standalone-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>analysis-api-k2-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>analysis-api-impl-base-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>analysis-api-platform-interface-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlinx</groupId>
@@ -199,10 +205,12 @@
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>low-level-api-fir-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>symbol-light-classes-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
@@ -245,16 +253,17 @@
     </dependency>
 
     <!-- D3+D4+D5: kotlin-compiler-common-for-ide (Kotlin PSI, FIR frontend, descriptors, etc.)
-         + kotlin-compiler-ir-for-ide (IR backend). Both are unshaded — no com/intellij classes.
-         Transitive deps (other compiler modules) carry their own *:* self-exclusions in the
-         -for-ide POMs, so the tree stays clean without blanket exclusions here. -->
+         + kotlin-compiler-ir-for-ide (IR backend). Both are unshaded fat JARs; their transitive
+         deps (psi-api, ir.tree, etc.) are JetBrains-internal and not published on any public repo. -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-compiler-common-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-compiler-ir-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains</groupId>
