@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.8.2-SNAPSHOT</version>
+    <version>0.8.6-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-compiler-cli-base</artifactId>
@@ -177,8 +177,11 @@ new ZipFile(kcompJar).withCloseable { zf ->
   zf.entries().each { e ->
     def name = e.name
     if (!name.endsWith('.class')) return
-    boolean keep = forceInclude.contains(name) ||
-                   (!forIdeEntries.contains(name) && !platformEntries.contains(name))
+    // Strip fastutil: provided separately as intellij-deps-fastutil; the bundled copy
+    // conflicts with the version CoreImpl (util:242) was compiled against.
+    boolean keep = !name.startsWith('it/unimi/dsi/fastutil/') &&
+                   (forceInclude.contains(name) ||
+                   (!forIdeEntries.contains(name) && !platformEntries.contains(name)))
     if (!keep) return
 
     def target = new File(classesDir, name)

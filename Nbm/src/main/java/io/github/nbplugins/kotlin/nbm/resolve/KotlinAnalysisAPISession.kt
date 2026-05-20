@@ -16,9 +16,12 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.resolve
 
+import com.intellij.codeInsight.multiverse.CodeInsightContextManager
+import com.intellij.codeInsight.multiverse.CodeInsightContextManagerStub
 import org.jetbrains.kotlin.analysis.api.standalone.StandaloneAnalysisAPISession
 import org.jetbrains.kotlin.analysis.api.standalone.buildStandaloneAnalysisAPISession
 import org.jetbrains.kotlin.analysis.project.structure.builder.buildKtLibraryModule
+import org.jetbrains.kotlin.analysis.project.structure.builder.buildKtSdkModule
 import org.jetbrains.kotlin.analysis.project.structure.builder.buildKtSourceModule
 import org.jetbrains.kotlin.config.ApiVersion
 import org.jetbrains.kotlin.config.LanguageVersion
@@ -88,8 +91,15 @@ class KotlinAnalysisAPISession private constructor(
         hasDependencies = binaryJars.isNotEmpty()
 
         session = buildStandaloneAnalysisAPISession {
+            registerProjectService(CodeInsightContextManager::class.java, CodeInsightContextManagerStub())
             buildKtModuleProvider {
                 platform = JvmPlatforms.unspecifiedJvmPlatform
+
+                val jdkModule = addModule(buildKtSdkModule {
+                    libraryName = "JDK"
+                    addBinaryRootsFromJdkHome(Path.of(System.getProperty("java.home")), false)
+                    platform = JvmPlatforms.unspecifiedJvmPlatform
+                })
 
                 val libModules = binaryJars.map { jar ->
                     addModule(buildKtLibraryModule {
@@ -105,6 +115,7 @@ class KotlinAnalysisAPISession private constructor(
                         LanguageVersion.KOTLIN_2_0, ApiVersion.KOTLIN_2_0
                     )
                     sourceRoots.forEach { addSourceRoot(it) }
+                    addRegularDependency(jdkModule)
                     libModules.forEach { addRegularDependency(it) }
                     platform = JvmPlatforms.unspecifiedJvmPlatform
                 })
@@ -146,6 +157,7 @@ class KotlinAnalysisAPISession private constructor(
         fun initApplicationEnvironment() {
             if (appEnvInitialized) return
             initSession = buildStandaloneAnalysisAPISession {
+                registerProjectService(CodeInsightContextManager::class.java, CodeInsightContextManagerStub())
                 buildKtModuleProvider {
                     platform = JvmPlatforms.unspecifiedJvmPlatform
                     addModule(buildKtSourceModule {

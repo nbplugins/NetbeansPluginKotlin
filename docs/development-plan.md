@@ -55,7 +55,7 @@ compatible version. Not a separate stage — done along the way.
 - [x] **B5** — Replace `KotlinIdeCommon` source module with binary artifacts (`base-fe10-analysis/code-insight/obsolete-compat/base-psi:231-1.9.20-506-IJ8109.175`); re-enable intentions/quickfixes tests. 163 tests pass.
 - [x] **B6** — Repoint `KotlinConverter` → `submodules/IntellijCommunity@232` (no binary artifact available for j2k); re-enable J2K/diagnostics tests
 - [x] **C** — K2 Analysis API migration (C1–C10 complete). Ships as 0.7.x.
-- [ ] **D** — Compiler upgrade to kotlin-compiler-ir-for-ide 2.3.21 + analysis-api 2.3.21 (D3+D5 ✅); platform 253 upgrade (D4) deferred. Ships as 0.8.x.
+- [ ] **D** — Compiler upgrade to kotlin-compiler-ir-for-ide 2.3.21 + analysis-api 2.3.21 (D3+D5 ✅, bugfix/jdk ✅); platform 253 upgrade (D4) deferred. Ships as 0.8.x.
 - [ ] **E** — Editor UX polish and missing features. Ships as 0.9.x+.
 
 B3–B6 ship as 0.6.x on `feature/kotlin-compiler-only`; single PR after B6 passes all 169 tests.
@@ -431,6 +431,11 @@ Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstrea
   `Registry` stub updated to expose `Companion` inner class (analysis-api 2.3.21 requirement).
   Note: D4 (platform 242 → 253) deferred — all published `analysis-api-*-for-ide` versions use
   the old 242-era `PathResolver(4-arg)` API, incompatible with 252/253 platform.
+- ✅ **bugfix/jdk-invisible-in-k2-session** — Register JDK home as a `KtSdkModule` dependency in
+  `KotlinAnalysisAPISession`; register `CodeInsightContextManagerStub` service; strip bundled
+  `fastutil` from `KotlinCompilerCliBase` (conflicts with `intellij-deps-fastutil` in `util:242`);
+  bump `intellij-deps-fastutil` 8.5.11-18 → 8.5.13-jb4. Fixes false type errors and broken
+  semantic highlighting for code that uses JDK types.
 - **D4** (`refactor/d4-platform-253`) — Bump platform JARs: `core`/`core-impl`/`util` 242 → 253;
   `code-style`/`code-style-impl` 241 → 253. Blocked until a compatible `analysis-api-*-for-ide`
   artifact targeting 253-era platform is published.

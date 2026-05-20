@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin</artifactId>
-  <version>0.8.2-SNAPSHOT</version>
+  <version>0.8.6-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin</name>
   <properties>
@@ -416,7 +416,7 @@
       <dependency>
         <groupId>org.jetbrains.intellij.deps.fastutil</groupId>
         <artifactId>intellij-deps-fastutil</artifactId>
-        <version>8.5.11-18</version>
+        <version>8.5.13-jb4</version>
       </dependency>
       <!-- ASM bytecode library: JavaStubGenerator uses asm-tree for .class file inspection.
            Previously used the shaded copy inside kotlin-compiler fat JAR (org.jetbrains.org.objectweb.asm).

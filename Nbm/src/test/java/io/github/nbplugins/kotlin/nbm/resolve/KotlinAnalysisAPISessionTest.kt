@@ -16,10 +16,12 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.resolve
 
+import com.intellij.codeInsight.multiverse.CodeInsightContextManager
 import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.components.KaDiagnosticCheckerFilter
 import org.jetbrains.kotlin.psi.KtFile
+import org.openide.filesystems.FileUtil
 import utils.KotlinTestCase
 
 /**
@@ -105,6 +107,57 @@ class KotlinAnalysisAPISessionTest : KotlinTestCase("K2 Analysis API session", "
         val result = wrapper.getKtFileForPath(path!!)
         assertNotNull("getKtFileForPath must return the KtFile for a registered path", result)
         assertEquals("Returned KtFile must have the requested path", path, result!!.virtualFile?.path)
+    }
+
+    /**
+     * Verifies that JDK types (java.lang.Exception, java.io.Serializable, etc.) are accessible
+     * in a K2 session that has no project binary JARs — only the JDK SDK module.
+     *
+     * Before the fix, `buildKtSdkModule` was absent, so JDK entries from the boot classpath
+     * (which are `jrt:/` URLs on Java 9+, not `.jar` files) were silently dropped, causing
+     * "Cannot access class 'java.lang.Exception'" false positives.
+     */
+    @OptIn(KaExperimentalApi::class)
+    fun testJdkClassesAreVisibleInSession() {
+        val sourceRoot = FileUtil.toFile(project.projectDirectory.getFileObject("src"))!!.toPath()
+        val wrapper = KotlinAnalysisAPISession.createWithJars("test-jdk-check", emptyList(), listOf(sourceRoot))
+
+        val ktFile = wrapper.session.modulesWithFiles.values
+            .flatten()
+            .filterIsInstance<KtFile>()
+            .firstOrNull { it.name == "checkJdkTypesVisible.kt" }
+        assertNotNull("checkJdkTypesVisible.kt must be in the K2 session's source module", ktFile)
+
+        val diagnostics = analyze(ktFile!!) {
+            ktFile.diagnostics(KaDiagnosticCheckerFilter.ONLY_COMMON_CHECKERS)
+        }
+
+        val jdkAccessErrors = diagnostics.filter { d ->
+            val msg = d.defaultMessage
+            msg.contains("Cannot access") && (msg.contains("java.lang") || msg.contains("java.io"))
+        }
+        assertTrue(
+            "JDK types must be accessible — no 'Cannot access java.*' errors expected, " +
+            "but got: ${jdkAccessErrors.map { it.defaultMessage }}",
+            jdkAccessErrors.isEmpty()
+        )
+    }
+
+    /**
+     * Verifies that [CodeInsightContextManager] is registered as a project service in the K2
+     * standalone session and returns `false` from [CodeInsightContextManager.isSharedSourceSupportEnabled].
+     *
+     * Without this registration, [com.intellij.psi.impl.file.PsiPackageImpl.getCachedClassesByName]
+     * throws [IllegalStateException] during Java-type resolution, which prevents semantic highlighting.
+     */
+    fun testCodeInsightContextManagerServiceRegistered() {
+        val wrapper = KotlinAnalysisAPISession.getSession(project)
+        val manager = CodeInsightContextManager.getInstance(wrapper.session.project)
+        assertNotNull("CodeInsightContextManager service must be registered", manager)
+        assertFalse(
+            "isSharedSourceSupportEnabled must return false in standalone session",
+            manager.isSharedSourceSupportEnabled
+        )
     }
 
     /**

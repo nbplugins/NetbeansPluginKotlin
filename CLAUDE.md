@@ -391,3 +391,6 @@ through the K2 Analysis API (`StandaloneAnalysisAPISession`).
 - `Registry.java` stub in `Nbm/src/main/java/com/intellij/openapi/util/registry/` exposes a `Companion`
   inner class so that `analysis-api:2.3.21` code accessing `Registry.Companion` at runtime finds the
   expected field. The stub takes classloader precedence over the Kotlin `Registry` in `KotlinCompilerCliBase`.
+- `KotlinAnalysisAPISession` registers `CodeInsightContextManagerStub` as a project service
+  (required by `analysis-api:2.3.21`) and adds the JDK home as a `KtSdkModule` dependency so that
+  JDK standard library types are visible in the analysis session.

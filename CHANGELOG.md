@@ -1,3 +1,6 @@
+- Fixed JDK standard library types not visible in the K2 analysis session, causing false type errors and broken semantic highlighting for code that uses JDK types.
+- Added support for Kotlin 2.3.x source files.
+
 # 0.7.13 (2026-05-19)
 
 - Switched all language features (diagnostics, completion, semantic highlighting, hints/quick-fixes, navigation) to the K2 Analysis API, replacing the previous K1 engine.
