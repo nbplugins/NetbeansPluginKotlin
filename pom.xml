@@ -151,15 +151,6 @@
 
   <dependencyManagement>
     <dependencies>
-      <!-- Pin kotlin-tooling-core to a released version available on Maven Central.
-           The *-for-ide:1.9.20-506 artifacts transitively depend on kotlin-tooling-core:1.9.20-dev-6566
-           whose parent BOM (kotlin-gradle-plugins-bom:1.9.20-dev-6566) is not in any public repo.
-           kotlin-tooling-core is Gradle build tooling, not IDE runtime — any compatible release works. -->
-      <dependency>
-        <groupId>org.jetbrains.kotlin</groupId>
-        <artifactId>kotlin-tooling-core</artifactId>
-        <version>1.9.25</version>
-      </dependency>
       <!-- K2 Analysis API (for-ide variants — all transitive deps excluded by the POM).
            D5: bumped 2.0.21 → 2.3.20-ij253-119 (matches common-for-ide/ir-for-ide/platform 253). -->
       <dependency>
