@@ -436,11 +436,25 @@ Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstrea
   `fastutil` from `KotlinCompilerCliBase` (conflicts with `intellij-deps-fastutil` in `util:242`);
   bump `intellij-deps-fastutil` 8.5.11-18 → 8.5.13-jb4. Fixes false type errors and broken
   semantic highlighting for code that uses JDK types.
+- **D5** (`refactor/d5-remove-shaded-stubs`) — Remove compatibility stubs that patched the old
+  shaded `kotlin-compiler:1.9.25` and are now dead since D3+D5 switched to the unshaded
+  `kotlin-compiler-ir-for-ide:2.3.21`: `FormatTextRanges`, `DynamicBundle`, `Extensions`,
+  `ConcurrentCollectionFactory` and any others confirmed unused. Verify by building and running
+  tests after each deletion.
+- **D6** (`refactor/d6-formatter-from-sources`) — Replace `org.jetbrains.kotlin:formatter:231-1.9.20-506-IJ8109.175`
+  with a new `bundled-jars/KotlinFormatter` module built from sources.
+  JetBrains stopped publishing this artifact after era 231; sources live in
+  `submodules/IntellijCommunity/plugins/kotlin/formatter/minimal/src/`.
+  The new module compiles those sources against the current platform era (242) and produces
+  `io.github.nbplugins:netbeans-plugin-kotlin-formatter:${project.version}`, replacing
+  the pinned 231-era Maven artifact in Nbm's dependency list.
+  Requires enabling sparse checkout for `plugins/kotlin/formatter/minimal/` in `submodules/IntellijCommunity`.
 - **D4** (`refactor/d4-platform-253`) — Bump platform JARs: `core`/`core-impl`/`util` 242 → 253;
-  `code-style`/`code-style-impl` 241 → 253. Blocked until a compatible `analysis-api-*-for-ide`
+  `code-style`/`code-style-impl` 241 → 253. **Blocked** until a compatible `analysis-api-*-for-ide`
   artifact targeting 253-era platform is published.
-- **D6** (`refactor/d6-cleanup`) — Remove `PatchedCoreImpl` and compatibility stubs made obsolete by
-  the unshaded compiler.
+- **D7** (`refactor/d7-platform-stubs-cleanup`) — Remove compatibility stubs that bridge the
+  193-era platform with 242-era: `ObjectUtils`, `MultiMap`, `ContainerUtil*`, `ObjectIntHashMap`,
+  `ObjectIntMap`, and others made obsolete once the platform is on 253. Depends on D4.
 
 ---
 
@@ -473,6 +487,6 @@ Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstrea
 - A4 series: `0.4.x` → `0.5.x` (cleanup of bundled JARs)
 - **B2–B6** (Kotlin 1.9.25 + IntelliJ 232 bump, FE1.0 preserved): `0.6.x`
 - **C1–C10** (K2 Analysis API migration, kotlin-compiler 2.0.21): `0.7.x` ✓
-- **D1–D6** (kotlin-compiler-ir-for-ide 2.3.21, analysis-api 2.3.21; D4 platform 253 deferred): `0.8.x`
+- **D1–D7** (kotlin-compiler-ir-for-ide 2.3.21, analysis-api 2.3.21; D4 platform 253 deferred): `0.8.x`
 - **E1–E7** (editor UX polish + missing features): `0.9.x`+
 - Major version `1.0.0`: when feature parity with the IDEA plugin reached
