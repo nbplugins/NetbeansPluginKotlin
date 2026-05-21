@@ -252,9 +252,9 @@ Several capabilities depend on bundled custom JARs (not from Maven Central):
   `core-impl:193.7288.26` as direct Maven dependencies of Nbm (since A4.10; replaces old `lib/intellij-core-1.0.jar`)
 
 Formatter infrastructure (A4.9): `openapi-formatter.jar` and `idea-formatter.jar` replaced by
-`com.jetbrains.intellij.platform:code-style:241.194` and `code-style-impl:241.194` (direct Maven
+`com.jetbrains.intellij.platform:code-style:242.26775.26` and `code-style-impl:242.26775.26` (direct Maven
 dependencies). All `com.jetbrains.intellij.platform:*` transitive deps are excluded from `Nbm` to
-avoid conflicts with bundled 193-era JARs. The following stubs live in `Nbm/src/main/java/`:
+avoid conflicts with bundled JARs. The following stubs live in `Nbm/src/main/java/`:
 
 | Class | Package | Purpose |
 |-------|---------|---------|
@@ -264,17 +264,16 @@ avoid conflicts with bundled 193-era JARs. The following stubs live in `Nbm/src/
 | `LanguageCodeStyleSettingsProvider` | `com.intellij.psi.codeStyle` | Runtime; `EP_NAME` field needed for extension registration |
 | `CodeStyleSettingsCustomizable` | `com.intellij.psi.codeStyle` | Compile-only interface |
 | `CodeStyleSettingsService` | `com.intellij.psi.codeStyle` | Runtime; `getInstance()` returns no-op (empty factory lists) |
-| `CustomCodeStyleSettingsManager` | `com.intellij.psi.codeStyle` | Runtime; `getCustomSettings()` uses reflection to create settings |
-| `Formatter` | `com.intellij.formatting` | Runtime; `getInstance()` returns `new FormatterImpl()` singleton |
-| `DynamicBundle` | `com.intellij` | Runtime; stub for `core:241` i18n bundle — supports both `DynamicBundle(Class,String)` (241-era) and `DynamicBundle(String)` (1.9.25-era) constructors |
-| `ConcurrentCollectionFactory` | `com.intellij.concurrency` | Runtime; delegates to `ContainerUtil` (193-era) factory methods |
-| `ObjectIntHashMap` | `com.intellij.util.containers` | Runtime; extends `TObjectIntHashMap` AND implements `ObjectIntMap` (241 casts it to interface); adds `containsKey(Object)` absent from 1.9.25 shaded version |
-| `ObjectIntMap` | `com.intellij.util.containers` | Runtime; interface stub with `get`, `put`, `containsKey` — 1.9.25 shaded version only has `get`/`put` |
-| `ObjectUtils` | `com.intellij.util` | Runtime; adds `binarySearch(int,int,IntUnaryOperator)` (needed by `code-style-impl:241`) and `reachabilityFence(Object)` (no-op, absent in 1.9.25); placed in main module JAR to take classloader priority over `ext/util.jar` |
-| `Extensions` | `com.intellij.openapi.extensions` | Runtime; adds `getExtensions(ExtensionPointName)` missing from kotlin-compiler's embedded stub; placed in main module JAR to take classloader priority |
-| `MultiMap` | `com.intellij.util.containers` | Runtime; full replacement — 1.9.25 shaded version lacks `createConcurrent()`, `createLinkedSet()`, `createConcurrentSet()`, `isEmpty()`, `containsKey()`, `values()`, `size()`, etc.; uses `java.util.*` instead of missing `CollectionFactory`/`LinkedMultiMap` |
-| `FormatTextRanges` | `com.intellij.formatting` | Runtime; replaces code-style-impl:241's version — uses `Collections.sort` instead of `ContainerUtil.sorted(Collection,Comparator)` absent in 1.9.25 |
-| `ContainerUtilRt` | `com.intellij.util.containers` | Runtime; copied from `submodules/IntellijCommunity` via generated-sources; kotlin-compiler's embedded version lacks `newArrayList()` |
+| `CustomCodeStyleSettingsManager` | `com.intellij.psi.codeStyle` | Runtime; `getCustomSettings()` uses reflection to create settings in standalone mode |
+| `Formatter` | `com.intellij.formatting` | Runtime; `getInstance()` returns `new FormatterImpl()` singleton (242-era `getInstance()` returns null in standalone mode) |
+| `ConcurrentCollectionFactory` | `com.intellij.concurrency` | Runtime; `concurrency:242` module not published — provides `createConcurrentIdentityMap()` etc. needed by code-style-impl |
+| `ConcurrencyUtil` | `com.intellij.util` | Runtime; `computeIfAbsent(UserDataHolder, Key, Supplier)` absent from `util:242` but called by analysis-api:2.3.21 |
+| `Registry` | `com.intellij.openapi.util.registry` | Runtime; stripped from CoreImpl (see CoreImpl/pom.xml); exposes `Companion` inner class so analysis-api:2.3.21 Kotlin code can access `Registry.Companion` |
+| `RegistryValue` | `com.intellij.openapi.util.registry` | Runtime; used by the `Registry` stub above |
+| `Editor` | `com.intellij.openapi.editor` | Compile-only; referenced by `NetBeansFormattingModel` parameter type |
+| `CodeInsightContextManagerStub` | `com.intellij.codeInsight.multiverse` | Runtime; registered as a project service in `KotlinAnalysisAPISession`; no-op stub required by analysis-api:2.3.21 |
+| `KotlinSettingsProvider` | `com.intellij.formatting` | Plugin-specific; extends `CodeStyleSettingsProvider`; provides `KotlinCodeStyleSettings` factory |
+| `KotlinLanguageCodeStyleSettingsProvider` | `com.intellij.formatting` | Plugin-specific; extends `LanguageCodeStyleSettingsProvider`; provides Kotlin code style settings UI |
 
 These JARs are built by the `bundled-jars/*` reactor modules and passed to `Nbm` automatically.
 They are installed under `io.github.nbplugins` coordinates
@@ -289,14 +288,10 @@ work with Kotlin 1.3.72 and Java 17+. No ASM patches remain since A4.10.
 
 | What | Source | Why |
 |------|--------|-----|
-| `StringUtil` | `submodules/IntellijCommunity` (via generated-sources) | kotlin-compiler's embedded version lacks `trimStart(String,String)` needed by code-style-impl:241 |
-| `ContainerUtil`, `ContainerUtilRt` | `submodules/IntellijCommunity` (via generated-sources) | kotlin-compiler's embedded versions lack `sorted(Collection,Comparator)` and `newArrayList()` |
-| `ObjectIntMap/HashMap` | extracted from `util:193.5964` | 193.5964 has deprecated methods needed at runtime |
-| `Extensions` | `Nbm/src/main/java/com/intellij/` | kotlin-compiler's embedded version lacks `getExtensions(ExtensionPointName)` |
-| `messages/JavaCoreBundle.properties`, `messages/JavaErrorMessages.properties` | `Nbm/src/main/resources/messages/` | absent from `core:193` but required by `LanguageLevel.<clinit>` at runtime |
+| `messages/JavaCoreBundle.properties`, `messages/JavaErrorMessages.properties` | `Nbm/src/main/resources/messages/` | absent from `core:242` but required by `LanguageLevel.<clinit>` at runtime |
 
 **JetBrains Maven repo** (`jetbrains-intellij-releases`) is slow without a proxy. To bootstrap:
-download missing 193.x JARs manually via SOCKS5 proxy (`router.oleghome:11337`) using curl and
+download missing JARs manually via SOCKS5 proxy (`router.oleghome:11337`) using curl and
 place them in `~/.m2/repository/com/jetbrains/intellij/platform/<artifact>/<version>/`.
 
 **Правило разрешения конфликтов версий классов:** При конфликте двух версий одного класса из разных JAR-файлов — всегда стрипить **старую** версию, оставлять **новую**. Если новый код вызывает метод, отсутствующий в старом классе — добавить метод в старый класс (stub в `Nbm/src/main/java/`, главный JAR загружается первым и перекрывает `ext/*.jar`).

@@ -436,12 +436,15 @@ Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstrea
   `fastutil` from `KotlinCompilerCliBase` (conflicts with `intellij-deps-fastutil` in `util:242`);
   bump `intellij-deps-fastutil` 8.5.11-18 → 8.5.13-jb4. Fixes false type errors and broken
   semantic highlighting for code that uses JDK types.
-- **D5** (`refactor/d5-remove-stubs`) — Remove all compatibility stubs in `Nbm/src/main/java/com/intellij/`
-  that are now dead: (a) stubs that patched the shaded `kotlin-compiler:1.9.25` (`FormatTextRanges`,
-  `DynamicBundle`, `Extensions`, `ConcurrentCollectionFactory`, …); (b) stubs that bridged the
-  193-era platform — these are also dead since `CoreImpl` already bundles 242-era `core`/`util`
-  with all required methods (`ObjectUtils`, `MultiMap`, `ContainerUtil*`, `ObjectIntHashMap`, …).
-  No 193-era artifacts remain in the dependency tree. Verify by deleting each stub and running tests.
+- ✅ **D5** (`refactor/d5-remove-stubs`) — Removed 17 dead compatibility stubs from `Nbm/src/main/java/com/intellij/`:
+  shaded-1.9.25 stubs (`DynamicBundle`, `FormatTextRanges`, `Extensions`, `ObjectUtils`, `DependantSpacingImpl`, …)
+  and 193-era platform bridges (`ServiceManager`, `DataLoader`, `ObjectIntHashMap`, `MultiMap`, `ContainerUtilRt`, …).
+  Retained 16 stubs still needed: formatter runtime stubs (`Formatter`, `CustomCodeStyleSettingsManager`,
+  `CodeStyleSettingsService`, `ConcurrentCollectionFactory`, `ConcurrencyUtil`), compile-only stubs
+  (`Configurable`, `IndentOptionsEditor`, `Editor`, `CodeStyleSettingsCustomizable`), extension-point base
+  classes (`CodeStyleSettingsProvider`, `LanguageCodeStyleSettingsProvider`), `Registry`/`RegistryValue`
+  (analysis-api 2.3.21 Companion wrapper), `CodeInsightContextManagerStub` (K2 service), and
+  plugin-specific providers. 145 tests pass.
 - **D6** (`refactor/d6-formatter-from-sources`) — Replace `org.jetbrains.kotlin:formatter:231-1.9.20-506-IJ8109.175`
   with a new `bundled-jars/KotlinFormatter` module built from sources.
   JetBrains stopped publishing this artifact after era 231; sources live in
