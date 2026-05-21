@@ -10,9 +10,6 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <netbeans.version>RELEASE230</netbeans.version>
-    <!-- Legacy Kotlin used for compiling the bundled-jars/* sources (which were
-         written for FE1.0 1.3 era). -->
-    <kotlin.version>1.3.72</kotlin.version>
     <!-- IDE-internal Kotlin artifacts (common-for-ide, ir-for-ide, analysis-api-*-for-ide).
          D3: 2.0.21 → 2.3.21; platform stays 242, no shaded com/intellij classes. -->
     <kotlin.runtime.version>2.3.21</kotlin.runtime.version>
@@ -22,11 +19,6 @@
     <kotlin.runtime.languageVersion>2.2</kotlin.runtime.languageVersion>
     <!-- kotlin-maven-plugin version for compiling sources; decoupled from bundled runtime. -->
     <kotlin.compile.version>2.2.21</kotlin.compile.version>
-    <!-- 193: default for bundled-jars/* (compiling 1.3.72-era sources) -->
-    <intellij.platform.193.version>193.7288.26</intellij.platform.193.version>
-    <intellij.platform.193.util.version>193.5964</intellij.platform.193.util.version>
-    <!-- 232: used by KotlinConverter (compiles j2k/k1.old sources against 1.3.72-era API) -->
-    <intellij.platform.232.version>232.9921.47</intellij.platform.232.version>
     <!-- 242: main platform era for Nbm, CoreImpl -->
     <intellij.platform.242.version>242.26775.26</intellij.platform.242.version>
     <jetbrains.annotations.version>26.0.2</jetbrains.annotations.version>
