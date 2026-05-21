@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.github.nbplugins</groupId>
+    <artifactId>netbeans-plugin-kotlin</artifactId>
+    <version>0.8.11-SNAPSHOT</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+  <artifactId>netbeans-plugin-kotlin-formatter</artifactId>
+  <packaging>jar</packaging>
+  <name>Netbeans Plugin Kotlin Formatter</name>
+  <description>
+    Kotlin formatter compiled from submodules/IntellijCommunity/plugins/kotlin/formatter/minimal/src/
+    (242-era sources). Replaces the binary org.jetbrains.kotlin:formatter:231-1.9.20-506-IJ8109.175
+    which JetBrains stopped publishing after era 231.
+  </description>
+
+  <build>
+    <!--
+      kotlin-maven-plugin does not support <excludes>, so we copy the sources to
+      target/formatter-sources/ first (excluding UI-panel files that need IntelliJ UI toolkit
+      classes absent from the published 242-era platform Maven artifacts, deferred to E8),
+      then compile from that filtered directory.
+    -->
+    <sourceDirectory>${project.build.directory}/formatter-sources</sourceDirectory>
+
+    <resources>
+      <resource>
+        <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/formatter/minimal/resources</directory>
+      </resource>
+      <resource>
+        <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/formatter/minimal/resources-en</directory>
+      </resource>
+    </resources>
+
+    <plugins>
+      <!-- Copy sources into target/formatter-sources/:
+           1. Submodule formatter sources (excluding UI-panel files deferred to E8)
+           2. Local stubs in src/main/java/ (e.g. AlignmentStrategy) -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>copy-formatter-sources</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/formatter-sources</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/formatter/minimal/src</directory>
+                  <filtering>false</filtering>
+                  <!-- UI-panel files require IntelliJ UI toolkit (ComboBox, JBScrollPane, etc.)
+                       absent from published 242-era platform Maven artifacts. Deferred to E8. -->
+                  <excludes>
+                    <!-- UI panels: require IntelliJ UI toolkit absent from published 242-era Maven artifacts. Deferred to E8. -->
+                    <exclude>**/KotlinSaveStylePanel.kt</exclude>
+                    <exclude>**/KotlinCodeStylePanel.kt</exclude>
+                    <exclude>**/KotlinOtherSettingsPanel.kt</exclude>
+                    <exclude>**/BaseKotlinImportLayoutPanel.kt</exclude>
+                    <exclude>**/ImportSettingsPanel.kt</exclude>
+                    <exclude>**/KotlinLanguageCodeStyleSettingsProvider.kt</exclude>
+                    <!-- Settings accessors: require CodeStylePropertyAccessor/CodeStylePropertiesUtil
+                         from code-style-api which is not published as a JAR. Not used by NetBeans formatter. -->
+                    <exclude>**/KotlinCodeStylePropertyAccessor.kt</exclude>
+                    <exclude>**/KotlinPackageEntryTableAccessor.kt</exclude>
+                    <!-- Auto-indent provider: requires KotlinLangLineIndentProvider from
+                         base/code-insight/minimal (not in sparse checkout). NetBeans uses a
+                         separate indentation mechanism; this class is not needed for Ctrl+Shift+F. -->
+                    <exclude>**/KotlinLineIndentProvider.kt</exclude>
+                    <!-- KotlinFormatterMinimalBundle.java uses @Nls in TYPE_USE context;
+                         @Nls lacks TYPE_USE target in annotations:26. Bundle helper for style
+                         guide titles — not needed at runtime in NetBeans. -->
+                    <exclude>**/KotlinFormatterMinimalBundle.java</exclude>
+                    <!-- KotlinObsoleteStyleGuide and KotlinOfficialStyleGuide are kept in the
+                         build (their CODE_STYLE_ID constants and apply* methods are needed),
+                         but their CODE_STYLE_TITLE properties reference the excluded bundle —
+                         patched in the gmavenplus step below. -->
+                  </excludes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <execution>
+            <id>copy-stubs</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/formatter-sources</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/src/main/java</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Patch deprecated safeAs<>/cast<> calls that are ERROR-level in Kotlin 2.3+ runtime.
+           Replace with standard `as?` / `as` in the copied source tree. -->
+      <plugin>
+        <groupId>org.codehaus.gmavenplus</groupId>
+        <artifactId>gmavenplus-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>patch-unsafe-casts</id>
+            <phase>generate-sources</phase>
+            <goals><goal>execute</goal></goals>
+            <configuration>
+              <scripts>
+                <script><![CDATA[
+import java.nio.file.*
+
+def srcDir = new File(project.build.directory, 'formatter-sources')
+
+def patches = [
+  // KotlinCommonBlock.kt:800-801  x?.psi\n    ?.safeAs<T>() — must patch whole expression
+  [file: 'org/jetbrains/kotlin/idea/formatter/KotlinCommonBlock.kt',
+   old:  'unwrapQualifier()?.psi\n    ?.safeAs<KtQualifiedExpression>()',
+   new_: '(unwrapQualifier()?.psi as? KtQualifiedExpression)'],
+  // KotlinCommonBlock.kt:828  x?.safeAs<T>() in the middle of an expression
+  [file: 'org/jetbrains/kotlin/idea/formatter/KotlinCommonBlock.kt',
+   old:  'currentNode.psi?.safeAs<KtPostfixExpression>()',
+   new_: '(currentNode.psi as? KtPostfixExpression)'],
+  // TrailingCommaHelper.kt:72  x.cast<T>() == x as T
+  [file: 'org/jetbrains/kotlin/idea/formatter/trailingComma/TrailingCommaHelper.kt',
+   old:  'commaOwner.parent.cast<KtWhenExpression>()',
+   new_: '(commaOwner.parent as KtWhenExpression)'],
+  // util.kt:60  x.cast<T>() == x as T
+  [file: 'org/jetbrains/kotlin/idea/formatter/trailingComma/util.kt',
+   old:  'parent.cast<KtWhenExpression>()',
+   new_: '(parent as KtWhenExpression)'],
+  // KotlinOfficialStyleGuide: remove CODE_STYLE_TITLE that references excluded bundle
+  [file: 'org/jetbrains/kotlin/idea/formatter/KotlinOfficialStyleGuide.kt',
+   old:  '    val CODE_STYLE_TITLE: @NlsContexts.ListItem String\n        get() = KotlinFormatterMinimalBundle.message("kotlin.coding.conventions.title")',
+   new_: '    val CODE_STYLE_TITLE: String get() = "Kotlin Coding Conventions"'],
+  // KotlinObsoleteStyleGuide: remove CODE_STYLE_TITLE that references excluded bundle
+  [file: 'org/jetbrains/kotlin/idea/formatter/KotlinObsoleteStyleGuide.kt',
+   old:  '    val CODE_STYLE_TITLE: @NlsContexts.ListItem String\n        get() = KotlinFormatterMinimalBundle.message("kotlin.obsolete.coding.conventions.title")',
+   new_: '    val CODE_STYLE_TITLE: String get() = "Kotlin Obsolete Coding Conventions"'],
+]
+
+patches.each { p ->
+  def f = new File(srcDir, p.file)
+  if (!f.exists()) { log.warn("patch target not found: ${p.file}"); return }
+  def text = f.text
+  if (!text.contains(p.old)) { log.warn("patch target not found in ${p.file}: '${p.old}'"); return }
+  f.text = text.replace(p.old, p.new_)
+  log.info("Patched ${p.file}")
+}
+                ]]></script>
+              </scripts>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-maven-plugin</artifactId>
+        <configuration>
+          <languageVersion>${kotlin.runtime.languageVersion}</languageVersion>
+          <apiVersion>${kotlin.runtime.languageVersion}</apiVersion>
+          <jvmTarget>17</jvmTarget>
+          <args>
+            <arg>-Xskip-metadata-version-check</arg>
+          </args>
+          <sourceDirs>
+            <sourceDir>${project.build.directory}/formatter-sources</sourceDir>
+          </sourceDirs>
+        </configuration>
+        <executions>
+          <execution>
+            <id>compile</id>
+            <phase>process-sources</phase>
+            <goals><goal>compile</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <source>17</source>
+          <target>17</target>
+          <compilerArgument>-proc:none</compilerArgument>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>code-style</artifactId>
+      <version>${intellij.platform.242.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>code-style-impl</artifactId>
+      <version>${intellij.platform.242.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core</artifactId>
+      <version>${intellij.platform.242.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core-impl</artifactId>
+      <version>${intellij.platform.242.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>util</artifactId>
+      <version>${intellij.platform.242.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-compiler-ir-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <!-- Transitive kotlin deps are JetBrains-internal and not on any public repo -->
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-compiler-common-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains</groupId>
+      <artifactId>annotations</artifactId>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+</project>

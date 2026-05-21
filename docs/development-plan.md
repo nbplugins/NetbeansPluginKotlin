@@ -55,7 +55,7 @@ compatible version. Not a separate stage — done along the way.
 - [x] **B5** — Replace `KotlinIdeCommon` source module with binary artifacts (`base-fe10-analysis/code-insight/obsolete-compat/base-psi:231-1.9.20-506-IJ8109.175`); re-enable intentions/quickfixes tests. 163 tests pass.
 - [x] **B6** — Repoint `KotlinConverter` → `submodules/IntellijCommunity@232` (no binary artifact available for j2k); re-enable J2K/diagnostics tests
 - [x] **C** — K2 Analysis API migration (C1–C10 complete). Ships as 0.7.x.
-- [ ] **D** — Compiler upgrade to kotlin-compiler-ir-for-ide 2.3.21 + analysis-api 2.3.21 (D3+D5 ✅, bugfix/jdk ✅); stub cleanup D5; formatter D6; platform 253 upgrade (D7) deferred. Ships as 0.8.x.
+- [ ] **D** — Compiler upgrade to kotlin-compiler-ir-for-ide 2.3.21 + analysis-api 2.3.21 (D3+D5 ✅, bugfix/jdk ✅, D6 ✅); platform 253 upgrade (D7) deferred. Ships as 0.8.x.
 - [ ] **E** — Editor UX polish and missing features. Ships as 0.9.x+.
 
 B3–B6 ship as 0.6.x on `feature/kotlin-compiler-only`; single PR after B6 passes all 169 tests.
@@ -445,14 +445,9 @@ Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstrea
   classes (`CodeStyleSettingsProvider`, `LanguageCodeStyleSettingsProvider`), `Registry`/`RegistryValue`
   (analysis-api 2.3.21 Companion wrapper), `CodeInsightContextManagerStub` (K2 service), and
   plugin-specific providers. 145 tests pass.
-- **D6** (`refactor/d6-formatter-from-sources`) — Replace `org.jetbrains.kotlin:formatter:231-1.9.20-506-IJ8109.175`
-  with a new `bundled-jars/KotlinFormatter` module built from sources.
-  JetBrains stopped publishing this artifact after era 231; sources live in
-  `submodules/IntellijCommunity/plugins/kotlin/formatter/minimal/src/`.
-  The new module compiles those sources against the current platform era (242) and produces
-  `io.github.nbplugins:netbeans-plugin-kotlin-formatter:${project.version}`, replacing
-  the pinned 231-era Maven artifact in Nbm's dependency list.
-  Requires enabling sparse checkout for `plugins/kotlin/formatter/minimal/` in `submodules/IntellijCommunity`.
+- **D6** ✅ (`refactor/d6-formatter-from-sources`, PR #65) — Replaced `org.jetbrains.kotlin:formatter:231-1.9.20-506-IJ8109.175`
+  with `bundled-jars/KotlinFormatter` built from `submodules/IntellijCommunity/plugins/kotlin/formatter/minimal/src/`
+  (242-era sources). 9 UI-panel files excluded from compilation; deferred to E8.
 - **D7** (`refactor/d7-platform-253`) — Bump platform JARs: `core`/`core-impl`/`util` 242 → 253;
   `code-style`/`code-style-impl` 241 → 253. **Blocked** until a compatible `analysis-api-*-for-ide`
   artifact targeting 253-era platform is published.
@@ -479,6 +474,19 @@ Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstrea
   `submodules/IntellijCommunity` or an equivalent binary artifact once published); wire up
   `Java2KotlinConverter` (currently stubbed since D2) and re-enable `J2KTest`
 - **E7** — Create function quick fix — implement
+- **E8** — Formatter settings UI — implement a NetBeans code style settings panel for Kotlin:
+  - Port or adapt the 6 IntelliJ formatter UI sources currently excluded from
+    `bundled-jars/KotlinFormatter` compilation (see D6):
+    `KotlinLanguageCodeStyleSettingsProvider`, `KotlinCodeStylePanel`,
+    `KotlinOtherSettingsPanel`, `KotlinSaveStylePanel`,
+    `BaseKotlinImportLayoutPanel`, `ImportSettingsPanel`.
+  - Options: (a) rewrite panels against the NetBeans Options API (`OptionsCategory`,
+    `OptionsPanelController`), or (b) add compile-time shims for the missing IntelliJ UI
+    toolkit types (`CodeStyleAbstractPanel`, `KotlinBundle`, `ComboBox`, `JBScrollPane`,
+    `VerticalLayout`, `HorizontalLayout`, `SimpleListCellRenderer`) and wire them to
+    corresponding NetBeans UI components at runtime.
+  - Goal: expose at least indent size, trailing comma, and import ordering options in
+    the NetBeans Options → Editor → Formatting → Kotlin panel.
 
 ---
 
@@ -489,5 +497,5 @@ Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstrea
 - **B2–B6** (Kotlin 1.9.25 + IntelliJ 232 bump, FE1.0 preserved): `0.6.x`
 - **C1–C10** (K2 Analysis API migration, kotlin-compiler 2.0.21): `0.7.x` ✓
 - **D1–D7** (kotlin-compiler-ir-for-ide 2.3.21, analysis-api 2.3.21; D7 platform 253 deferred): `0.8.x`
-- **E1–E7** (editor UX polish + missing features): `0.9.x`+
+- **E1–E8** (editor UX polish + missing features): `0.9.x`+
 - Major version `1.0.0`: when feature parity with the IDEA plugin reached
