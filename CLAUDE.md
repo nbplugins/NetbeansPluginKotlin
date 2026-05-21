@@ -220,9 +220,6 @@ Nbm/                     ← main plugin module (packaging=nbm)
   pom.xml
   src/                   ← plugin source and tests
 bundled-jars/            ← grouping dir (no pom); each submodule produces one JAR
-  KotlinIdeCommon/       ← not in reactor (replaced by base-fe10-* binary artifacts in B5)
-  KotlinFormatter/       ← not in reactor (replaced by formatter binary artifact in B4)
-  KotlinConverter/       ← not in reactor (removed in D2; J2K reimplemented in E6)
 patches/                 ← replacement class sources for bundled-jars modules (StubBasedPsiElementBase, AtomicFieldUpdater, picocontainer)
 ```
 
@@ -248,14 +245,6 @@ patches/                 ← replacement class sources for bundled-jars modules 
 | `utils/` | Shared helpers |
 
 ### Bundled JARs
-
-#### bundled-jars/* submodule summary
-
-| Submodule | What it does | Status |
-|-----------|-------------|--------|
-| **KotlinFormatter** | Compiled 12 files from `submodules/Kotlin/idea/formatter/` | Replaced by `org.jetbrains.kotlin:formatter:231-*` binary (B4) |
-| **KotlinConverter** | Compiled 55+ files from `submodules/IntellijCommunity/plugins/kotlin/j2k/old/` | Removed from reactor (D2); J2K reimplemented in E6 |
-| **KotlinIdeCommon** | Compiled `submodules/IntellijCommunity/plugins/kotlin/base/fe10/analysis/src/` | Replaced by `base-fe10-*` binary artifacts (B5) |
 
 Several capabilities depend on bundled custom JARs (not from Maven Central):
 - `kotlin-ide-common.jar` — replaced by `base-fe10-analysis/code-insight/obsolete-compat/base-psi:231-*` binary artifacts (B5)
@@ -305,10 +294,6 @@ work with Kotlin 1.3.72 and Java 17+. No ASM patches remain since A4.10.
 | `ObjectIntMap/HashMap` | extracted from `util:193.5964` | 193.5964 has deprecated methods needed at runtime |
 | `Extensions` | `Nbm/src/main/java/com/intellij/` | kotlin-compiler's embedded version lacks `getExtensions(ExtensionPointName)` |
 | `messages/JavaCoreBundle.properties`, `messages/JavaErrorMessages.properties` | `Nbm/src/main/resources/messages/` | absent from `core:193` but required by `LanguageLevel.<clinit>` at runtime |
-
-**Class stripping** — done with Ant tasks in KotlinIdeCommon/pom.xml:
-
-- `KotlinIdeCommon`: strips 8 plugin-owned classes (`ReferenceVariantsHelper`, `CallType`, `ExtensionUtils`, `FuzzyType`, `ScopeUtils`, `ShadowedDeclarationsFilter`, `UtilsKt`, `ReceiverType`) — the plugin provides its own versions in `Nbm/src`; bundled copies would conflict at runtime.
 
 **JetBrains Maven repo** (`jetbrains-intellij-releases`) is slow without a proxy. To bootstrap:
 download missing 193.x JARs manually via SOCKS5 proxy (`router.oleghome:11337`) using curl and
