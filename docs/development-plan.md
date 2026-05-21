@@ -479,6 +479,19 @@ Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstrea
   `submodules/IntellijCommunity` or an equivalent binary artifact once published); wire up
   `Java2KotlinConverter` (currently stubbed since D2) and re-enable `J2KTest`
 - **E7** — Create function quick fix — implement
+- **E8** — Formatter settings UI — implement a NetBeans code style settings panel for Kotlin:
+  - Port or adapt the 6 IntelliJ formatter UI sources currently excluded from
+    `bundled-jars/KotlinFormatter` compilation (see D6):
+    `KotlinLanguageCodeStyleSettingsProvider`, `KotlinCodeStylePanel`,
+    `KotlinOtherSettingsPanel`, `KotlinSaveStylePanel`,
+    `BaseKotlinImportLayoutPanel`, `ImportSettingsPanel`.
+  - Options: (a) rewrite panels against the NetBeans Options API (`OptionsCategory`,
+    `OptionsPanelController`), or (b) add compile-time shims for the missing IntelliJ UI
+    toolkit types (`CodeStyleAbstractPanel`, `KotlinBundle`, `ComboBox`, `JBScrollPane`,
+    `VerticalLayout`, `HorizontalLayout`, `SimpleListCellRenderer`) and wire them to
+    corresponding NetBeans UI components at runtime.
+  - Goal: expose at least indent size, trailing comma, and import ordering options in
+    the NetBeans Options → Editor → Formatting → Kotlin panel.
 
 ---
 
@@ -489,5 +502,5 @@ Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstrea
 - **B2–B6** (Kotlin 1.9.25 + IntelliJ 232 bump, FE1.0 preserved): `0.6.x`
 - **C1–C10** (K2 Analysis API migration, kotlin-compiler 2.0.21): `0.7.x` ✓
 - **D1–D7** (kotlin-compiler-ir-for-ide 2.3.21, analysis-api 2.3.21; D7 platform 253 deferred): `0.8.x`
-- **E1–E7** (editor UX polish + missing features): `0.9.x`+
+- **E1–E8** (editor UX polish + missing features): `0.9.x`+
 - Major version `1.0.0`: when feature parity with the IDEA plugin reached
