@@ -313,6 +313,7 @@
     <dependency>
       <groupId>org.netbeans.modules</groupId>
       <artifactId>org-netbeans-modules-maven-embedder</artifactId>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.netbeans.api</groupId>
@@ -549,6 +550,7 @@
     <dependency>
       <groupId>org.netbeans.modules</groupId>
       <artifactId>org-netbeans-modules-maven-indexer</artifactId>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.netbeans.api</groupId>
