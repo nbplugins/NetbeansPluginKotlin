@@ -60,7 +60,7 @@ class KotlinSemanticAnalyzer : SemanticAnalyzer<KotlinParserResult>() {
             val visitor = KaSemanticHighlightingVisitor(kaKtFile)
             highlighting.putAll(visitor.computeHighlightingRanges())
         }.onFailure { ex ->
-            KotlinLogger.INSTANCE.logWarning("K2 semantic highlighting failed: $ex")
+            KotlinLogger.INSTANCE.logWarning("K2 semantic highlighting failed:\n${ex.stackTraceToString()}")
         }
 
         KotlinLogger.INSTANCE.logInfo("KotlinSemanticAnalyzer.run: produced ${highlighting.size} highlight ranges")

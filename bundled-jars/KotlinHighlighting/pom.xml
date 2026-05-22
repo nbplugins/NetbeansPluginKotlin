@@ -1,0 +1,397 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.github.nbplugins</groupId>
+    <artifactId>netbeans-plugin-kotlin</artifactId>
+    <version>0.9.8-SNAPSHOT</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+  <artifactId>netbeans-plugin-kotlin-highlighting</artifactId>
+  <packaging>jar</packaging>
+  <name>Netbeans Plugin Kotlin Highlighting</name>
+  <description>
+    Kotlin semantic highlighting classes compiled from submodules/IntellijCommunity
+    (highlighting-k2, highlighting-minimal, highlighting-shared, java-frontback-impl).
+    Exposes FunctionCallHighlighter, TypeHighlighter, VariableReferenceHighlighter and
+    supporting infrastructure (KotlinHighlightingColors, KotlinHighlightInfoTypeSemanticNames,
+    HighlightingFactory) for use by the NetBeans adapter layer in the Nbm module.
+  </description>
+
+  <build>
+    <!--
+      Sources are copied from multiple submodule directories to target/generated-sources/highlighting/
+      so that gmavenplus patches can modify copies without dirtying the git submodule, and so that
+      kotlin-maven-plugin can compile from a single <sourceDirectory>.
+    -->
+    <sourceDirectory>${project.build.directory}/generated-sources/highlighting</sourceDirectory>
+
+    <resources>
+      <resource>
+        <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/highlighting/highlighting-shared/resources</directory>
+        <includes>
+          <include>messages/KotlinBaseHighlightingBundle.properties</include>
+        </includes>
+      </resource>
+    </resources>
+
+    <plugins>
+      <!--
+        Copy Kotlin/Java sources from five submodule source roots into
+        target/generated-sources/highlighting/, preserving package directory structure.
+        All exclusions remove files that depend on IntelliJ UI toolkit or unrelated infrastructure
+        not available from published platform Maven artifacts.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <executions>
+          <!-- highlighting-k2: semantic highlighter classes (FunctionCallHighlighter etc.) -->
+          <execution>
+            <id>copy-highlighting-k2</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/highlighting</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/highlighting/highlighting-k2/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/highlighting/highlighters/FunctionCallHighlighter.kt</include>
+                    <include>org/jetbrains/kotlin/idea/highlighting/highlighters/TypeHighlighter.kt</include>
+                    <include>org/jetbrains/kotlin/idea/highlighting/highlighters/VariableReferenceHighlighter.kt</include>
+                    <include>org/jetbrains/kotlin/idea/highlighting/highlighters/KotlinSemanticAnalyzer.kt</include>
+                    <include>org/jetbrains/kotlin/idea/highlighting/KotlinCallHighlighterExtension.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- highlighting-minimal: HighlightingFactory, semantic name constants, color keys -->
+          <execution>
+            <id>copy-highlighting-minimal</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/highlighting</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/highlighting/highlighting-minimal/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/highlighter/HighlightingFactory.kt</include>
+                    <include>org/jetbrains/kotlin/idea/highlighter/KotlinHighlightInfoTypeSemanticNames.kt</include>
+                    <include>org/jetbrains/kotlin/idea/highlighter/KotlinHighlightingColors.java</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- highlighting-shared: bundle helper -->
+          <execution>
+            <id>copy-highlighting-shared</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/highlighting</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/highlighting/highlighting-shared/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/highlighting/KotlinBaseHighlightingBundle.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- java-frontback-impl: JavaHighlightingColors (base color keys for KotlinHighlightingColors) -->
+          <execution>
+            <id>copy-java-highlighting-colors</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/highlighting</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../../submodules/IntellijCommunity/java/java-frontback-impl/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>com/intellij/ide/highlighter/JavaHighlightingColors.java</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- highlighting-minimal: AbstractHighlightingVisitor (base for before-resolve visitors) -->
+          <execution>
+            <id>copy-highlighting-visitor</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/highlighting</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/highlighting/highlighting-minimal/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/highlighter/visitor/AbstractHighlightingVisitor.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- highlighting-shared: declaration/annotation visitors + attribute utils -->
+          <execution>
+            <id>copy-highlighting-shared-visitors</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/highlighting</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/highlighting/highlighting-shared/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/highlighting/KotlinHighlighterAttributeUtils.kt</include>
+                    <include>org/jetbrains/kotlin/idea/base/highlighting/beforeResolve/DeclarationHighlightingVisitor.kt</include>
+                    <include>org/jetbrains/kotlin/idea/base/highlighting/beforeResolve/AnnotationEntryHighlightingVisitor.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- base/util: AbstractKotlinBundle (parent of KotlinBaseHighlightingBundle) -->
+          <execution>
+            <id>copy-abstract-bundle</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/highlighting</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/base/util/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/util/AbstractKotlinBundle.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- Local public facades in src/main/java/ (e.g. KotlinHighlightingAnalyzers.kt) -->
+          <execution>
+            <id>copy-stubs</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/highlighting</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/src/main/java</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
+        Patch API incompatibilities between IntelliJ-internal analysis-api (used by submodule sources)
+        and the public analysis-api 2.3.21 artifact we compile against:
+
+        1. KaNamedClassOrObjectSymbol was renamed to KaNamedClassSymbol in public 2.3.21.
+        2. KaSymbolKind was removed from public 2.3.21; top-level detection uses callableId?.classId == null.
+      -->
+      <plugin>
+        <groupId>org.codehaus.gmavenplus</groupId>
+        <artifactId>gmavenplus-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>patch-analysis-api-compat</id>
+            <phase>generate-sources</phase>
+            <goals><goal>execute</goal></goals>
+            <configuration>
+              <scripts>
+                <script><![CDATA[
+import java.nio.file.*
+
+def srcDir = new File(project.build.directory, 'generated-sources/highlighting')
+
+def patches = [
+  // TypeHighlighter.kt: KaNamedClassOrObjectSymbol renamed to KaNamedClassSymbol in public 2.3.21
+  [file: 'org/jetbrains/kotlin/idea/highlighting/highlighters/TypeHighlighter.kt',
+   old:  'is KaNamedClassOrObjectSymbol',
+   new_: 'is KaNamedClassSymbol'],
+
+  // FunctionCallHighlighter.kt: KaSymbolKind removed; import and usage replaced
+  [file: 'org/jetbrains/kotlin/idea/highlighting/highlighters/FunctionCallHighlighter.kt',
+   old:  'import org.jetbrains.kotlin.analysis.api.symbols.markers.KaSymbolKind\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/highlighting/highlighters/FunctionCallHighlighter.kt',
+   old:  'function.symbolKind == KaSymbolKind.TOP_LEVEL',
+   new_: 'function.callableId?.classId == null'],
+
+  // VariableReferenceHighlighter.kt: KaSymbolKind removed; import and usage replaced
+  [file: 'org/jetbrains/kotlin/idea/highlighting/highlighters/VariableReferenceHighlighter.kt',
+   old:  'import org.jetbrains.kotlin.analysis.api.symbols.markers.KaSymbolKind\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/highlighting/highlighters/VariableReferenceHighlighter.kt',
+   old:  'symbol.symbolKind == KaSymbolKind.TOP_LEVEL',
+   new_: 'symbol.callableId?.classId == null'],
+]
+
+patches.each { p ->
+  def f = new File(srcDir, p.file)
+  if (!f.exists()) { log.warn("patch target not found: ${p.file}"); return }
+  def text = f.text
+  if (!text.contains(p.old)) { log.warn("patch target not found in ${p.file}: '${p.old}'"); return }
+  f.text = text.replace(p.old, p.new_)
+  log.info("Patched ${p.file}")
+}
+                ]]></script>
+              </scripts>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-maven-plugin</artifactId>
+        <configuration>
+          <languageVersion>${kotlin.runtime.languageVersion}</languageVersion>
+          <apiVersion>${kotlin.runtime.languageVersion}</apiVersion>
+          <jvmTarget>17</jvmTarget>
+          <args>
+            <arg>-Xskip-metadata-version-check</arg>
+            <!-- context() receivers are used by FunctionCallHighlighter, TypeHighlighter, VariableReferenceHighlighter -->
+            <arg>-Xcontext-receivers</arg>
+          </args>
+          <sourceDirs>
+            <sourceDir>${project.build.directory}/generated-sources/highlighting</sourceDir>
+          </sourceDirs>
+        </configuration>
+        <executions>
+          <execution>
+            <id>compile</id>
+            <phase>process-sources</phase>
+            <goals><goal>compile</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <!-- Java sources (KotlinHighlightingColors, JavaHighlightingColors) compiled by javac
+               after kotlin-maven-plugin has already processed the Kotlin sources. -->
+          <compilerArgument>-proc:none</compilerArgument>
+        </configuration>
+        <executions>
+          <execution>
+            <id>default-compile</id>
+            <phase>compile</phase>
+            <goals><goal>compile</goal></goals>
+            <configuration>
+              <sourceDirs>
+                <sourceDir>${project.build.directory}/generated-sources/highlighting</sourceDir>
+              </sourceDirs>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <dependencies>
+    <!-- IntelliJ platform: HighlightInfo, HighlightInfoHolder, HighlightInfoType, PsiElement, DynamicBundle -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core-impl</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>analysis-impl</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>extensions</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <!-- PsiClass: used by TypeHighlighter.isAnnotationCall() to detect Java annotation types -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.java</groupId>
+      <artifactId>java-psi</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Kotlin PSI (KtCallExpression, KtVisitorVoid, KtSimpleNameExpression …) -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-compiler-ir-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <!-- StandardNames (used in FunctionCallHighlighter companion) -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-compiler-common-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <!-- Analysis API: KaSession, KaCall, KaNamedFunctionSymbol, KaKotlinPropertySymbol … -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-impl-base-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <dependency>
+      <groupId>org.jetbrains</groupId>
+      <artifactId>annotations</artifactId>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+</project>
