@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.8.14-SNAPSHOT</version>
+    <version>0.9.0-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-compiler-cli-base</artifactId>
@@ -156,7 +156,7 @@ log.info("KotlinCompilerCliBase: forIde=${forIdeEntries.size()}, platform=${plat
 
 // Extract from kotlin-compiler.jar every .class that is not already provided by:
 //   - kotlin-compiler-common-for-ide or kotlin-compiler-ir-for-ide (forIdeEntries)
-//   - platform 242 JARs (platformEntries)
+//   - platform 253 JARs (platformEntries)
 // This captures cli/**, com/intellij/**, third-party shaded deps (aalto, stax2, etc.)
 // and any other Kotlin runtime classes absent from the -for-ide thin artifacts.
 def classesDir = new File(buildDir, 'classes')
@@ -178,7 +178,7 @@ new ZipFile(kcompJar).withCloseable { zf ->
     def name = e.name
     if (!name.endsWith('.class')) return
     // Strip fastutil: provided separately as intellij-deps-fastutil; the bundled copy
-    // conflicts with the version CoreImpl (util:242) was compiled against.
+    // conflicts with the version CoreImpl (util:253) was compiled against.
     boolean keep = !name.startsWith('it/unimi/dsi/fastutil/') &&
                    (forceInclude.contains(name) ||
                    (!forIdeEntries.contains(name) && !platformEntries.contains(name)))

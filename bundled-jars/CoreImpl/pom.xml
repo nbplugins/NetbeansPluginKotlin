@@ -5,17 +5,15 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.8.14-SNAPSHOT</version>
+    <version>0.9.0-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-core-impl</artifactId>
   <packaging>jar</packaging>
   <name>Netbeans Plugin Kotlin Core-Impl</name>
   <description>
-    Repacks com.jetbrains.intellij.platform:{core, core-impl, util}:242 into a single JAR.
-    In C2 no stripping is done — all 3796 com/intellij/** classes from 242-era are provided
-    as-is. The stripping logic (removing classes that overlap with kotlin-compiler shading)
-    is kept as inactive comments for future activation when needed (Track D direction).
+    Repacks com.jetbrains.intellij.platform:{core, core-impl, util}:253 into a single JAR.
+    All com/intellij/** classes from 253-era are provided as-is.
   </description>
 
   <dependencies>
@@ -38,7 +36,7 @@
       <version>${intellij.platform.253.version}</version>
       <scope>provided</scope>
     </dependency>
-    <!-- core:242 CoreProgressManager references TelemetryManager and Scope at static init;
+    <!-- core:253 CoreProgressManager references TelemetryManager and Scope at static init;
          TelemetryManager references opentelemetry-api at class-load time (JVM verification) -->
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
@@ -213,8 +211,8 @@
                 <touch file="${project.build.directory}/repack.stamp" unless:set="repack.uptodate"/>
                 <!--
                   INACTIVE: stripping of classes that overlap with kotlin-compiler shading.
-                  Activate when kotlin-compiler's shaded 232-era com.intellij.* should yield
-                  to these 242-era versions (Track D direction):
+                  Activate when kotlin-compiler's shaded com.intellij.* should yield
+                  to 253-era versions:
 
                 <delete dir="${project.build.directory}/kc-com-intellij" quiet="true"/>
                 <mkdir dir="${project.build.directory}/kc-com-intellij"/>

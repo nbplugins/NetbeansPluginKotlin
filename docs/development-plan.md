@@ -55,8 +55,8 @@ compatible version. Not a separate stage — done along the way.
 - [x] **B5** — Replace `KotlinIdeCommon` source module with binary artifacts (`base-fe10-analysis/code-insight/obsolete-compat/base-psi:231-1.9.20-506-IJ8109.175`); re-enable intentions/quickfixes tests. 163 tests pass.
 - [x] **B6** — Repoint `KotlinConverter` → `submodules/IntellijCommunity@232` (no binary artifact available for j2k); re-enable J2K/diagnostics tests
 - [x] **C** — K2 Analysis API migration (C1–C10 complete). Ships as 0.7.x.
-- [ ] **D** — Compiler upgrade to kotlin-compiler-ir-for-ide 2.3.21 + analysis-api 2.3.21 (D3+D5 ✅, bugfix/jdk ✅, D6 ✅); platform 253 upgrade (D7) deferred. Ships as 0.8.x.
-- [ ] **E** — Editor UX polish and missing features. Ships as 0.9.x+.
+- [x] **D** — Compiler upgrade to kotlin-compiler-ir-for-ide 2.3.21 + analysis-api 2.3.21, platform 253 (D1–D7 ✅). Ships as 0.8.x.
+- [ ] **E** — Editor UX polish and missing features (E1–E12). Ships as 0.9.x+.
 
 B3–B6 ship as 0.6.x on `feature/kotlin-compiler-only`; single PR after B6 passes all 169 tests.
 Stage C ships as 0.7.x; C1–C10 complete.
@@ -408,7 +408,7 @@ ADR: `docs/adr/B1-k2-analysis-api-approach.md`.
 
 Starting point after C10: K2 Analysis API, `kotlin-compiler:2.0.21` shaded (193-era com.intellij.*),
 platform `core`/`core-impl`/`util` at 242, `code-style` at 241.
-Target: `kotlin-compiler-ir-for-ide:2.3.21` unshaded, platform era 242 (unchanged — see D3/D5 note),
+Target (achieved): `kotlin-compiler-ir-for-ide:2.3.21` unshaded, platform era 253,
 `analysis-api` 2.3.21.
 
 Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstream/main`.
@@ -426,14 +426,12 @@ Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstrea
   with `kotlin-compiler-ir-for-ide:2.3.21` (unshaded); bump `analysis-api-*-for-ide` 2.0.21 → 2.3.21;
   remove `FirIncompatibleClassExpressionChecker` workaround (KT-75035 fixed in ≥ 2.1.20).
   New `KotlinCompilerCliBase` module extracts all classes absent from `-for-ide` and platform JARs
-  (set-difference from fat `kotlin-compiler.jar`); `CoreImpl` repacks platform 242 as before.
+  (set-difference from fat `kotlin-compiler.jar`); `CoreImpl` repacks platform 253 as before.
   Explicit new runtime deps: `kotlinx-collections-immutable-jvm:0.3.7`, `caffeine:3.1.8`.
   `Registry` stub updated to expose `Companion` inner class (analysis-api 2.3.21 requirement).
-  Note: D7 (platform 242 → 253) deferred — all published `analysis-api-*-for-ide` versions use
-  the old 242-era `PathResolver(4-arg)` API, incompatible with 252/253 platform.
 - ✅ **bugfix/jdk-invisible-in-k2-session** — Register JDK home as a `KtSdkModule` dependency in
   `KotlinAnalysisAPISession`; register `CodeInsightContextManagerStub` service; strip bundled
-  `fastutil` from `KotlinCompilerCliBase` (conflicts with `intellij-deps-fastutil` in `util:242`);
+  `fastutil` from `KotlinCompilerCliBase` (conflicts with `intellij-deps-fastutil` in `util:253`);
   bump `intellij-deps-fastutil` 8.5.11-18 → 8.5.13-jb4. Fixes false type errors and broken
   semantic highlighting for code that uses JDK types.
 - ✅ **D5** (`refactor/d5-remove-stubs`) — Removed 17 dead compatibility stubs from `Nbm/src/main/java/com/intellij/`:
@@ -445,48 +443,81 @@ Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstrea
   classes (`CodeStyleSettingsProvider`, `LanguageCodeStyleSettingsProvider`), `Registry`/`RegistryValue`
   (analysis-api 2.3.21 Companion wrapper), `CodeInsightContextManagerStub` (K2 service), and
   plugin-specific providers. 145 tests pass.
-- **D6** ✅ (`refactor/d6-formatter-from-sources`, PR #65) — Replaced `org.jetbrains.kotlin:formatter:231-1.9.20-506-IJ8109.175`
+- ✅ **D6** (`refactor/d6-formatter-from-sources`, PR #65) — Replaced `org.jetbrains.kotlin:formatter:231-1.9.20-506-IJ8109.175`
   with `bundled-jars/KotlinFormatter` built from `submodules/IntellijCommunity/plugins/kotlin/formatter/minimal/src/`
-  (242-era sources). 9 UI-panel files excluded from compilation; deferred to E8.
-- **D7** (`refactor/d7-platform-253`) — Bump platform JARs: `core`/`core-impl`/`util` 242 → 253;
-  `code-style`/`code-style-impl` 241 → 253. **Blocked** until a compatible `analysis-api-*-for-ide`
-  artifact targeting 253-era platform is published.
+  (253-era sources). 9 UI-panel files excluded from compilation; deferred to E5.
+- ✅ **D7** (`refactor/d7-platform-253`, PR #66) — Bumped platform JARs `core`/`core-impl`/`util`/
+  `code-style`/`code-style-impl` 242/241 → 253. Added `Registry`, `RegistryValue`,
+  `ConcurrentCollectionFactory`, `ConcurrencyUtil`, `CodeInsightContextManager` stubs
+  to satisfy analysis-api 2.3.21 and kotlin-compiler-ir-for-ide 2.3.21 requirements at runtime.
 
 ---
 
 ## Track E — Editor UX Polish and Missing Features (0.9.x+)
 
-- **E1** — Editor UX polish (K2-only path improvements):
-  - **FunctionCallHighlighter**: add `FUNCTION_CALL`, `EXTENSION_FUNCTION_CALL`,
-    `PACKAGE_FUNCTION_CALL`, `SUSPEND_FUNCTION_CALL`, `CONSTRUCTOR_CALL` to
-    `KotlinHighlightingAttributes`; implement in `KaSemanticHighlightingVisitor.highlightSimpleName()`
-    via `KaFunctionSymbol` branch.
-  - **Hover tooltip** (plain hover): implement CSL `Documentation` provider that calls
-    `KaNavigationUtils.renderDeclarationTooltip()` and register in `layer.xml`.
-  - **Completion filtering**: filter out package-scope symbols when completing after dot receiver.
-  - **False positive `QUALIFIED_EXPRESSION_WITHOUT_SELECTOR`**: investigate and suppress or fix
-    the spurious K2 diagnostic on valid code (e.g. `x.length` as statement).
-- **E2** — Find Usages (Alt+F7) — implement via `IndexSearcher`
-- **E3** — Go to Declaration (Ctrl+B) — implement `DeclarationFinder`
-- **E4** — Rename refactoring — rewrite
-- **E5** — Debugger — rewrite via reflection (bypass Friend-restricted module)
-- **E6** — J2K (Java→Kotlin) — reimplement converter using K2 Analysis API (`j2k/new` from
-  `submodules/IntellijCommunity` or an equivalent binary artifact once published); wire up
-  `Java2KotlinConverter` (currently stubbed since D2) and re-enable `J2KTest`
-- **E7** — Create function quick fix — implement
-- **E8** — Formatter settings UI — implement a NetBeans code style settings panel for Kotlin:
-  - Port or adapt the 6 IntelliJ formatter UI sources currently excluded from
-    `bundled-jars/KotlinFormatter` compilation (see D6):
-    `KotlinLanguageCodeStyleSettingsProvider`, `KotlinCodeStylePanel`,
-    `KotlinOtherSettingsPanel`, `KotlinSaveStylePanel`,
-    `BaseKotlinImportLayoutPanel`, `ImportSettingsPanel`.
-  - Options: (a) rewrite panels against the NetBeans Options API (`OptionsCategory`,
-    `OptionsPanelController`), or (b) add compile-time shims for the missing IntelliJ UI
-    toolkit types (`CodeStyleAbstractPanel`, `KotlinBundle`, `ComboBox`, `JBScrollPane`,
-    `VerticalLayout`, `HorizontalLayout`, `SimpleListCellRenderer`) and wire them to
-    corresponding NetBeans UI components at runtime.
-  - Goal: expose at least indent size, trailing comma, and import ordering options in
-    the NetBeans Options → Editor → Formatting → Kotlin panel.
+Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E10 → E11 → E12
+
+- **E1** — Editor UX polish (sub-items in priority order):
+  - Source / History toolbar buttons for `.kt` files: register `MultiViewElement` (History view)
+    alongside the existing Source view in `layer.xml` — same mechanism as Java editor
+  - Reformat selection: verify CSL Reformat action works on a selected range
+    (`KotlinReformatTask` already exists — test and fix edge cases)
+  - Auto-indent on paste and Enter: verify/fix `KotlinIndentTask` for paste events;
+    hook `IndentAction` for Enter
+  - Completion filtering: suppress package-scope symbols after dot receiver
+  - `FUNCTION_CALL`, `EXTENSION_FUNCTION_CALL`, `SUSPEND_FUNCTION_CALL`, `CONSTRUCTOR_CALL` tokens
+    in `KotlinHighlightingAttributes`; implement in `KaSemanticHighlightingVisitor.highlightSimpleName()`
+    (Note: E2 adds unused/deprecated annotations via `KaDiagnosticProvider` — separate mechanism)
+  - Hover tooltip: CSL `Documentation` provider → `KaNavigationUtils.renderDeclarationTooltip()`
+  - False-positive `QUALIFIED_EXPRESSION_WITHOUT_SELECTOR` — investigate and suppress
+
+- **E2** — Extended diagnostics and highlighting:
+  - Unused variables / unused parameters: K2 `KaDiagnosticProvider` checks
+  - `@Deprecated` symbols: grey-strike rendering via `KaSymbol.deprecationStatus`
+  - Full K2 diagnostic set (exhaustive `when`, type mismatch, unresolved reference) exposed
+    in the NetBeans gutter + error stripe
+
+- **E3** — Parameter info and inlay hints:
+  - Ctrl+P (ParameterInfo): implement CSL `ParameterInfo` service;
+    show function signature popup with active parameter highlighted
+  - Inlay hints (parameter names at call sites): research NetBeans 23 inlay-hints API;
+    if unavailable, emulate via Editor annotations / `OffsetsBag`;
+    use `KaFunctionCall.argumentMapping` to obtain parameter names
+
+- **E4** — Extended intentions and quick-fixes matching IDEA set:
+  - Add missing `when` branches, convert expression/statement lambdas,
+    convert function to property, convert val↔var, introduce variable, etc.
+
+- **E5** — Formatter settings UI:
+  - Port or adapt 6 IntelliJ formatter UI sources excluded from `bundled-jars/KotlinFormatter`
+    compilation in D6: `KotlinLanguageCodeStyleSettingsProvider`, `KotlinCodeStylePanel`,
+    `KotlinOtherSettingsPanel`, `KotlinSaveStylePanel`, `BaseKotlinImportLayoutPanel`,
+    `ImportSettingsPanel`
+  - Options: (a) rewrite against NetBeans `OptionsCategory`/`OptionsPanelController`,
+    or (b) add compile-time shims for missing IntelliJ UI types
+  - Expose at minimum: indent size, trailing comma, import ordering
+
+- **E6** — New Kotlin Class wizard:
+  - `WizardDescriptor` + `DataObjectFactory` integration
+  - Variants matching IDEA: Class, Object, Interface, Enum class, Annotation class,
+    Sealed class, Abstract class
+  - Pre-fill package from selected folder; file created with correct template body
+
+- **E7** — Find Usages (Alt+F7): implement via `IndexSearcher`
+
+- **E8** — Go to Declaration (Ctrl+B): implement `DeclarationFinder`
+
+- **E9** — Rename refactoring: rewrite using K2 symbol resolution
+
+- **E10** — J2K (Java→Kotlin): reimplement using `j2k/new` from `submodules/IntellijCommunity`
+  or binary artifact once published; wire up stubbed `Java2KotlinConverter` (stubbed since D2)
+  and re-enable `J2KTest`
+
+- **E11** — New Project with Kotlin group:
+  - `ProjectWizardPanel` integration
+  - Variants: Kotlin/JVM application, Kotlin/JVM library, Kotlin Script
+
+- **E12** — Debugger: rewrite via reflection to bypass Friend-module restrictions (lowest priority)
 
 ---
 
@@ -496,6 +527,6 @@ Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstrea
 - A4 series: `0.4.x` → `0.5.x` (cleanup of bundled JARs)
 - **B2–B6** (Kotlin 1.9.25 + IntelliJ 232 bump, FE1.0 preserved): `0.6.x`
 - **C1–C10** (K2 Analysis API migration, kotlin-compiler 2.0.21): `0.7.x` ✓
-- **D1–D7** (kotlin-compiler-ir-for-ide 2.3.21, analysis-api 2.3.21; D7 platform 253 deferred): `0.8.x`
-- **E1–E8** (editor UX polish + missing features): `0.9.x`+
+- **D1–D7** (kotlin-compiler-ir-for-ide 2.3.21, analysis-api 2.3.21, platform 253): `0.8.x` ✓
+- **E1–E12** (editor UX polish + missing features): `0.9.x`+
 - Major version `1.0.0`: when feature parity with the IDEA plugin reached

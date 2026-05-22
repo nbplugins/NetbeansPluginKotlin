@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin</artifactId>
-  <version>0.8.14-SNAPSHOT</version>
+  <version>0.9.0-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin</name>
   <properties>
@@ -223,7 +223,7 @@
         <artifactId>kotlin-compiler-ir-for-ide</artifactId>
         <version>${kotlin.runtime.version}</version>
       </dependency>
-      <!-- core/core-impl/util: 242 era. Bundled via CoreImpl wrapper module. -->
+      <!-- core/core-impl/util: 253 era. Bundled via CoreImpl wrapper module. -->
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>core</artifactId>
