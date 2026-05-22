@@ -161,7 +161,7 @@ Before every commit, in order:
 **All dependency versions must be declared in the root `pom.xml` `<dependencyManagement>` section.**
 Never add a `<version>` tag directly in a module `pom.xml` unless it is an explicit override (exception to the default rule), and document why.
 
-**Version policy for multi-version artifacts:** The default version in `dependencyManagement` must be the most current (242-era). Older versions used by specific submodules are declared explicitly in those submodule pom.xml files as documented exceptions.
+**Version policy for multi-version artifacts:** The default version in `dependencyManagement` must be the most current (253-era). Older versions used by specific submodules are declared explicitly in those submodule pom.xml files as documented exceptions.
 
 ## Build Commands
 
@@ -265,13 +265,13 @@ avoid conflicts with bundled JARs. The following stubs live in `Nbm/src/main/jav
 | `CodeStyleSettingsCustomizable` | `com.intellij.psi.codeStyle` | Compile-only interface |
 | `CodeStyleSettingsService` | `com.intellij.psi.codeStyle` | Runtime; `getInstance()` returns no-op (empty factory lists) |
 | `CustomCodeStyleSettingsManager` | `com.intellij.psi.codeStyle` | Runtime; `getCustomSettings()` uses reflection to create settings in standalone mode |
-| `Formatter` | `com.intellij.formatting` | Runtime; `getInstance()` returns `new FormatterImpl()` singleton (242-era `getInstance()` returns null in standalone mode) |
-| `ConcurrentCollectionFactory` | `com.intellij.concurrency` | Runtime; `concurrency:242` module not published — provides `createConcurrentIdentityMap()` etc. needed by code-style-impl |
-| `ConcurrencyUtil` | `com.intellij.util` | Runtime; `computeIfAbsent(UserDataHolder, Key, Supplier)` absent from `util:242` but called by analysis-api:2.3.21 |
+| `Formatter` | `com.intellij.formatting` | Runtime; `getInstance()` returns `new FormatterImpl()` singleton (253-era `getInstance()` returns null in standalone mode) |
+| `ConcurrentCollectionFactory` | `com.intellij.concurrency` | Runtime; `concurrency:253` module not published — provides `createConcurrentIdentityMap()` etc. needed by code-style-impl |
+| `ConcurrencyUtil` | `com.intellij.util` | Runtime; `computeIfAbsent(UserDataHolder, Key, Supplier)` absent from `util:253` but called by analysis-api:2.3.21 |
 | `Registry` | `com.intellij.openapi.util.registry` | Runtime; stripped from CoreImpl (see CoreImpl/pom.xml); exposes `Companion` inner class so analysis-api:2.3.21 Kotlin code can access `Registry.Companion` |
 | `RegistryValue` | `com.intellij.openapi.util.registry` | Runtime; used by the `Registry` stub above |
 | `Editor` | `com.intellij.openapi.editor` | Compile-only; referenced by `NetBeansFormattingModel` parameter type |
-| `CodeInsightContextManagerStub` | `com.intellij.codeInsight.multiverse` | Runtime; registered as a project service in `KotlinAnalysisAPISession`; no-op stub required by analysis-api:2.3.21 |
+| `CodeInsightContextManager` | `com.intellij.codeInsight.multiverse` | Runtime; Kotlin interface stub overriding `core:253` version; adds `isSharedSourceSupportEnabled(): Boolean = false` default method absent from 253 interface but called via `invokeinterface` by `kotlin-compiler-ir-for-ide:2.3.21` (compiled against 242) |
 | `KotlinSettingsProvider` | `com.intellij.formatting` | Plugin-specific; extends `CodeStyleSettingsProvider`; provides `KotlinCodeStyleSettings` factory |
 | `KotlinLanguageCodeStyleSettingsProvider` | `com.intellij.formatting` | Plugin-specific; extends `LanguageCodeStyleSettingsProvider`; provides Kotlin code style settings UI |
 
@@ -288,7 +288,7 @@ work with Kotlin 1.3.72 and Java 17+. No ASM patches remain since A4.10.
 
 | What | Source | Why |
 |------|--------|-----|
-| `messages/JavaCoreBundle.properties`, `messages/JavaErrorMessages.properties` | `Nbm/src/main/resources/messages/` | absent from `core:242` but required by `LanguageLevel.<clinit>` at runtime |
+| `messages/JavaCoreBundle.properties`, `messages/JavaErrorMessages.properties` | `Nbm/src/main/resources/messages/` | absent from `core:253` but required by `LanguageLevel.<clinit>` at runtime |
 
 **JetBrains Maven repo** (`jetbrains-intellij-releases`) is slow without a proxy. To bootstrap:
 download missing JARs manually via SOCKS5 proxy (`router.oleghome:11337`) using curl and
@@ -354,9 +354,9 @@ grep "jdk.unsupported" /usr/lib/apache-netbeans/etc/netbeans.conf
 
 ## Key Versions
 - Kotlin compiler plugin (`kotlin.compile.version`): 2.2.21
-- Kotlin bundled runtime (`kotlin.runtime.version`): 2.3.21 — `kotlin-compiler-ir-for-ide:2.3.21` (unshaded) + Analysis API 2.3.21 (D3+D5 complete)
+- Kotlin bundled runtime (`kotlin.runtime.version`): 2.3.21 — `kotlin-compiler-ir-for-ide:2.3.21` (unshaded) + Analysis API 2.3.21 (D3+D5+D7 complete)
 - Kotlin language/API version (`kotlin.runtime.languageVersion`): 2.2 (capped until context-receivers → context-parameters migration)
-- IntelliJ Platform era: 242 (D4 platform 253 upgrade deferred — no compatible `analysis-api-*-for-ide` artifact exists for 253)
+- IntelliJ Platform era: 253 (`253.33514.17`; D7 complete — platform bumped from 242; analysis-api stays at 2.3.21 because `registerDefaultComponents` added only in ij253 IDE-internal build)
 - NetBeans target: RELEASE230 (23.0)
 - Java source/target: 17
 - **K2 Analysis API**: all language features run exclusively via `KaSession` / `analyze {}` (C10 complete — K1/FE1.0/BindingContext code removed)
@@ -371,6 +371,8 @@ through the K2 Analysis API (`StandaloneAnalysisAPISession`).
 - `Registry.java` stub in `Nbm/src/main/java/com/intellij/openapi/util/registry/` exposes a `Companion`
   inner class so that `analysis-api:2.3.21` code accessing `Registry.Companion` at runtime finds the
   expected field. The stub takes classloader precedence over the Kotlin `Registry` in `KotlinCompilerCliBase`.
-- `KotlinAnalysisAPISession` registers `CodeInsightContextManagerStub` as a project service
-  (required by `analysis-api:2.3.21`) and adds the JDK home as a `KtSdkModule` dependency so that
+- `KotlinAnalysisAPISession` adds the JDK home as a `KtSdkModule` dependency so that
   JDK standard library types are visible in the analysis session.
+- `CodeInsightContextManager.kt` stub in `Nbm/src/main/java/` overrides the `core:253` interface to
+  add `isSharedSourceSupportEnabled(): Boolean = false` — called via `invokeinterface` by
+  `kotlin-compiler-ir-for-ide:2.3.21` (compiled against 242 where this method existed).

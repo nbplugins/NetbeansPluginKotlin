@@ -5,21 +5,21 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.8.11-SNAPSHOT</version>
+    <version>0.8.14-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-compiler-cli-base</artifactId>
   <packaging>jar</packaging>
   <name>Netbeans Plugin Kotlin Compiler CLI Base</name>
   <description>
-    Bundles all classes from kotlin-compiler:2.3.21 that are absent from both the -for-ide
-    thin artifacts and the 242-era Maven platform JARs.  Uses set-difference at build time:
+    Bundles all classes from kotlin-compiler:2.3.20 that are absent from both the -for-ide
+    thin artifacts and the 253-era Maven platform JARs.  Uses set-difference at build time:
 
     keep := NOT in (kotlin-compiler-common-for-ide ∪ kotlin-compiler-ir-for-ide)
-              AND NOT in (core:242 ∪ core-impl:242 ∪ util:242 ∪ extensions:242)
+              AND NOT in (core:253 ∪ core-impl:253 ∪ util:253 ∪ extensions:253)
 
     This captures cli/jvm/compiler/**, com/intellij/** (Java-plugin classes absent from
-    published 242 platform), and third-party shaded deps (aalto, stax2, etc.) that were
+    published 253 platform), and third-party shaded deps (aalto, stax2, etc.) that were
     bundled inside the old kotlin-compiler fat JAR but are absent from the thin -for-ide
     artifacts.
   </description>
@@ -164,7 +164,7 @@ classesDir.deleteDir()
 classesDir.mkdirs()
 
 // Classes where the fat jar's newer Kotlin version must override the platform's Java version.
-// The platform JAR contains an older Java Registry; analysis-api 2.3.21 requires the Kotlin
+// The platform JAR contains an older Java Registry; analysis-api 2.3.20-ij253-119 requires the Kotlin
 // version (with Registry$Companion) from the fat jar.
 def forceInclude = [
   'com/intellij/openapi/util/registry/Registry.class',
