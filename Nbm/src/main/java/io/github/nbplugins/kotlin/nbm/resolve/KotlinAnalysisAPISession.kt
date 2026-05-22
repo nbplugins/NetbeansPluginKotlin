@@ -16,8 +16,7 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.resolve
 
-import com.intellij.codeInsight.multiverse.CodeInsightContextManager
-import com.intellij.codeInsight.multiverse.CodeInsightContextManagerStub
+
 import org.jetbrains.kotlin.analysis.api.standalone.StandaloneAnalysisAPISession
 import org.jetbrains.kotlin.analysis.api.standalone.buildStandaloneAnalysisAPISession
 import org.jetbrains.kotlin.analysis.project.structure.builder.buildKtLibraryModule
@@ -91,7 +90,6 @@ class KotlinAnalysisAPISession private constructor(
         hasDependencies = binaryJars.isNotEmpty()
 
         session = buildStandaloneAnalysisAPISession {
-            registerProjectService(CodeInsightContextManager::class.java, CodeInsightContextManagerStub())
             buildKtModuleProvider {
                 platform = JvmPlatforms.unspecifiedJvmPlatform
 
@@ -157,8 +155,7 @@ class KotlinAnalysisAPISession private constructor(
         fun initApplicationEnvironment() {
             if (appEnvInitialized) return
             initSession = buildStandaloneAnalysisAPISession {
-                registerProjectService(CodeInsightContextManager::class.java, CodeInsightContextManagerStub())
-                buildKtModuleProvider {
+                    buildKtModuleProvider {
                     platform = JvmPlatforms.unspecifiedJvmPlatform
                     addModule(buildKtSourceModule {
                         moduleName = "nbkotlin-app-env-init"

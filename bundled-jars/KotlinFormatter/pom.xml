@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.8.11-SNAPSHOT</version>
+    <version>0.8.14-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-formatter</artifactId>
@@ -201,31 +201,31 @@ patches.each { p ->
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>code-style</artifactId>
-      <version>${intellij.platform.242.version}</version>
+      <version>${intellij.platform.253.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>code-style-impl</artifactId>
-      <version>${intellij.platform.242.version}</version>
+      <version>${intellij.platform.253.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>core</artifactId>
-      <version>${intellij.platform.242.version}</version>
+      <version>${intellij.platform.253.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>core-impl</artifactId>
-      <version>${intellij.platform.242.version}</version>
+      <version>${intellij.platform.253.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>util</artifactId>
-      <version>${intellij.platform.242.version}</version>
+      <version>${intellij.platform.253.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>

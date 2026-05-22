@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.8.11-SNAPSHOT</version>
+    <version>0.8.14-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-nbm</artifactId>
@@ -238,7 +238,28 @@
         </exclusion>
       </exclusions>
     </dependency>
-    <!-- fastutil: runtime dep of code-style-impl:242 — not auto-bundled by nbm plugin -->
+    <!-- concurrency: provides ConcurrentCollectionFactory needed at runtime by platform 253 -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>concurrency</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <!-- util-multiplatform: provides StringUtilKmp referenced by StringUtil from util:253 (CoreImpl repack) -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>util-multiplatform</artifactId>
+    </dependency>
+    <!-- util-coroutines: MockProject.<init> in platform 253 references CoroutineScopeKt -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>util-coroutines</artifactId>
+    </dependency>
+    <!-- util-base-multiplatform: provides StringsKmp referenced by platform 253 core classes -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>util-base-multiplatform</artifactId>
+    </dependency>
+    <!-- fastutil: runtime dep of code-style-impl:253 — not auto-bundled by nbm plugin -->
     <dependency>
       <groupId>org.jetbrains.intellij.deps.fastutil</groupId>
       <artifactId>intellij-deps-fastutil</artifactId>

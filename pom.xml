@@ -4,23 +4,24 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin</artifactId>
-  <version>0.8.11-SNAPSHOT</version>
+  <version>0.8.14-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin</name>
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <netbeans.version>RELEASE230</netbeans.version>
     <!-- IDE-internal Kotlin artifacts (common-for-ide, ir-for-ide, analysis-api-*-for-ide).
-         D3: 2.0.21 → 2.3.21; platform stays 242, no shaded com/intellij classes. -->
+         D7: platform bumped to 253; analysis-api stays at 2.3.21 (registerDefaultComponents
+         was added only in ij253 IDE-internal build, not in public kotlin-compiler:2.3.20). -->
     <kotlin.runtime.version>2.3.21</kotlin.runtime.version>
-    <!-- stdlib/reflect/script-runtime: same version as the compiler artifacts. -->
+    <!-- stdlib/reflect/script-runtime: fat kotlin-compiler JAR version. -->
     <kotlin.runtime.stdlib.version>2.3.21</kotlin.runtime.stdlib.version>
     <!-- stays 2.2 until context-receivers → context-parameters migration -->
     <kotlin.runtime.languageVersion>2.2</kotlin.runtime.languageVersion>
     <!-- kotlin-maven-plugin version for compiling sources; decoupled from bundled runtime. -->
     <kotlin.compile.version>2.2.21</kotlin.compile.version>
-    <!-- 242: main platform era for Nbm, CoreImpl -->
-    <intellij.platform.242.version>242.26775.26</intellij.platform.242.version>
+    <!-- 253: main platform era for Nbm, CoreImpl -->
+    <intellij.platform.253.version>253.33514.17</intellij.platform.253.version>
     <jetbrains.annotations.version>26.0.2</jetbrains.annotations.version>
     <nbm.maven.plugin.version>14.4</nbm.maven.plugin.version>
     <surefire.version>3.5.5</surefire.version>
@@ -226,72 +227,92 @@
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>core</artifactId>
-        <version>${intellij.platform.242.version}</version>
+        <version>${intellij.platform.253.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>core-impl</artifactId>
-        <version>${intellij.platform.242.version}</version>
+        <version>${intellij.platform.253.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>util</artifactId>
-        <version>${intellij.platform.242.version}</version>
+        <version>${intellij.platform.253.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>code-style</artifactId>
-        <version>${intellij.platform.242.version}</version>
+        <version>${intellij.platform.253.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>code-style-impl</artifactId>
-        <version>${intellij.platform.242.version}</version>
+        <version>${intellij.platform.253.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>project-model</artifactId>
-        <version>${intellij.platform.242.version}</version>
+        <version>${intellij.platform.253.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>concurrency</artifactId>
-        <version>${intellij.platform.242.version}</version>
+        <version>${intellij.platform.253.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>extensions</artifactId>
-        <version>${intellij.platform.242.version}</version>
+        <version>${intellij.platform.253.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>diagnostic</artifactId>
-        <version>${intellij.platform.242.version}</version>
+        <version>${intellij.platform.253.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>diagnostic-telemetry</artifactId>
-        <version>${intellij.platform.242.version}</version>
+        <version>${intellij.platform.253.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>util-base</artifactId>
-        <version>${intellij.platform.242.version}</version>
+        <version>${intellij.platform.253.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>util-class-loader</artifactId>
-        <version>${intellij.platform.242.version}</version>
+        <version>${intellij.platform.253.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>util-rt</artifactId>
-        <version>${intellij.platform.242.version}</version>
+        <version>${intellij.platform.253.version}</version>
       </dependency>
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>util-xml-dom</artifactId>
-        <version>${intellij.platform.242.version}</version>
+        <version>${intellij.platform.253.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.jetbrains.intellij.platform</groupId>
+        <artifactId>plugins-parser-impl</artifactId>
+        <version>${intellij.platform.253.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.jetbrains.intellij.platform</groupId>
+        <artifactId>util-multiplatform</artifactId>
+        <version>${intellij.platform.253.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.jetbrains.intellij.platform</groupId>
+        <artifactId>util-coroutines</artifactId>
+        <version>${intellij.platform.253.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.jetbrains.intellij.platform</groupId>
+        <artifactId>util-base-multiplatform</artifactId>
+        <version>${intellij.platform.253.version}</version>
       </dependency>
       <!-- kotlin-stdlib/reflect/script-runtime: same version as the compiler artifacts. -->
       <dependency>
@@ -347,7 +368,7 @@
       <dependency>
         <groupId>org.jetbrains.intellij.deps.fastutil</groupId>
         <artifactId>intellij-deps-fastutil</artifactId>
-        <version>8.5.13-jb4</version>
+        <version>8.5.16-jb1</version>
       </dependency>
       <!-- ASM bytecode library: JavaStubGenerator uses asm-tree for .class file inspection.
            Previously used the shaded copy inside kotlin-compiler fat JAR (org.jetbrains.org.objectweb.asm).

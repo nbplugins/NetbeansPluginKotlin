@@ -144,20 +144,16 @@ class KotlinAnalysisAPISessionTest : KotlinTestCase("K2 Analysis API session", "
     }
 
     /**
-     * Verifies that [CodeInsightContextManager] is registered as a project service in the K2
-     * standalone session and returns `false` from [CodeInsightContextManager.isSharedSourceSupportEnabled].
+     * Verifies that [CodeInsightContextManager] is accessible as a project service in the K2
+     * standalone session.
      *
-     * Without this registration, [com.intellij.psi.impl.file.PsiPackageImpl.getCachedClassesByName]
-     * throws [IllegalStateException] during Java-type resolution, which prevents semantic highlighting.
+     * Platform 253 registers the service automatically via the standalone environment;
+     * [CodeInsightContextManager.getInstance] must return non-null.
      */
     fun testCodeInsightContextManagerServiceRegistered() {
         val wrapper = KotlinAnalysisAPISession.getSession(project)
         val manager = CodeInsightContextManager.getInstance(wrapper.session.project)
         assertNotNull("CodeInsightContextManager service must be registered", manager)
-        assertFalse(
-            "isSharedSourceSupportEnabled must return false in standalone session",
-            manager.isSharedSourceSupportEnabled
-        )
     }
 
     /**
