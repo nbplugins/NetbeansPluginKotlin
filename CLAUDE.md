@@ -252,7 +252,7 @@ Several capabilities depend on bundled custom JARs (not from Maven Central):
   `core-impl:193.7288.26` as direct Maven dependencies of Nbm (since A4.10; replaces old `lib/intellij-core-1.0.jar`)
 
 Formatter infrastructure (A4.9): `openapi-formatter.jar` and `idea-formatter.jar` replaced by
-`com.jetbrains.intellij.platform:code-style:242.26775.26` and `code-style-impl:242.26775.26` (direct Maven
+`com.jetbrains.intellij.platform:code-style:253.33514.17` and `code-style-impl:253.33514.17` (direct Maven
 dependencies). All `com.jetbrains.intellij.platform:*` transitive deps are excluded from `Nbm` to
 avoid conflicts with bundled JARs. The following stubs live in `Nbm/src/main/java/`:
 
@@ -271,7 +271,7 @@ avoid conflicts with bundled JARs. The following stubs live in `Nbm/src/main/jav
 | `Registry` | `com.intellij.openapi.util.registry` | Runtime; stripped from CoreImpl (see CoreImpl/pom.xml); exposes `Companion` inner class so analysis-api:2.3.21 Kotlin code can access `Registry.Companion` |
 | `RegistryValue` | `com.intellij.openapi.util.registry` | Runtime; used by the `Registry` stub above |
 | `Editor` | `com.intellij.openapi.editor` | Compile-only; referenced by `NetBeansFormattingModel` parameter type |
-| `CodeInsightContextManager` | `com.intellij.codeInsight.multiverse` | Runtime; Kotlin interface stub overriding `core:253` version; adds `isSharedSourceSupportEnabled(): Boolean = false` default method absent from 253 interface but called via `invokeinterface` by `kotlin-compiler-ir-for-ide:2.3.21` (compiled against 242) |
+| `CodeInsightContextManager` | `com.intellij.codeInsight.multiverse` | Runtime; Kotlin interface stub overriding `core:253` version; adds `isSharedSourceSupportEnabled(): Boolean = false` default method absent from 253 interface but called via `invokeinterface` by `kotlin-compiler-ir-for-ide:2.3.21` (compiled against 253) |
 | `KotlinSettingsProvider` | `com.intellij.formatting` | Plugin-specific; extends `CodeStyleSettingsProvider`; provides `KotlinCodeStyleSettings` factory |
 | `KotlinLanguageCodeStyleSettingsProvider` | `com.intellij.formatting` | Plugin-specific; extends `LanguageCodeStyleSettingsProvider`; provides Kotlin code style settings UI |
 
@@ -375,4 +375,4 @@ through the K2 Analysis API (`StandaloneAnalysisAPISession`).
   JDK standard library types are visible in the analysis session.
 - `CodeInsightContextManager.kt` stub in `Nbm/src/main/java/` overrides the `core:253` interface to
   add `isSharedSourceSupportEnabled(): Boolean = false` — called via `invokeinterface` by
-  `kotlin-compiler-ir-for-ide:2.3.21` (compiled against 242 where this method existed).
+  `kotlin-compiler-ir-for-ide:2.3.21` (compiled against 253 where this method existed).

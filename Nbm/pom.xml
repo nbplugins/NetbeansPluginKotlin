@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.8.14-SNAPSHOT</version>
+    <version>0.9.0-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-nbm</artifactId>
@@ -147,15 +147,15 @@
       <groupId>io.github.nbplugins</groupId>
       <artifactId>netbeans-plugin-kotlin-compiler-cli-base</artifactId>
     </dependency>
-    <!-- IntelliJ Platform 242 (core+core-impl+util) via CoreImpl.
-         CoreImpl repacks the 242 JARs into one — all com/intellij classes provided as-is. -->
+    <!-- IntelliJ Platform 253 (core+core-impl+util) via CoreImpl.
+         CoreImpl repacks the 253 JARs into one — all com/intellij classes provided as-is. -->
     <dependency>
       <groupId>io.github.nbplugins</groupId>
       <artifactId>netbeans-plugin-kotlin-core-impl</artifactId>
     </dependency>
 
 
-    <!-- kotlinx-collections-immutable: compile dep of core:242 (Language.transitiveDialects).
+    <!-- kotlinx-collections-immutable: compile dep of core:253 (Language.transitiveDialects).
          Formerly provided by the shaded kotlin-compiler fat JAR; now needed explicitly. -->
     <dependency>
       <groupId>org.jetbrains.kotlinx</groupId>
