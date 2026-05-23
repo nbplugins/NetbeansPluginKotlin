@@ -96,9 +96,14 @@ class KotlinParser : Parser() {
 
         try {
             KotlinLogger.INSTANCE.logInfo("KotlinParser.parse: building KtFile for ${fo?.path}")
-            val ktFile = ProjectUtils.getKtFile(snapshot.text.toString(), fo)
+            val snapshotText = snapshot.text.toString()
+            val ktFile = ProjectUtils.getKtFile(snapshotText, fo)
             Companion.project = project
             Companion.file = ktFile
+            // Keep the session's LVF-backed KtFile PSI in sync with the current editor snapshot.
+            if (fo != null) {
+                KotlinAnalysisAPISession.getSession(project).updateFileContent(fo.path, snapshotText)
+            }
             KotlinLogger.INSTANCE.logInfo("KotlinParser.parse: done for ${fo?.path}")
         } catch (ex: Throwable) {
             KotlinLogger.INSTANCE.logException("KotlinParser.parse failed for ${fo?.path}", ex)
