@@ -87,4 +87,44 @@ class KaHighlightColorMapperTest : TestCase() {
         val result = KaHighlightColorMapper.toColoringAttributes("KOTLIN_UNKNOWN_FUTURE_TOKEN")
         assertNull(result)
     }
+
+    /**
+     * Regression for the "no colors for: mod-method" CSL error: `FontAndColors.xml` must register
+     * a `mod-method` color, since function calls map to [ColoringAttributes.METHOD].
+     */
+    fun testFontColorsRegistersModMethod() {
+        assertTrue(
+            "FontAndColors.xml must register a 'mod-method' color for function-call highlighting",
+            registeredColorNames().contains("mod-method")
+        )
+    }
+
+    /**
+     * Every [ColoringAttributes] the mapper can emit must have a matching `mod-<name>` entry in
+     * `FontAndColors.xml`. NetBeans CSL derives the coloring token name as
+     * `"mod-" + name.lowercase().replace('_', '-')` and logs SEVERE "no colors for: …" when the
+     * entry is missing, leaving the token uncolored. This guards the whole class of the
+     * mod-method bug.
+     */
+    fun testEveryEmittedColoringAttributeIsRegistered() {
+        val registered = registeredColorNames()
+        val missing = KaHighlightColorMapper.emittedColoringAttributes
+            .map { "mod-" + it.name.lowercase().replace('_', '-') }
+            .filter { it !in registered }
+        assertTrue(
+            "FontAndColors.xml is missing color registrations for: $missing",
+            missing.isEmpty()
+        )
+    }
+
+    /** Reads all `<fontcolor name="…">` names declared in the editor's FontAndColors.xml. */
+    private fun registeredColorNames(): Set<String> {
+        val xml = KaHighlightColorMapperTest::class.java
+            .getResourceAsStream("/org/jetbrains/kotlin/FontAndColors.xml")
+            ?.bufferedReader()?.use { it.readText() }
+        assertNotNull("FontAndColors.xml must be on the classpath", xml)
+        return Regex("""<fontcolor\s+name="([^"]+)"""").findAll(xml!!)
+            .map { it.groupValues[1] }
+            .toSet()
+    }
 }

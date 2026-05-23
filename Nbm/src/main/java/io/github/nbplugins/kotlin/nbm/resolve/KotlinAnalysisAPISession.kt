@@ -442,15 +442,15 @@ class KotlinAnalysisAPISession private constructor(
         //
         // After the transplant, the K2 FIR cache still references the old PSI node identities.
         // Two caches must be invalidated for analyze {} to map FIR onto the new PSI nodes:
-        //   1. LLFirSessionCache (inside LLFirSessionInvalidationService)
+        //   1. LLFirSessionCache's source-session storage (holds the LLFirSession whose FIR was
+        //      built from the old PSI)
         //   2. KaFirSessionProvider's own Caffeine Cache<KaModule, KaFirSession>
         //
-        // In a real IDE, KaFirSessionProvider.clearCaches() is invoked by SessionInvalidationListener
-        // (registered as <projectListeners> on LLFirSessionInvalidationListener).  In standalone
-        // (MockProject) mode lazy listener instantiation throws "Cannot create listener", so we
-        // bypass the listener and clear the second cache directly via the public
-        // KaSessionProvider.clearCaches() API.  Each step is wrapped in its own runCatching so a
-        // syncPublisher failure in one step does not skip the next cache clear.
+        // In a real IDE both are cleared by SessionInvalidationListener (registered as
+        // <projectListeners> on LLFirSessionInvalidationListener).  In standalone (MockProject)
+        // mode lazy listener instantiation throws "Cannot create listener", so we clear both
+        // caches directly.  Each step is wrapped in its own runCatching so a failure in one step
+        // does not skip the next cache clear.
         val kaKtFile = getKtFileForPath(path) as? com.intellij.psi.impl.source.PsiFileImpl ?: return
         runCatching {
             val freshKtFile = org.jetbrains.kotlin.psi.KtPsiFactory(session.project).createFile(text)
@@ -463,19 +463,20 @@ class KotlinAnalysisAPISession private constructor(
             )
         }
 
-        // Step 1: LLFirSessionCache.  invalidateAll() clears the internal map BEFORE publishing
-        // LLFirSessionInvalidationListener.SESSION_INVALIDATION; the publish step throws because
-        // KaFirSessionProvider$SessionInvalidationListener is lazily registered and MockComponentManager
-        // cannot instantiate it, but the cache itself is already empty by then.
+        // Step 1: LLFirSessionCache source storage.  We clear the source-session storage directly
+        // rather than calling LLFirSessionInvalidationService.invalidateAll(), which publishes a
+        // SESSION_INVALIDATION event in a `finally` block.  In standalone mode that publish fails
+        // (MockComponentManager.createListener() throws for the lazily-registered listener) and
+        // logs a swallowed-but-noisy ERROR stack on every edit.  clear() removes and disposes all
+        // cached source sessions without publishing any event.
+        @OptIn(org.jetbrains.kotlin.analysis.low.level.api.fir.LLFirInternals::class)
         runCatching {
-            @OptIn(KaImplementationDetail::class)
-            org.jetbrains.kotlin.analysis.low.level.api.fir.sessions.LLFirSessionInvalidationService
+            org.jetbrains.kotlin.analysis.low.level.api.fir.sessions.LLFirSessionCache
                 .getInstance(session.project)
-                .invalidateAll(includeLibraryModules = false, diagnosticInformation = "updateFileContent")
+                .storage.sourceCache.clear("updateFileContent")
         }.onFailure { ex ->
-            // Expected in standalone mode: listener bus publish throws after the cache is cleared.
             KotlinLogger.INSTANCE.logWarning(
-                "KotlinAnalysisAPISession.updateFileContent: LLFirSessionInvalidationService threw (expected in standalone): $ex"
+                "KotlinAnalysisAPISession.updateFileContent: LLFirSessionCache clear failed for $path: $ex"
             )
         }
 

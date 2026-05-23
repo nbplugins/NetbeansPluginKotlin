@@ -268,4 +268,35 @@ class KotlinAnalysisAPISessionTest : KotlinTestCase("K2 Analysis API session", "
         )
         assertNotNull("Diagnostics collection must not be null", diagnostics.getOrNull())
     }
+
+    /**
+     * Verifies that repeated [KotlinAnalysisAPISession.updateFileContent] + [analyze] cycles keep
+     * succeeding. Each update clears the K2 FIR caches (LLFirSessionCache source storage +
+     * KaFirSessionProvider) so the session is rebuilt from the current PSI every time; a stale
+     * cache from a previous edit would resurface "No fir element was found".
+     */
+    @OptIn(KaExperimentalApi::class)
+    fun testUpdateFileContent_analyzeSucceedsAcrossRepeatedUpdates() {
+        val wrapper = KotlinAnalysisAPISession.getSession(project)
+        val ktFile = wrapper.session.modulesWithFiles.values
+            .flatten()
+            .filterIsInstance<KtFile>()
+            .firstOrNull { it.name == "checkTypeMismatch.kt" }
+        assertNotNull("checkTypeMismatch.kt must be in the K2 session's source module", ktFile)
+        val path = ktFile!!.virtualFile!!.path
+        val baseText = ktFile.text
+
+        repeat(3) { i ->
+            wrapper.updateFileContent(path, baseText + "\nval roundTrip$i = $i\n")
+            val result = runCatching {
+                analyze(ktFile) {
+                    ktFile.diagnostics(KaDiagnosticCheckerFilter.ONLY_COMMON_CHECKERS)
+                }
+            }
+            assertTrue(
+                "analyze {} must succeed on update cycle #$i; error: ${result.exceptionOrNull()}",
+                result.isSuccess
+            )
+        }
+    }
 }
