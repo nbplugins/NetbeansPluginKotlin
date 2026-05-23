@@ -30,11 +30,28 @@ class KotlinTokensFactory {
         return when (elementType) {
             in KtTokens.KEYWORDS, in KtTokens.SOFT_KEYWORDS, in KtTokens.MODIFIER_KEYWORDS -> TokenType.KEYWORD
             in KtTokens.STRINGS, KtTokens.OPEN_QUOTE, KtTokens.CLOSING_QUOTE -> TokenType.STRING
+            KtTokens.ESCAPE_SEQUENCE -> TokenType.STRING_ESCAPE
             KtTokens.IDENTIFIER -> TokenType.IDENTIFIER
             in KtTokens.WHITESPACES -> TokenType.WHITESPACE
             KtTokens.EOL_COMMENT -> TokenType.SINGLE_LINE_COMMENT
             in KtTokens.COMMENTS, in KDocTokens.KDOC_HIGHLIGHT_TOKENS -> TokenType.MULTI_LINE_COMMENT
             KDocTokens.TAG_NAME -> TokenType.KDOC_LINK
+            KtTokens.INTEGER_LITERAL, KtTokens.FLOAT_LITERAL, KtTokens.CHARACTER_LITERAL -> TokenType.NUMBER
+            KtTokens.LPAR, KtTokens.RPAR -> TokenType.PARENTHESIS
+            KtTokens.LBRACE, KtTokens.RBRACE -> TokenType.BRACES
+            KtTokens.LBRACKET, KtTokens.RBRACKET -> TokenType.BRACKETS
+            KtTokens.COMMA -> TokenType.COMMA
+            KtTokens.SEMICOLON -> TokenType.SEMICOLON
+            KtTokens.DOT, KtTokens.SAFE_ACCESS -> TokenType.DOT
+            KtTokens.ARROW -> TokenType.ARROW
+            KtTokens.PLUSPLUS, KtTokens.MINUSMINUS, KtTokens.MUL, KtTokens.PLUS, KtTokens.MINUS,
+            KtTokens.EXCL, KtTokens.DIV, KtTokens.PERC, KtTokens.LT, KtTokens.GT,
+            KtTokens.LTEQ, KtTokens.GTEQ, KtTokens.EQEQEQ, KtTokens.EXCLEQEQEQ,
+            KtTokens.EQEQ, KtTokens.EXCLEQ, KtTokens.ANDAND, KtTokens.OROR,
+            KtTokens.ELVIS, KtTokens.EQ, KtTokens.MULTEQ, KtTokens.DIVEQ,
+            KtTokens.PERCEQ, KtTokens.PLUSEQ, KtTokens.MINUSEQ, KtTokens.RANGE,
+            KtTokens.RANGE_UNTIL, KtTokens.COLON, KtTokens.COLONCOLON,
+            KtTokens.QUEST, KtTokens.EXCLEXCL -> TokenType.OPERATOR
             else -> TokenType.UNDEFINED
         }
     }

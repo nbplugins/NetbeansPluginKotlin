@@ -34,8 +34,13 @@ class HighlightingTest : KotlinTestCase("Highlighting test", "highlighting") {
         assertNotNull(tokens)
         
         val parsedTypes = tokens.map{ it.type }
-                .filter{ it != TokenType.EOF && it != TokenType.WHITESPACE 
-                        && it != TokenType.UNDEFINED && it != TokenType.IDENTIFIER }
+                .filter{ it != TokenType.EOF && it != TokenType.WHITESPACE
+                        && it != TokenType.UNDEFINED && it != TokenType.IDENTIFIER
+                        && it != TokenType.PARENTHESIS && it != TokenType.BRACES
+                        && it != TokenType.BRACKETS && it != TokenType.COMMA
+                        && it != TokenType.SEMICOLON && it != TokenType.DOT
+                        && it != TokenType.ARROW && it != TokenType.OPERATOR
+                        && it != TokenType.NUMBER && it != TokenType.STRING_ESCAPE }
         
         
         assertEquals(parsedTypes, types.asList())

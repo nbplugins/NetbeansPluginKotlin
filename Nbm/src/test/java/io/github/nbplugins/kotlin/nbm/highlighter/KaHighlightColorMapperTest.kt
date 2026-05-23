@@ -17,112 +17,101 @@
 package io.github.nbplugins.kotlin.nbm.highlighter
 
 import junit.framework.TestCase
-import org.netbeans.modules.csl.api.ColoringAttributes
 
 /**
  * Unit tests for [KaHighlightColorMapper].
  *
- * Tests the [KaHighlightColorMapper.toColoringAttributes] overload that accepts a
+ * Tests the [KaHighlightColorMapper.toFontColorName] overload that accepts a
  * [TextAttributesKey][com.intellij.openapi.editor.colors.TextAttributesKey] external name
  * string directly, avoiding the need to construct IntelliJ infrastructure objects.
  */
 class KaHighlightColorMapperTest : TestCase() {
 
-    /** A regular function call maps to METHOD. */
-    fun testRegularFunctionCallMapsToMethod() {
-        val result = KaHighlightColorMapper.toColoringAttributes("KOTLIN_FUNCTION_CALL")
-        assertEquals(setOf(ColoringAttributes.METHOD), result)
+    /** A regular function call maps to KOTLIN_FUNCTION_CALL. */
+    fun testRegularFunctionCallMapsToName() {
+        val result = KaHighlightColorMapper.toFontColorName("KOTLIN_FUNCTION_CALL")
+        assertEquals("KOTLIN_FUNCTION_CALL", result)
     }
 
-    /** A package-level function call maps to METHOD + STATIC. */
-    fun testPackageFunctionCallMapsToMethodAndStatic() {
-        val result = KaHighlightColorMapper.toColoringAttributes("KOTLIN_PACKAGE_FUNCTION_CALL")
-        assertEquals(setOf(ColoringAttributes.METHOD, ColoringAttributes.STATIC), result)
+    /** A package-level function call maps to KOTLIN_PACKAGE_FUNCTION_CALL. */
+    fun testPackageFunctionCallMapsToName() {
+        val result = KaHighlightColorMapper.toFontColorName("KOTLIN_PACKAGE_FUNCTION_CALL")
+        assertEquals("KOTLIN_PACKAGE_FUNCTION_CALL", result)
     }
 
-    /** An extension function call maps to METHOD + STATIC. */
-    fun testExtensionFunctionCallMapsToMethodAndStatic() {
-        val result = KaHighlightColorMapper.toColoringAttributes("KOTLIN_EXTENSION_FUNCTION_CALL")
-        assertEquals(setOf(ColoringAttributes.METHOD, ColoringAttributes.STATIC), result)
+    /** A suspend function call maps to KOTLIN_SUSPEND_FUNCTION_CALL. */
+    fun testSuspendFunctionCallMapsToName() {
+        val result = KaHighlightColorMapper.toFontColorName("KOTLIN_SUSPEND_FUNCTION_CALL")
+        assertEquals("KOTLIN_SUSPEND_FUNCTION_CALL", result)
     }
 
-    /** A suspend function call maps to METHOD + CUSTOM1. */
-    fun testSuspendFunctionCallMapsToMethodAndCustom1() {
-        val result = KaHighlightColorMapper.toColoringAttributes("KOTLIN_SUSPEND_FUNCTION_CALL")
-        assertEquals(setOf(ColoringAttributes.METHOD, ColoringAttributes.CUSTOM1), result)
+    /** A class reference maps to KOTLIN_CLASS. */
+    fun testClassMapsToName() {
+        val result = KaHighlightColorMapper.toFontColorName("KOTLIN_CLASS")
+        assertEquals("KOTLIN_CLASS", result)
     }
 
-    /** A class reference maps to CLASS. */
-    fun testClassMapsToClass() {
-        val result = KaHighlightColorMapper.toColoringAttributes("KOTLIN_CLASS")
-        assertEquals(setOf(ColoringAttributes.CLASS), result)
+    /** A trait (interface) reference maps to KOTLIN_TRAIT. */
+    fun testTraitMapsToName() {
+        val result = KaHighlightColorMapper.toFontColorName("KOTLIN_TRAIT")
+        assertEquals("KOTLIN_TRAIT", result)
     }
 
-    /** A trait (interface) reference maps to INTERFACE. */
-    fun testTraitMapsToInterface() {
-        val result = KaHighlightColorMapper.toColoringAttributes("KOTLIN_TRAIT")
-        assertEquals(setOf(ColoringAttributes.INTERFACE), result)
+    /** An instance property maps to KOTLIN_INSTANCE_PROPERTY. */
+    fun testInstancePropertyMapsToName() {
+        val result = KaHighlightColorMapper.toFontColorName("KOTLIN_INSTANCE_PROPERTY")
+        assertEquals("KOTLIN_INSTANCE_PROPERTY", result)
     }
 
-    /** An instance property maps to FIELD + ENUM (bold); MUTABLE_VARIABLE overlay adds CUSTOM2 for var. */
-    fun testInstancePropertyMapsToFieldAndEnum() {
-        val result = KaHighlightColorMapper.toColoringAttributes("KOTLIN_INSTANCE_PROPERTY")
-        assertEquals(setOf(ColoringAttributes.FIELD, ColoringAttributes.ENUM), result)
+    /** A function declaration maps to KOTLIN_FUNCTION_DECLARATION. */
+    fun testFunctionDeclarationMapsToName() {
+        val result = KaHighlightColorMapper.toFontColorName("KOTLIN_FUNCTION_DECLARATION")
+        assertEquals("KOTLIN_FUNCTION_DECLARATION", result)
     }
 
-    /** A function declaration maps to DECLARATION. */
-    fun testFunctionDeclarationMapsToDeclaration() {
-        val result = KaHighlightColorMapper.toColoringAttributes("KOTLIN_FUNCTION_DECLARATION")
-        assertEquals(setOf(ColoringAttributes.DECLARATION), result)
-    }
-
-    /** The mutable-variable overlay maps to CUSTOM2 only (merged on top of base property color). */
-    fun testMutableVariableOverlayMapsToCustom2() {
-        val result = KaHighlightColorMapper.toColoringAttributes("KOTLIN_MUTABLE_VARIABLE")
-        assertEquals(setOf(ColoringAttributes.CUSTOM2), result)
+    /** The mutable-variable overlay maps to KOTLIN_MUTABLE_VARIABLE. */
+    fun testMutableVariableMapsToName() {
+        val result = KaHighlightColorMapper.toFontColorName("KOTLIN_MUTABLE_VARIABLE")
+        assertEquals("KOTLIN_MUTABLE_VARIABLE", result)
     }
 
     /** An unknown key returns null without throwing. */
     fun testUnknownKeyReturnsNull() {
-        val result = KaHighlightColorMapper.toColoringAttributes("KOTLIN_UNKNOWN_FUTURE_TOKEN")
+        val result = KaHighlightColorMapper.toFontColorName("KOTLIN_UNKNOWN_FUTURE_TOKEN")
         assertNull(result)
     }
 
     /**
-     * Regression for the "no colors for: mod-method" CSL error: `FontAndColors.xml` must register
-     * a `mod-method` color, since function calls map to [ColoringAttributes.METHOD].
+     * Every color category name the mapper can emit must have a matching `<fontcolor name="...">` entry
+     * in `FontAndColors.xml`. Missing entries would cause categories to be silently uncolored.
      */
-    fun testFontColorsRegistersModMethod() {
-        assertTrue(
-            "FontAndColors.xml must register a 'mod-method' color for function-call highlighting",
-            registeredColorNames().contains("mod-method")
-        )
-    }
-
-    /**
-     * Every [ColoringAttributes] the mapper can emit must have a matching `mod-<name>` entry in
-     * `FontAndColors.xml`. NetBeans CSL derives the coloring token name as
-     * `"mod-" + name.lowercase().replace('_', '-')` and logs SEVERE "no colors for: …" when the
-     * entry is missing, leaving the token uncolored. This guards the whole class of the
-     * mod-method bug.
-     */
-    fun testEveryEmittedColoringAttributeIsRegistered() {
-        val registered = registeredColorNames()
-        val missing = KaHighlightColorMapper.emittedColoringAttributes
-            .map { "mod-" + it.name.lowercase().replace('_', '-') }
-            .filter { it !in registered }
+    fun testEveryEmittedColorNameIsRegisteredInLightTheme() {
+        val registered = registeredColorNames("/io/github/nbplugins/kotlin/nbm/FontAndColors.xml")
+        val missing = KaHighlightColorMapper.emittedColorNames.filter { it !in registered }
         assertTrue(
             "FontAndColors.xml is missing color registrations for: $missing",
             missing.isEmpty()
         )
     }
 
-    /** Reads all `<fontcolor name="…">` names declared in the editor's FontAndColors.xml. */
-    private fun registeredColorNames(): Set<String> {
+    /**
+     * Every color category name must also be registered in the dark theme file.
+     */
+    fun testEveryEmittedColorNameIsRegisteredInDarkTheme() {
+        val registered = registeredColorNames("/io/github/nbplugins/kotlin/nbm/FontAndColorsDark.xml")
+        val missing = KaHighlightColorMapper.emittedColorNames.filter { it !in registered }
+        assertTrue(
+            "FontAndColorsDark.xml is missing color registrations for: $missing",
+            missing.isEmpty()
+        )
+    }
+
+    /** Reads all `<fontcolor name="…">` names declared in the given classpath resource. */
+    private fun registeredColorNames(resourcePath: String): Set<String> {
         val xml = KaHighlightColorMapperTest::class.java
-            .getResourceAsStream("/org/jetbrains/kotlin/FontAndColors.xml")
+            .getResourceAsStream(resourcePath)
             ?.bufferedReader()?.use { it.readText() }
-        assertNotNull("FontAndColors.xml must be on the classpath", xml)
+        assertNotNull("$resourcePath must be on the classpath", xml)
         return Regex("""<fontcolor\s+name="([^"]+)"""").findAll(xml!!)
             .map { it.groupValues[1] }
             .toSet()

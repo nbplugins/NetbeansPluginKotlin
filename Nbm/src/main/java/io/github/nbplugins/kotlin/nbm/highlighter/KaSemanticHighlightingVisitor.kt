@@ -16,17 +16,14 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.highlighter
 
-import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.components.KaDiagnosticCheckerFilter
-import org.jetbrains.kotlin.highlighter.semanticanalyzer.KotlinHighlightingAttributes
 import org.jetbrains.kotlin.idea.highlighting.highlighters.createBeforeResolveHighlightingAnalyzers
 import org.jetbrains.kotlin.idea.highlighting.highlighters.createKotlinHighlightingAnalyzers
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtVisitorVoid
-import org.netbeans.modules.csl.api.ColoringAttributes
 import org.netbeans.modules.csl.api.OffsetRange
 
 /**
@@ -35,7 +32,7 @@ import org.netbeans.modules.csl.api.OffsetRange
  * Delegates to IDEA's before-resolve and K2-resolve semantic highlighters, using a
  * [KaHighlightCapturingHolder] to intercept produced
  * [com.intellij.codeInsight.daemon.impl.HighlightInfo] objects. [KaHighlightColorMapper]
- * then converts them to [ColoringAttributes] sets understood by the NetBeans CSL API.
+ * then converts them to color category name strings registered in `FontAndColors.xml`.
  *
  * Three passes are made:
  * 1. **Before-resolve** (no K2 analysis): declaration names (class, function, property, parameter,
@@ -47,8 +44,9 @@ import org.netbeans.modules.csl.api.OffsetRange
  *    [IllegalArgumentException] for some FIR elements (K2 bug: `FirIncompatibleClassExpressionChecker`).
  *
  * When multiple [com.intellij.codeInsight.daemon.impl.HighlightInfo] objects cover the same
- * source range (e.g. base property color + mutable-variable overlay), their [ColoringAttributes]
- * sets are **merged** so that both contributions are visible.
+ * source range (e.g. base property color + mutable-variable overlay), their color names are
+ * **accumulated** in a list so that [KotlinSemanticHighlightsLayerFactory] can merge them
+ * using [org.netbeans.api.editor.settings.FontColorSettings.getTokenFontColors].
  *
  * This class belongs to the **model/service** layer and must not reference NetBeans UI APIs.
  *
@@ -60,10 +58,11 @@ class KaSemanticHighlightingVisitor(private val kaKtFile: KtFile) {
     /**
      * Runs all semantic highlight passes on [kaKtFile] and returns the full set of highlight ranges.
      *
-     * @return map from [OffsetRange] to the merged [ColoringAttributes] set for that range
+     * @return map from [OffsetRange] to the ordered list of color category names for that range;
+     *   names correspond to `<fontcolor name="...">` entries in `FontAndColors.xml`
      */
-    fun computeHighlightingRanges(): Map<OffsetRange, Set<ColoringAttributes>> {
-        val positions = hashMapOf<OffsetRange, Set<ColoringAttributes>>()
+    fun computeHighlightingRanges(): Map<OffsetRange, List<String>> {
+        val positions = hashMapOf<OffsetRange, MutableList<String>>()
         val holder = KaHighlightCapturingHolder(kaKtFile)
 
         runBeforeResolveHighlighters(holder)
@@ -73,9 +72,9 @@ class KaSemanticHighlightingVisitor(private val kaKtFile: KtFile) {
         }
 
         holder.capturedInfos.forEach { info ->
-            KaHighlightColorMapper.toColoringAttributes(info)?.let { attrs ->
+            KaHighlightColorMapper.toFontColorName(info)?.let { name ->
                 val range = OffsetRange(info.startOffset, info.endOffset)
-                positions.merge(range, attrs) { existing, incoming -> existing + incoming }
+                positions.getOrPut(range) { mutableListOf() }.add(name)
             }
         }
 
@@ -124,19 +123,19 @@ class KaSemanticHighlightingVisitor(private val kaKtFile: KtFile) {
     }
 
     /**
-     * Collects K2 diagnostics for [kaKtFile] and merges deprecated-element highlights into [positions].
+     * Collects K2 diagnostics for [kaKtFile] and appends "KOTLIN_DEPRECATED" to each deprecated
+     * element's range list.
      *
-     * @param positions accumulator for highlight ranges; existing entries are merged, not overwritten
+     * @param positions accumulator for highlight ranges; the color name is appended to existing lists
      */
     context(KaSession)
-    private fun highlightDeprecated(positions: HashMap<OffsetRange, Set<ColoringAttributes>>) {
+    private fun highlightDeprecated(positions: HashMap<OffsetRange, MutableList<String>>) {
         kaKtFile.collectDiagnostics(KaDiagnosticCheckerFilter.ONLY_COMMON_CHECKERS)
             .filter { it.factoryName.contains("DEPRECATION", ignoreCase = true) }
             .forEach { diag ->
                 diag.textRanges.forEach { range ->
                     val offsetRange = OffsetRange(range.startOffset, range.endOffset)
-                    val deprecatedAttrs = KotlinHighlightingAttributes.DEPRECATED.styleKey
-                    positions.merge(offsetRange, deprecatedAttrs) { existing, incoming -> existing + incoming }
+                    positions.getOrPut(offsetRange) { mutableListOf() }.add("KOTLIN_DEPRECATED")
                 }
             }
     }
