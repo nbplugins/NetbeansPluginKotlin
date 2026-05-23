@@ -166,7 +166,46 @@ class KotlinAnalysisAPISession private constructor(
                     })
                 }
             }
+            registerHighlightInfoFilterEP()
             appEnvInitialized = true
+        }
+
+        /**
+         * Registers extension points required by IDEA semantic highlighting code in the
+         * standalone application container.
+         *
+         * The IDEA highlighters query several EPs at runtime. In standalone mode these EPs are
+         * never registered, causing {@link IllegalArgumentException}. Registering them as empty
+         * points makes the EP lookups return empty lists so all highlights are accepted and no
+         * extensions are invoked.
+         *
+         * EPs registered:
+         * - {@code com.intellij.daemon.highlightInfoFilter}: queried by {@code HighlightInfoB.isAcceptedByFilters()}
+         *   and {@code AnnotationSessionImpl.create()} at highlight-creation time.
+         * - {@code org.jetbrains.kotlin.callHighlighterExtension}: queried by
+         *   {@code FunctionCallHighlighter.getHighlightInfoTypeForCallFromExtension()}.
+         */
+        private fun registerHighlightInfoFilterEP() {
+            val app = com.intellij.openapi.application.ApplicationManager.getApplication()
+            val area = app.extensionArea
+            registerEpIfAbsent(area, "com.intellij.daemon.highlightInfoFilter",
+                "com.intellij.codeInsight.daemon.impl.HighlightInfoFilter",
+                com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE)
+            registerEpIfAbsent(area, "org.jetbrains.kotlin.callHighlighterExtension",
+                "org.jetbrains.kotlin.idea.highlighting.KotlinCallHighlighterExtension",
+                com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE)
+        }
+
+        private fun registerEpIfAbsent(
+            area: com.intellij.openapi.extensions.ExtensionsArea,
+            name: String,
+            beanClassName: String,
+            kind: com.intellij.openapi.extensions.ExtensionPoint.Kind,
+        ) {
+            if (!area.hasExtensionPoint(name)) {
+                area.registerExtensionPoint(name, beanClassName, kind)
+                KotlinLogger.INSTANCE.logInfo("Registered extension point: $name")
+            }
         }
 
         /**

@@ -32,8 +32,13 @@ typealias KaAttr = KotlinHighlightingAttributes
  *
  * Each test opens one of the existing `.kt` files from the `semantic` test-resource directory,
  * obtains the corresponding K2 [KtFile] from [KotlinAnalysisAPISession], runs the visitor, and
- * verifies that the expected [KotlinHighlightingAttributes] are produced at the caret positions
- * marked in the companion `.caret` file.
+ * verifies that the expected [ColoringAttributes] are produced at the caret positions marked in
+ * the companion `.caret` file.
+ *
+ * Assertions use **subset containment**: the actual [ColoringAttributes] set for a given range
+ * must contain *at least* the expected attributes. This tolerates additional attributes produced
+ * by orthogonal highlight passes (e.g. a function-call range that is also deprecated receives
+ * both `METHOD + STATIC` and `DEPRECATED`; a test checking only `DEPRECATED` still passes).
  *
  * Tests skip gracefully (with a log message) when the K2 session has no binary dependencies,
  * because symbol resolution is unreliable without the Kotlin stdlib on the classpath.
@@ -90,7 +95,11 @@ class KaSemanticHighlightingVisitorTest : KotlinTestCase("KaSemanticHighlighting
 
     /**
      * Runs [KaSemanticHighlightingVisitor] for [fileName] and asserts that the returned
-     * highlights contain all entries in the expected map.
+     * highlights contain at least the expected attribute sets at the expected ranges.
+     *
+     * The assertion is **subset-based**: `highlights[range]` must contain all attributes
+     * from the expected set, but may also contain additional attributes from other passes
+     * (e.g. a deprecated function call accumulates both function-call and deprecated colors).
      *
      * @param fileName name of the test file (without extension)
      * @param attrs    expected [KotlinHighlightingAttributes] in caret order
@@ -99,9 +108,12 @@ class KaSemanticHighlightingVisitorTest : KotlinTestCase("KaSemanticHighlighting
         val kaKtFile = getKaKtFile(fileName) ?: return
         val highlights = KaSemanticHighlightingVisitor(kaKtFile).computeHighlightingRanges()
         val expected = attrs(fileName, attrs.toList())
+        val missing = expected.entries.filter { (range, expectedAttrs) ->
+            highlights[range]?.containsAll(expectedAttrs) != true
+        }
         assertTrue(
-            "Missing highlights for $fileName. Expected: $expected, got: $highlights",
-            highlights.entries.containsAll(expected.entries),
+            "Missing highlights for $fileName.\nExpected (subset): $expected\nGot: $highlights\nMissing: $missing",
+            missing.isEmpty(),
         )
     }
 
@@ -112,10 +124,10 @@ class KaSemanticHighlightingVisitorTest : KotlinTestCase("KaSemanticHighlighting
         assertTrue("Empty file should produce no highlights", highlights.isEmpty())
     }
 
-    /** A single class declaration should produce one CLASS highlight. */
+    /** A single class declaration should produce at least a CLASS highlight at the class name. */
     fun testSimpleClass() = doTest("simpleClass", KaAttr.CLASS)
 
-    /** A class with a property should produce CLASS and FINAL_FIELD highlights. */
+    /** A class with a val property should produce CLASS and FINAL_FIELD highlights. */
     fun testClass() = doTest("class", KaAttr.CLASS, KaAttr.FINAL_FIELD)
 
     /** A function with local variables should produce FUNCTION_DECLARATION, LOCAL_FINAL_VARIABLE, LOCAL_VARIABLE. */
@@ -126,17 +138,43 @@ class KaSemanticHighlightingVisitorTest : KotlinTestCase("KaSemanticHighlighting
         KaAttr.LOCAL_VARIABLE,
     )
 
-    /** An annotation usage should be highlighted as ANNOTATION. */
+    /** An annotation usage should contain at least the ANNOTATION color. */
     fun testAnnotation() = doTest("annotation", KaAttr.ANNOTATION)
 
-    /** A deprecated symbol usage should be highlighted as DEPRECATED. */
+    /**
+     * A deprecated symbol usage should contain at least the DEPRECATED color.
+     *
+     * The range may also carry function-call colors (METHOD + STATIC) since the deprecated
+     * call site is highlighted by both [KaHighlightColorMapper] and the deprecation diagnostic.
+     */
     fun testDeprecated() = doTest("deprecated", KaAttr.DEPRECATED)
 
     /**
-     * A smart-cast expression is highlighted as LOCAL_FINAL_VARIABLE.
+     * A smart-cast expression should contain at least LOCAL_FINAL_VARIABLE color.
      *
      * Smart-cast type rendering is not yet implemented in the K2 path; the test
-     * only verifies the base variable attribute, not the SMART_CAST overlay.
+     * only verifies the base variable attribute.
      */
     fun testSmartCast() = doTest("smartCast", KaAttr.LOCAL_FINAL_VARIABLE)
+
+    /**
+     * A top-level function call site is highlighted with at least METHOD + STATIC.
+     * An extension function call site is highlighted with at least METHOD + STATIC.
+     */
+    fun testFunctionCallHighlighting() {
+        val kaKtFile = getKaKtFile("functionCallHighlighting") ?: return
+        val highlights = KaSemanticHighlightingVisitor(kaKtFile).computeHighlightingRanges()
+        val doc = getDocumentForFileObject(dir, "functionCallHighlighting.caret")
+        val ranges = doc.carets().toOffsetRanges()
+        assertTrue("Expected at least 2 call-site caret ranges", ranges.size >= 2)
+        val methodAndStatic = setOf(ColoringAttributes.METHOD, ColoringAttributes.STATIC)
+        assertTrue(
+            "topLevelFun() call site should contain METHOD + STATIC (package function call)",
+            highlights[ranges[0]]?.containsAll(methodAndStatic) == true,
+        )
+        assertTrue(
+            "extensionFun() call site should contain METHOD + STATIC (extension function call)",
+            highlights[ranges[1]]?.containsAll(methodAndStatic) == true,
+        )
+    }
 }
