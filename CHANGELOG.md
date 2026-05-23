@@ -1,3 +1,5 @@
+- Fixed K2 semantic highlighting drifting out of place while typing unsaved changes: colors below the edit point now stay correctly positioned as you type.
+
 # 0.8.15 (2026-05-22)
 
 # 0.8.6 (2026-05-20)

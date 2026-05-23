@@ -92,4 +92,14 @@ object KaHighlightColorMapper {
      */
     internal fun toColoringAttributes(externalName: String): Set<ColoringAttributes>? =
         mappings[externalName]
+
+    /**
+     * Every [ColoringAttributes] this mapper can emit, across all mapped token types.
+     *
+     * Used by tests to assert that the editor's `FontAndColors.xml` registers a color for each
+     * emitted attribute (NetBeans CSL raises "no colors for: mod-…" otherwise, leaving the token
+     * uncolored).
+     */
+    internal val emittedColoringAttributes: Set<ColoringAttributes>
+        get() = mappings.values.flatten().toSet()
 }
