@@ -16,9 +16,12 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.highlighter
 
+import javax.swing.event.DocumentEvent
+import javax.swing.event.DocumentListener
 import javax.swing.text.AttributeSet
 import javax.swing.text.Document
 import javax.swing.text.SimpleAttributeSet
+import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.api.editor.mimelookup.MimeLookup
 import org.netbeans.api.editor.settings.FontColorSettings
 import org.netbeans.modules.csl.api.OffsetRange
@@ -56,6 +59,9 @@ class KotlinSemanticHighlightsLayerFactory : HighlightsLayerFactory {
         const val HIGHLIGHTS_BAG_KEY = "io.github.nbplugins.kotlin.nbm.highlights.bag"
 
         private const val LAYER_ID = "io.github.nbplugins.kotlin.nbm.highlighter.semantic"
+
+        /** Content signature of the Fonts & Colors preview file (`preview.kt`). */
+        private const val PREVIEW_SIGNATURE = "/* Block comment */\npackage hello"
 
         /**
          * Computes highlight [AttributeSet]s from [highlights] and applies them to the
@@ -112,7 +118,18 @@ class KotlinSemanticHighlightsLayerFactory : HighlightsLayerFactory {
     }
 
     override fun createLayers(context: HighlightsLayerFactory.Context): Array<HighlightsLayer> {
-        val bag = getOrCreateBag(context.document)
+        val doc = context.document
+        val bag = getOrCreateBag(doc)
+        KotlinLogger.INSTANCE.logInfo(
+            "KotlinSemanticHighlightsLayerFactory.createLayers: doc=${doc.javaClass.simpleName}, length=${doc.length}"
+        )
+        // The Fonts & Colors settings preview pane is a text/x-kotlin editor but is not parsed
+        // by CSL (no project, no SemanticAnalyzer run), so its bag would stay empty. Populate it
+        // here from the pre-computed snapshot instead.
+        if (isPreviewDocument(doc)) {
+            KotlinLogger.INSTANCE.logInfo("KotlinSemanticHighlightsLayerFactory: detected preview document")
+            schedulePreviewHighlights(doc)
+        }
         return arrayOf(
             HighlightsLayer.create(
                 LAYER_ID,
@@ -121,5 +138,54 @@ class KotlinSemanticHighlightsLayerFactory : HighlightsLayerFactory {
                 bag
             )
         )
+    }
+
+    /**
+     * `true` when [doc] is the Options dialog Fonts & Colors preview document.
+     *
+     * The preview document has no [FileObject] (no `StreamDescriptionProperty`), so we detect it
+     * by content: if the first line matches the known preview file signature, it is the preview.
+     */
+    private fun isPreviewDocument(doc: Document): Boolean {
+        val fo = ProjectUtils.getFileObjectForDocument(doc)
+        if (fo != null) {
+            val isPreview = fo.path.contains("PreviewExamples")
+            KotlinLogger.INSTANCE.logInfo("isPreviewDocument: path=${fo.path}, isPreview=$isPreview")
+            return isPreview
+        }
+        // Preview documents have no FileObject — detect by content signature.
+        val isPreview = doc.length > 0 &&
+            runCatching {
+                doc.getText(0, doc.length.coerceAtMost(PREVIEW_SIGNATURE.length)) == PREVIEW_SIGNATURE
+            }.getOrDefault(false)
+        KotlinLogger.INSTANCE.logInfo("isPreviewDocument: FileObject is null, signatureMatch=$isPreview")
+        return isPreview
+    }
+
+    /**
+     * Applies the pre-computed preview highlights to [doc], deferring until the document has
+     * content if it is still empty when the layer is created (NetBeans may create layers before
+     * loading the preview text).
+     */
+    private fun schedulePreviewHighlights(doc: Document) {
+        val highlights = PreviewSemanticHighlightsLoader.load()
+        KotlinLogger.INSTANCE.logInfo(
+            "schedulePreviewHighlights: loaded ${highlights.size} ranges, doc.length=${doc.length}"
+        )
+        if (doc.length > 0) {
+            applyHighlights(doc, highlights)
+            return
+        }
+        doc.addDocumentListener(object : DocumentListener {
+            override fun insertUpdate(e: DocumentEvent) {
+                doc.removeDocumentListener(this)
+                KotlinLogger.INSTANCE.logInfo(
+                    "schedulePreviewHighlights: document inserted, length=${doc.length}, applying highlights"
+                )
+                applyHighlights(doc, highlights)
+            }
+            override fun removeUpdate(e: DocumentEvent) {}
+            override fun changedUpdate(e: DocumentEvent) {}
+        })
     }
 }
