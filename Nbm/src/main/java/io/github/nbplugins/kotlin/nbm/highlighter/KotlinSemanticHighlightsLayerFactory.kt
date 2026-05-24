@@ -21,6 +21,7 @@ import javax.swing.event.DocumentListener
 import javax.swing.text.AttributeSet
 import javax.swing.text.Document
 import javax.swing.text.SimpleAttributeSet
+import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.api.editor.mimelookup.MimeLookup
 import org.netbeans.api.editor.settings.FontColorSettings

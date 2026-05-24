@@ -19,8 +19,7 @@ package io.github.nbplugins.kotlin.nbm.highlighter
 import junit.framework.TestCase
 
 /**
- * Verifies that `FontAndColors.xml` (light) and `FontAndColorsDark.xml` (dark) both define
- * the complete set of expected Kotlin color categories.
+ * Verifies that all theme color files define the complete set of expected Kotlin color categories.
  *
  * Guards against accidental omissions when adding or renaming categories — a missing entry
  * causes the category to silently receive no color at runtime.
@@ -63,30 +62,41 @@ class KotlinFontColorNamesTest : TestCase() {
         "mark-occurrences"
     )
 
-    /** Light theme file contains all expected categories. */
+    private val light = "/io/github/nbplugins/kotlin/nbm/highlighter/colors/FlatLafLight.xml"
+    private val dark = "/io/github/nbplugins/kotlin/nbm/highlighter/colors/FlatLafDark.xml"
+    private val nb55 = "/io/github/nbplugins/kotlin/nbm/highlighter/colors/NetBeans55.xml"
+
     fun testLightThemeHasAllExpectedNames() {
-        val registered = parseNames("/io/github/nbplugins/kotlin/nbm/FontAndColors.xml")
+        val registered = parseNames(light)
         val missing = expectedNames - registered
-        assertTrue("FontAndColors.xml is missing: $missing", missing.isEmpty())
+        assertTrue("FlatLafLight.xml is missing: $missing", missing.isEmpty())
     }
 
-    /** Dark theme file contains all expected categories. */
     fun testDarkThemeHasAllExpectedNames() {
-        val registered = parseNames("/io/github/nbplugins/kotlin/nbm/FontAndColorsDark.xml")
+        val registered = parseNames(dark)
         val missing = expectedNames - registered
-        assertTrue("FontAndColorsDark.xml is missing: $missing", missing.isEmpty())
+        assertTrue("FlatLafDark.xml is missing: $missing", missing.isEmpty())
     }
 
-    /** Both theme files define exactly the same set of category names. */
-    fun testLightAndDarkThemeHaveSameNames() {
-        val light = parseNames("/io/github/nbplugins/kotlin/nbm/FontAndColors.xml")
-        val dark = parseNames("/io/github/nbplugins/kotlin/nbm/FontAndColorsDark.xml")
-        val onlyInLight = light - dark
-        val onlyInDark = dark - light
-        assertTrue(
-            "Name mismatch between light and dark themes. Only in light: $onlyInLight. Only in dark: $onlyInDark",
-            onlyInLight.isEmpty() && onlyInDark.isEmpty()
-        )
+    fun testNB55ThemeHasAllExpectedNames() {
+        val registered = parseNames(nb55)
+        val missing = expectedNames - registered
+        assertTrue("NetBeans55.xml is missing: $missing", missing.isEmpty())
+    }
+
+    /** All theme files define exactly the same set of category names. */
+    fun testAllThemesHaveSameNames() {
+        val lightNames = parseNames(light)
+        val darkNames = parseNames(dark)
+        val nb55Names = parseNames(nb55)
+        for ((a, aName) in listOf(darkNames to "FlatLafDark", nb55Names to "NetBeans55")) {
+            val onlyInLight = lightNames - a
+            val onlyInOther = a - lightNames
+            assertTrue(
+                "Name mismatch between FlatLafLight and $aName. Only in light: $onlyInLight. Only in $aName: $onlyInOther",
+                onlyInLight.isEmpty() && onlyInOther.isEmpty()
+            )
+        }
     }
 
     /**
@@ -97,7 +107,7 @@ class KotlinFontColorNamesTest : TestCase() {
      */
     fun testEveryCategoryHasDisplayName() {
         val displayNames = parseBundleKeys()
-        val categories = parseNames("/io/github/nbplugins/kotlin/nbm/FontAndColors.xml") - "mark-occurrences"
+        val categories = parseNames(light) - "mark-occurrences"
         val missing = categories - displayNames
         assertTrue("Bundle.properties is missing display names for: $missing", missing.isEmpty())
     }

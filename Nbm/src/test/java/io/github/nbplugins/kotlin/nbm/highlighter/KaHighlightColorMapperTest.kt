@@ -86,7 +86,7 @@ class KaHighlightColorMapperTest : TestCase() {
      * in `FontAndColors.xml`. Missing entries would cause categories to be silently uncolored.
      */
     fun testEveryEmittedColorNameIsRegisteredInLightTheme() {
-        val registered = registeredColorNames("/io/github/nbplugins/kotlin/nbm/FontAndColors.xml")
+        val registered = registeredColorNames("/io/github/nbplugins/kotlin/nbm/highlighter/colors/FlatLafLight.xml")
         val missing = KaHighlightColorMapper.emittedColorNames.filter { it !in registered }
         assertTrue(
             "FontAndColors.xml is missing color registrations for: $missing",
@@ -98,7 +98,7 @@ class KaHighlightColorMapperTest : TestCase() {
      * Every color category name must also be registered in the dark theme file.
      */
     fun testEveryEmittedColorNameIsRegisteredInDarkTheme() {
-        val registered = registeredColorNames("/io/github/nbplugins/kotlin/nbm/FontAndColorsDark.xml")
+        val registered = registeredColorNames("/io/github/nbplugins/kotlin/nbm/highlighter/colors/FlatLafDark.xml")
         val missing = KaHighlightColorMapper.emittedColorNames.filter { it !in registered }
         assertTrue(
             "FontAndColorsDark.xml is missing color registrations for: $missing",

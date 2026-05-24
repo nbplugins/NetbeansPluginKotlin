@@ -31,7 +31,7 @@ class PreviewSemanticHighlightsLoaderTest : NbTestCase("PreviewSemanticHighlight
     /** Reads all `<fontcolor name="...">` attribute values from `FontAndColors.xml`. */
     private fun loadKnownColorNames(): Set<String> {
         val stream = PreviewSemanticHighlightsLoaderTest::class.java
-            .getResourceAsStream("/io/github/nbplugins/kotlin/nbm/FontAndColors.xml")
+            .getResourceAsStream("/io/github/nbplugins/kotlin/nbm/highlighter/colors/FlatLafLight.xml")
             ?: return emptySet()
         val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(stream)
         val nodes = doc.getElementsByTagName("fontcolor")

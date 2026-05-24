@@ -19,15 +19,16 @@ package io.github.nbplugins.kotlin.nbm.highlighter
 import junit.framework.TestCase
 
 /**
- * Verifies the actual `foreColor` / `bgColor` values declared in `FontAndColors.xml` (light)
- * and `FontAndColorsDark.xml` (dark) match the colors resolved from IntelliJ IDEA's color schemes:
+ * Verifies the actual `foreColor` / `bgColor` values declared in the theme color files match
+ * the colors resolved from IntelliJ IDEA's color schemes:
  *
- * - **Light** = IntelliJ "Light" scheme (`themes/Light.xml`, parent `Default`) + Kotlin fallback
+ * - **FlatLafLight** = IntelliJ "Light" scheme (`themes/Light.xml`, parent `Default`) + Kotlin fallback
  *   chain in `KotlinHighlightingColors.java` + explicit colors in `colorScheme/Default_Kotlin.xml`.
- * - **Dark** = IntelliJ "Darcula" scheme + `colorScheme/Darcula_Kotlin.xml`.
+ * - **FlatLafDark** = IntelliJ "Darcula" scheme + `colorScheme/Darcula_Kotlin.xml`.
+ * - **NetBeans55** = IntelliJ "Classic Light" (`Default`) scheme + `colorScheme/Default_Kotlin.xml`.
  *
  * Guards against silent drift of the resolved hex values (e.g. accidentally reverting to the
- * Classic "Default" scheme, where keyword was `000080` instead of IntelliJ Light's `0033B3`).
+ * Classic "Default" scheme for FlatLafLight, where keyword was `000080` instead of `0033B3`).
  */
 class KotlinFontColorValuesTest : TestCase() {
 
@@ -76,6 +77,27 @@ class KotlinFontColorValuesTest : TestCase() {
         "KOTLIN_COROUTINE_DEBUGGER_VALUE" to "FF8C8B",
     )
 
+    /** Expected foreground colors for the NetBeans 5.5 (Classic Light / Default) theme. */
+    private val expectedNB55Fore = mapOf(
+        "KEYWORD" to "000080",
+        "KOTLIN_NUMBER" to "0000FF",
+        "STRING" to "008000",
+        "KOTLIN_STRING_ESCAPE" to "000080",
+        "SINGLE_LINE_COMMENT" to "808080",
+        "MULTI_LINE_COMMENT" to "808080",
+        "KOTLIN_DOC_COMMENT" to "808080",
+        "KDOC_LINK" to "3D3D3D",
+        "ANNOTATION" to "808000",
+        "KOTLIN_ANNOTATION" to "808000",
+        "KOTLIN_INSTANCE_PROPERTY" to "660E7A",
+        "KOTLIN_PACKAGE_PROPERTY" to "660E7A",
+        "KOTLIN_EXTENSION_PROPERTY" to "660E7A",
+        "KOTLIN_ENUM_ENTRY" to "660E7A",
+        "KOTLIN_LABEL" to "4A86E8",
+        "KOTLIN_NAMED_ARGUMENT" to "4A86E8",
+        "KOTLIN_COROUTINE_DEBUGGER_VALUE" to "840000",
+    )
+
     /** Expected background colors (shared light theme — smart casts, backing field). */
     private val expectedLightBg = mapOf(
         "KOTLIN_SMART_CAST_VALUE" to "DBFFDB",
@@ -85,41 +107,65 @@ class KotlinFontColorValuesTest : TestCase() {
         "KOTLIN_INVALID_STRING_ESCAPE" to "FFCCCC",
     )
 
-    /** Light theme foreground colors match IntelliJ Light. */
+    /** FlatLafLight foreground colors match IntelliJ Light. */
     fun testLightForegroundValues() {
-        val colors = parse("/io/github/nbplugins/kotlin/nbm/FontAndColors.xml")
-        assertForeground(colors, expectedLightFore, "FontAndColors.xml")
+        val colors = parse("/io/github/nbplugins/kotlin/nbm/highlighter/colors/FlatLafLight.xml")
+        assertForeground(colors, expectedLightFore, "FlatLafLight.xml")
     }
 
-    /** Dark theme foreground colors match Darcula. */
+    /** FlatLafDark foreground colors match Darcula. */
     fun testDarkForegroundValues() {
-        val colors = parse("/io/github/nbplugins/kotlin/nbm/FontAndColorsDark.xml")
-        assertForeground(colors, expectedDarkFore, "FontAndColorsDark.xml")
+        val colors = parse("/io/github/nbplugins/kotlin/nbm/highlighter/colors/FlatLafDark.xml")
+        assertForeground(colors, expectedDarkFore, "FlatLafDark.xml")
     }
 
-    /** Light theme background colors (smart casts etc.) match IDEA. */
+    /** NetBeans55 foreground colors match Classic Light (Default). */
+    fun testNB55ForegroundValues() {
+        val colors = parse("/io/github/nbplugins/kotlin/nbm/highlighter/colors/NetBeans55.xml")
+        assertForeground(colors, expectedNB55Fore, "NetBeans55.xml")
+    }
+
+    /** FlatLafLight background colors (smart casts etc.) match IDEA. */
     fun testLightBackgroundValues() {
-        val colors = parse("/io/github/nbplugins/kotlin/nbm/FontAndColors.xml")
+        val colors = parse("/io/github/nbplugins/kotlin/nbm/highlighter/colors/FlatLafLight.xml")
         for ((name, expected) in expectedLightBg) {
             val actual = colors[name]?.bgColor?.uppercase()
-            assertEquals("bgColor for $name in FontAndColors.xml", expected, actual)
+            assertEquals("bgColor for $name in FlatLafLight.xml", expected, actual)
+        }
+    }
+
+    /** NetBeans55 background colors (smart casts etc.) match Classic Light defaults. */
+    fun testNB55BackgroundValues() {
+        val colors = parse("/io/github/nbplugins/kotlin/nbm/highlighter/colors/NetBeans55.xml")
+        for ((name, expected) in expectedLightBg) {
+            val actual = colors[name]?.bgColor?.uppercase()
+            assertEquals("bgColor for $name in NetBeans55.xml", expected, actual)
         }
     }
 
     /**
-     * KEYWORD must NOT be bold in either theme. In IDEA the Kotlin keyword color resolves
-     * `KOTLIN_KEYWORD -> JAVA_KEYWORD -> DefaultLanguageHighlighterColors.KEYWORD`, and the light
-     * ("Light"/IntelliJ Light) and Darcula schemes render it plain (bold is set only for the
+     * KEYWORD must NOT be bold in FlatLafLight and FlatLafDark. In IDEA the Kotlin keyword
+     * color resolves `KOTLIN_KEYWORD -> JAVA_KEYWORD -> DefaultLanguageHighlighterColors.KEYWORD`,
+     * and the IntelliJ Light and Darcula schemes render it plain (bold is set only for the
      * colorblind variants). Guards against re-introducing the incorrect bold style.
+     *
+     * NetBeans55 uses the Classic Light (Default) scheme where keyword IS bold — excluded here.
      */
     fun testKeywordIsNotBold() {
         for (file in listOf(
-            "/io/github/nbplugins/kotlin/nbm/FontAndColors.xml",
-            "/io/github/nbplugins/kotlin/nbm/FontAndColorsDark.xml",
+            "/io/github/nbplugins/kotlin/nbm/highlighter/colors/FlatLafLight.xml",
+            "/io/github/nbplugins/kotlin/nbm/highlighter/colors/FlatLafDark.xml",
         )) {
             val block = fontColorBlock(file, "KEYWORD")
             assertFalse("KEYWORD must not be bold in $file (block: $block)", block.contains("bold"))
         }
+    }
+
+    /** KEYWORD must be bold in NetBeans55 — Classic Light (Default) renders it bold. */
+    fun testNB55KeywordIsBold() {
+        val file = "/io/github/nbplugins/kotlin/nbm/highlighter/colors/NetBeans55.xml"
+        val block = fontColorBlock(file, "KEYWORD")
+        assertTrue("KEYWORD must be bold in $file (block: $block)", block.contains("bold"))
     }
 
     /** Extracts the full `<fontcolor name="$name" ...>...</fontcolor>` (or self-closed) element text. */

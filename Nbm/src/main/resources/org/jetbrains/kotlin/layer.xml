@@ -121,30 +121,40 @@
                     <folder name="FontsColors">
                         <folder name="NetBeans">
                             <folder name="Defaults">
-                                <file name="FontAndColors.xml" url="nbres:/io/github/nbplugins/kotlin/nbm/FontAndColors.xml">
+                                <file name="FontAndColors.xml" url="nbres:/io/github/nbplugins/kotlin/nbm/highlighter/colors/FlatLafLight.xml">
                                     <attr name="SystemFileSystem.localizingBundle" stringvalue="io.github.nbplugins.kotlin.nbm.Bundle"/>
                                 </file>
-                                <file name="coloring.xml" url="nbres:/io/github/nbplugins/kotlin/nbm/FontAndColors.xml">
+                                <file name="coloring.xml" url="nbres:/io/github/nbplugins/kotlin/nbm/highlighter/colors/FlatLafLight.xml">
                                     <attr name="SystemFileSystem.localizingBundle" stringvalue="io.github.nbplugins.kotlin.nbm.Bundle"/>
                                 </file>
                             </folder>
                         </folder>
                         <folder name="FlatLafLight">
                             <folder name="Defaults">
-                                <file name="FontAndColors.xml" url="nbres:/io/github/nbplugins/kotlin/nbm/FontAndColors.xml">
+                                <file name="FontAndColors.xml" url="nbres:/io/github/nbplugins/kotlin/nbm/highlighter/colors/FlatLafLight.xml">
                                     <attr name="SystemFileSystem.localizingBundle" stringvalue="io.github.nbplugins.kotlin.nbm.Bundle"/>
                                 </file>
-                                <file name="coloring.xml" url="nbres:/io/github/nbplugins/kotlin/nbm/FontAndColors.xml">
+                                <file name="coloring.xml" url="nbres:/io/github/nbplugins/kotlin/nbm/highlighter/colors/FlatLafLight.xml">
                                     <attr name="SystemFileSystem.localizingBundle" stringvalue="io.github.nbplugins.kotlin.nbm.Bundle"/>
                                 </file>
                             </folder>
                         </folder>
                         <folder name="FlatLafDark">
                             <folder name="Defaults">
-                                <file name="FontAndColorsDark.xml" url="nbres:/io/github/nbplugins/kotlin/nbm/FontAndColorsDark.xml">
+                                <file name="FontAndColors.xml" url="nbres:/io/github/nbplugins/kotlin/nbm/highlighter/colors/FlatLafDark.xml">
                                     <attr name="SystemFileSystem.localizingBundle" stringvalue="io.github.nbplugins.kotlin.nbm.Bundle"/>
                                 </file>
-                                <file name="coloring.xml" url="nbres:/io/github/nbplugins/kotlin/nbm/FontAndColorsDark.xml">
+                                <file name="coloring.xml" url="nbres:/io/github/nbplugins/kotlin/nbm/highlighter/colors/FlatLafDark.xml">
+                                    <attr name="SystemFileSystem.localizingBundle" stringvalue="io.github.nbplugins.kotlin.nbm.Bundle"/>
+                                </file>
+                            </folder>
+                        </folder>
+                        <folder name="NetBeans55">
+                            <folder name="Defaults">
+                                <file name="FontAndColors.xml" url="nbres:/io/github/nbplugins/kotlin/nbm/highlighter/colors/NetBeans55.xml">
+                                    <attr name="SystemFileSystem.localizingBundle" stringvalue="io.github.nbplugins.kotlin.nbm.Bundle"/>
+                                </file>
+                                <file name="coloring.xml" url="nbres:/io/github/nbplugins/kotlin/nbm/highlighter/colors/NetBeans55.xml">
                                     <attr name="SystemFileSystem.localizingBundle" stringvalue="io.github.nbplugins.kotlin.nbm.Bundle"/>
                                 </file>
                             </folder>
