@@ -89,6 +89,31 @@ class KotlinFontColorNamesTest : TestCase() {
         )
     }
 
+    /**
+     * Every color category declared in the theme files must have a display name in
+     * `Bundle.properties`. A missing entry makes the Fonts & Colors panel show the raw
+     * internal name (e.g. `KOTLIN_SMART_CAST_VALUE`) instead of the IDEA-style grouped label.
+     * `mark-occurrences` is infrastructure and intentionally has no Kotlin display name.
+     */
+    fun testEveryCategoryHasDisplayName() {
+        val displayNames = parseBundleKeys()
+        val categories = parseNames("/io/github/nbplugins/kotlin/nbm/FontAndColors.xml") - "mark-occurrences"
+        val missing = categories - displayNames
+        assertTrue("Bundle.properties is missing display names for: $missing", missing.isEmpty())
+    }
+
+    private fun parseBundleKeys(): Set<String> {
+        val text = KotlinFontColorNamesTest::class.java
+            .getResourceAsStream("/io/github/nbplugins/kotlin/nbm/Bundle.properties")
+            ?.bufferedReader()?.use { it.readText() }
+        assertNotNull("Bundle.properties must be on the classpath", text)
+        return text!!.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !it.startsWith("#") && it.contains("=") }
+            .map { it.substringBefore("=").trim() }
+            .toSet()
+    }
+
     private fun parseNames(resourcePath: String): Set<String> {
         val xml = KotlinFontColorNamesTest::class.java
             .getResourceAsStream(resourcePath)
