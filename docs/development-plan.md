@@ -458,23 +458,29 @@ Each substage is a separate branch (`refactor/dN-...`) and PR targeting `upstrea
 Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E10 → E11 → E12
 
 - **E1** — Editor UX polish (sub-items in priority order):
-  - Source / History toolbar buttons for `.kt` files: register `MultiViewElement` (History view)
+  - [x] K2 semantic highlighting live-update: fixed drift while typing unsaved changes (PR #71)
+  - [x] `FUNCTION_CALL`, `EXTENSION_FUNCTION_CALL`, `SUSPEND_FUNCTION_CALL`, `CONSTRUCTOR_CALL`
+    semantic tokens added to `KotlinHighlightingAttributes` and `KaSemanticHighlightingVisitor`
+  - [x] Fonts & Colors: 50+ named color categories matching IDEA exactly, organised in 10 groups;
+    3 theme XMLs in `highlighter/colors/`: `FlatLafLight.xml` (IntelliJ Light), `FlatLafDark.xml`
+    (Darcula), `NetBeans55.xml` (Classic NetBeans) (branch `feature/e2-idea-color-parity`)
+  - [x] Fonts & Colors preview: semantic highlights applied to preview sample via
+    `PreviewSemanticHighlightsLoader` (branch `feature/e2-idea-color-parity`)
+  - [ ] Source / History toolbar buttons for `.kt` files: register `MultiViewElement` (History view)
     alongside the existing Source view in `layer.xml` — same mechanism as Java editor
-  - Reformat selection: verify CSL Reformat action works on a selected range
+  - [ ] Reformat selection: verify CSL Reformat action works on a selected range
     (`KotlinReformatTask` already exists — test and fix edge cases)
-  - Auto-indent on paste and Enter: verify/fix `KotlinIndentTask` for paste events;
+  - [ ] Auto-indent on paste and Enter: verify/fix `KotlinIndentTask` for paste events;
     hook `IndentAction` for Enter
-  - Completion filtering: suppress package-scope symbols after dot receiver
-  - `FUNCTION_CALL`, `EXTENSION_FUNCTION_CALL`, `SUSPEND_FUNCTION_CALL`, `CONSTRUCTOR_CALL` tokens
-    in `KotlinHighlightingAttributes`; implement in `KaSemanticHighlightingVisitor.highlightSimpleName()`
-    (Note: E2 adds unused/deprecated annotations via `KaDiagnosticProvider` — separate mechanism)
-  - Hover tooltip: CSL `Documentation` provider → `KaNavigationUtils.renderDeclarationTooltip()`
-  - False-positive `QUALIFIED_EXPRESSION_WITHOUT_SELECTOR` — investigate and suppress
+  - [ ] Completion filtering: suppress package-scope symbols after dot receiver
+  - [ ] Hover tooltip: CSL `Documentation` provider → `KaNavigationUtils.renderDeclarationTooltip()`
+  - [ ] False-positive `QUALIFIED_EXPRESSION_WITHOUT_SELECTOR` — investigate and suppress
 
 - **E2** — Extended diagnostics and highlighting:
-  - Unused variables / unused parameters: K2 `KaDiagnosticProvider` checks
-  - `@Deprecated` symbols: grey-strike rendering via `KaSymbol.deprecationStatus`
-  - Full K2 diagnostic set (exhaustive `when`, type mismatch, unresolved reference) exposed
+  - [x] `@Deprecated` symbols: grey-strike rendering via `KaSymbol.deprecationStatus`
+    (added as `KOTLIN_DEPRECATED` token in color parity work, branch `feature/e2-idea-color-parity`)
+  - [ ] Unused variables / unused parameters: K2 `KaDiagnosticProvider` checks
+  - [ ] Full K2 diagnostic set (exhaustive `when`, type mismatch, unresolved reference) exposed
     in the NetBeans gutter + error stripe
 
 - **E3** — Parameter info and inlay hints:

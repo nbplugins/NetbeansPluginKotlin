@@ -1,0 +1,127 @@
+<!DOCTYPE fontscolors PUBLIC
+    "-//NetBeans//DTD Editor Fonts and Colors settings 1.1//EN"
+    "https://netbeans.org/dtds/EditorFontsColors-1_1.dtd">
+<fontscolors>
+    <!-- Colors resolved from IntelliJ "Light" (IntelliJ Light) scheme:
+         platform/platform-resources/src/themes/Light.xml (parent_scheme="Default")
+         + Kotlin fallback chain in KotlinHighlightingColors.java
+         + explicit Kotlin colors in colorScheme/Default_Kotlin.xml (inherited). -->
+
+    <!-- === LEXICAL === -->
+    <fontcolor name="IDENTIFIER" default="identifier"/>
+    <fontcolor name="KEYWORD" foreColor="0033B3"/>
+    <fontcolor name="KOTLIN_NUMBER" foreColor="1750EB"/>
+    <fontcolor name="KOTLIN_OPERATION_SIGN"/>
+    <fontcolor name="KOTLIN_PARENTHESIS"/>
+    <fontcolor name="KOTLIN_BRACES"/>
+    <fontcolor name="KOTLIN_FUNCTION_LITERAL_BRACES_AND_ARROW">
+        <font style="bold"/>
+    </fontcolor>
+    <fontcolor name="KOTLIN_BRACKETS"/>
+    <fontcolor name="KOTLIN_COMMA"/>
+    <fontcolor name="KOTLIN_SEMICOLON"/>
+    <fontcolor name="KOTLIN_DOT"/>
+    <fontcolor name="KOTLIN_SAFE_ACCESS"/>
+    <fontcolor name="KOTLIN_ARROW"/>
+    <fontcolor name="STRING" foreColor="067D17"/>
+    <fontcolor name="KOTLIN_STRING_ESCAPE" foreColor="0037A6"/>
+    <fontcolor name="KOTLIN_INVALID_STRING_ESCAPE" foreColor="067D17" bgColor="FFCCCC"/>
+    <fontcolor name="SINGLE_LINE_COMMENT" foreColor="8C8C8C">
+        <font style="italic"/>
+    </fontcolor>
+    <fontcolor name="MULTI_LINE_COMMENT" foreColor="8C8C8C">
+        <font style="italic"/>
+    </fontcolor>
+    <fontcolor name="KOTLIN_DOC_COMMENT" foreColor="8C8C8C">
+        <font style="italic"/>
+    </fontcolor>
+    <fontcolor name="KDOC_TAG_NAME" foreColor="8C8C8C">
+        <font style="bold"/>
+    </fontcolor>
+    <fontcolor name="KDOC_LINK" foreColor="3D3D3D">
+        <font style="italic"/>
+    </fontcolor>
+    <fontcolor name="ANNOTATION" foreColor="9E880D"/>
+    <fontcolor name="WHITESPACE" default="whitespace"/>
+
+    <!-- === SEMANTIC — Classes === -->
+    <fontcolor name="KOTLIN_CLASS"/>
+    <fontcolor name="KOTLIN_ABSTRACT_CLASS"/>
+    <fontcolor name="KOTLIN_TRAIT"/>
+    <fontcolor name="KOTLIN_OBJECT"/>
+    <fontcolor name="KOTLIN_ENUM"/>
+    <fontcolor name="KOTLIN_TYPE_ALIAS"/>
+    <fontcolor name="KOTLIN_ANNOTATION" foreColor="9E880D"/>
+    <fontcolor name="KOTLIN_TYPE_PARAMETER" foreColor="007E8A"/>
+
+    <!-- === SEMANTIC — Functions === -->
+    <fontcolor name="KOTLIN_FUNCTION_DECLARATION" foreColor="00627A"/>
+    <fontcolor name="KOTLIN_FUNCTION_CALL"/>
+    <fontcolor name="KOTLIN_PACKAGE_FUNCTION_CALL" foreColor="00627A">
+        <font style="italic"/>
+    </fontcolor>
+    <fontcolor name="KOTLIN_EXTENSION_FUNCTION_CALL" foreColor="00627A">
+        <font style="italic"/>
+    </fontcolor>
+    <fontcolor name="KOTLIN_CONSTRUCTOR_CALL"/>
+    <fontcolor name="KOTLIN_CONSTRUCTOR"/>
+    <fontcolor name="KOTLIN_SUSPEND_FUNCTION_CALL"/>
+    <fontcolor name="KOTLIN_DYNAMIC_FUNCTION_CALL">
+        <font style="bold, italic"/>
+    </fontcolor>
+    <fontcolor name="KOTLIN_VARIABLE_AS_FUNCTION_CALL"/>
+    <fontcolor name="KOTLIN_VARIABLE_AS_FUNCTION_LIKE_CALL"/>
+
+    <!-- === SEMANTIC — Variables === -->
+    <fontcolor name="KOTLIN_LOCAL_VARIABLE"/>
+    <fontcolor name="KOTLIN_PARAMETER"/>
+    <fontcolor name="KOTLIN_WRAPPED_INTO_REF"/>
+    <fontcolor name="KOTLIN_INSTANCE_PROPERTY" foreColor="871094"/>
+    <fontcolor name="KOTLIN_PACKAGE_PROPERTY" foreColor="871094">
+        <font style="italic"/>
+    </fontcolor>
+    <fontcolor name="KOTLIN_EXTENSION_PROPERTY" foreColor="871094">
+        <font style="italic"/>
+    </fontcolor>
+    <fontcolor name="KOTLIN_SYNTHETIC_EXTENSION_PROPERTY" foreColor="871094">
+        <font style="italic"/>
+    </fontcolor>
+    <fontcolor name="KOTLIN_BACKING_FIELD_VARIABLE">
+        <font style="bold"/>
+    </fontcolor>
+    <fontcolor name="KOTLIN_ENUM_ENTRY" foreColor="871094">
+        <font style="italic"/>
+    </fontcolor>
+    <fontcolor name="KOTLIN_INSTANCE_PROPERTY_CUSTOM_PROPERTY_DECLARATION" foreColor="871094"/>
+    <fontcolor name="KOTLIN_PACKAGE_PROPERTY_CUSTOM_PROPERTY_DECLARATION" foreColor="871094">
+        <font style="italic"/>
+    </fontcolor>
+    <fontcolor name="KOTLIN_MUTABLE_VARIABLE" underline="000000"/>
+    <fontcolor name="KOTLIN_CLOSURE_DEFAULT_PARAMETER">
+        <font style="bold"/>
+    </fontcolor>
+    <fontcolor name="KOTLIN_FUNCTION_LITERAL_DEFAULT_PARAMETER"/>
+    <fontcolor name="KOTLIN_DYNAMIC_PROPERTY_CALL">
+        <font style="bold, italic"/>
+    </fontcolor>
+
+    <!-- === SEMANTIC — Smart casts === -->
+    <fontcolor name="KOTLIN_SMART_CAST_VALUE" bgColor="DBFFDB"/>
+    <fontcolor name="KOTLIN_SMART_CONSTANT" bgColor="DBFFDB"/>
+    <fontcolor name="KOTLIN_SMART_CAST_RECEIVER" bgColor="DBFFDB"/>
+
+    <!-- === SEMANTIC — Misc === -->
+    <fontcolor name="KOTLIN_LABEL" foreColor="4A86E8"/>
+    <fontcolor name="KOTLIN_NAMED_ARGUMENT" foreColor="4A86E8"/>
+    <fontcolor name="KOTLIN_ANNOTATION_ATTRIBUTE_NAME_ATTRIBUTES" foreColor="9E880D"/>
+    <fontcolor name="KOTLIN_PROPERTY_WITH_BACKING_FIELD" bgColor="F5D7EF"/>
+    <fontcolor name="KOTLIN_COROUTINE_DEBUGGER_VALUE" foreColor="840000"/>
+
+    <!-- === SEMANTIC — Diagnostics === -->
+    <fontcolor name="KOTLIN_DEPRECATED" strikeThrough="909090"/>
+    <fontcolor name="KOTLIN_RESOLVED_TO_ERROR" underline="FF0000"/>
+    <fontcolor name="KOTLIN_DEBUG_INFO" underline="000000"/>
+
+    <!-- Legacy mark-occurrences highlight (used by CSL infrastructure) -->
+    <fontcolor name="mark-occurrences" bgColor="ECEBA3"/>
+</fontscolors>

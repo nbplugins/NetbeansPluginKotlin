@@ -19,8 +19,28 @@ package org.jetbrains.kotlin.highlighter
 enum class TokenType {
     KEYWORD, IDENTIFIER, STRING, SINGLE_LINE_COMMENT,
     MULTI_LINE_COMMENT, KDOC_TAG_NAME, WHITESPACE,
-    ANNOTATION, KDOC_LINK, UNDEFINED, EOF;
-    
+    ANNOTATION, KDOC_LINK, UNDEFINED, EOF,
+    /** Numeric literal (int, float, char) — KOTLIN_NUMBER */
+    NUMBER,
+    /** Operators (+, -, *, ==, etc.) — KOTLIN_OPERATION_SIGN */
+    OPERATOR,
+    /** Parentheses ( ) — KOTLIN_PARENTHESIS */
+    PARENTHESIS,
+    /** Braces { } — KOTLIN_BRACES */
+    BRACES,
+    /** Brackets [ ] — KOTLIN_BRACKETS */
+    BRACKETS,
+    /** Comma , — KOTLIN_COMMA */
+    COMMA,
+    /** Semicolon ; — KOTLIN_SEMICOLON */
+    SEMICOLON,
+    /** Dot . and safe access ?. — KOTLIN_DOT / KOTLIN_SAFE_ACCESS */
+    DOT,
+    /** Arrow -> — KOTLIN_ARROW */
+    ARROW,
+    /** String escape sequence \n, \t, etc. — KOTLIN_STRING_ESCAPE */
+    STRING_ESCAPE;
+
     fun getId() = when(this) {
         KEYWORD -> 0
         IDENTIFIER -> 1
@@ -31,6 +51,16 @@ enum class TokenType {
         WHITESPACE -> 6
         ANNOTATION -> 8
         KDOC_LINK -> 9
+        NUMBER -> 10
+        OPERATOR -> 11
+        PARENTHESIS -> 12
+        BRACES -> 13
+        BRACKETS -> 14
+        COMMA -> 15
+        SEMICOLON -> 16
+        DOT -> 17
+        ARROW -> 18
+        STRING_ESCAPE -> 19
         else -> 7
     }
 }

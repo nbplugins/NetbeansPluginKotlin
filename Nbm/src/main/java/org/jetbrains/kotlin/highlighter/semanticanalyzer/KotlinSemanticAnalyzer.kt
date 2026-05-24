@@ -17,6 +17,7 @@
 package org.jetbrains.kotlin.highlighter.semanticanalyzer
 
 import io.github.nbplugins.kotlin.nbm.highlighter.KaSemanticHighlightingVisitor
+import io.github.nbplugins.kotlin.nbm.highlighter.KotlinSemanticHighlightsLayerFactory
 import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParserResult
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper.isScanning
@@ -27,17 +28,25 @@ import org.netbeans.modules.csl.api.SemanticAnalyzer
 import org.netbeans.modules.parsing.spi.Scheduler
 import org.netbeans.modules.parsing.spi.SchedulerEvent
 
+/**
+ * CSL [SemanticAnalyzer] that drives K2 semantic highlighting for Kotlin files.
+ *
+ * This class acts as the **computation trigger**: CSL calls [run] on each parse, which
+ * computes highlight ranges via [KaSemanticHighlightingVisitor] and stores them in the
+ * document as an [org.netbeans.lib.editor.util.swing.PositionsBag] managed by
+ * [KotlinSemanticHighlightsLayerFactory]. The rendering is done by the layer factory, not
+ * by this class — [getHighlights] therefore always returns an empty map.
+ */
 class KotlinSemanticAnalyzer : SemanticAnalyzer<KotlinParserResult>() {
 
     private var cancel = false
-    private val highlighting = hashMapOf<OffsetRange, Set<ColoringAttributes>>()
 
     override fun getPriority() = Priorities.SEMANTIC_ANALYZER_PRIORITY
 
-    override fun getHighlights() = highlighting
+    /** Always empty — rendering is delegated to [KotlinSemanticHighlightsLayerFactory]. */
+    override fun getHighlights(): Map<OffsetRange, Set<ColoringAttributes>> = emptyMap()
 
     override fun run(result: KotlinParserResult?, event: SchedulerEvent?) {
-        highlighting.clear()
         cancel = false
 
         KotlinLogger.INSTANCE.logInfo("KotlinSemanticAnalyzer.run: result=${result?.javaClass?.simpleName}")
@@ -58,12 +67,15 @@ class KotlinSemanticAnalyzer : SemanticAnalyzer<KotlinParserResult>() {
 
         runCatching {
             val visitor = KaSemanticHighlightingVisitor(kaKtFile)
-            highlighting.putAll(visitor.computeHighlightingRanges())
+            val highlights = visitor.computeHighlightingRanges()
+            val doc = result.snapshot.source.getDocument(false)
+            if (doc != null) {
+                KotlinSemanticHighlightsLayerFactory.applyHighlights(doc, highlights)
+            }
+            KotlinLogger.INSTANCE.logInfo("KotlinSemanticAnalyzer.run: produced ${highlights.size} highlight ranges")
         }.onFailure { ex ->
             KotlinLogger.INSTANCE.logWarning("K2 semantic highlighting failed:\n${ex.stackTraceToString()}")
         }
-
-        KotlinLogger.INSTANCE.logInfo("KotlinSemanticAnalyzer.run: produced ${highlighting.size} highlight ranges")
     }
 
     override fun cancel() {

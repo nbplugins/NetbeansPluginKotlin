@@ -35,7 +35,21 @@ class KotlinLanguageHierarchy : LanguageHierarchy<KotlinTokenId>() {
                 KotlinTokenId(TokenType.WHITESPACE.name,TokenType.WHITESPACE.name,6),
                 KotlinTokenId(TokenType.UNDEFINED.name,TokenType.UNDEFINED.name,7),
                 KotlinTokenId(TokenType.ANNOTATION.name,TokenType.ANNOTATION.name,8),
-                KotlinTokenId(TokenType.KDOC_LINK.name,TokenType.KDOC_LINK.name,9)
+                KotlinTokenId(TokenType.KDOC_LINK.name,TokenType.KDOC_LINK.name,9),
+                // The category (and name) must match the `<fontcolor name>` entry in
+                // FontAndColors.xml so the CSL lexer coloring resolves the correct color.
+                // The IDEA-parity KOTLIN_* names are used (the older tokens above keep the
+                // NetBeans-generic names KEYWORD/STRING/... which already have matching entries).
+                KotlinTokenId("KOTLIN_NUMBER","KOTLIN_NUMBER",10),
+                KotlinTokenId("KOTLIN_OPERATION_SIGN","KOTLIN_OPERATION_SIGN",11),
+                KotlinTokenId("KOTLIN_PARENTHESIS","KOTLIN_PARENTHESIS",12),
+                KotlinTokenId("KOTLIN_BRACES","KOTLIN_BRACES",13),
+                KotlinTokenId("KOTLIN_BRACKETS","KOTLIN_BRACKETS",14),
+                KotlinTokenId("KOTLIN_COMMA","KOTLIN_COMMA",15),
+                KotlinTokenId("KOTLIN_SEMICOLON","KOTLIN_SEMICOLON",16),
+                KotlinTokenId("KOTLIN_DOT","KOTLIN_DOT",17),
+                KotlinTokenId("KOTLIN_ARROW","KOTLIN_ARROW",18),
+                KotlinTokenId("KOTLIN_STRING_ESCAPE","KOTLIN_STRING_ESCAPE",19)
         )
         
         fun getToken(id: Int) = tokens.first { it.ordinal() == id }
