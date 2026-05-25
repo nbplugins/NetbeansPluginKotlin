@@ -474,7 +474,7 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
     hook `IndentAction` for Enter
   - [ ] Completion filtering: suppress package-scope symbols after dot receiver
   - [ ] Hover tooltip: CSL `Documentation` provider → `KaNavigationUtils.renderDeclarationTooltip()`
-  - [ ] False-positive `QUALIFIED_EXPRESSION_WITHOUT_SELECTOR` — investigate and suppress
+  - [x] False-positive `QUALIFIED_EXPRESSION_WITHOUT_SELECTOR` — investigated; no longer reproduced with K2 2.3.21
 
 - **E2** — Extended diagnostics and highlighting:
   - [x] `@Deprecated` symbols: grey-strike rendering via `KaSymbol.deprecationStatus`
