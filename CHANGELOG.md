@@ -1,3 +1,4 @@
+- Fixed `SEVERE: ClassNotFoundException: org.codehaus.plexus.util.PropertyUtils` logged on J2SE project open: replaced the inaccessible Maven Embedder utility with a standard `Properties.load()` call.
 - Added History tab to `.kt` file editor: file-change history is now accessible directly from the editor alongside the Source tab.
 - Removed empty "Visual" tab from `.kt` file editor; only the "Source" tab (and "History" when the versioning module is installed) now appears.
 

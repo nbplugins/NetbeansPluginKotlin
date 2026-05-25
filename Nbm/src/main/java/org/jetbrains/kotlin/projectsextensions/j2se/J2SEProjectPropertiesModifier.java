@@ -29,7 +29,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 import org.jetbrains.kotlin.utils.KotlinClasspath;
-import org.codehaus.plexus.util.PropertyUtils;
 import org.jetbrains.kotlin.log.KotlinLogger;
 import org.netbeans.api.project.Project;
 import org.netbeans.spi.project.support.ant.EditableProperties;
@@ -37,15 +36,20 @@ import org.openide.filesystems.FileObject;
 import org.openide.util.Exceptions;
 
 /**
+ * Modifies Ant-based J2SE project property files to integrate the Kotlin runtime
+ * and disable compile-on-save (which conflicts with Kotlin incremental compilation).
  *
  * @author Alexander.Baratynski
  */
 public class J2SEProjectPropertiesModifier {
-    
+
     private final Project project;
-    
+
+    /**
+     * @param project the J2SE project whose property files will be modified
+     */
     public J2SEProjectPropertiesModifier(Project project) {
-        this.project = project;     
+        this.project = project;
     }
     
     private String[] getModifiedClasspathProperty(EditableProperties editableProperties, String str) {
@@ -64,6 +68,11 @@ public class J2SEProjectPropertiesModifier {
         return classpath.toArray(new String[classpath.size()]);
     }
     
+    /**
+     * Appends {@code ${kotlinc.classpath}} to the project's {@code run.classpath} and
+     * {@code javac.test.classpath} properties and records the Kotlin runtime JAR path.
+     * No-ops when the project lacks {@code nbproject/project.properties}.
+     */
     public void addKotlinRuntime() {
         FileObject root = project.getProjectDirectory();
         FileObject nbproject = root.getFileObject("nbproject");
@@ -97,6 +106,11 @@ public class J2SEProjectPropertiesModifier {
         }
     }
     
+    /**
+     * Sets {@code compile.on.save=false} in {@code nbproject/private/private.properties}.
+     * No-ops when the file does not exist. Uses standard {@link Properties#load} instead of
+     * {@code PropertyUtils} (which is inaccessible across NetBeans module classloaders).
+     */
     public void turnOffCompileOnSave() {
         FileObject root = project.getProjectDirectory();
         FileObject nbproject = root.getFileObject("nbproject");
@@ -116,7 +130,10 @@ public class J2SEProjectPropertiesModifier {
         
         
         try {
-            Properties props = PropertyUtils.loadProperties(privateProperties.toURL());
+            Properties props = new Properties();
+            try (InputStream is = privateProperties.getInputStream()) {
+                props.load(is);
+            }
             props.setProperty("compile.on.save", "false");
             FileWriter writer = new FileWriter(privateProperties.getPath());
             writer.write("");
