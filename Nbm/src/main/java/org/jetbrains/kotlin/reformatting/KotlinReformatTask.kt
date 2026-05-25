@@ -26,10 +26,24 @@ import org.netbeans.modules.editor.indent.spi.ReformatTask
   Created on Sep 9, 2016
 */
 
-class KotlinReformatTask(val context : Context) : ReformatTask {
-    
-    override fun reformat() = format(context.document(), context.caretOffset())
-    
+/**
+ * CSL [ReformatTask] for Kotlin files.
+ *
+ * When the editor has a non-empty selection, only the selected character range is
+ * reformatted; otherwise the entire document is formatted.
+ */
+class KotlinReformatTask(val context: Context) : ReformatTask {
+
+    override fun reformat() {
+        val start = context.startOffset()
+        val end = context.endOffset()
+        if (start < end) {
+            format(context.document(), context.caretOffset(), startOffset = start, endOffset = end)
+        } else {
+            format(context.document(), context.caretOffset())
+        }
+    }
+
     override fun reformatLock() = null
-    
+
 }
