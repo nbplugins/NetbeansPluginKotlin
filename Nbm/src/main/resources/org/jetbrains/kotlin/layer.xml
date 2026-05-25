@@ -24,6 +24,10 @@
                     <attr name="instanceClass" stringvalue="org.jetbrains.kotlin.language.KotlinLanguage"/>
                 </file>
                 <attr intvalue="2" name="genver"/>
+                <!-- Enables GsfDataObject to create a MultiView editor so that
+                     the History tab (registered globally in Editors/MultiView/ by
+                     versioning.ui) appears alongside the Source tab. -->
+                <attr boolvalue="true" name="useMultiview"/>
             </folder>
         </folder>
     </folder>
@@ -238,22 +242,17 @@
                         </folder>
                     </folder>
                 </folder>
-            </folder>
-    </folder>
-
-    <!-- JavaHyperlinkProvider for text/x-java: navigates from Java to Kotlin declarations -->
-    <folder name="Editors">
-        <folder name="text">
-            <folder name="x-java">
-                <folder name="HyperlinkProviders">
-                    <file name="org-jetbrains-kotlin-navigation-netbeans-JavaHyperlinkProvider.instance">
-                        <attr name="instanceClass" stringvalue="org.jetbrains.kotlin.navigation.netbeans.JavaHyperlinkProvider"/>
-                        <attr name="instanceOf" stringvalue="org.netbeans.lib.editor.hyperlink.spi.HyperlinkProviderExt"/>
-                        <attr name="position" intvalue="1000"/>
-                    </file>
+                <!-- JavaHyperlinkProvider for text/x-java: navigates from Java to Kotlin declarations -->
+                <folder name="x-java">
+                    <folder name="HyperlinkProviders">
+                        <file name="org-jetbrains-kotlin-navigation-netbeans-JavaHyperlinkProvider.instance">
+                            <attr name="instanceClass" stringvalue="org.jetbrains.kotlin.navigation.netbeans.JavaHyperlinkProvider"/>
+                            <attr name="instanceOf" stringvalue="org.netbeans.lib.editor.hyperlink.spi.HyperlinkProviderExt"/>
+                            <attr name="position" intvalue="1000"/>
+                        </file>
+                    </folder>
                 </folder>
             </folder>
-        </folder>
     </folder>
 
     <folder name="OptionsDialog">

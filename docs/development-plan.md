@@ -474,7 +474,11 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
     hook `IndentAction` for Enter
   - [ ] Completion filtering: suppress package-scope symbols after dot receiver
   - [ ] Hover tooltip: CSL `Documentation` provider → `KaNavigationUtils.renderDeclarationTooltip()`
-  - [ ] False-positive `QUALIFIED_EXPRESSION_WITHOUT_SELECTOR` — investigate and suppress
+  - [x] False-positive `QUALIFIED_EXPRESSION_WITHOUT_SELECTOR` — investigated; no longer reproduced with K2 2.3.21
+  - [ ] `ClassNotFoundException: org.codehaus.plexus.util.PropertyUtils` SEVERE on J2SE project open:
+    `J2SEProjectPropertiesModifier.java:119` calls `PropertyUtils.loadProperties(url)` from the
+    Maven Embedder classloader, which is not accessible from the `io.github.nbplugins.kotlin` module.
+    Fix: replace with plain `new Properties(); props.load(url.openStream())`.
 
 - **E2** — Extended diagnostics and highlighting:
   - [x] `@Deprecated` symbols: grey-strike rendering via `KaSymbol.deprecationStatus`
