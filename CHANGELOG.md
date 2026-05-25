@@ -1,3 +1,5 @@
+- Removed empty "Visual" tab from `.kt` file editor; only the "Source" tab (and "History" when the versioning module is installed) now appears.
+
 # 0.9.5 (2026-05-25)
 
 - Added IntelliJ IDEA-style Kotlin highlighting settings: Tools > Options > Fonts & Colors now lists the same named Kotlin categories as IDEA (keywords, numbers, string escapes, classes, properties, function calls, smart casts, labels, etc.) with IDEA's default colors for light and dark themes, plus an IDEA-matching preview sample.
