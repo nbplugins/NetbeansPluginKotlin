@@ -187,6 +187,9 @@
                             <attr name="instanceCreate" methodvalue="org.netbeans.modules.refactoring.api.ui.RefactoringActionsFactory.editorSubmenuAction"/>
                             <attr name="position" intvalue="1794"/>
                         </file>
+                        <file name="format">
+                            <attr name="position" intvalue="1795"/>
+                        </file>
                     </folder>
                     <file name="JavaIndexer.shadow">
                         <attr name="originalFile" stringvalue="Editors/text/x-java/JavaIndexer.instance"/>
