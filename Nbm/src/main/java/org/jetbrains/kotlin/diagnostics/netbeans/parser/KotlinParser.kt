@@ -19,7 +19,9 @@ package org.jetbrains.kotlin.diagnostics.netbeans.parser
 import java.beans.PropertyChangeListener
 import java.util.Collections
 import javax.swing.event.ChangeListener
+import javax.swing.text.Document
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
+import org.jetbrains.kotlin.indentation.installPasteFilterIfNeeded
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper.isScanning
 import org.jetbrains.kotlin.utils.ProjectUtils
@@ -73,6 +75,7 @@ class KotlinParser : Parser() {
 
         val fo = snapshot.source.fileObject
         KotlinLogger.INSTANCE.logInfo("KotlinParser.parse called for ${fo?.path}")
+        snapshot.source.getDocument(false)?.let { installPasteFilterIfNeeded(it) }
 
         if (SourceUtils.isScanInProgress()) {
             KotlinLogger.INSTANCE.logInfo("KotlinParser.parse: scan in progress, skipping ${fo?.path}")

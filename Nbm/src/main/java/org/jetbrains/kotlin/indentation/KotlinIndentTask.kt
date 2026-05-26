@@ -12,7 +12,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
  *******************************************************************************/
 package org.jetbrains.kotlin.indentation
 
@@ -22,9 +21,16 @@ import org.netbeans.modules.editor.indent.spi.IndentTask
 
 class KotlinIndentTask(val context: Context) : IndentTask {
 
+    /**
+     * Called by NetBeans after a newline insertion (Enter key).
+     * Paste indentation is handled separately by [KotlinPasteIndentFilter].
+     */
     override fun reindent() {
         KotlinIndentStrategy(context).addIndent()
     }
 
     override fun indentLock() = null
 }
+
+/** Width of [s] in columns, counting each tab as 8 spaces. */
+internal fun indentWidth(s: String): Int = s.sumOf { if (it == '\t') 8 else 1 }

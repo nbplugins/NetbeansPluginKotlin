@@ -19,8 +19,12 @@
 package indentation
 
 import javaproject.JavaProject
+import javax.swing.text.PlainDocument
 import javax.swing.text.StyledDocument
 import org.jetbrains.kotlin.formatting.KotlinIndentStrategy
+import org.jetbrains.kotlin.indentation.applyDeltaToText
+import org.jetbrains.kotlin.indentation.computePasteAdjustment
+import org.jetbrains.kotlin.indentation.indentWidth
 import org.netbeans.api.project.Project
 import org.netbeans.junit.NbTestCase
 import org.openide.filesystems.FileObject
@@ -80,7 +84,68 @@ class IndentationTest : KotlinTestCase("Indentation test", "indentation") {
     fun testNewLineWhenCaretAtPosition0() = doTest("newLineWhenCaretAtPosition0.kt")
     
 //    fun testBetweenBracesOnOneLine() = doTest("betweenBracesOnOneLine.kt")
-//    
+//
 //    fun testBetweenBracesOnOneLine2() = doTest("betweenBracesOnOneLine2.kt")
-    
+
+    // ----- end-to-end paste tests (real project document, formatter active) -----
+
+    /**
+     * Simulates pasting [pastedText] at the `<caret>` position in [fileName] through the
+     * production [computePasteAdjustment] path (formatter-backed indent computation), then
+     * compares the resulting document to the corresponding `.after` fixture.
+     */
+    fun doPasteTest(fileName: String, pastedText: String) {
+        val doc = getDocumentForFileObject(dir, fileName) as StyledDocument
+        val caret = getCaret(doc)
+        doc.remove(caret, "<caret>".length)
+
+        val adjusted = computePasteAdjustment(doc, caret, pastedText)
+        doc.insertString(caret, adjusted ?: pastedText, null)
+
+        val expected = getDocumentForFileObject(dir, fileName.replace(".kt", ".after"))
+        assertEquals(expected.getText(0, expected.length), doc.getText(0, doc.getLength()))
+    }
+
+    /** Paste two zero-indent lines onto a blank line inside a function body → shifted to body level. */
+    fun testPasteAtBlankLineInBody() =
+        doPasteTest("pasteAtBlankLineInBody.kt", "val a = 1\nval b = 2")
+
+    /** Paste onto a blank line inside a nested `if` block → shifted to the nested level. */
+    fun testPasteInNestedIf() =
+        doPasteTest("pasteInNestedIf.kt", "val a = 1\nval b = 2")
+
+    /** Paste a block that carries its own relative indent → whole block shifted, structure preserved. */
+    fun testPasteWithOwnIndent() =
+        doPasteTest("pasteWithOwnIndent.kt", "if (x) {\n    doThing()\n}")
+
+    /** Paste a single line (no newline) onto a blank line inside a function body → indented to body level. */
+    fun testPasteSingleLineAtBlankLineInBody() =
+        doPasteTest("pasteSingleLineAtBlankLineInBody.kt", "val x = 1")
+
+    // ----- applyDeltaToText tests (KotlinPasteIndentFilter) -----
+
+    /** Positive delta shifts all non-blank lines right; blank lines become empty. */
+    fun testApplyDeltaToTextPositive() {
+        val text = "val x = 1\n\nval y = 2\n"
+        assertEquals("    val x = 1\n\n    val y = 2\n", applyDeltaToText(text, 4))
+    }
+
+    /** Negative delta shifts lines left; indent cannot go below zero. */
+    fun testApplyDeltaToTextNegative() {
+        val text = "    val a = 1\n    val b = 2\n"
+        assertEquals("val a = 1\nval b = 2\n", applyDeltaToText(text, -4))
+    }
+
+    /** Tab counted as 8 spaces; output is spaces only. */
+    fun testApplyDeltaToTextTabToSpaces() {
+        val text = "\tval x = 1\n"
+        assertEquals("val x = 1\n", applyDeltaToText(text, -8))
+    }
+
+    /** Lines with only whitespace are cleared regardless of delta. */
+    fun testApplyDeltaToTextBlankLinesCleared() {
+        val text = "val a = 1\n   \nval b = 2\n"
+        assertEquals("  val a = 1\n\n  val b = 2\n", applyDeltaToText(text, 2))
+    }
+
 }
