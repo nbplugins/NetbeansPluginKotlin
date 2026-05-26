@@ -18,7 +18,10 @@ package io.github.nbplugins.kotlin.nbm.completion
 
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.psi.KtFile
+import org.openide.filesystems.FileUtil
 import utils.KotlinTestCase
+import utils.getCaret
+import utils.getDocumentForFileObject
 
 /**
  * Unit tests for [KaCompletionProvider].
@@ -90,5 +93,89 @@ class KaCompletionProviderTest : KotlinTestCase("KaCompletionProvider test", "co
         // Both calls must succeed without throwing; result sizes may differ depending on symbols
         assertNotNull(lowerCase)
         assertNotNull(upperCase)
+    }
+
+    /**
+     * Verifies that with [isAfterDot]=true, top-level non-extension callables are suppressed.
+     *
+     * [checkAfterDotFiltering.kt] declares [topLevelNonExtension] (no receiver) at the top level.
+     * When completing after a dot receiver, that symbol must not appear.
+     */
+    fun testGetSymbolsAt_afterDot_suppressesTopLevelNonExtension() {
+        val fo = dir.getFileObject("checkAfterDotFiltering.kt")
+        assertNotNull("checkAfterDotFiltering.kt must exist in the completion dir", fo)
+        val doc = getDocumentForFileObject(fo)
+        val caretOffset = getCaret(doc)
+        assertTrue("caret marker must be present in the file", caretOffset >= 0)
+
+        val absolutePath = FileUtil.toFile(fo)!!.absolutePath
+        val wrapper = KotlinAnalysisAPISession.getSession(project)
+        val ktFile = wrapper.getKtFileForPath(absolutePath)
+        assertNotNull("K2 session must contain checkAfterDotFiltering.kt", ktFile)
+
+        val symbols = KaCompletionProvider.getSymbolsAt(ktFile!!, caretOffset, prefix = "", isAfterDot = true)
+        val names = symbols.mapNotNull {
+            (it as? org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol)?.name?.identifier
+        }
+        assertFalse(
+            "topLevelNonExtension must be suppressed when isAfterDot=true, but got: $names",
+            "topLevelNonExtension" in names
+        )
+    }
+
+    /**
+     * Verifies that with [isAfterDot]=true, extension callables are NOT suppressed.
+     *
+     * [checkAfterDotFiltering.kt] declares [String.stringExtension] (has a receiver).
+     * Extension functions must remain in the completion list after a dot.
+     */
+    fun testGetSymbolsAt_afterDot_keepsExtensions() {
+        val fo = dir.getFileObject("checkAfterDotFiltering.kt")
+        assertNotNull("checkAfterDotFiltering.kt must exist in the completion dir", fo)
+        val doc = getDocumentForFileObject(fo)
+        val caretOffset = getCaret(doc)
+        assertTrue("caret marker must be present in the file", caretOffset >= 0)
+
+        val absolutePath = FileUtil.toFile(fo)!!.absolutePath
+        val wrapper = KotlinAnalysisAPISession.getSession(project)
+        val ktFile = wrapper.getKtFileForPath(absolutePath)
+        assertNotNull("K2 session must contain checkAfterDotFiltering.kt", ktFile)
+
+        val symbols = KaCompletionProvider.getSymbolsAt(ktFile!!, caretOffset, prefix = "", isAfterDot = true)
+        val names = symbols.mapNotNull {
+            (it as? org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol)?.name?.identifier
+        }
+        assertTrue(
+            "stringExtension (an extension fun) must NOT be suppressed when isAfterDot=true, but got: $names",
+            "stringExtension" in names
+        )
+    }
+
+    /**
+     * Verifies that without [isAfterDot], top-level non-extension callables are still shown.
+     *
+     * When completing at the same position but without the after-dot flag, [topLevelNonExtension]
+     * must appear (normal scope completion).
+     */
+    fun testGetSymbolsAt_withoutAfterDot_showsTopLevelNonExtension() {
+        val fo = dir.getFileObject("checkAfterDotFiltering.kt")
+        assertNotNull("checkAfterDotFiltering.kt must exist in the completion dir", fo)
+        val doc = getDocumentForFileObject(fo)
+        val caretOffset = getCaret(doc)
+        assertTrue("caret marker must be present in the file", caretOffset >= 0)
+
+        val absolutePath = FileUtil.toFile(fo)!!.absolutePath
+        val wrapper = KotlinAnalysisAPISession.getSession(project)
+        val ktFile = wrapper.getKtFileForPath(absolutePath)
+        assertNotNull("K2 session must contain checkAfterDotFiltering.kt", ktFile)
+
+        val symbols = KaCompletionProvider.getSymbolsAt(ktFile!!, caretOffset, prefix = "", isAfterDot = false)
+        val names = symbols.mapNotNull {
+            (it as? org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol)?.name?.identifier
+        }
+        assertTrue(
+            "topLevelNonExtension must appear when isAfterDot=false, but got: $names",
+            "topLevelNonExtension" in names
+        )
     }
 }

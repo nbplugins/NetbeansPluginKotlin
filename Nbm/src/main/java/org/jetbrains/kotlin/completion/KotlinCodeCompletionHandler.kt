@@ -75,7 +75,8 @@ class KotlinCodeCompletionHandler : CodeCompletionHandler2 {
         val kaKtFile = parserResult.kaKtFile
         if (kaKtFile != null) {
             val identOffset = (caretOffset - prefix.length).coerceAtLeast(0)
-            val k2Proposals = KaCompletionProvider.getSymbolsAt(kaKtFile, caretOffset, prefix)
+            val isAfterDot = identOffset > 0 && doc?.getText(identOffset - 1, 1) == "."
+            val k2Proposals = KaCompletionProvider.getSymbolsAt(kaKtFile, caretOffset, prefix, isAfterDot)
                 .mapNotNull { KaCompletionProposalFactory.toProposal(it, identOffset, prefix) }
             KotlinLogger.INSTANCE.logInfo(
                 "K2 completion for ${file.name}: ${k2Proposals.size} proposal(s), prefix='$prefix'"

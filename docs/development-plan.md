@@ -472,7 +472,7 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
     (`KotlinReformatTask` already exists — test and fix edge cases)
   - [ ] Auto-indent on paste and Enter: verify/fix `KotlinIndentTask` for paste events;
     hook `IndentAction` for Enter
-  - [ ] Completion filtering: suppress package-scope symbols after dot receiver
+  - [x] Completion filtering: suppress package-scope symbols after dot receiver
   - [ ] Hover tooltip: CSL `Documentation` provider → `KaNavigationUtils.renderDeclarationTooltip()`
   - [x] False-positive `QUALIFIED_EXPRESSION_WITHOUT_SELECTOR` — investigated; no longer reproduced with K2 2.3.21
   - [ ] `ClassNotFoundException: org.codehaus.plexus.util.PropertyUtils` SEVERE on J2SE project open:

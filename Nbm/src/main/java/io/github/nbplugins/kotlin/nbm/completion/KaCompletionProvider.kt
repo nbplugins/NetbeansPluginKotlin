@@ -17,7 +17,9 @@
 package io.github.nbplugins.kotlin.nbm.completion
 
 import org.jetbrains.kotlin.analysis.api.analyze
+import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaDeclarationSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.isTopLevel
 import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.psi.KtElement
@@ -40,12 +42,15 @@ object KaCompletionProvider {
     /**
      * Returns declaration symbols visible at [caretOffset] in [kaKtFile] that match [prefix].
      *
-     * @param kaKtFile   K2-session-owned [KtFile] for the file being edited
+     * @param kaKtFile    K2-session-owned [KtFile] for the file being edited
      * @param caretOffset document offset of the caret
-     * @param prefix     identifier prefix to filter by (case-insensitive); empty string returns all
+     * @param prefix      identifier prefix to filter by (case-insensitive); empty string returns all
+     * @param isAfterDot  `true` when completion is triggered after a dot receiver (e.g. `expr.|`);
+     *                    top-level non-extension callables are suppressed in this case
      * @return filtered list of [KaDeclarationSymbol]s, or an empty list if analysis fails
      */
-    fun getSymbolsAt(kaKtFile: KtFile, caretOffset: Int, prefix: String): List<KaDeclarationSymbol> =
+    fun getSymbolsAt(kaKtFile: KtFile, caretOffset: Int, prefix: String,
+                     isAfterDot: Boolean = false): List<KaDeclarationSymbol> =
         runCatching {
             analyze(kaKtFile) {
                 val psi = kaKtFile.findElementAt(caretOffset)
@@ -58,8 +63,16 @@ object KaCompletionProvider {
                     .scopes.map { it.scope }.asCompositeScope()
                 compositeScope.declarations
                     .filter { sym ->
-                        prefix.isEmpty() || (sym as? KaNamedSymbol)?.name?.identifier
-                            ?.startsWith(prefix, ignoreCase = true) == true
+                        if (prefix.isNotEmpty() &&
+                            (sym as? KaNamedSymbol)?.name?.identifier
+                                ?.startsWith(prefix, ignoreCase = true) != true) {
+                            return@filter false
+                        }
+                        if (isAfterDot && sym is KaCallableSymbol
+                                && !sym.isExtension && sym.isTopLevel) {
+                            return@filter false
+                        }
+                        true
                     }
                     .toList()
             }
