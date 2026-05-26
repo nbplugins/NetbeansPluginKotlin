@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin</artifactId>
-  <version>0.9.43-SNAPSHOT</version>
+  <version>0.9.48-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin</name>
   <properties>
@@ -32,6 +32,7 @@
     <module>bundled-jars/KotlinCompilerCliBase</module>
     <module>bundled-jars/KotlinFormatter</module>
     <module>bundled-jars/KotlinHighlighting</module>
+    <module>bundled-jars/KotlinIcons</module>
     <module>Nbm</module>
   </modules>
   <repositories>
@@ -187,6 +188,11 @@
         <version>${kotlin.runtime.version}</version>
       </dependency>
       <!-- Bundled JARs -->
+      <dependency>
+        <groupId>io.github.nbplugins</groupId>
+        <artifactId>netbeans-plugin-kotlin-icons</artifactId>
+        <version>${project.version}</version>
+      </dependency>
       <dependency>
         <groupId>io.github.nbplugins</groupId>
         <artifactId>netbeans-plugin-kotlin-formatter</artifactId>

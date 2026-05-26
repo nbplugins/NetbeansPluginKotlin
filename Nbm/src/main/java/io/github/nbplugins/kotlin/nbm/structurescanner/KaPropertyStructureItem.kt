@@ -16,13 +16,12 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.structurescanner
 
-import javax.swing.ImageIcon
 import org.jetbrains.kotlin.psi.KtProperty
+import org.jetbrains.kotlin.utils.KotlinImageProvider
 import org.netbeans.modules.csl.api.ElementKind
 import org.netbeans.modules.csl.api.HtmlFormatter
 import org.netbeans.modules.csl.api.Modifier
 import org.netbeans.modules.csl.api.StructureItem
-import org.openide.util.ImageUtilities
 
 /**
  * K2 structure item for a Kotlin property declaration.
@@ -51,6 +50,5 @@ class KaPropertyStructureItem(
     override fun getNestedItems() = emptyList<StructureItem>()
     override fun getPosition() = property.textRange.startOffset.toLong()
     override fun getEndPosition() = property.textRange.endOffset.toLong()
-    override fun getCustomIcon() =
-        ImageIcon(ImageUtilities.loadImage("org/jetbrains/kotlin/completionIcons/field.png"))
+    override fun getCustomIcon() = KotlinImageProvider.valImage
 }

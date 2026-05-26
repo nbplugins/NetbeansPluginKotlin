@@ -24,17 +24,20 @@ import org.netbeans.modules.csl.api.HtmlFormatter
 import org.netbeans.modules.csl.spi.DefaultCompletionProposal
 
 /**
- * NetBeans [org.netbeans.modules.csl.api.CompletionProposal] backed by a K2 [KaCompletionProposalFactory] symbol.
+ * NetBeans [org.netbeans.modules.csl.api.CompletionProposal] backed by a K2 [KaCompletionItem].
  *
  * Implements [InsertableProposal] so that [KaCodeCompletionResult] can perform text
  * insertion when the user accepts this proposal.
  *
- * @param name       identifier name to display and insert
- * @param kind       NetBeans [ElementKind] for icon and categorisation
- * @param icon       icon resolved from the symbol type
- * @param anchorOffset document offset where identifier starts
- * @param prefix     already-typed prefix (removed on insertion)
+ * @param name           identifier name to display and insert
+ * @param kind           NetBeans [ElementKind] for icon and categorisation
+ * @param icon           icon resolved from the symbol type
+ * @param anchorOffset   document offset where identifier starts
+ * @param prefix         already-typed prefix (removed on insertion)
  * @param isFunctionLike whether to append `()` on insertion
+ * @param signature      pre-rendered RHS signature, e.g. `"(x: Int): Boolean"` or `": String"`;
+ *                       HTML-escaped when returned from [getRhsHtml] to handle generic types
+ * @param sortPriority   numeric sort key; lower value = higher position in the list
  */
 class KaCompletionProposal(
     private val name: String,
@@ -43,6 +46,8 @@ class KaCompletionProposal(
     private val anchorOffset: Int,
     private val prefix: String,
     private val isFunctionLike: Boolean,
+    private val signature: String,
+    private val sortPriority: Int = 0,
 ) : DefaultCompletionProposal(), InsertableProposal {
 
     override fun getName(): String = name
@@ -53,13 +58,9 @@ class KaCompletionProposal(
     override fun getKind(): ElementKind = kind
     override fun getElement() = null
     override fun getLhsHtml(formatter: HtmlFormatter): String = name
-    override fun getRhsHtml(formatter: HtmlFormatter): String = ""
-    override fun getSortPrioOverride(): Int = when (kind) {
-        ElementKind.FIELD -> 20
-        ElementKind.METHOD -> 30
-        ElementKind.CLASS -> 40
-        else -> 150
-    }
+    override fun getRhsHtml(formatter: HtmlFormatter): String =
+        signature.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    override fun getSortPrioOverride(): Int = sortPriority
 
     /**
      * Inserts the name at [anchorOffset], replacing [prefix]. Appends `()` for function-like symbols.

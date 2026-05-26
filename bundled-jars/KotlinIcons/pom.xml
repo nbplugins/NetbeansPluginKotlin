@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.github.nbplugins</groupId>
+    <artifactId>netbeans-plugin-kotlin</artifactId>
+    <version>0.9.48-SNAPSHOT</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+  <artifactId>netbeans-plugin-kotlin-icons</artifactId>
+  <packaging>jar</packaging>
+  <name>Netbeans Plugin Kotlin Icons</name>
+  <description>
+    Kotlin-specific completion icons (val, var, extension function, interface, enum, object, etc.)
+    converted from IntelliJ IDEA SVG sources to 16x16 PNG at build time via Apache Batik.
+    SVG sources come from submodules/IntellijCommunity (Apache License 2.0,
+    Copyright 2000-2020 JetBrains s.r.o. and Kotlin Programming Language contributors).
+  </description>
+
+  <build>
+    <plugins>
+      <!--
+        Converts Kotlin-specific SVG icons from submodules/IntellijCommunity into 16x16 PNGs
+        at generate-resources phase using Apache Batik.
+        SVGs are licensed under Apache 2.0 (see submodules/IntellijCommunity/plugins/kotlin/license/LICENSE.txt).
+        Output path org/jetbrains/kotlin/idea/icons/ mirrors the original IDEA resource path.
+      -->
+      <plugin>
+        <groupId>org.codehaus.gmaven</groupId>
+        <artifactId>groovy-maven-plugin</artifactId>
+        <version>2.1.1</version>
+        <dependencies>
+          <dependency>
+            <groupId>org.apache.xmlgraphics</groupId>
+            <artifactId>batik-transcoder</artifactId>
+            <version>1.17</version>
+          </dependency>
+          <dependency>
+            <groupId>org.apache.xmlgraphics</groupId>
+            <artifactId>batik-codec</artifactId>
+            <version>1.17</version>
+          </dependency>
+        </dependencies>
+        <executions>
+          <execution>
+            <id>generate-icons</id>
+            <phase>generate-resources</phase>
+            <goals><goal>execute</goal></goals>
+            <configuration>
+              <source><![CDATA[
+                import org.apache.batik.transcoder.image.PNGTranscoder
+                import org.apache.batik.transcoder.TranscoderInput
+                import org.apache.batik.transcoder.TranscoderOutput
+
+                def kotlinSvgDir = new File(project.basedir,
+                    '../../submodules/IntellijCommunity/plugins/kotlin/base/resources/resources/org/jetbrains/kotlin/idea/icons')
+                def platformSvgDir = new File(project.basedir,
+                    '../../submodules/IntellijCommunity/platform/icons/src/nodes')
+                def outDir = new File(project.build.outputDirectory, 'io/github/nbplugins/kotlin/nbm/icons')
+                outDir.mkdirs()
+
+                // svgDir -> output name
+                def icons = [
+                    [kotlinSvgDir,  'field_value.svg'               , 'val.png'],
+                    [kotlinSvgDir,  'field_variable.svg'            , 'var.png'],
+                    [kotlinSvgDir,  'abstract_extension_function.svg', 'extension_function.png'],
+                    [kotlinSvgDir,  'classKotlin.svg'               , 'class_kotlin.png'],
+                    [kotlinSvgDir,  'abstractClassKotlin.svg'       , 'abstract_class.png'],
+                    [kotlinSvgDir,  'interfaceKotlin.svg'           , 'interface.png'],
+                    [kotlinSvgDir,  'enumKotlin.svg'                , 'enum.png'],
+                    [kotlinSvgDir,  'annotationKotlin.svg'          , 'annotation.png'],
+                    [kotlinSvgDir,  'objectKotlin.svg'              , 'object.png'],
+                    [kotlinSvgDir,  'classInitializerKotlin.svg'    , 'class_initializer.png'],
+                    [kotlinSvgDir,  'lambda.svg'                    , 'lambda.png'],
+                    [kotlinSvgDir,  'suspendCall.svg'               , 'suspend_function.png'],
+                    [kotlinSvgDir,  'typeAlias.svg'                 , 'type_alias.png'],
+                    [kotlinSvgDir,  'value.svg'                     , 'value_class.png'],
+                    [kotlinSvgDir,  'actual.svg'                    , 'actual.png'],
+                    [kotlinSvgDir,  'expect.svg'                    , 'expect.png'],
+                    [kotlinSvgDir,  'kotlin_file.svg'               , 'kotlin_file.png'],
+                    [kotlinSvgDir,  'kotlin.svg'                    , 'kotlin.png'],
+                    // Platform icons (platform/icons/src/nodes/, Apache 2.0)
+                    [platformSvgDir, 'function.svg'                 , 'function.png'],
+                    [platformSvgDir, 'method.svg'                   , 'method.png'],
+                    [platformSvgDir, 'variable.svg'                 , 'variable.png'],
+                    [platformSvgDir, 'parameter.svg'                , 'parameter.png'],
+                ]
+
+                icons.each { entry ->
+                    def (svgDir, svgName, pngName) = entry
+                    def svgFile = new File(svgDir, svgName)
+                    if (!svgFile.exists()) {
+                        log.warn("SVG not found: ${svgFile.absolutePath}")
+                        return
+                    }
+                    def t = new PNGTranscoder()
+                    t.addTranscodingHint(PNGTranscoder.KEY_WIDTH, 16f)
+                    t.addTranscodingHint(PNGTranscoder.KEY_HEIGHT, 16f)
+                    def os = new FileOutputStream(new File(outDir, pngName))
+                    t.transcode(new TranscoderInput(svgFile.toURI().toString()),
+                                new TranscoderOutput(os))
+                    os.close()
+                    log.info("Generated ${pngName} (16px)")
+                }
+              ]]></source>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

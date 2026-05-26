@@ -19,10 +19,36 @@ package org.jetbrains.kotlin.utils
 import javax.swing.ImageIcon
 import org.openide.util.ImageUtilities
 
+/**
+ * Provides icons for Kotlin declarations used in completion and the Navigator structure view.
+ *
+ * Kotlin-specific icons (val, var, extension function, class kinds) come from
+ * netbeans-plugin-kotlin-icons (Apache 2.0, converted from IntelliJ IDEA SVGs at build time).
+ * The plain function icon (method.png) is a Java-style fallback since IDEA uses a platform icon
+ * for non-extension functions.
+ */
 object KotlinImageProvider {
 
-    private val imagesLocation = "org/jetbrains/kotlin/completionIcons/"
+    private fun load(path: String): ImageIcon? =
+        ImageUtilities.loadImage(path)?.let { ImageIcon(it) }
 
-    val typeImage = ImageIcon(ImageUtilities.loadImage("${imagesLocation}class.png"))
-    val functionImage = ImageIcon(ImageUtilities.loadImage("${imagesLocation}method.png"))
+    val functionImage: ImageIcon?          = load("io/github/nbplugins/kotlin/nbm/icons/function.png")
+    val methodImage: ImageIcon?            = load("io/github/nbplugins/kotlin/nbm/icons/method.png")
+
+    // Kotlin-specific icons from netbeans-plugin-kotlin-icons (io/github/nbplugins/kotlin/nbm/icons/)
+    val extensionFunctionImage: ImageIcon? = load("io/github/nbplugins/kotlin/nbm/icons/extension_function.png")
+    val suspendFunctionImage: ImageIcon?   = load("io/github/nbplugins/kotlin/nbm/icons/suspend_function.png")
+    val valImage: ImageIcon?               = load("io/github/nbplugins/kotlin/nbm/icons/val.png")
+    val varImage: ImageIcon?               = load("io/github/nbplugins/kotlin/nbm/icons/var.png")
+    val classKotlinImage: ImageIcon?       = load("io/github/nbplugins/kotlin/nbm/icons/class_kotlin.png")
+    val abstractClassImage: ImageIcon?     = load("io/github/nbplugins/kotlin/nbm/icons/abstract_class.png")
+    val interfaceImage: ImageIcon?         = load("io/github/nbplugins/kotlin/nbm/icons/interface.png")
+    val enumImage: ImageIcon?              = load("io/github/nbplugins/kotlin/nbm/icons/enum.png")
+    val annotationImage: ImageIcon?        = load("io/github/nbplugins/kotlin/nbm/icons/annotation.png")
+    val objectImage: ImageIcon?            = load("io/github/nbplugins/kotlin/nbm/icons/object.png")
+    val typeAliasImage: ImageIcon?         = load("io/github/nbplugins/kotlin/nbm/icons/type_alias.png")
+    val lambdaImage: ImageIcon?            = load("io/github/nbplugins/kotlin/nbm/icons/lambda.png")
+    // Platform icons (platform/icons/src/nodes/)
+    val variableImage: ImageIcon?          = load("io/github/nbplugins/kotlin/nbm/icons/variable.png")
+    val parameterImage: ImageIcon?         = load("io/github/nbplugins/kotlin/nbm/icons/parameter.png")
 }
