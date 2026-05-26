@@ -466,19 +466,16 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
     (Darcula), `NetBeans55.xml` (Classic NetBeans) (branch `feature/e2-idea-color-parity`)
   - [x] Fonts & Colors preview: semantic highlights applied to preview sample via
     `PreviewSemanticHighlightsLoader` (branch `feature/e2-idea-color-parity`)
-  - [ ] Source / History toolbar buttons for `.kt` files: register `MultiViewElement` (History view)
-    alongside the existing Source view in `layer.xml` — same mechanism as Java editor
-  - [ ] Reformat selection: verify CSL Reformat action works on a selected range
-    (`KotlinReformatTask` already exists — test and fix edge cases)
-  - [ ] Auto-indent on paste and Enter: verify/fix `KotlinIndentTask` for paste events;
-    hook `IndentAction` for Enter
-  - [ ] Completion filtering: suppress package-scope symbols after dot receiver
+  - [x] Source / History toolbar buttons for `.kt` files: registered `MultiViewElement` (History view) alongside Source; removed empty Visual tab (PR #74)
+  - [x] Reformat selection: CSL Reformat action works on a selected range; Format context menu item added (PR #76)
+  - [x] Auto-indent on paste: `KotlinIndentTask` handles paste events, preserving relative indentation of pasted block (PR #77)
+  - [x] Completion filtering: dot-receiver completion uses receiver type's member scope; only members and applicable extensions are shown (no locals, outer-class members, or imported classes)
+  - [x] Completion signatures: RHS shows `(param: Type): ReturnType` for functions and `: Type` for properties, rendered via K2 `KaTypeRendererForSource` inside `analyze {}`
+  - [x] Completion icons: Kotlin-accurate icons (val, var, method, extension function, suspend function, interface, enum, object, type alias, parameter) via `bundled-jars/KotlinIcons` (SVG→PNG from IntelliJ Community sources at build time)
+  - [x] Completion deduplication and IDEA-like sort order: locals first, then type members (properties before methods), then package/import scope; duplicates (same name+signature) suppressed
   - [ ] Hover tooltip: CSL `Documentation` provider → `KaNavigationUtils.renderDeclarationTooltip()`
   - [x] False-positive `QUALIFIED_EXPRESSION_WITHOUT_SELECTOR` — investigated; no longer reproduced with K2 2.3.21
-  - [ ] `ClassNotFoundException: org.codehaus.plexus.util.PropertyUtils` SEVERE on J2SE project open:
-    `J2SEProjectPropertiesModifier.java:119` calls `PropertyUtils.loadProperties(url)` from the
-    Maven Embedder classloader, which is not accessible from the `io.github.nbplugins.kotlin` module.
-    Fix: replace with plain `new Properties(); props.load(url.openStream())`.
+  - [x] `ClassNotFoundException: org.codehaus.plexus.util.PropertyUtils` SEVERE on J2SE project open: replaced Maven Embedder utility with `Properties.load()` (PR #75).
 
 - **E2** — Extended diagnostics and highlighting:
   - [x] `@Deprecated` symbols: grey-strike rendering via `KaSymbol.deprecationStatus`

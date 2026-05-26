@@ -16,22 +16,11 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.completion
 
-import org.jetbrains.kotlin.analysis.api.symbols.KaClassLikeSymbol
-import org.jetbrains.kotlin.analysis.api.symbols.KaDeclarationSymbol
-import org.jetbrains.kotlin.analysis.api.symbols.KaFunctionSymbol
-import org.jetbrains.kotlin.analysis.api.symbols.KaPropertySymbol
-import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
-import org.jetbrains.kotlin.utils.KotlinImageProvider
-import org.netbeans.modules.csl.api.ElementKind
-
 /**
- * Converts K2 [KaDeclarationSymbol]s to NetBeans [KaCompletionProposal]s.
+ * Converts [KaCompletionItem]s to NetBeans [KaCompletionProposal]s.
  *
- * Symbol-to-proposal mapping:
- * - [KaFunctionSymbol] → [ElementKind.METHOD], `()` appended on insertion
- * - [KaPropertySymbol] → [ElementKind.FIELD]
- * - [KaClassLikeSymbol] → [ElementKind.CLASS]
- * - Other → [ElementKind.OTHER]
+ * All symbol-level decisions (kind, icon, signature) are already made by
+ * [KaCompletionProvider] inside an `analyze {}` block; this factory is a thin mapper.
  *
  * This class belongs to the **model/service** layer and must not reference NetBeans UI APIs
  * other than [org.netbeans.modules.csl.api].
@@ -39,33 +28,14 @@ import org.netbeans.modules.csl.api.ElementKind
 object KaCompletionProposalFactory {
 
     /**
-     * Converts [symbol] to a [KaCompletionProposal], or `null` if the symbol has no name.
+     * Converts [item] to a [KaCompletionProposal].
      *
-     * @param symbol      the K2 declaration symbol to wrap
+     * @param item         the pre-rendered completion item from [KaCompletionProvider]
      * @param anchorOffset document offset where the identifier starts
-     * @param prefix      already-typed prefix; removed on proposal insertion
-     * @return a [KaCompletionProposal], or `null` for anonymous symbols
+     * @param prefix       already-typed prefix; removed on proposal insertion
+     * @return a [KaCompletionProposal]
      */
-    fun toProposal(symbol: KaDeclarationSymbol, anchorOffset: Int, prefix: String): KaCompletionProposal? {
-        val name = (symbol as? KaNamedSymbol)?.name?.identifier ?: return null
-        val (kind, icon, isFunctionLike) = when (symbol) {
-            is KaFunctionSymbol -> Triple(
-                ElementKind.METHOD,
-                KotlinImageProvider.functionImage,
-                true,
-            )
-            is KaPropertySymbol -> Triple(
-                ElementKind.FIELD,
-                KotlinImageProvider.typeImage,
-                false,
-            )
-            is KaClassLikeSymbol -> Triple(
-                ElementKind.CLASS,
-                KotlinImageProvider.typeImage,
-                false,
-            )
-            else -> Triple(ElementKind.OTHER, null, false)
-        }
-        return KaCompletionProposal(name, kind, icon, anchorOffset, prefix, isFunctionLike)
-    }
+    fun toProposal(item: KaCompletionItem, anchorOffset: Int, prefix: String): KaCompletionProposal =
+        KaCompletionProposal(item.name, item.kind, item.icon, anchorOffset, prefix,
+                             item.isFunctionLike, item.signature, item.sortPriority)
 }

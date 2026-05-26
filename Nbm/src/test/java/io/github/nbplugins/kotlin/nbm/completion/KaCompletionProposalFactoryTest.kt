@@ -16,96 +16,51 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.completion
 
-import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
-import org.jetbrains.kotlin.analysis.api.analyze
-import org.jetbrains.kotlin.analysis.api.symbols.KaClassLikeSymbol
-import org.jetbrains.kotlin.analysis.api.symbols.KaFunctionSymbol
-import org.jetbrains.kotlin.analysis.api.symbols.KaPropertySymbol
-import org.jetbrains.kotlin.psi.KtClassOrObject
-import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.psi.KtNamedFunction
-import org.jetbrains.kotlin.psi.KtProperty
 import org.netbeans.modules.csl.api.ElementKind
 import utils.KotlinTestCase
 
 /**
  * Unit tests for [KaCompletionProposalFactory].
  *
- * Uses real K2 symbols obtained via [analyze] from [KotlinAnalysisAPISession] source files.
+ * The factory is a thin mapper from [KaCompletionItem] to [KaCompletionProposal].
+ * Tests construct [KaCompletionItem] values directly — no K2 session needed.
  */
 class KaCompletionProposalFactoryTest : KotlinTestCase("KaCompletionProposalFactory test", "completion") {
 
-    private fun firstKtFile(): KtFile? =
-        KotlinAnalysisAPISession.getSession(project).session
-            .modulesWithFiles.values.flatten().filterIsInstance<KtFile>().firstOrNull()
-
     /**
-     * Verifies that [KaCompletionProposalFactory.toProposal] maps a [KaFunctionSymbol]
-     * to a proposal with [ElementKind.METHOD] and the correct identifier name.
-     *
-     * Skips when no top-level function is found in the K2 session source files.
+     * Verifies that a [KaCompletionItem] with [ElementKind.METHOD] maps to a proposal
+     * with kind METHOD and the correct name.
      */
-    fun testFunctionSymbol_mapsToMethodKind() {
-        val ktFile = firstKtFile() ?: return
-        val funcDecl = (ktFile as? KtFile)?.declarations?.filterIsInstance<KtNamedFunction>()?.firstOrNull()
-            ?: run {
-                // Try any file in session
-                KotlinAnalysisAPISession.getSession(project).session
-                    .modulesWithFiles.values.flatten().filterIsInstance<KtFile>()
-                    .flatMap { it.declarations.filterIsInstance<KtNamedFunction>() }
-                    .firstOrNull()
-            } ?: return  // No function found; skip test
-
-        analyze(ktFile) {
-            val sym = funcDecl.symbol as? KaFunctionSymbol ?: return@analyze
-            val proposal = KaCompletionProposalFactory.toProposal(sym, anchorOffset = 0, prefix = "")
-            assertNotNull("toProposal must not return null for a named function", proposal)
-            assertEquals(ElementKind.METHOD, proposal!!.kind)
-            assertEquals(funcDecl.name, proposal.name)
-        }
+    fun testFunctionItem_mapsToMethodKind() {
+        val item = KaCompletionItem("myFun", ElementKind.METHOD, isFunctionLike = true,
+                                   signature = "(x: Int): Boolean", icon = null)
+        val proposal = KaCompletionProposalFactory.toProposal(item, anchorOffset = 5, prefix = "my")
+        assertEquals(ElementKind.METHOD, proposal.kind)
+        assertEquals("myFun", proposal.name)
+        assertEquals(5, proposal.anchorOffset)
     }
 
     /**
-     * Verifies that [KaCompletionProposalFactory.toProposal] maps a [KaClassLikeSymbol]
-     * to a proposal with [ElementKind.CLASS].
-     *
-     * Skips when no top-level class is found in the K2 session source files.
+     * Verifies that a [KaCompletionItem] with [ElementKind.CLASS] maps to a proposal
+     * with kind CLASS.
      */
-    fun testClassSymbol_mapsToClassKind() {
-        val ktFile = firstKtFile() ?: return
-        val classDecl = KotlinAnalysisAPISession.getSession(project).session
-            .modulesWithFiles.values.flatten().filterIsInstance<KtFile>()
-            .flatMap { it.declarations.filterIsInstance<KtClassOrObject>() }
-            .firstOrNull() ?: return  // No class found; skip test
-
-        val ownerFile = classDecl.containingKtFile
-        analyze(ownerFile) {
-            val sym = classDecl.symbol as? KaClassLikeSymbol ?: return@analyze
-            val proposal = KaCompletionProposalFactory.toProposal(sym, anchorOffset = 0, prefix = "")
-            assertNotNull("toProposal must not return null for a named class", proposal)
-            assertEquals(ElementKind.CLASS, proposal!!.kind)
-        }
+    fun testClassItem_mapsToClassKind() {
+        val item = KaCompletionItem("MyClass", ElementKind.CLASS, isFunctionLike = false,
+                                   signature = "", icon = null)
+        val proposal = KaCompletionProposalFactory.toProposal(item, anchorOffset = 0, prefix = "")
+        assertEquals(ElementKind.CLASS, proposal.kind)
+        assertEquals("MyClass", proposal.name)
     }
 
     /**
-     * Verifies that [KaCompletionProposalFactory.toProposal] maps a [KaPropertySymbol]
-     * to a proposal with [ElementKind.FIELD].
-     *
-     * Skips when no top-level property is found in the K2 session source files.
+     * Verifies that a [KaCompletionItem] with [ElementKind.FIELD] maps to a proposal
+     * with kind FIELD and that the signature is forwarded to [KaCompletionProposal].
      */
-    fun testPropertySymbol_mapsToFieldKind() {
-        val ktFile = firstKtFile() ?: return
-        val propDecl = KotlinAnalysisAPISession.getSession(project).session
-            .modulesWithFiles.values.flatten().filterIsInstance<KtFile>()
-            .flatMap { it.declarations.filterIsInstance<KtProperty>() }
-            .firstOrNull() ?: return  // No property found; skip test
-
-        val ownerFile = propDecl.containingKtFile
-        analyze(ownerFile) {
-            val sym = propDecl.symbol as? KaPropertySymbol ?: return@analyze
-            val proposal = KaCompletionProposalFactory.toProposal(sym, anchorOffset = 0, prefix = "")
-            assertNotNull("toProposal must not return null for a named property", proposal)
-            assertEquals(ElementKind.FIELD, proposal!!.kind)
-        }
+    fun testPropertyItem_mapsToFieldKind() {
+        val item = KaCompletionItem("myProp", ElementKind.FIELD, isFunctionLike = false,
+                                   signature = ": String", icon = null)
+        val proposal = KaCompletionProposalFactory.toProposal(item, anchorOffset = 0, prefix = "")
+        assertEquals(ElementKind.FIELD, proposal.kind)
+        assertEquals("myProp", proposal.name)
     }
 }

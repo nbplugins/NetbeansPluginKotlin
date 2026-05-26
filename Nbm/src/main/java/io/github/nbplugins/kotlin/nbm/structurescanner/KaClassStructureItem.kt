@@ -16,13 +16,12 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.structurescanner
 
-import javax.swing.ImageIcon
 import org.jetbrains.kotlin.psi.KtClassOrObject
+import org.jetbrains.kotlin.utils.KotlinImageProvider
 import org.netbeans.modules.csl.api.ElementKind
 import org.netbeans.modules.csl.api.HtmlFormatter
 import org.netbeans.modules.csl.api.Modifier
 import org.netbeans.modules.csl.api.StructureItem
-import org.openide.util.ImageUtilities
 
 /**
  * K2 structure item for a Kotlin class, object, or interface declaration.
@@ -52,6 +51,5 @@ class KaClassStructureItem(
     override fun getNestedItems() = nestedItems
     override fun getPosition() = psiElement.textRange.startOffset.toLong()
     override fun getEndPosition() = psiElement.textRange.endOffset.toLong()
-    override fun getCustomIcon() =
-        ImageIcon(ImageUtilities.loadImage("org/jetbrains/kotlin/completionIcons/class.png"))
+    override fun getCustomIcon() = KotlinImageProvider.classKotlinImage
 }
