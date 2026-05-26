@@ -61,6 +61,32 @@ public class KotlinIndentStrategy {
         this((StyledDocument) context.document(), context.caretOffset());
     }
 
+    /**
+     * Returns the indentation string the formatter would assign to the first line of a
+     * paste at {@link #offset}, without modifying the document. Used by the paste-indent
+     * filter to compute the target indent at the insertion point.
+     *
+     * <p>A paste at the start of a line follows the preceding line's newline, so the
+     * situation is identical to pressing Enter on that (non-empty) preceding line — the
+     * case {@link #autoEdit} already handles correctly. This method reproduces
+     * {@code autoEdit}'s formatter input exactly: a single dummy character is placed at
+     * {@code offset} (a digit after {@code =}/<code>{</code>, otherwise a space) while the
+     * rest of the document — including the current line's tail, e.g. a following
+     * <code>}</code> — is preserved so the formatter sees the real block structure.
+     */
+    public String computeIndentForPaste() throws BadLocationException {
+        if (offset == 0) {
+            return "";
+        }
+        String text = doc.getText(0, doc.getLength());
+        StringBuilder textToFormat = new StringBuilder();
+        textToFormat.append(text, 0, offset);
+        char charToInsert = isAfterEqualityOrOpenBrace(textToFormat.toString(), textToFormat.length()) ? '1' : ' ';
+        textToFormat.append(charToInsert);
+        textToFormat.append(text, offset, text.length());
+        return getIndent(textToFormat.toString(), offset);
+    }
+
     public int addIndent() throws BadLocationException {
         if (offset == 1) {
             return offset;

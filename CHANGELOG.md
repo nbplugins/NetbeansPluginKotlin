@@ -1,3 +1,4 @@
+- Added automatic indentation of code pasted into the `.kt` editor: both single-line and multi-line pastes are shifted to the correct indentation level at the insertion point; the internal relative indentation of the pasted block is preserved (no reformatting).
 - Added Format option to the `.kt` editor right-click context menu (after Refactor); when text is selected, only the selected range is reformatted (Alt+Shift+F already worked; this adds the menu entry and range support).
 - Fixed `SEVERE: ClassNotFoundException: org.codehaus.plexus.util.PropertyUtils` logged on J2SE project open: replaced the inaccessible Maven Embedder utility with a standard `Properties.load()` call.
 - Added History tab to `.kt` file editor: file-change history is now accessible directly from the editor alongside the Source tab.

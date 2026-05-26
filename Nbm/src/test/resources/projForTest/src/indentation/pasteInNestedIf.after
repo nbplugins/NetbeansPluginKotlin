@@ -1,0 +1,8 @@
+package indentation
+
+fun baz() {
+    if (true) {
+        val a = 1
+        val b = 2
+    }
+}

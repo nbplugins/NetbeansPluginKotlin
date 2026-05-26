@@ -27,5 +27,4 @@ public class KotlinIndentTaskFactory implements IndentTask.Factory {
     public IndentTask createTask(Context context) {
         return new KotlinIndentTask(context);
     }
-
 }
