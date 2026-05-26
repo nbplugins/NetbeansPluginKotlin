@@ -16,6 +16,8 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.completion
 
+import org.openide.filesystems.FileObject
+
 /**
  * Converts [KaCompletionItem]s to NetBeans [KaCompletionProposal]s.
  *
@@ -33,9 +35,16 @@ object KaCompletionProposalFactory {
      * @param item         the pre-rendered completion item from [KaCompletionProvider]
      * @param anchorOffset document offset where the identifier starts
      * @param prefix       already-typed prefix; removed on proposal insertion
+     * @param fileObject   source file where completion was triggered; forwarded to
+     *                     [KaCompletionProposal.getElement] to enable hover documentation
      * @return a [KaCompletionProposal]
      */
-    fun toProposal(item: KaCompletionItem, anchorOffset: Int, prefix: String): KaCompletionProposal =
+    fun toProposal(
+        item: KaCompletionItem,
+        anchorOffset: Int,
+        prefix: String,
+        fileObject: FileObject? = null,
+    ): KaCompletionProposal =
         KaCompletionProposal(item.name, item.kind, item.icon, anchorOffset, prefix,
-                             item.isFunctionLike, item.signature, item.sortPriority)
+                             item.isFunctionLike, item.signature, item.sortPriority, fileObject)
 }

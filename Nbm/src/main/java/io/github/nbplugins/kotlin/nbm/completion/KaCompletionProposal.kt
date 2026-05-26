@@ -19,9 +19,11 @@ package io.github.nbplugins.kotlin.nbm.completion
 import javax.swing.ImageIcon
 import javax.swing.text.Document
 import org.jetbrains.kotlin.completion.InsertableProposal
+import org.netbeans.modules.csl.api.ElementHandle
 import org.netbeans.modules.csl.api.ElementKind
 import org.netbeans.modules.csl.api.HtmlFormatter
 import org.netbeans.modules.csl.spi.DefaultCompletionProposal
+import org.openide.filesystems.FileObject
 
 /**
  * NetBeans [org.netbeans.modules.csl.api.CompletionProposal] backed by a K2 [KaCompletionItem].
@@ -38,6 +40,8 @@ import org.netbeans.modules.csl.spi.DefaultCompletionProposal
  * @param signature      pre-rendered RHS signature, e.g. `"(x: Int): Boolean"` or `": String"`;
  *                       HTML-escaped when returned from [getRhsHtml] to handle generic types
  * @param sortPriority   numeric sort key; lower value = higher position in the list
+ * @param fileObject     the source file where the completion was triggered; used by [getElement]
+ *                       to build the [KtElementHandle] that enables hover documentation
  */
 class KaCompletionProposal(
     private val name: String,
@@ -48,6 +52,7 @@ class KaCompletionProposal(
     private val isFunctionLike: Boolean,
     private val signature: String,
     private val sortPriority: Int = 0,
+    private val fileObject: FileObject? = null,
 ) : DefaultCompletionProposal(), InsertableProposal {
 
     override fun getName(): String = name
@@ -56,7 +61,16 @@ class KaCompletionProposal(
     override fun getAnchorOffset(): Int = anchorOffset
     override fun getIcon(): ImageIcon? = icon
     override fun getKind(): ElementKind = kind
-    override fun getElement() = null
+
+    /**
+     * Returns a [KtElementHandle] pointing to the identifier start in the source file,
+     * enabling [org.jetbrains.kotlin.completion.KotlinCodeCompletionHandler.documentElement]
+     * to resolve the symbol and build the hover documentation popup.
+     *
+     * Returns `null` when [fileObject] was not provided (e.g. in tests that don't need docs).
+     */
+    override fun getElement(): ElementHandle? =
+        fileObject?.let { KtElementHandle(it, anchorOffset, name, kind) }
     override fun getLhsHtml(formatter: HtmlFormatter): String = name
     override fun getRhsHtml(formatter: HtmlFormatter): String =
         signature.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

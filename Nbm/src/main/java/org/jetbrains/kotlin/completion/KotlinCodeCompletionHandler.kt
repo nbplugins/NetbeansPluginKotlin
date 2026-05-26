@@ -19,6 +19,8 @@ package org.jetbrains.kotlin.completion
 import io.github.nbplugins.kotlin.nbm.completion.KaCodeCompletionResult
 import io.github.nbplugins.kotlin.nbm.completion.KaCompletionProposalFactory
 import io.github.nbplugins.kotlin.nbm.completion.KaCompletionProvider
+import io.github.nbplugins.kotlin.nbm.completion.KtDocumentationRenderer
+import io.github.nbplugins.kotlin.nbm.completion.KtElementHandle
 import java.util.concurrent.Callable
 import org.jetbrains.kotlin.log.KotlinLogger
 import javax.swing.text.Document
@@ -37,11 +39,34 @@ import org.netbeans.modules.csl.api.CodeCompletionHandler.QueryType
 
 class KotlinCodeCompletionHandler : CodeCompletionHandler2 {
 
+    /**
+     * Builds the documentation popup for [element].
+     *
+     * When [element] is a [KtElementHandle] (produced by [KaCompletionProposal.getElement]),
+     * delegates to [KtDocumentationRenderer] to resolve the K2 symbol and render a rich HTML
+     * popup with a syntax-highlighted signature, container info, and KDoc sections.
+     *
+     * Falls back to a URL-based popup for [ElementHandle.UrlHandle] and returns an empty
+     * [Documentation] for all other handle types.
+     *
+     * @param info   the current parser result (used to locate the project)
+     * @param element the element handle from the accepted or hovered completion proposal
+     * @param cancel  callable that returns `true` when the request was cancelled
+     * @return a [Documentation] instance for the popup; never `null`
+     */
     override fun documentElement(info: ParserResult, element: ElementHandle,
                                  cancel: Callable<Boolean>): Documentation {
-        return if (element is ElementHandle.UrlHandle)
-            return Documentation.create(element.url)
-        else Documentation.create("")
+        if (element is KtElementHandle) {
+            val infoFile = info.snapshot.source.fileObject
+            val project = ProjectUtils.getKotlinProjectForFileObject(infoFile)
+                ?: ProjectUtils.getValidProject()
+            if (project != null) {
+                val html = KtDocumentationRenderer.buildHtml(project, element.fileObject, element.offset)
+                if (!html.isNullOrEmpty()) return Documentation.create(html)
+            }
+        }
+        if (element is ElementHandle.UrlHandle) return Documentation.create(element.url)
+        return Documentation.create("")
     }
 
     override fun document(info: ParserResult, element: ElementHandle) = ""
@@ -77,7 +102,7 @@ class KotlinCodeCompletionHandler : CodeCompletionHandler2 {
             val identOffset = (caretOffset - prefix.length).coerceAtLeast(0)
             val isAfterDot = identOffset > 0 && doc?.getText(identOffset - 1, 1) == "."
             val k2Proposals = KaCompletionProvider.getItemsAt(kaKtFile, caretOffset, prefix, isAfterDot)
-                .map { KaCompletionProposalFactory.toProposal(it, identOffset, prefix) }
+                .map { KaCompletionProposalFactory.toProposal(it, identOffset, prefix, file) }
             KotlinLogger.INSTANCE.logInfo(
                 "K2 completion for ${file.name}: ${k2Proposals.size} proposal(s), prefix='$prefix'"
             )
