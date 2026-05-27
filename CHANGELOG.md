@@ -1,4 +1,4 @@
-# 0.9
+# 0.9.13 (2026-05-27)
 
 - Added hover tooltip: pausing the mouse over a Kotlin symbol now shows a documentation popup with a syntax-highlighted signature, container information, and KDoc sections; each completion candidate also shows its own documentation rather than always showing the first candidate's docs.
 - Improved code completion: dot-receiver (`expr.`) now shows only members and applicable extensions of the receiver type; each item displays its signature (`(param: Type): ReturnType` or `: Type`); Kotlin-accurate icons distinguish val, var, method, extension function, interface, enum, object, type alias, and parameter; items are deduplicated and sorted with locals and type members first.
