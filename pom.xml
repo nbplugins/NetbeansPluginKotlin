@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin</artifactId>
-  <version>0.9.48-SNAPSHOT</version>
+  <version>0.9.53-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin</name>
   <properties>
@@ -734,6 +734,11 @@
       <dependency>
         <groupId>org.netbeans.modules</groupId>
         <artifactId>org-netbeans-modules-maven-model</artifactId>
+        <version>${netbeans.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.netbeans.api</groupId>
+        <artifactId>org-netbeans-api-lsp</artifactId>
         <version>${netbeans.version}</version>
       </dependency>
       <dependency>

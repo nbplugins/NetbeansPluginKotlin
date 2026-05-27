@@ -23,8 +23,6 @@ import javax.swing.text.Document
 import javax.swing.text.SimpleAttributeSet
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.utils.ProjectUtils
-import org.netbeans.api.editor.mimelookup.MimeLookup
-import org.netbeans.api.editor.settings.FontColorSettings
 import org.netbeans.modules.csl.api.OffsetRange
 import org.netbeans.spi.editor.highlighting.HighlightsLayer
 import org.netbeans.spi.editor.highlighting.HighlightsLayerFactory
@@ -75,19 +73,16 @@ class KotlinSemanticHighlightsLayerFactory : HighlightsLayerFactory {
          */
         fun applyHighlights(doc: Document, highlights: Map<OffsetRange, List<String>>) {
             val bag = getOrCreateBag(doc)
-            val fcs = MimeLookup.getLookup("text/x-kotlin").lookup(FontColorSettings::class.java)
 
             val newBag = OffsetsBag(doc, true)
-            if (fcs != null) {
-                for ((range, names) in highlights) {
-                    var merged: AttributeSet = SimpleAttributeSet.EMPTY
-                    for (name in names) {
-                        val attrs = fcs.getTokenFontColors(name) ?: continue
-                        merged = composeAttributes(merged, attrs)
-                    }
-                    if (merged !== SimpleAttributeSet.EMPTY) {
-                        newBag.addHighlight(range.start, range.end, merged)
-                    }
+            for ((range, names) in highlights) {
+                var merged: AttributeSet = SimpleAttributeSet.EMPTY
+                for (name in names) {
+                    val attrs = KotlinColorResolver.attributeSetFor(name) ?: continue
+                    merged = composeAttributes(merged, attrs)
+                }
+                if (merged !== SimpleAttributeSet.EMPTY) {
+                    newBag.addHighlight(range.start, range.end, merged)
                 }
             }
             bag.clear()

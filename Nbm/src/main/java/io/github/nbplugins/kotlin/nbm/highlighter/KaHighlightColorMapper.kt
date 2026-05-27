@@ -17,6 +17,18 @@
 package io.github.nbplugins.kotlin.nbm.highlighter
 
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
+import org.jetbrains.kotlin.analysis.api.symbols.KaClassKind
+import org.jetbrains.kotlin.analysis.api.symbols.KaClassSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaDeclarationSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaEnumEntrySymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaFunctionSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaPropertySymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaTypeAliasSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaTypeParameterSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaValueParameterSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaSymbolLocation
+import org.jetbrains.kotlin.analysis.api.symbols.KaSymbolModality
 
 /**
  * Maps IntelliJ [HighlightInfo] produced by the IDEA semantic highlighters to the
@@ -121,4 +133,54 @@ object KaHighlightColorMapper {
 
     /** Every color category name this mapper can emit, across all mapped token types. */
     internal val emittedColorNames: Set<String> get() = mappings.values.toSet()
+
+    /**
+     * Returns the primary `FontAndColors.xml` color category name for [symbol]'s declaration
+     * role (e.g. `"KOTLIN_FUNCTION_DECLARATION"`, `"KOTLIN_INSTANCE_PROPERTY"`, etc.).
+     *
+     * The mapping mirrors what IntelliJ IDEA's Kotlin semantic highlighter assigns when
+     * coloring declaration names.  This method must be called while a K2 `analyze {}` block
+     * is active so that all symbol properties are valid.
+     *
+     * Returns `null` for symbol kinds that have no distinct semantic color (e.g. local
+     * variables in a hover context, or unrecognised future symbol types).
+     *
+     * @param symbol the K2 declaration symbol to classify
+     * @return a color category name understood by [toFontColorName], or `null`
+     */
+    fun colorCategoryForDeclaration(symbol: KaDeclarationSymbol): String? {
+        val key = ideaKeyForDeclaration(symbol) ?: return null
+        return toFontColorName(key)
+    }
+
+    /**
+     * Maps [symbol] to the IDEA [TextAttributesKey][com.intellij.openapi.editor.colors.TextAttributesKey]
+     * external name that IDEA's Kotlin highlighter would assign to its declaration name.
+     *
+     * @param symbol a K2 declaration symbol; all properties are read inside an active analyze block
+     * @return the IDEA external name string, or `null` when [symbol] has no dedicated highlighting
+     */
+    private fun ideaKeyForDeclaration(symbol: KaDeclarationSymbol): String? = when (symbol) {
+        is KaFunctionSymbol      -> "KOTLIN_FUNCTION_DECLARATION"
+        is KaPropertySymbol      -> when (symbol.location) {
+            KaSymbolLocation.CLASS -> "KOTLIN_INSTANCE_PROPERTY"
+            else                   -> "KOTLIN_PACKAGE_PROPERTY"
+        }
+        is KaTypeParameterSymbol  -> "KOTLIN_TYPE_PARAMETER"
+        is KaValueParameterSymbol -> "KOTLIN_PARAMETER"
+        is KaConstructorSymbol    -> "KOTLIN_CONSTRUCTOR"
+        is KaTypeAliasSymbol      -> "KOTLIN_TYPE_ALIAS"
+        is KaEnumEntrySymbol      -> "KOTLIN_ENUM_ENTRY"
+        is KaClassSymbol -> when (symbol.classKind) {
+            KaClassKind.INTERFACE                              -> "KOTLIN_TRAIT"
+            KaClassKind.OBJECT, KaClassKind.COMPANION_OBJECT  -> "KOTLIN_OBJECT"
+            KaClassKind.ENUM_CLASS                            -> "KOTLIN_ENUM"
+            KaClassKind.ANNOTATION_CLASS                      -> "KOTLIN_ANNOTATION"
+            else -> when (symbol.modality) {
+                KaSymbolModality.ABSTRACT, KaSymbolModality.SEALED -> "KOTLIN_ABSTRACT_CLASS"
+                else                                               -> "KOTLIN_CLASS"
+            }
+        }
+        else -> null
+    }
 }
