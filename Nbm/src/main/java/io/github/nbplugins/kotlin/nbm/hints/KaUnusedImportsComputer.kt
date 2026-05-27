@@ -16,7 +16,7 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.hints
 
-import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParserResult
+import io.github.nbplugins.kotlin.nbm.diagnostics.parser.KotlinParserResult
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtImportDirective
 import org.netbeans.modules.csl.api.Hint

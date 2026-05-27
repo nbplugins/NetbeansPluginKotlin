@@ -17,7 +17,7 @@
 package io.github.nbplugins.kotlin.nbm.highlighter
 
 import junit.framework.TestCase
-import org.jetbrains.kotlin.highlighter.TokenType
+import io.github.nbplugins.kotlin.nbm.highlighter.TokenType
 
 /**
  * Unit tests for new [TokenType] values added in E2 (lexical category expansion).

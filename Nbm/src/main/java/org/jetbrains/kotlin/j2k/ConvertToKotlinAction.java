@@ -21,6 +21,7 @@ import java.awt.event.ActionListener;
 import java.io.IOException;
 import javax.swing.text.Document;
 import org.jetbrains.kotlin.utils.ProjectUtils;
+import io.github.nbplugins.kotlin.nbm.j2k.Java2KotlinConverter;
 import org.netbeans.api.project.Project;
 import org.openide.DialogDisplayer;
 import org.openide.NotifyDescriptor;

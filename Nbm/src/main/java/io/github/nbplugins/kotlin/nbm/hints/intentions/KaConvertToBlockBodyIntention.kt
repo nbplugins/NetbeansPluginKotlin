@@ -24,7 +24,7 @@ import javax.swing.text.Document
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.renderer.types.impl.KaTypeRendererForSource
 import org.jetbrains.kotlin.analysis.api.types.KaErrorType
-import org.jetbrains.kotlin.hints.atomicChange
+import io.github.nbplugins.kotlin.nbm.hints.atomicChange
 import org.jetbrains.kotlin.psi.KtDeclarationWithBody
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtFunctionLiteral
@@ -32,7 +32,7 @@ import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtPropertyAccessor
 import org.jetbrains.kotlin.psi.KtPsiFactory
 import org.jetbrains.kotlin.log.KotlinLogger
-import org.jetbrains.kotlin.reformatting.format
+import io.github.nbplugins.kotlin.nbm.reformatting.format
 import org.jetbrains.kotlin.types.Variance
 import io.github.nbplugins.kotlin.nbm.hints.KaApplicableIntention
 

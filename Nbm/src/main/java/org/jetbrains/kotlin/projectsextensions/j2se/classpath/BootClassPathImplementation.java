@@ -28,7 +28,7 @@ import java.net.URL;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Collections;
-import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper;
+import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectHelper;
 import org.jetbrains.kotlin.utils.KotlinClasspath;
 import org.netbeans.api.java.platform.JavaPlatform;
 import org.netbeans.api.java.platform.JavaPlatformManager;
@@ -38,7 +38,7 @@ import org.openide.filesystems.FileObject;
 import org.openide.filesystems.FileUtil;
 import org.openide.util.WeakListeners;
 
-final class BootClassPathImplementation implements ClassPathImplementation, PropertyChangeListener {
+public final class BootClassPathImplementation implements ClassPathImplementation, PropertyChangeListener {
 
     private static final String PLATFORM_ACTIVE = "platform.active";   
     private static final String ANT_NAME = "java.platform.ant.name";          

@@ -16,7 +16,7 @@
  *******************************************************************************/
 package org.jetbrains.kotlin.highlighter.netbeans
 
-import org.jetbrains.kotlin.language.KotlinLanguageHierarchy
+import io.github.nbplugins.kotlin.nbm.language.KotlinLanguageHierarchy
 import org.jetbrains.kotlin.highlighter.KotlinTokenScanner
 import org.netbeans.api.lexer.Token
 import org.netbeans.spi.lexer.Lexer

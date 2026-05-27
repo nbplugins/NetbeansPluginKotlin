@@ -20,7 +20,7 @@ package io.github.nbplugins.kotlin.nbm.hints
 
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.renderer.types.impl.KaTypeRendererForSource
-import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParserResult
+import io.github.nbplugins.kotlin.nbm.diagnostics.parser.KotlinParserResult
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression

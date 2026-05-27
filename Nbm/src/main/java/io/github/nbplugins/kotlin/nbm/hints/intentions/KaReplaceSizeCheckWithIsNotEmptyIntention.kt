@@ -19,7 +19,7 @@ package io.github.nbplugins.kotlin.nbm.hints.intentions
 import com.intellij.psi.PsiElement
 import javax.swing.text.Document
 import org.jetbrains.kotlin.analysis.api.analyze
-import org.jetbrains.kotlin.hints.atomicChange
+import io.github.nbplugins.kotlin.nbm.hints.atomicChange
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtBinaryExpression
 import org.jetbrains.kotlin.psi.KtElement

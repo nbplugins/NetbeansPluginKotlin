@@ -19,6 +19,7 @@ package org.jetbrains.kotlin.reformatting;
 import org.netbeans.api.editor.mimelookup.MimeRegistration;
 import org.netbeans.modules.editor.indent.spi.Context;
 import org.netbeans.modules.editor.indent.spi.ReformatTask;
+import io.github.nbplugins.kotlin.nbm.reformatting.KotlinReformatTask;
 
 @MimeRegistration(mimeType="text/x-kotlin",service=ReformatTask.Factory.class)
 public class KotlinReformatTaskFactory implements ReformatTask.Factory {

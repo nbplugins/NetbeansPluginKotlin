@@ -26,6 +26,8 @@ import javax.swing.text.Document;
 import javax.swing.text.StyledDocument;
 import kotlin.Pair;
 import org.jetbrains.kotlin.utils.ProjectUtils;
+import io.github.nbplugins.kotlin.nbm.navigation.FromJavaToKotlinNavigationUtilsKt;
+import io.github.nbplugins.kotlin.nbm.navigation.OpenDeclarationKt;
 import org.jetbrains.kotlin.psi.KtFile;
 import org.netbeans.api.editor.mimelookup.MimeRegistration;
 import org.netbeans.api.java.source.ElementHandle;

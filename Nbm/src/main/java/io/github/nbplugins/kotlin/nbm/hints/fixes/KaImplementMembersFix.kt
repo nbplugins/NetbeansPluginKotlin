@@ -27,14 +27,14 @@ import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaNamedFunctionSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaPropertySymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaSymbolModality
-import org.jetbrains.kotlin.hints.atomicChange
+import io.github.nbplugins.kotlin.nbm.hints.atomicChange
 import org.jetbrains.kotlin.language.Priorities
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.psi.KtClassBody
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtDeclaration
 import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.reformatting.format
+import io.github.nbplugins.kotlin.nbm.reformatting.format
 import org.netbeans.modules.csl.api.Hint
 import org.netbeans.modules.csl.api.HintSeverity
 import org.netbeans.modules.csl.api.OffsetRange

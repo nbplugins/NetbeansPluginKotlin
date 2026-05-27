@@ -16,7 +16,7 @@
  *******************************************************************************/
 package org.jetbrains.kotlin.highlighter.netbeans
 
-import org.jetbrains.kotlin.highlighter.TokenType
+import io.github.nbplugins.kotlin.nbm.highlighter.TokenType
 import org.netbeans.api.lexer.TokenId
 
 class KotlinToken<out T : TokenId>(val value: T, val text: String, val type: TokenType) {

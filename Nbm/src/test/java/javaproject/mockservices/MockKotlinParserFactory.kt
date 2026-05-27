@@ -1,6 +1,6 @@
 package javaproject.mockservices
 
-import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParser
+import io.github.nbplugins.kotlin.nbm.diagnostics.parser.KotlinParser
 import org.netbeans.modules.parsing.api.Snapshot
 import org.netbeans.modules.parsing.spi.Parser
 import org.netbeans.modules.parsing.spi.ParserFactory

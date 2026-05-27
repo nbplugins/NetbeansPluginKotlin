@@ -17,7 +17,7 @@
 package org.jetbrains.kotlin.projectsextensions.maven.output
 
 import java.io.File
-import org.jetbrains.kotlin.navigation.netbeans.openFileAtPosition
+import io.github.nbplugins.kotlin.nbm.navigation.openFileAtPosition
 import org.netbeans.modules.maven.api.output.OutputProcessor
 import org.netbeans.modules.maven.api.output.OutputVisitor
 import org.openide.filesystems.FileObject

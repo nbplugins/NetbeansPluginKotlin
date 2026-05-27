@@ -21,7 +21,7 @@ import com.intellij.psi.PsiElement
 import javax.swing.text.Document
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.renderer.types.impl.KaTypeRendererForSource
-import org.jetbrains.kotlin.hints.atomicChange
+import io.github.nbplugins.kotlin.nbm.hints.atomicChange
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtExpression
 import org.jetbrains.kotlin.psi.KtFile

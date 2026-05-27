@@ -16,6 +16,9 @@
  *******************************************************************************/
 package org.jetbrains.kotlin.highlighter
 
+import io.github.nbplugins.kotlin.nbm.highlighter.TokenType
+import io.github.nbplugins.kotlin.nbm.highlighter.KotlinTokensFactory
+
 import com.intellij.psi.PsiElement
 import org.jetbrains.kotlin.builder.KotlinPsiManager
 import org.jetbrains.kotlin.highlighter.netbeans.KotlinToken

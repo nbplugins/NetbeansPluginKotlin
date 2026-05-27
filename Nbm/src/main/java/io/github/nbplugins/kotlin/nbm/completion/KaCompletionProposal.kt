@@ -19,7 +19,7 @@ package io.github.nbplugins.kotlin.nbm.completion
 import javax.swing.ImageIcon
 import javax.swing.text.Document
 import org.jetbrains.kotlin.analysis.api.symbols.pointers.KaSymbolPointer
-import org.jetbrains.kotlin.completion.InsertableProposal
+import io.github.nbplugins.kotlin.nbm.completion.InsertableProposal
 import org.netbeans.modules.csl.api.ElementHandle
 import org.netbeans.modules.csl.api.ElementKind
 import org.netbeans.modules.csl.api.HtmlFormatter

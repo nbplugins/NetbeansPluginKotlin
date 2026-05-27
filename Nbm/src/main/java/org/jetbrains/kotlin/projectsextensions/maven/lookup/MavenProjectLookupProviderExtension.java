@@ -17,7 +17,7 @@
 package org.jetbrains.kotlin.projectsextensions.maven.lookup;
 
 import org.jetbrains.kotlin.projectsextensions.KotlinPrivilegedTemplates;
-import org.jetbrains.kotlin.projectsextensions.maven.MavenProjectOpenedHook;
+import io.github.nbplugins.kotlin.nbm.projectsextensions.maven.MavenProjectOpenedHook;
 import org.netbeans.api.project.Project;
 import org.netbeans.spi.project.LookupProvider;
 import org.openide.util.Lookup;

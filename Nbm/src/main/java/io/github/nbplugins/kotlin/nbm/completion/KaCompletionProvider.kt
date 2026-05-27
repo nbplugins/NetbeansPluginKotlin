@@ -42,7 +42,7 @@ import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtQualifiedExpression
 import org.jetbrains.kotlin.types.Variance
-import org.jetbrains.kotlin.utils.KotlinImageProvider
+import io.github.nbplugins.kotlin.nbm.utils.KotlinImageProvider
 import org.netbeans.modules.csl.api.ElementKind
 
 /**

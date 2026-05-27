@@ -18,6 +18,8 @@
  */
 package org.jetbrains.kotlin.formatting;
 
+import io.github.nbplugins.kotlin.nbm.formatting.KotlinFormatterUtils;
+
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 

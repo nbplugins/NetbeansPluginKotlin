@@ -17,7 +17,7 @@
 package org.jetbrains.kotlin.search
 
 import java.io.File
-import org.jetbrains.kotlin.navigation.netbeans.openFileAtOffset
+import io.github.nbplugins.kotlin.nbm.navigation.openFileAtOffset
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.api.project.ui.OpenProjects
 import org.netbeans.spi.quicksearch.SearchProvider
