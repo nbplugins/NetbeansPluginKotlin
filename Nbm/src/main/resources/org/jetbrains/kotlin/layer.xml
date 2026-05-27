@@ -122,6 +122,16 @@
                     <folder name="CompletionProviders">
                         <file name="org-netbeans-modules-csl-editor-completion-GsfCompletionProvider.instance"/>
                     </folder>
+                    <!-- HoverProvider for mouse-hover documentation popups. Normally generated
+                         by LanguageRegistrationProcessor, but annotation processing is disabled
+                         (-proc:none), so it must be registered manually. GsfHoverProvider drives
+                         CodeCompletionHandler.documentElement() (KtDocumentationRenderer) when the
+                         user hovers over a Kotlin identifier. -->
+                    <folder name="HoverProviders">
+                        <file name="org-netbeans-modules-csl-editor-completion-GsfHoverProvider.instance">
+                            <attr name="instanceClass" stringvalue="org.netbeans.modules.csl.editor.completion.GsfHoverProvider"/>
+                        </file>
+                    </folder>
                     <folder name="FontsColors">
                         <folder name="NetBeans">
                             <folder name="Defaults">
