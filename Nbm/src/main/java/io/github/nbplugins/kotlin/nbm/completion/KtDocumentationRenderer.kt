@@ -40,12 +40,15 @@ import org.jetbrains.kotlin.analysis.api.symbols.KaSymbolModality
 import org.jetbrains.kotlin.analysis.api.symbols.KaTypeAliasSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaTypeParameterSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaValueParameterSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.pointers.KaSymbolPointer
 import org.jetbrains.kotlin.analysis.api.types.KaType
 import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.kdoc.psi.api.KDoc
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtDeclaration
+import org.jetbrains.kotlin.psi.KtModifierListOwner
 import org.jetbrains.kotlin.psi.KtReferenceExpression
 import org.jetbrains.kotlin.types.Variance
 import org.netbeans.api.project.Project
@@ -84,20 +87,71 @@ object KtDocumentationRenderer {
      */
     fun buildHtml(project: Project, file: FileObject, usageOffset: Int): String? =
         runCatching {
-            val session = KotlinAnalysisAPISession.getSession(project) ?: return null
-            val kaKtFile = session.getKtFileForPath(file.path) ?: return null
+            val session = KotlinAnalysisAPISession.getSession(project)
+            if (session == null) {
+                KotlinLogger.INSTANCE.logWarning("buildHtml: no K2 session for project -> null")
+                return null
+            }
+            val kaKtFile = session.getKtFileForPath(file.path)
+            if (kaKtFile == null) {
+                KotlinLogger.INSTANCE.logWarning("buildHtml: file not in session: ${file.path} -> null")
+                return null
+            }
             val kaElement = kaKtFile.findElementAt(usageOffset) ?: return null
             val kaRef = PsiTreeUtil.getNonStrictParentOfType(kaElement, KtReferenceExpression::class.java)
                 ?: return null
             analyze(kaKtFile) {
                 val symbol = kaRef.mainReference?.resolveToSymbol() as? KaDeclarationSymbol
-                    ?: return@analyze null
+                if (symbol == null) {
+                    KotlinLogger.INSTANCE.logWarning("buildHtml: reference '${kaRef.text}' did not resolve to a declaration symbol -> null")
+                    return@analyze null
+                }
                 val declarationPsi = (kaRef.mainReference?.resolve() as? KtDeclaration)
                     ?: (symbol.psi as? KtDeclaration)
                 buildHtmlForSymbol(symbol, declarationPsi)
             }
         }.getOrElse { e ->
             KotlinLogger.INSTANCE.logException("K2 documentation rendering failed", e)
+            null
+        }
+
+    /**
+     * Builds the documentation HTML for the exact declaration referenced by [pointer].
+     *
+     * Unlike [buildHtml], this does not depend on a source offset: it restores the precise symbol a
+     * completion item stands for, so the popup tracks the *selected* list item even when several
+     * candidates share the same anchor offset (the typed prefix).
+     *
+     * Returns `null` when no K2 session is available, [file] is not indexed, or the pointer can no
+     * longer be restored (e.g. the document changed since the completion list was built).
+     *
+     * @param project the NetBeans project owning [file]
+     * @param file    the source file the completion was triggered in (selects the analysis session)
+     * @param pointer stable K2 pointer captured at completion time
+     * @return an HTML string for the documentation popup, or `null`
+     */
+    fun buildHtmlForPointer(project: Project, file: FileObject, pointer: KaSymbolPointer<*>): String? =
+        runCatching {
+            val session = KotlinAnalysisAPISession.getSession(project)
+            if (session == null) {
+                KotlinLogger.INSTANCE.logWarning("buildHtmlForPointer: no K2 session for project -> null")
+                return null
+            }
+            val kaKtFile = session.getKtFileForPath(file.path)
+            if (kaKtFile == null) {
+                KotlinLogger.INSTANCE.logWarning("buildHtmlForPointer: file not in session: ${file.path} -> null")
+                return null
+            }
+            analyze(kaKtFile) {
+                val symbol = pointer.restoreSymbol() as? KaDeclarationSymbol
+                if (symbol == null) {
+                    KotlinLogger.INSTANCE.logWarning("buildHtmlForPointer: pointer did not restore to a declaration -> null")
+                    return@analyze null
+                }
+                buildHtmlForSymbol(symbol, symbol.psi as? KtDeclaration)
+            }
+        }.getOrElse { e ->
+            KotlinLogger.INSTANCE.logException("K2 documentation (pointer) rendering failed", e)
             null
         }
 
@@ -191,8 +245,20 @@ object KtDocumentationRenderer {
             str(")")
         }
 
+        fun modalityPrefix(sym: KaDeclarationSymbol) {
+            when (sym.modality) {
+                KaSymbolModality.ABSTRACT -> { kw("abstract"); append(" ") }
+                KaSymbolModality.OPEN     -> { kw("open"); append(" ") }
+                KaSymbolModality.SEALED   -> { kw("sealed"); append(" ") }
+                KaSymbolModality.FINAL    -> Unit
+            }
+        }
+
         when (symbol) {
             is KaNamedFunctionSymbol -> {
+                modalityPrefix(symbol)
+                if (symbol.isOverride) { kw("override"); append(" ") }
+                if (symbol.isInline) { kw("inline"); append(" ") }
                 if (symbol.isSuspend) { kw("suspend"); append(" ") }
                 kw("fun"); append(" ")
                 if (symbol.typeParameters.isNotEmpty()) {
@@ -211,6 +277,11 @@ object KtDocumentationRenderer {
                 valueParamHtml(symbol.valueParameters)
             }
             is KaPropertySymbol -> {
+                modalityPrefix(symbol)
+                if (symbol.isOverride) { kw("override"); append(" ") }
+                val isConst = (symbol.psi as? KtModifierListOwner)
+                    ?.hasModifier(KtTokens.CONST_KEYWORD) == true
+                if (isConst) { kw("const"); append(" ") }
                 kw(if (symbol.isVal) "val" else "var"); append(" ")
                 nameSpan(symbol.name, symbol)
                 str(": ")

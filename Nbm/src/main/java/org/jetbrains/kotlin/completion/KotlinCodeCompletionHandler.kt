@@ -61,7 +61,12 @@ class KotlinCodeCompletionHandler : CodeCompletionHandler2 {
             val project = ProjectUtils.getKotlinProjectForFileObject(infoFile)
                 ?: ProjectUtils.getValidProject()
             if (project != null) {
-                val html = KtDocumentationRenderer.buildHtml(project, element.fileObject, element.offset)
+                val pointer = element.symbolPointer
+                val html = if (pointer != null) {
+                    KtDocumentationRenderer.buildHtmlForPointer(project, element.fileObject, pointer)
+                } else {
+                    KtDocumentationRenderer.buildHtml(project, element.fileObject, element.offset)
+                }
                 if (!html.isNullOrEmpty()) return Documentation.create(html)
             }
         }
@@ -98,19 +103,18 @@ class KotlinCodeCompletionHandler : CodeCompletionHandler2 {
 
         // K2 primary path: use Analysis API when a K2-session KtFile is available
         val kaKtFile = parserResult.kaKtFile
-        if (kaKtFile != null) {
-            val identOffset = (caretOffset - prefix.length).coerceAtLeast(0)
-            val isAfterDot = identOffset > 0 && doc?.getText(identOffset - 1, 1) == "."
-            val k2Proposals = KaCompletionProvider.getItemsAt(kaKtFile, caretOffset, prefix, isAfterDot)
-                .map { KaCompletionProposalFactory.toProposal(it, identOffset, prefix, file) }
-            KotlinLogger.INSTANCE.logInfo(
-                "K2 completion for ${file.name}: ${k2Proposals.size} proposal(s), prefix='$prefix'"
-            )
-            if (k2Proposals.isNotEmpty()) {
-                return KaCodeCompletionResult(doc, k2Proposals)
-            }
+        if (kaKtFile == null) {
+            KotlinLogger.INSTANCE.logWarning("complete(): kaKtFile is null -> returning null (no proposals)")
+            return null
         }
-
+        val identOffset = (caretOffset - prefix.length).coerceAtLeast(0)
+        val isAfterDot = identOffset > 0 && doc?.getText(identOffset - 1, 1) == "."
+        val k2Proposals = KaCompletionProvider.getItemsAt(kaKtFile, caretOffset, prefix, isAfterDot)
+            .map { KaCompletionProposalFactory.toProposal(it, identOffset, prefix, file) }
+        if (k2Proposals.isNotEmpty()) {
+            return KaCodeCompletionResult(doc, k2Proposals)
+        }
+        KotlinLogger.INSTANCE.logWarning("complete(): no proposals -> returning null")
         return null
     }
 

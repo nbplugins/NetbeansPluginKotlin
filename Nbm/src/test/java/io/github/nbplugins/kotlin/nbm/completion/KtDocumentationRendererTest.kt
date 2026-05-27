@@ -53,6 +53,52 @@ class KtDocumentationRendererTest : KotlinTestCase("KtDocumentationRenderer test
     }
 
     /**
+     * Runs completion at the `functionWithKDoc(42)` call site and returns the items (each carrying
+     * a [KaCompletionItem.symbolPointer]) matching prefix `"functionWith"`.
+     */
+    private fun functionItems(): List<KaCompletionItem> {
+        val fo = dir.getFileObject(fileName)!!
+        val absolutePath = FileUtil.toFile(fo)!!.absolutePath
+        val doc = getDocumentForFileObject(fo)
+        val session = KotlinAnalysisAPISession.getSession(project)
+        session.updateFileContent(absolutePath, doc.getText(0, doc.length))
+        val ktFile = session.getKtFileForPath(absolutePath)!!
+        val caret = doc.getText(0, doc.length).indexOf("functionWithKDoc(42)")
+        assertTrue("call site must be present in $fileName", caret >= 0)
+        return KaCompletionProvider.getItemsAt(ktFile, caret, prefix = "functionWith")
+    }
+
+    /**
+     * [KtDocumentationRenderer.buildHtmlForPointer] renders the exact declaration the pointer stands
+     * for: the documented and undocumented overloads yield *different* HTML. This is the regression
+     * guard for the bug where the doc popup always showed the first list item regardless of which
+     * candidate was selected.
+     */
+    fun testBuildHtmlForPointer_followsSelectedCandidate() {
+        val items = functionItems()
+        val documented = items.find { it.name == "functionWithKDoc" }
+        val undocumented = items.find { it.name == "functionWithoutKDoc" }
+        assertNotNull("functionWithKDoc must be among completion items", documented)
+        assertNotNull("functionWithoutKDoc must be among completion items", undocumented)
+        assertNotNull("completion items must carry a symbol pointer", documented!!.symbolPointer)
+        assertNotNull("completion items must carry a symbol pointer", undocumented!!.symbolPointer)
+
+        val fo = dir.getFileObject(fileName)!!
+        val docHtml = KtDocumentationRenderer.buildHtmlForPointer(project, fo, documented.symbolPointer!!)
+        val undocHtml = KtDocumentationRenderer.buildHtmlForPointer(project, fo, undocumented.symbolPointer!!)
+
+        assertNotNull("documented pointer must render HTML", docHtml)
+        assertNotNull("undocumented pointer must render HTML", undocHtml)
+        assertTrue("documented HTML must name functionWithKDoc", docHtml!!.contains("functionWithKDoc"))
+        assertTrue("documented HTML must include its KDoc", docHtml.contains("hover tests"))
+        assertTrue("undocumented HTML must name functionWithoutKDoc", undocHtml!!.contains("functionWithoutKDoc"))
+        assertFalse(
+            "undocumented candidate must not inherit the documented function's KDoc",
+            undocHtml.contains("hover tests")
+        )
+    }
+
+    /**
      * For a reference to a documented function, [KtDocumentationRenderer.buildHtml] returns HTML
      * that contains the `fun` keyword and the function name.
      */

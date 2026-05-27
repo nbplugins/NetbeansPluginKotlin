@@ -18,6 +18,7 @@ package org.jetbrains.kotlin.highlighter.semanticanalyzer
 
 import io.github.nbplugins.kotlin.nbm.highlighter.KaSemanticHighlightingVisitor
 import io.github.nbplugins.kotlin.nbm.highlighter.KotlinSemanticHighlightsLayerFactory
+import io.github.nbplugins.kotlin.nbm.hover.KotlinTooltipHighlightsLayerFactory
 import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParserResult
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper.isScanning
@@ -71,6 +72,7 @@ class KotlinSemanticAnalyzer : SemanticAnalyzer<KotlinParserResult>() {
             val doc = result.snapshot.source.getDocument(false)
             if (doc != null) {
                 KotlinSemanticHighlightsLayerFactory.applyHighlights(doc, highlights)
+                KotlinTooltipHighlightsLayerFactory.applyTooltipRanges(doc, highlights.keys)
             }
             KotlinLogger.INSTANCE.logInfo("KotlinSemanticAnalyzer.run: produced ${highlights.size} highlight ranges")
         }.onFailure { ex ->

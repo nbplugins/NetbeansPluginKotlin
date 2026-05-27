@@ -18,6 +18,7 @@ package io.github.nbplugins.kotlin.nbm.completion
 
 import javax.swing.ImageIcon
 import javax.swing.text.Document
+import org.jetbrains.kotlin.analysis.api.symbols.pointers.KaSymbolPointer
 import org.jetbrains.kotlin.completion.InsertableProposal
 import org.netbeans.modules.csl.api.ElementHandle
 import org.netbeans.modules.csl.api.ElementKind
@@ -42,6 +43,9 @@ import org.openide.filesystems.FileObject
  * @param sortPriority   numeric sort key; lower value = higher position in the list
  * @param fileObject     the source file where the completion was triggered; used by [getElement]
  *                       to build the [KtElementHandle] that enables hover documentation
+ * @param symbolPointer  stable K2 pointer to the declaration this proposal represents; forwarded to
+ *                       [KtElementHandle] so the documentation popup renders *this* candidate rather
+ *                       than re-resolving the identifier under the caret
  */
 class KaCompletionProposal(
     private val name: String,
@@ -53,6 +57,7 @@ class KaCompletionProposal(
     private val signature: String,
     private val sortPriority: Int = 0,
     private val fileObject: FileObject? = null,
+    private val symbolPointer: KaSymbolPointer<*>? = null,
 ) : DefaultCompletionProposal(), InsertableProposal {
 
     override fun getName(): String = name
@@ -70,7 +75,7 @@ class KaCompletionProposal(
      * Returns `null` when [fileObject] was not provided (e.g. in tests that don't need docs).
      */
     override fun getElement(): ElementHandle? =
-        fileObject?.let { KtElementHandle(it, anchorOffset, name, kind) }
+        fileObject?.let { KtElementHandle(it, anchorOffset, name, kind, symbolPointer) }
     override fun getLhsHtml(formatter: HtmlFormatter): String = name
     override fun getRhsHtml(formatter: HtmlFormatter): String =
         signature.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

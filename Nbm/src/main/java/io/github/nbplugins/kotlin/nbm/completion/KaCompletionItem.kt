@@ -17,6 +17,7 @@
 package io.github.nbplugins.kotlin.nbm.completion
 
 import javax.swing.ImageIcon
+import org.jetbrains.kotlin.analysis.api.symbols.pointers.KaSymbolPointer
 import org.netbeans.modules.csl.api.ElementKind
 
 /**
@@ -33,6 +34,11 @@ import org.netbeans.modules.csl.api.ElementKind
  * @param icon         icon resolved from the symbol type and properties
  * @param sortPriority numeric sort key: lower = higher in the list; computed from [KaScopeKind]
  *                     priority and symbol kind (properties before methods within the same scope)
+ * @param symbolPointer stable K2 pointer to the exact declaration this item represents, created
+ *                     inside the `analyze {}` block. Restored in a later session by
+ *                     [io.github.nbplugins.kotlin.nbm.completion.KtDocumentationRenderer] to render
+ *                     documentation for *this* candidate (not the identifier under the caret), so
+ *                     the doc popup follows the selected list item.
  */
 data class KaCompletionItem(
     val name: String,
@@ -41,4 +47,5 @@ data class KaCompletionItem(
     val signature: String,
     val icon: ImageIcon?,
     val sortPriority: Int = 0,
+    val symbolPointer: KaSymbolPointer<*>? = null,
 )

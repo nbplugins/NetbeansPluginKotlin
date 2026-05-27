@@ -243,7 +243,7 @@ object KaCompletionProvider {
             else               -> 9
         }
         return KaCompletionItem(name, kind, isFunctionLike, buildSignature(sym), icon,
-                                basePriority * 10 + symbolPriority)
+                                basePriority * 10 + symbolPriority, sym.createPointer())
     }
 
     private fun KaSession.buildSignature(sym: KaDeclarationSymbol): String = when (sym) {

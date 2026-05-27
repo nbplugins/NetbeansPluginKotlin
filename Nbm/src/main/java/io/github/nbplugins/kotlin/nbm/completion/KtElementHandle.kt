@@ -15,6 +15,7 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.completion
 
+import org.jetbrains.kotlin.analysis.api.symbols.pointers.KaSymbolPointer
 import org.netbeans.modules.csl.api.ElementHandle
 import org.netbeans.modules.csl.api.ElementKind
 import org.netbeans.modules.csl.api.Modifier
@@ -34,16 +35,23 @@ import org.openide.filesystems.FileObject
  * [KtDocumentationRenderer] uses this offset to find the `KtReferenceExpression` in the K2
  * PSI tree and resolve its declaration.
  *
+ * For completion proposals a [symbolPointer] to the exact selected declaration is also carried, so
+ * [KtDocumentationRenderer] can render documentation for *that* candidate instead of re-resolving
+ * the (identical for every list item) [offset] in the source.
+ *
  * @param fileObject the source file containing the reference
  * @param offset     character offset of the identifier start (anchor offset)
  * @param name       the identifier text, used for display and [getOffsetRange]
  * @param elementKind the CSL element kind (e.g. [ElementKind.METHOD], [ElementKind.CLASS])
+ * @param symbolPointer stable K2 pointer to the represented declaration, or `null` for usage-site
+ *                   (hover) handles that should resolve purely from [offset]
  */
 class KtElementHandle(
     private val fileObject: FileObject,
     val offset: Int,
     private val name: String,
     private val elementKind: ElementKind,
+    val symbolPointer: KaSymbolPointer<*>? = null,
 ) : ElementHandle {
 
     /** Returns the file containing the reference. */

@@ -119,17 +119,22 @@
                         <attr name="instanceOf" stringvalue="org.netbeans.spi.editor.highlighting.HighlightsLayerFactory"/>
                         <attr name="position" intvalue="1500"/>
                     </file>
+                    <!-- Tooltip highlights layer: EditorStyleConstants.Tooltip on identifier ranges,
+                         read lazily by NbToolTip when the mouse pauses over a Kotlin symbol. -->
+                    <file name="io-github-nbplugins-kotlin-nbm-hover-KotlinTooltipHighlightsLayerFactory.instance">
+                        <attr name="instanceClass" stringvalue="io.github.nbplugins.kotlin.nbm.hover.KotlinTooltipHighlightsLayerFactory"/>
+                        <attr name="instanceOf" stringvalue="org.netbeans.spi.editor.highlighting.HighlightsLayerFactory"/>
+                        <attr name="position" intvalue="1600"/>
+                    </file>
                     <folder name="CompletionProviders">
                         <file name="org-netbeans-modules-csl-editor-completion-GsfCompletionProvider.instance"/>
                     </folder>
-                    <!-- HoverProvider for mouse-hover documentation popups. Normally generated
-                         by LanguageRegistrationProcessor, but annotation processing is disabled
-                         (-proc:none), so it must be registered manually. GsfHoverProvider drives
-                         CodeCompletionHandler.documentElement() (KtDocumentationRenderer) when the
-                         user hovers over a Kotlin identifier. -->
+                    <!-- HoverProvider for mouse-hover documentation popups.
+                         KotlinHoverProvider resolves the symbol at the exact hover offset via
+                         KtDocumentationRenderer.buildHtml() and returns rich HTML. -->
                     <folder name="HoverProviders">
-                        <file name="org-netbeans-modules-csl-editor-completion-GsfHoverProvider.instance">
-                            <attr name="instanceClass" stringvalue="org.netbeans.modules.csl.editor.completion.GsfHoverProvider"/>
+                        <file name="io-github-nbplugins-kotlin-nbm-hover-KotlinHoverProvider.instance">
+                            <attr name="instanceClass" stringvalue="io.github.nbplugins.kotlin.nbm.hover.KotlinHoverProvider"/>
                         </file>
                     </folder>
                     <folder name="FontsColors">

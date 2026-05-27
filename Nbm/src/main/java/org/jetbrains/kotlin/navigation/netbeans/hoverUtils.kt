@@ -16,39 +16,43 @@
  *******************************************************************************/
 package org.jetbrains.kotlin.navigation.netbeans
 
+import io.github.nbplugins.kotlin.nbm.completion.KtDocumentationRenderer
 import io.github.nbplugins.kotlin.nbm.navigation.KaNavigationUtils
 import javax.swing.text.Document
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.utils.ProjectUtils
 
 /**
- * Returns the tooltip string for a hover over [referenceExpression], or an empty string if nothing
- * meaningful can be shown. Uses the K2 Analysis API exclusively.
+ * Returns the HTML documentation tooltip for a Ctrl+hover over [referenceExpression], or an
+ * empty string if nothing can be shown. Delegates to [KtDocumentationRenderer.buildHtml] so
+ * the Ctrl+hover popup is identical to the plain-hover popup.
  *
  * @param referenceExpression the PSI reference under the cursor, or null
  * @param doc the editor document
- * @param offset the caret offset (unused; kept for interface compatibility)
+ * @param offset the character offset of the identifier
  */
 fun getToolTip(referenceExpression: KtReferenceExpression?,
                doc: Document, offset: Int): String {
-    val file = referenceExpression?.let { ProjectUtils.getFileObjectForDocument(doc) }
-    val project = file?.let {
-        ProjectUtils.getKotlinProjectForFileObject(it) ?: ProjectUtils.getValidProject()
-    }
+    val file = ProjectUtils.getFileObjectForDocument(doc) ?: return ""
+    val project = ProjectUtils.getKotlinProjectForFileObject(file)
+        ?: ProjectUtils.getValidProject()
+        ?: return ""
 
     val k2Expression = referenceExpression?.let { ref ->
         (ref as? KtSimpleNameExpression) ?: ref.children.filterIsInstance<KtSimpleNameExpression>().firstOrNull()
     }
-    val smartCast = if (k2Expression != null && file != null && project != null) {
+    val smartCast = if (k2Expression != null) {
         KaNavigationUtils.getSmartCastDescription(k2Expression, project, file) ?: ""
     } else ""
 
-    referenceExpression ?: return smartCast
-    if (file == null || project == null) return smartCast
-
-    val k2Tooltip = KaNavigationUtils.renderDeclarationTooltip(referenceExpression, project, file)
-    if (k2Tooltip != null) {
-        return "$k2Tooltip${if (smartCast.isNotEmpty()) "\n\n$smartCast" else ""}"
+    val html = KtDocumentationRenderer.buildHtml(project, file, offset)
+    if (html != null) {
+        return if (smartCast.isNotEmpty()) {
+            html.replace(
+                "</body></html>",
+                "<hr style='margin:4px 0'><div style='padding:4px'>$smartCast</div></body></html>"
+            )
+        } else html
     }
 
     return smartCast

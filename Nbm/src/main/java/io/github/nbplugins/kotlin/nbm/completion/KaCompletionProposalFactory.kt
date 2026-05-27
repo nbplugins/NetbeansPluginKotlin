@@ -46,5 +46,6 @@ object KaCompletionProposalFactory {
         fileObject: FileObject? = null,
     ): KaCompletionProposal =
         KaCompletionProposal(item.name, item.kind, item.icon, anchorOffset, prefix,
-                             item.isFunctionLike, item.signature, item.sortPriority, fileObject)
+                             item.isFunctionLike, item.signature, item.sortPriority, fileObject,
+                             item.symbolPointer)
 }
