@@ -51,7 +51,7 @@ import org.openide.util.WeakListeners;
  * on org.netbeans.modules.java.api.common which is not visible to the Kotlin
  * plugin module classloader at class-load time.
  */
-final class SourcePathImplementation implements ClassPathImplementation, PropertyChangeListener {
+public final class SourcePathImplementation implements ClassPathImplementation, PropertyChangeListener {
 
     // SourceRoots.PROP_ROOTS constant value
     private static final String PROP_ROOTS = "roots"; // NOI18N

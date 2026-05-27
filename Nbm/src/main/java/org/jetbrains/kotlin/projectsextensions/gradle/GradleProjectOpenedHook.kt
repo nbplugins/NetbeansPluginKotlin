@@ -17,8 +17,8 @@
 package org.jetbrains.kotlin.projectsextensions.gradle
 
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
-import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper
-import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper.doInitialScan
+import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectHelper
+import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectHelper.doInitialScan
 import org.netbeans.api.progress.ProgressHandleFactory
 import org.netbeans.api.project.Project
 import org.netbeans.spi.project.ui.ProjectOpenedHook

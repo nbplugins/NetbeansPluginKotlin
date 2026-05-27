@@ -16,8 +16,8 @@
  *******************************************************************************/
 package org.jetbrains.kotlin.hints.fixes
 
-import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinParserResult
-import org.jetbrains.kotlin.diagnostics.netbeans.parser.KotlinError
+import io.github.nbplugins.kotlin.nbm.diagnostics.parser.KotlinParserResult
+import io.github.nbplugins.kotlin.nbm.diagnostics.parser.KotlinError
 import org.jetbrains.kotlin.hints.KotlinRule
 import org.netbeans.modules.csl.api.Hint
 import org.netbeans.modules.csl.api.HintFix

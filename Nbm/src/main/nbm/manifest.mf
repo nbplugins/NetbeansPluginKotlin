@@ -1,5 +1,5 @@
 Manifest-Version: 1.0
 OpenIDE-Module-Layer: org/jetbrains/kotlin/layer.xml
-OpenIDE-Module-Install: org/jetbrains/kotlin/installer/KotlinInstaller.class
+OpenIDE-Module-Install: io/github/nbplugins/kotlin/nbm/installer/KotlinInstaller.class
 OpenIDE-Module-Name: Kotlin Support
 

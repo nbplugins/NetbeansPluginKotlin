@@ -22,7 +22,7 @@ import com.intellij.psi.util.PsiTreeUtil
 import javax.swing.text.Document
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.psi.KtDeclarationWithInitializer
-import org.jetbrains.kotlin.hints.atomicChange
+import io.github.nbplugins.kotlin.nbm.hints.atomicChange
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtIfExpression
 import org.jetbrains.kotlin.psi.KtWhenExpression
@@ -40,7 +40,7 @@ import org.jetbrains.kotlin.psi.KtBinaryExpression
 import org.jetbrains.kotlin.psi.KtDeclaration
 import org.jetbrains.kotlin.psi.KtLoopExpression
 import org.jetbrains.kotlin.psi.KtPsiFactory
-import org.jetbrains.kotlin.reformatting.moveCursorTo
+import io.github.nbplugins.kotlin.nbm.reformatting.moveCursorTo
 import io.github.nbplugins.kotlin.nbm.hints.KaApplicableIntention
 
 /**

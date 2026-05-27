@@ -24,6 +24,7 @@ import com.intellij.psi.codeStyle.CodeStyleSettings;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.StyledDocument;
 import org.jetbrains.kotlin.idea.formatter.KotlinSpacingRulesKt;
+import io.github.nbplugins.kotlin.nbm.formatting.KotlinFormatterUtils;
 import org.jetbrains.kotlin.psi.KtFile;
 import org.jetbrains.kotlin.psi.KtPsiFactory;
 import org.jetbrains.kotlin.utils.ProjectUtils;

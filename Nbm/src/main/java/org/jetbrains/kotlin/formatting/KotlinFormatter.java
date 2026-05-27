@@ -30,6 +30,7 @@ import org.jetbrains.kotlin.idea.formatter.KotlinSpacingBuilderUtil;
 import org.jetbrains.kotlin.psi.KtFile;
 import org.jetbrains.kotlin.psi.KtPsiFactory;
 import org.jetbrains.kotlin.idea.formatter.KotlinSpacingRulesKt;
+import io.github.nbplugins.kotlin.nbm.formatting.KotlinFormatterUtils;
 
 /**
  *
@@ -64,7 +65,7 @@ public class KotlinFormatter {
                 KotlinFormatterUtils.getSettings(), source);
     }
     
-    static class KotlinSpacingBuilderUtilImpl implements KotlinSpacingBuilderUtil {
+    public static class KotlinSpacingBuilderUtilImpl implements KotlinSpacingBuilderUtil {
         
         public static KotlinSpacingBuilderUtilImpl INSTANCE = 
                 new KotlinSpacingBuilderUtilImpl();

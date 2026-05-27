@@ -17,7 +17,7 @@
 package io.github.nbplugins.kotlin.nbm.completion
 
 import javax.swing.text.Document
-import org.jetbrains.kotlin.completion.InsertableProposal
+import io.github.nbplugins.kotlin.nbm.completion.InsertableProposal
 import org.netbeans.modules.csl.api.CodeCompletionResult
 import org.netbeans.modules.csl.api.CompletionProposal
 

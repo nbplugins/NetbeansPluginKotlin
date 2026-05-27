@@ -20,6 +20,7 @@ import org.netbeans.modules.csl.spi.DefaultCompletionProposal
 import org.netbeans.modules.csl.api.ElementKind
 import org.netbeans.modules.csl.api.HtmlFormatter
 import javax.swing.text.Document
+import io.github.nbplugins.kotlin.nbm.completion.InsertableProposal
 
 class KeywordCompletionProposal(private val keyword: String,
                                 private val idenStartOffset: Int,

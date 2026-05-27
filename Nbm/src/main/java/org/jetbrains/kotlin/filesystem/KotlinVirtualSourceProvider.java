@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Set;
 import org.netbeans.api.project.Project;
 import org.netbeans.modules.java.preprocessorbridge.spi.VirtualSourceProvider;
+import io.github.nbplugins.kotlin.nbm.filesystem.VirtualSourceUtilsKt;
 import org.openide.util.lookup.ServiceProvider;
 
 @ServiceProvider(service = VirtualSourceProvider.class)

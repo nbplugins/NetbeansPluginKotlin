@@ -22,12 +22,12 @@ import com.intellij.openapi.vfs.CharsetToolkit
 import com.intellij.psi.PsiFileFactory
 import com.intellij.psi.impl.PsiFileFactoryImpl
 import java.io.IOException
-import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper.checkProject
-import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper.getKotlinSources
+import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectHelper.checkProject
+import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectHelper.getKotlinSources
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.model.KotlinLightVirtualFile
 import org.jetbrains.kotlin.project.KotlinProjectConstants
-import org.jetbrains.kotlin.utils.KotlinMockProject
+import io.github.nbplugins.kotlin.nbm.utils.KotlinMockProject
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.jetbrains.kotlin.idea.KotlinFileType
 import org.jetbrains.kotlin.idea.KotlinLanguage

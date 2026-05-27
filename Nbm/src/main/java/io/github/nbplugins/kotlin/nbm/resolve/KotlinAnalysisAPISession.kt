@@ -36,7 +36,7 @@ import org.jetbrains.kotlin.idea.KotlinFileType
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.platform.jvm.JvmPlatforms
 import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper
+import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectHelper
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.api.java.classpath.ClassPath
 import org.netbeans.api.project.Project as NBProject

@@ -20,7 +20,8 @@ package org.jetbrains.kotlin.projectsextensions.j2se;
 
 import org.jetbrains.kotlin.projectsextensions.j2se.buildextender.KotlinBuildExtender;
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession;
-import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper;
+import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectHelper;
+import io.github.nbplugins.kotlin.nbm.projectsextensions.j2se.J2SEProjectPropertiesModifier;
 import org.netbeans.api.progress.ProgressHandle;
 import org.netbeans.api.progress.ProgressHandleFactory;
 import org.netbeans.api.project.Project;

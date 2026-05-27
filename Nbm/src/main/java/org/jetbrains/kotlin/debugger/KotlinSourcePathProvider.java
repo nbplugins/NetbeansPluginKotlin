@@ -26,7 +26,7 @@ import java.util.List;
 import java.util.Set;
 import org.jetbrains.kotlin.fileClasses.JvmFileClassUtil;
 import org.jetbrains.kotlin.name.FqName;
-import org.jetbrains.kotlin.projectsextensions.KotlinProjectHelper;
+import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectHelper;
 import org.jetbrains.kotlin.psi.KtClass;
 import org.jetbrains.kotlin.psi.KtFile;
 import org.jetbrains.kotlin.utils.ProjectUtils;

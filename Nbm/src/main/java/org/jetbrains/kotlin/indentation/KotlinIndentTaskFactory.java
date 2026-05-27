@@ -19,6 +19,7 @@ package org.jetbrains.kotlin.indentation;
 import org.netbeans.api.editor.mimelookup.MimeRegistration;
 import org.netbeans.modules.editor.indent.spi.Context;
 import org.netbeans.modules.editor.indent.spi.IndentTask;
+import io.github.nbplugins.kotlin.nbm.indentation.KotlinIndentTask;
 
 @MimeRegistration(mimeType="text/x-kotlin",service=IndentTask.Factory.class)
 public class KotlinIndentTaskFactory implements IndentTask.Factory {

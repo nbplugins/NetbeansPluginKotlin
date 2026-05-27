@@ -17,7 +17,7 @@
 package io.github.nbplugins.kotlin.nbm.structurescanner
 
 import org.jetbrains.kotlin.psi.KtClassOrObject
-import org.jetbrains.kotlin.utils.KotlinImageProvider
+import io.github.nbplugins.kotlin.nbm.utils.KotlinImageProvider
 import org.netbeans.modules.csl.api.ElementKind
 import org.netbeans.modules.csl.api.HtmlFormatter
 import org.netbeans.modules.csl.api.Modifier
