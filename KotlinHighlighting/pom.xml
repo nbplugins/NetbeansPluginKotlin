@@ -5,8 +5,8 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.10.8-SNAPSHOT</version>
-    <relativePath>../../pom.xml</relativePath>
+    <version>0.10.9-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-highlighting</artifactId>
   <packaging>jar</packaging>
@@ -29,7 +29,7 @@
 
     <resources>
       <resource>
-        <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/highlighting/highlighting-shared/resources</directory>
+        <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/highlighting/highlighting-shared/resources</directory>
         <includes>
           <include>messages/KotlinBaseHighlightingBundle.properties</include>
         </includes>
@@ -57,7 +57,7 @@
               <overwrite>true</overwrite>
               <resources>
                 <resource>
-                  <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/highlighting/highlighting-k2/src</directory>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/highlighting/highlighting-k2/src</directory>
                   <filtering>false</filtering>
                   <includes>
                     <include>org/jetbrains/kotlin/idea/highlighting/highlighters/FunctionCallHighlighter.kt</include>
@@ -81,7 +81,7 @@
               <overwrite>true</overwrite>
               <resources>
                 <resource>
-                  <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/highlighting/highlighting-minimal/src</directory>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/highlighting/highlighting-minimal/src</directory>
                   <filtering>false</filtering>
                   <includes>
                     <include>org/jetbrains/kotlin/idea/highlighter/HighlightingFactory.kt</include>
@@ -103,7 +103,7 @@
               <overwrite>true</overwrite>
               <resources>
                 <resource>
-                  <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/highlighting/highlighting-shared/src</directory>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/highlighting/highlighting-shared/src</directory>
                   <filtering>false</filtering>
                   <includes>
                     <include>org/jetbrains/kotlin/idea/base/highlighting/KotlinBaseHighlightingBundle.kt</include>
@@ -123,7 +123,7 @@
               <overwrite>true</overwrite>
               <resources>
                 <resource>
-                  <directory>${basedir}/../../submodules/IntellijCommunity/java/java-frontback-impl/src</directory>
+                  <directory>${basedir}/../submodules/IntellijCommunity/java/java-frontback-impl/src</directory>
                   <filtering>false</filtering>
                   <includes>
                     <include>com/intellij/ide/highlighter/JavaHighlightingColors.java</include>
@@ -143,7 +143,7 @@
               <overwrite>true</overwrite>
               <resources>
                 <resource>
-                  <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/highlighting/highlighting-minimal/src</directory>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/highlighting/highlighting-minimal/src</directory>
                   <filtering>false</filtering>
                   <includes>
                     <include>org/jetbrains/kotlin/idea/highlighter/visitor/AbstractHighlightingVisitor.kt</include>
@@ -163,7 +163,7 @@
               <overwrite>true</overwrite>
               <resources>
                 <resource>
-                  <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/highlighting/highlighting-shared/src</directory>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/highlighting/highlighting-shared/src</directory>
                   <filtering>false</filtering>
                   <includes>
                     <include>org/jetbrains/kotlin/idea/base/highlighting/KotlinHighlighterAttributeUtils.kt</include>
@@ -185,7 +185,7 @@
               <overwrite>true</overwrite>
               <resources>
                 <resource>
-                  <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/base/util/src</directory>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/util/src</directory>
                   <filtering>false</filtering>
                   <includes>
                     <include>org/jetbrains/kotlin/util/AbstractKotlinBundle.kt</include>

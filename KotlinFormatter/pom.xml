@@ -5,8 +5,8 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.10.8-SNAPSHOT</version>
-    <relativePath>../../pom.xml</relativePath>
+    <version>0.10.9-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-formatter</artifactId>
   <packaging>jar</packaging>
@@ -28,10 +28,10 @@
 
     <resources>
       <resource>
-        <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/formatter/minimal/resources</directory>
+        <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/formatter/minimal/resources</directory>
       </resource>
       <resource>
-        <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/formatter/minimal/resources-en</directory>
+        <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/formatter/minimal/resources-en</directory>
       </resource>
     </resources>
 
@@ -52,7 +52,7 @@
               <overwrite>true</overwrite>
               <resources>
                 <resource>
-                  <directory>${basedir}/../../submodules/IntellijCommunity/plugins/kotlin/formatter/minimal/src</directory>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/formatter/minimal/src</directory>
                   <filtering>false</filtering>
                   <!-- UI-panel files require IntelliJ UI toolkit (ComboBox, JBScrollPane, etc.)
                        absent from published platform Maven artifacts. Deferred to E5. -->
