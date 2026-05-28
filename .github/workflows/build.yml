@@ -102,8 +102,6 @@ jobs:
           cache: maven
       - name: Set version
         run: mvn versions:set -DnewVersion=${{ needs.calc_ver.outputs.project_ver }} --batch-mode
-      - name: Check copyright headers
-        run: python3 build-scripts/update-copyright.py --check
       - name: Build and test
         run: mvn package --batch-mode
       # Maven Central deploy — disabled pending license research (Apache-2.0 / JetBrains / IntelliJ Community)

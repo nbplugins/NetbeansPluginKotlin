@@ -5,8 +5,8 @@ Modes (default: --branch):
   --branch    Add nbplugins copyright to files changed vs main...HEAD (one-shot fix).
   --all       Add the full canonical header to every .java/.kt file in Nbm/src/ that
               has no copyright at all.  Safe to run repeatedly (idempotent).
-  --check     Exit with code 1 if any .java/.kt file in Nbm/src/ has no copyright line.
-              Intended for CI.
+  --check     Exit with code 1 if any .java/.kt file in Nbm/src/ has no copyright line
+              or has a wrong nbplugins year. Intended for CI.
 
 Run from the repository root:
     python3 build-scripts/update-copyright.py            # default: --branch
@@ -14,16 +14,37 @@ Run from the repository root:
     python3 build-scripts/update-copyright.py --check    # CI check
 """
 
+import datetime
+import re
 import subprocess
 import sys
 from pathlib import Path
 
-NBPLUGINS_LINE = " * Copyright 2026 nbplugins contributors"
+_NBPLUGINS_PATTERN = re.compile(
+    r" \* Copyright (\d{4})(?:-(\d{4}))? nbplugins contributors"
+)
 
-FULL_HEADER = """\
+
+def get_git_modification_year(path: Path) -> int:
+    """Return the year of the last commit touching path since 2026-01-01, or current year."""
+    result = subprocess.run(
+        ["git", "log", "-1", "--format=%ci", "--after=2025-12-31", "--", str(path)],
+        capture_output=True, text=True, check=True,
+    )
+    if result.stdout.strip():
+        return int(result.stdout.strip()[:4])
+    return datetime.date.today().year
+
+
+def nbplugins_line(year: int) -> str:
+    return f" * Copyright {year} nbplugins contributors"
+
+
+def full_header(year: int) -> str:
+    return f"""\
 /*******************************************************************************
  * Copyright 2000-2016 JetBrains s.r.o.
- * Copyright 2026 nbplugins contributors
+ * Copyright {year} nbplugins contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -80,23 +101,25 @@ def has_any_copyright(text: str) -> bool:
 
 
 def process_file(path: Path, only_missing: bool = False) -> str:
-    """Return 'updated', 'no-change'.
+    """Return 'updated' or 'no-change'.
 
     only_missing=True: add header only if no copyright exists (--all mode).
     only_missing=False: also insert nbplugins line into existing JetBrains headers (--branch mode).
     """
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines(keepends=True)
+    year = get_git_modification_year(path)
+    line = nbplugins_line(year)
 
     # Already has the nbplugins line → nothing to do
-    if NBPLUGINS_LINE in text:
+    if _NBPLUGINS_PATTERN.search(text):
         return "no-change"
 
     if not only_missing:
         # --- Case 1: file has a JetBrains copyright line → insert nbplugins line after it ---
-        for i, line in enumerate(lines):
-            if "JetBrains" in line and "Copyright" in line:
-                lines.insert(i + 1, NBPLUGINS_LINE + "\n")
+        for i, ln in enumerate(lines):
+            if "JetBrains" in ln and "Copyright" in ln:
+                lines.insert(i + 1, line + "\n")
                 path.write_text("".join(lines), encoding="utf-8")
                 return "updated"
 
@@ -108,14 +131,14 @@ def process_file(path: Path, only_missing: bool = False) -> str:
 
     # Find insertion point: after leading @file:OptIn annotation(s), if any
     insert_at = 0
-    for i, line in enumerate(lines):
-        stripped = line.strip()
+    for i, ln in enumerate(lines):
+        stripped = ln.strip()
         if stripped.startswith("@file:"):
             insert_at = i + 1
         elif stripped:
             break
 
-    lines.insert(insert_at, FULL_HEADER)
+    lines.insert(insert_at, full_header(year))
     path.write_text("".join(lines), encoding="utf-8")
     return "updated"
 
@@ -150,18 +173,35 @@ def cmd_all() -> None:
 
 def cmd_check() -> None:
     files = get_all_source_files()
-    missing = [p for p in files if not has_any_copyright(p.read_text(encoding="utf-8"))]
-    if missing:
-        print("ERROR: the following files have no copyright header:")
-        for p in missing:
-            print(f"  {p}")
+    errors: list[str] = []
+
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        if not has_any_copyright(text):
+            errors.append(f"  MISSING header: {path}")
+            continue
+        m = _NBPLUGINS_PATTERN.search(text)
+        if not m:
+            continue  # has JetBrains-only copyright, no nbplugins line yet — not an error here
+        # end year is group 2 if range (e.g. 2024-2026), else group 1
+        header_year = int(m.group(2) or m.group(1))
+        expected_year = get_git_modification_year(path)
+        if header_year != expected_year:
+            errors.append(
+                f"  WRONG YEAR ({header_year} ≠ {expected_year}): {path}"
+            )
+
+    if errors:
+        print("ERROR: copyright header issues found:")
+        for e in errors:
+            print(e)
         print(
-            f"\n{len(missing)} file(s) missing copyright."
-            " Run: python3 build-scripts/update-copyright.py --all"
+            f"\n{len(errors)} issue(s). "
+            "Run: python3 build-scripts/update-copyright.py --all"
         )
         sys.exit(1)
     else:
-        print(f"OK: all {len(files)} Java/Kotlin files have a copyright header.")
+        print(f"OK: all {len(files)} Java/Kotlin files pass copyright check.")
 
 
 def main() -> None:
