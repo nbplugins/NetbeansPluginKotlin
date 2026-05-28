@@ -30,7 +30,10 @@ import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectHelper.isM
 import io.github.nbplugins.kotlin.nbm.projectsextensions.maven.MavenHelper
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.nbm.startup.FakeIntellijHome
+import org.jetbrains.kotlin.log.KotlinLogger
 import org.openide.modules.ModuleInstall
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 class KotlinInstaller : ModuleInstall() {
 
@@ -49,8 +52,19 @@ class KotlinInstaller : ModuleInstall() {
                                 val currentFile = dataObject.primaryFile
                                 if (currentFile != null) {
                                     if (currentFile.mimeType == "text/x-kotlin") {
+                                        KotlinLogger.INSTANCE.logInfo(
+                                            "[TIME] KotlinInstaller: .kt editor opened ${currentFile.path} at ${now()}"
+                                        )
                                         checkUpdates()
                                         checkProjectConfiguration(currentFile)
+                                        // Pre-warm the K2 session on a background thread so it is
+                                        // ready before EDITOR_SENSITIVE_TASK_SCHEDULER fires the parser.
+                                        val proj = ProjectUtils.getKotlinProjectForFileObject(currentFile)
+                                        if (proj != null) {
+                                            org.openide.util.RequestProcessor.getDefault().post {
+                                                KotlinAnalysisAPISession.getSession(proj)
+                                            }
+                                        }
                                     }
                                     if (currentFile.mimeType == "text/x-java") {
                                         checkVirtualSourceProvider(currentFile)
@@ -80,5 +94,7 @@ class KotlinInstaller : ModuleInstall() {
     private fun checkUpdates() {
         if (!KotlinUpdater.updated) KotlinUpdater.checkUpdates()
     }
-    
+
+    private fun now(): String =
+        LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss.SSS"))
 }

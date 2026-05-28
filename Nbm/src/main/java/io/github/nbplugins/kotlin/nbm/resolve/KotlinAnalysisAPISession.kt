@@ -126,19 +126,29 @@ class KotlinAnalysisAPISession private constructor(
 
         // Scan source roots and create in-memory LVFs so that updateFileContent() can keep
         // the session's KtFile PSI in sync with live editor snapshots without rebuilding.
+        val tScan = System.nanoTime()
         val lvfs = scanSourceFiles(sourceRoots)
         fileMap = lvfs.associateBy { it.path }
+        KotlinLogger.INSTANCE.logInfo(
+            "[PERF] KotlinAnalysisAPISession '$moduleName': scanSourceFiles=${(System.nanoTime() - tScan) / 1_000_000}ms (${lvfs.size} files)"
+        )
 
+        val tBuild = System.nanoTime()
         session = buildStandaloneAnalysisAPISession {
             buildKtModuleProvider {
                 platform = JvmPlatforms.unspecifiedJvmPlatform
 
+                val tJdk = System.nanoTime()
                 val jdkModule = addModule(buildKtSdkModule {
                     libraryName = "JDK"
                     addBinaryRootsFromJdkHome(Path.of(System.getProperty("java.home")), false)
                     platform = JvmPlatforms.unspecifiedJvmPlatform
                 })
+                KotlinLogger.INSTANCE.logInfo(
+                    "[PERF] KotlinAnalysisAPISession '$moduleName': JDK module=${(System.nanoTime() - tJdk) / 1_000_000}ms"
+                )
 
+                val tLibs = System.nanoTime()
                 val libModules = binaryJars.map { jar ->
                     addModule(buildKtLibraryModule {
                         libraryName = jar.fileName.toString()
@@ -146,7 +156,11 @@ class KotlinAnalysisAPISession private constructor(
                         platform = JvmPlatforms.unspecifiedJvmPlatform
                     })
                 }
+                KotlinLogger.INSTANCE.logInfo(
+                    "[PERF] KotlinAnalysisAPISession '$moduleName': library modules=${(System.nanoTime() - tLibs) / 1_000_000}ms (${binaryJars.size} jars)"
+                )
 
+                val tSrc = System.nanoTime()
                 addModule(buildKtSourceModule {
                     this.moduleName = moduleName
                     languageVersionSettings = LanguageVersionSettingsImpl(
@@ -157,16 +171,24 @@ class KotlinAnalysisAPISession private constructor(
                     libModules.forEach { addRegularDependency(it) }
                     platform = JvmPlatforms.unspecifiedJvmPlatform
                 })
+                KotlinLogger.INSTANCE.logInfo(
+                    "[PERF] KotlinAnalysisAPISession '$moduleName': source module=${(System.nanoTime() - tSrc) / 1_000_000}ms"
+                )
             }
         }
+        KotlinLogger.INSTANCE.logInfo(
+            "[PERF] KotlinAnalysisAPISession '$moduleName': buildStandaloneAnalysisAPISession total=${(System.nanoTime() - tBuild) / 1_000_000}ms"
+        )
 
+        val tProvider = System.nanoTime()
         installLiveDeclarationProvider(session)
+        KotlinLogger.INSTANCE.logInfo(
+            "[PERF] KotlinAnalysisAPISession '$moduleName': installLiveDeclarationProvider=${(System.nanoTime() - tProvider) / 1_000_000}ms"
+        )
 
         KotlinLogger.INSTANCE.logInfo(
-            "KotlinAnalysisAPISession init for '$moduleName': " +
-            "${(System.nanoTime() - startTime)} ns, " +
-            "${binaryJars.size} binary jars, ${sourceRoots.size} source roots, " +
-            "${lvfs.size} source files"
+            "[PERF] KotlinAnalysisAPISession '$moduleName': TOTAL=${(System.nanoTime() - startTime) / 1_000_000}ms " +
+            "(${binaryJars.size} binary jars, ${sourceRoots.size} source roots, ${lvfs.size} source files)"
         )
     }
 
