@@ -29,17 +29,6 @@ repo/
 
 # Test output
 test-output.txt
-/Nbm/target/
-/PatchingJars/target/
-/bundled-jars/KotlinIdeCommon/target/
-/bundled-jars/KotlinConverter/target/
-/bundled-jars/KotlinCompiler/target/
-/bundled-jars/KotlinFormatter/target/
-/bundled-jars/IntellijCore/target/
-/bundled-jars/IdeaFormatter/target/
-/bundled-jars/OpenapiFormatter/target/
-/bundled-jars/KotlinCompilerIntellijPlatform/target/
-/bundled-jars/PatchedCoreImpl/target/
 
 # Generated module target/ dirs
 **/target/

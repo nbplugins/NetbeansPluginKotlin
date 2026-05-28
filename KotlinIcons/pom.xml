@@ -5,8 +5,8 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.10.8-SNAPSHOT</version>
-    <relativePath>../../pom.xml</relativePath>
+    <version>0.10.10-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-icons</artifactId>
   <packaging>jar</packaging>
@@ -54,9 +54,9 @@
                 import org.apache.batik.transcoder.TranscoderOutput
 
                 def kotlinSvgDir = new File(project.basedir,
-                    '../../submodules/IntellijCommunity/plugins/kotlin/base/resources/resources/org/jetbrains/kotlin/idea/icons')
+                    '../submodules/IntellijCommunity/plugins/kotlin/base/resources/resources/org/jetbrains/kotlin/idea/icons')
                 def platformSvgDir = new File(project.basedir,
-                    '../../submodules/IntellijCommunity/platform/icons/src/nodes')
+                    '../submodules/IntellijCommunity/platform/icons/src/nodes')
                 def outDir = new File(project.build.outputDirectory, 'io/github/nbplugins/kotlin/nbm/icons')
                 outDir.mkdirs()
 

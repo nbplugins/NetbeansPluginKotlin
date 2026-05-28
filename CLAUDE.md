@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is the **Kotlin plugin for NetBeans IDE** — a JetBrains-developed plugin providing Kotlin language support in NetBeans. **Note**: This project is no longer actively developed (see [issue #122](https://github.com/JetBrains/kotlin-netbeans/issues/122)).
+This is the **Kotlin plugin for NetBeans IDE** — an actively maintained fork of the original JetBrains plugin (abandoned in 2020, see [issue #122](https://github.com/JetBrains/kotlin-netbeans/issues/122)) published at [nbplugins/NetbeansPluginKotlin](https://github.com/nbplugins/NetbeansPluginKotlin). The fork migrates the plugin to the K2 Analysis API, updates all bundled dependencies, and adds modern editor features (semantic highlighting, code completion, hover docs, etc.).
 
 See [docs/development-plan.md](docs/development-plan.md) for the long-term development roadmap.
 
@@ -98,11 +98,27 @@ When finishing a release by adding `# MAJOR.MINOR` to CHANGELOG.md, the commit m
 ### Package naming
 
 All **new** plugin classes (not existing legacy code) go in `io.github.nbplugins.kotlin.nbm.*`.
-Sub-package mirrors the feature area, e.g.:
-- `io.github.nbplugins.kotlin.nbm.resolve` — analysis session management
-- `io.github.nbplugins.kotlin.nbm.completion` — code completion
-- `io.github.nbplugins.kotlin.nbm.diagnostics` — error/warning reporting
+Sub-package mirrors the feature area. Current packages:
+- `io.github.nbplugins.kotlin.nbm.completion` — code completion proposals
+- `io.github.nbplugins.kotlin.nbm.diagnostics` — error/warning detection and reporting
+- `io.github.nbplugins.kotlin.nbm.file` — file-type utilities
+- `io.github.nbplugins.kotlin.nbm.filesystem` — virtual filesystem integration
+- `io.github.nbplugins.kotlin.nbm.formatting` — code formatting adapter
+- `io.github.nbplugins.kotlin.nbm.highlighter` — syntax and semantic token coloring
 - `io.github.nbplugins.kotlin.nbm.hints` — K2 hints, intentions, quick-fixes
+- `io.github.nbplugins.kotlin.nbm.hover` — hover tooltip / documentation popup
+- `io.github.nbplugins.kotlin.nbm.indentation` — auto-indent on paste
+- `io.github.nbplugins.kotlin.nbm.installer` — module install/upgrade hooks
+- `io.github.nbplugins.kotlin.nbm.j2k` — Java-to-Kotlin conversion stub
+- `io.github.nbplugins.kotlin.nbm.language` — language registration and configuration
+- `io.github.nbplugins.kotlin.nbm.model` — shared data models (e.g. highlight token types)
+- `io.github.nbplugins.kotlin.nbm.navigation` — go-to-definition, find usages
+- `io.github.nbplugins.kotlin.nbm.projectsextensions` — Maven/Gradle/Ant project integration
+- `io.github.nbplugins.kotlin.nbm.reformatting` — reformat-selection support
+- `io.github.nbplugins.kotlin.nbm.resolve` — K2 analysis session management
+- `io.github.nbplugins.kotlin.nbm.startup` — pre-warming and startup tasks
+- `io.github.nbplugins.kotlin.nbm.structurescanner` — Navigator panel (K2 structure scanner)
+- `io.github.nbplugins.kotlin.nbm.utils` — shared helpers
 
 ### Documentation
 
@@ -118,7 +134,7 @@ Every new class must have a corresponding unit test class.
 
 | Source | Test |
 |--------|------|
-| `src/main/java/io/github/nbplugins/kotlin/nbm/resolve/Foo.kt` | `src/test/java/io/github/nbplugins/kotlin/nbm/resolve/FooTest.kt` |
+| `src/main/kotlin/io/github/nbplugins/kotlin/nbm/resolve/Foo.kt` | `src/test/kotlin/io/github/nbplugins/kotlin/nbm/resolve/FooTest.kt` |
 
 Every public method of a new class must have at least one test method in the corresponding test
 class. Test classes extend `utils.KotlinTestCase` (or `org.netbeans.junit.NbTestCase` directly
@@ -144,7 +160,7 @@ Before every commit, in order:
    python3 build-scripts/update-copyright.py --all
    ```
    This adds the canonical header (JetBrains + nbplugins) to every `.java`/`.kt` file
-   in `Nbm/src/main/java` and `Nbm/src/test/java` that has no copyright. Safe to run
+   in `Nbm/src/main/java`, `Nbm/src/main/kotlin`, `Nbm/src/test/java`, and `Nbm/src/test/kotlin` that has no copyright. Safe to run
    repeatedly (idempotent). Verify with `python3 build-scripts/update-copyright.py --check`.
 
 2. **Run unit tests** — all tests must pass:
@@ -184,33 +200,33 @@ mvn clean package -DskipTests  # Build without running tests
 mvn nbm:cluster-app -pl Nbm    # Create a NetBeans test cluster for manual testing
 ```
 
-Running `mvn clean test` or `mvn clean package` from the root reactor builds `bundled-jars/*`
+Running `mvn clean test` or `mvn clean package` from the root reactor builds the bundled-JAR
 modules first and passes them to `Nbm` automatically — no prior `mvn install` needed.
 
 ### Fast iteration (do NOT add `clean` on every build)
 
-The `bundled-jars/CoreImpl` and `bundled-jars/KotlinCompiler` modules repack large
-binary JARs (KotlinCompiler unzips/zips ~24k files, 142 MB). An up-to-date guard makes
+The `CoreImpl` and `KotlinCompilerCliBase` modules repack large
+binary JARs (KotlinCompilerCliBase unzips/zips ~24k files, 142 MB). An up-to-date guard makes
 a **no-clean** rebuild reuse the existing repacked JARs untouched (verified byte-identical):
 
 ```bash
-# Daily loop while working on Nbm code — bundled-jars reused in ~2 s,
+# Daily loop while working on Nbm code — repack modules reused in ~2 s,
 # only Nbm recompiles:
 mvn package -DskipTests
 
 # Use clean ONLY when: a bundled-jar dependency version changed in pom.xml,
-# after a git pull touching bundled-jars, or to force a pristine state:
+# after a git pull touching repack modules, or to force a pristine state:
 mvn clean package -DskipTests
 ```
 
-`clean` deletes `target/` (the `repack.stamp` + repacked JAR) → bundled-jars do the
+`clean` deletes `target/` (the `repack.stamp` + repacked JAR) → repack modules do the
 full unzip/strip/jar again. **Habitually typing `mvn clean package` every iteration
 defeats the speed-up.** A stale/partial state is always fixable with one `mvn clean package`.
 
-How it works: an Ant `<uptodate>` guard skips the unzip/strip and builds the JAR via
-Ant `<jar>` only when inputs changed; `maven-jar-plugin`'s `default-jar` is unbound
-(`phase=none`) so it neither re-zips nor scans the 24k files; `gmavenplus-plugin`
-points Maven at the JAR so the reactor and `mvn install` resolve the module.
+How it works: a Groovy `<uptodate>` guard in `gmavenplus-plugin` skips extraction when
+`repack.stamp` is newer than the source JARs; `maven-jar-plugin`'s `default-jar` is
+unbound (`phase=none`) so it neither re-zips nor scans the 24k files; the plugin points
+Maven at the pre-built JAR so the reactor and `mvn install` resolve the module.
 
 ## Architecture
 
@@ -227,11 +243,17 @@ pom.xml                  ← root (packaging=pom), dependencyManagement for all 
 Nbm/                     ← main plugin module (packaging=nbm)
   pom.xml
   src/                   ← plugin source and tests
-bundled-jars/            ← grouping dir (no pom); each submodule produces one JAR
-patches/                 ← replacement class sources for bundled-jars modules (StubBasedPsiElementBase, AtomicFieldUpdater, picocontainer)
+CoreImpl/                ← bundled JAR: repacked IntelliJ platform core+core-impl+util (193/253)
+KotlinCompilerCliBase/   ← bundled JAR: CLI subset of kotlin-compiler (~24k entries, 142 MB)
+KotlinFormatter/         ← bundled JAR: Kotlin formatter compiled from submodules/IntellijCommunity
+KotlinHighlighting/      ← bundled JAR: K2 semantic highlighting compiled from submodules/IntellijCommunity
+KotlinIcons/             ← bundled JAR: Kotlin completion icons (SVG→PNG via Batik)
+patches/                 ← replacement class sources for bundled modules (StubBasedPsiElementBase, AtomicFieldUpdater, picocontainer)
 ```
 
-### Main Packages (`Nbm/src/main/java/org/jetbrains/kotlin/`)
+### Main Packages
+
+**Legacy packages** (`Nbm/src/main/java/org/jetbrains/kotlin/`) — original JetBrains code, kept as-is:
 
 | Package | Purpose |
 |---------|---------|
@@ -252,10 +274,22 @@ patches/                 ← replacement class sources for bundled-jars modules 
 | `projectsextensions/` | Maven/Gradle/Ant build system integration |
 | `utils/` | Shared helpers |
 
+**New packages** (`Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/`) — reworked and new classes (see *Package naming* under Coding Standards for the full sub-package list).
+
 ### Bundled JARs
 
-Several capabilities depend on bundled custom JARs (not from Maven Central):
-- `kotlin-ide-common.jar` — replaced by `base-fe10-analysis/code-insight/obsolete-compat/base-psi:231-*` binary artifacts (B5)
+Several capabilities depend on bundled custom JARs (not from Maven Central).
+Active reactor modules (at repo root alongside `Nbm/`):
+
+| Module | Artifact | Purpose |
+|--------|----------|---------|
+| `CoreImpl` | `netbeans-plugin-kotlin-core-impl` | Repacked `core-impl:193` with stripped/replaced classes; classloader glue for IntelliJ platform |
+| `KotlinCompilerCliBase` | `netbeans-plugin-kotlin-compiler-cli-base` | Repacked `kotlin-compiler` (heavy — ~24k entries, 142 MB); only CLI classes absent from the `-for-ide` thin artifacts |
+| `KotlinFormatter` | `netbeans-plugin-kotlin-formatter` | Kotlin formatter compiled from `submodules/IntellijCommunity` |
+| `KotlinHighlighting` | `netbeans-plugin-kotlin-highlighting` | Kotlin semantic highlighting pipeline (`FunctionCallHighlighter`, `TypeHighlighter`, `VariableReferenceHighlighter`) compiled from `submodules/IntellijCommunity` |
+| `KotlinIcons` | `netbeans-plugin-kotlin-icons` | Kotlin-accurate completion icons (val, var, extension function, etc.) converted from IntelliJ SVG sources to 16×16 PNG at build time via Apache Batik |
+
+Other bundled capabilities (not separate reactor modules):
 - IntelliJ platform core — provided by `com.jetbrains.intellij.platform:core:193.7288.26` +
   `core-impl:193.7288.26` as direct Maven dependencies of Nbm (since A4.10; replaces old `lib/intellij-core-1.0.jar`)
 
@@ -283,14 +317,14 @@ avoid conflicts with bundled JARs. The following stubs live in `Nbm/src/main/jav
 | `KotlinSettingsProvider` | `com.intellij.formatting` | Plugin-specific; extends `CodeStyleSettingsProvider`; provides `KotlinCodeStyleSettings` factory |
 | `KotlinLanguageCodeStyleSettingsProvider` | `com.intellij.formatting` | Plugin-specific; extends `LanguageCodeStyleSettingsProvider`; provides Kotlin code style settings UI |
 
-These JARs are built by the `bundled-jars/*` reactor modules and passed to `Nbm` automatically.
+These JARs are built by the reactor modules above and passed to `Nbm` automatically.
 They are installed under `io.github.nbplugins` coordinates
-(e.g. `io.github.nbplugins:netbeans-plugin-kotlin-ide-common:${project.version}`).
+(e.g. `io.github.nbplugins:netbeans-plugin-kotlin-core-impl:${project.version}`).
 
 ### JAR Patches
 
 The bundled JARs were compiled against older library versions and require class replacements to
-work with Kotlin 1.3.72 and Java 17+. No ASM patches remain since A4.10.
+work with the current runtime (Kotlin 2.3.21, Java 17+). No ASM patches remain since A4.10.
 
 **Active class replacements** — classes in `Nbm/src/main/java/` win over `ext/*.jar` via classloader order:
 
@@ -311,7 +345,8 @@ mvn clean test
 ```
 
 ### Plugin Registration
-- `Nbm/src/main/resources/META-INF/layer.xml` — Registers language services, file actions, project integrations
+- `Nbm/src/main/resources/org/jetbrains/kotlin/layer.xml` — Registers language services, file actions, project integrations (316 lines)
+- `Nbm/src/main/resources/org/jetbrains/kotlin/navigation/layer.xml` — Navigation-specific layer entries
 - `@LanguageRegistration` on `KotlinLanguage.java` — Binds the plugin to `.kt` files
 
 ### Why `-proc:none` and why layer.xml is hand-written
@@ -328,7 +363,7 @@ This is a deliberate consequence of the mixed Kotlin+Java build:
 
 **Consequence:** NetBeans annotation processors (`LanguageRegistrationProcessor`,
 `MimeRegistrationProcessor`, `ServiceProviderProcessor`) never run, so no `generated-layer.xml` is
-produced. All layer entries are written manually in `layer.xml` (316 lines). The file contains
+produced. All layer entries are written manually in `layer.xml` (see *Plugin Registration* above). The files contain
 `// normally generated by LanguageRegistrationProcessor…` comments marking every entry that would
 have been auto-generated if annotation processing were enabled.
 
@@ -343,7 +378,7 @@ automation (Java-only classes) is possible but not worth the added complexity.
 
 ## Test Structure
 
-Tests live in `Nbm/src/test/java/` mirroring feature packages: `completion/`, `diagnostics/`, `formatting/`, `navigation/`, `rename/`, etc.
+Tests live in `Nbm/src/test/kotlin/` mirroring feature packages: `completion/`, `diagnostics/`, `formatting/`, `navigation/`, `rename/`, etc.
 
 Test resource files (sample `.kt` files) are in `Nbm/src/test/resources/projForTest/src/`, organized by feature. Tests extend `KotlinTestCase` (a custom NetBeans test base class) which sets up a mock NetBeans environment.
 
@@ -408,6 +443,6 @@ through the K2 Analysis API (`StandaloneAnalysisAPISession`).
   expected field. The stub takes classloader precedence over the Kotlin `Registry` in `KotlinCompilerCliBase`.
 - `KotlinAnalysisAPISession` adds the JDK home as a `KtSdkModule` dependency so that
   JDK standard library types are visible in the analysis session.
-- `CodeInsightContextManager.kt` stub in `Nbm/src/main/java/` overrides the `core:253` interface to
+- `CodeInsightContextManager.kt` stub in `Nbm/src/main/kotlin/` overrides the `core:253` interface to
   add `isSharedSourceSupportEnabled(): Boolean = false` — called via `invokeinterface` by
   `kotlin-compiler-ir-for-ide:2.3.21` (compiled against 253 where this method existed).
