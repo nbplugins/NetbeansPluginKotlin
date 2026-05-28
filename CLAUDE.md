@@ -134,7 +134,7 @@ Every new class must have a corresponding unit test class.
 
 | Source | Test |
 |--------|------|
-| `src/main/java/io/github/nbplugins/kotlin/nbm/resolve/Foo.kt` | `src/test/java/io/github/nbplugins/kotlin/nbm/resolve/FooTest.kt` |
+| `src/main/kotlin/io/github/nbplugins/kotlin/nbm/resolve/Foo.kt` | `src/test/kotlin/io/github/nbplugins/kotlin/nbm/resolve/FooTest.kt` |
 
 Every public method of a new class must have at least one test method in the corresponding test
 class. Test classes extend `utils.KotlinTestCase` (or `org.netbeans.junit.NbTestCase` directly
@@ -160,7 +160,7 @@ Before every commit, in order:
    python3 build-scripts/update-copyright.py --all
    ```
    This adds the canonical header (JetBrains + nbplugins) to every `.java`/`.kt` file
-   in `Nbm/src/main/java` and `Nbm/src/test/java` that has no copyright. Safe to run
+   in `Nbm/src/main/java`, `Nbm/src/main/kotlin`, `Nbm/src/test/java`, and `Nbm/src/test/kotlin` that has no copyright. Safe to run
    repeatedly (idempotent). Verify with `python3 build-scripts/update-copyright.py --check`.
 
 2. **Run unit tests** — all tests must pass:
@@ -274,7 +274,7 @@ patches/                 ← replacement class sources for bundled modules (Stub
 | `projectsextensions/` | Maven/Gradle/Ant build system integration |
 | `utils/` | Shared helpers |
 
-**New packages** (`Nbm/src/main/java/io/github/nbplugins/kotlin/nbm/`) — reworked and new classes (see *Package naming* under Coding Standards for the full sub-package list).
+**New packages** (`Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/`) — reworked and new classes (see *Package naming* under Coding Standards for the full sub-package list).
 
 ### Bundled JARs
 
@@ -378,7 +378,7 @@ automation (Java-only classes) is possible but not worth the added complexity.
 
 ## Test Structure
 
-Tests live in `Nbm/src/test/java/` mirroring feature packages: `completion/`, `diagnostics/`, `formatting/`, `navigation/`, `rename/`, etc.
+Tests live in `Nbm/src/test/kotlin/` mirroring feature packages: `completion/`, `diagnostics/`, `formatting/`, `navigation/`, `rename/`, etc.
 
 Test resource files (sample `.kt` files) are in `Nbm/src/test/resources/projForTest/src/`, organized by feature. Tests extend `KotlinTestCase` (a custom NetBeans test base class) which sets up a mock NetBeans environment.
 
@@ -443,6 +443,6 @@ through the K2 Analysis API (`StandaloneAnalysisAPISession`).
   expected field. The stub takes classloader precedence over the Kotlin `Registry` in `KotlinCompilerCliBase`.
 - `KotlinAnalysisAPISession` adds the JDK home as a `KtSdkModule` dependency so that
   JDK standard library types are visible in the analysis session.
-- `CodeInsightContextManager.kt` stub in `Nbm/src/main/java/` overrides the `core:253` interface to
+- `CodeInsightContextManager.kt` stub in `Nbm/src/main/kotlin/` overrides the `core:253` interface to
   add `isSharedSourceSupportEnabled(): Boolean = false` — called via `invokeinterface` by
   `kotlin-compiler-ir-for-ide:2.3.21` (compiled against 253 where this method existed).

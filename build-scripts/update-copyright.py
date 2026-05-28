@@ -82,8 +82,13 @@ _STUB_PACKAGES = (
 
 
 def get_all_source_files() -> list[Path]:
-    """Return all .java/.kt files in src/main/java and src/test/java, excluding IntelliJ stubs."""
-    roots = [Path("Nbm/src/main/java"), Path("Nbm/src/test/java")]
+    """Return all .java/.kt files in src/main/java, src/main/kotlin and test equivalents, excluding IntelliJ stubs."""
+    roots = [
+        Path("Nbm/src/main/java"),
+        Path("Nbm/src/main/kotlin"),
+        Path("Nbm/src/test/java"),
+        Path("Nbm/src/test/kotlin"),
+    ]
     result = []
     for root in roots:
         for p in root.rglob("*"):

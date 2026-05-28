@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.10.9-SNAPSHOT</version>
+    <version>0.10.10-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-highlighting</artifactId>
@@ -194,7 +194,7 @@
               </resources>
             </configuration>
           </execution>
-          <!-- Local public facades in src/main/java/ (e.g. KotlinHighlightingAnalyzers.kt) -->
+          <!-- Local public facades in src/main/kotlin/ (e.g. KotlinHighlightingAnalyzers.kt) -->
           <execution>
             <id>copy-stubs</id>
             <phase>initialize</phase>
@@ -204,7 +204,7 @@
               <overwrite>true</overwrite>
               <resources>
                 <resource>
-                  <directory>${basedir}/src/main/java</directory>
+                  <directory>${basedir}/src/main/kotlin</directory>
                   <filtering>false</filtering>
                 </resource>
               </resources>
