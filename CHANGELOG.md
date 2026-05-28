@@ -1,3 +1,4 @@
+- Added parameter info popup (Ctrl+P): pressing Ctrl+P inside a Kotlin function call now shows the function's parameter list with the current parameter highlighted.
 - Improved time to first semantic highlighting for a Kotlin file: removed a global scan-in-progress check that blocked the parser while any project was being indexed, and added background pre-warming of the K2 analysis session when a `.kt` editor opens so session initialisation runs in parallel with NetBeans project scanning.
 
 # 0.9.13 (2026-05-27)
