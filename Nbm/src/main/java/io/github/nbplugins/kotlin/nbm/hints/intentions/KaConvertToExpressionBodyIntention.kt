@@ -1,6 +1,7 @@
 @file:OptIn(org.jetbrains.kotlin.analysis.api.KaExperimentalApi::class)
 /*******************************************************************************
  * Copyright 2000-2024 JetBrains s.r.o.
+ * Copyright 2026 nbplugins contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

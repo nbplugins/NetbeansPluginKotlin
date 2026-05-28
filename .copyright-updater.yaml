@@ -1,0 +1,2 @@
+pattern: ' * Copyright {years} nbplugins contributors'
+ignore_commits_before: 2026-01-01

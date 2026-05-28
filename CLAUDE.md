@@ -139,20 +139,28 @@ New classes must be placed in the layer that matches their responsibility.
 
 Before every commit, in order:
 
-1. **Run unit tests** — all tests must pass:
+1. **Add copyright headers to any new files** — run:
+   ```bash
+   python3 build-scripts/update-copyright.py --all
+   ```
+   This adds the canonical header (JetBrains + nbplugins) to every `.java`/`.kt` file
+   in `Nbm/src/main/java` and `Nbm/src/test/java` that has no copyright. Safe to run
+   repeatedly (idempotent). Verify with `python3 build-scripts/update-copyright.py --check`.
+
+2. **Run unit tests** — all tests must pass:
    ```bash
    mvn clean test
    ```
 
-2. **Build the plugin** — must produce a `.nbm` without errors:
+3. **Build the plugin** — must produce a `.nbm` without errors:
    ```bash
    mvn clean package -DskipTests
    ```
 
-3. **Propose a manual test plan** — based on what changed, list the concrete steps for the user
+4. **Propose a manual test plan** — based on what changed, list the concrete steps for the user
    to verify in a running NetBeans. Wait for the user to confirm that manual testing passed.
 
-4. **Commit and open PR only after** manual testing is confirmed successful.
+5. **Commit and open PR only after** manual testing is confirmed successful.
 
 ---
 

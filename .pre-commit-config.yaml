@@ -1,0 +1,14 @@
+fail_fast: false
+repos:
+  - repo: https://github.com/nanoufo/copyright-hook
+    rev: v1.1.0
+    hooks:
+      - id: update-copyright
+        types_or: [java, kotlin]
+  - repo: local
+    hooks:
+      - id: copyright-add
+        name: Add missing copyright headers
+        entry: python3 build-scripts/update-copyright.py --all
+        language: python
+        pass_filenames: false
