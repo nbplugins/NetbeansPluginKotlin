@@ -29,6 +29,8 @@ import org.netbeans.modules.csl.api.OffsetRange
 import org.netbeans.modules.csl.api.SemanticAnalyzer
 import org.netbeans.modules.parsing.spi.Scheduler
 import org.netbeans.modules.parsing.spi.SchedulerEvent
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 /**
  * CSL [SemanticAnalyzer] that drives K2 semantic highlighting for Kotlin files.
@@ -69,11 +71,19 @@ class KotlinSemanticAnalyzer : SemanticAnalyzer<KotlinParserResult>() {
 
         runCatching {
             val visitor = KaSemanticHighlightingVisitor(kaKtFile)
+            val tHighlight = System.nanoTime()
             val highlights = visitor.computeHighlightingRanges()
+            KotlinLogger.INSTANCE.logInfo(
+                "[PERF] KotlinSemanticAnalyzer.run: computeHighlightingRanges=${(System.nanoTime() - tHighlight) / 1_000_000}ms (${highlights.size} ranges)"
+            )
             val doc = result.snapshot.source.getDocument(false)
             if (doc != null) {
                 KotlinSemanticHighlightsLayerFactory.applyHighlights(doc, highlights)
                 KotlinTooltipHighlightsLayerFactory.applyTooltipRanges(doc, highlights.keys)
+                val filePath = result.snapshot.source.fileObject?.path
+                KotlinLogger.INSTANCE.logInfo(
+                    "[TIME] KotlinSemanticAnalyzer: highlights applied for $filePath at ${now()} (${highlights.size} ranges)"
+                )
             }
             KotlinLogger.INSTANCE.logInfo("KotlinSemanticAnalyzer.run: produced ${highlights.size} highlight ranges")
         }.onFailure { ex ->
@@ -87,4 +97,6 @@ class KotlinSemanticAnalyzer : SemanticAnalyzer<KotlinParserResult>() {
 
     override fun getSchedulerClass(): Class<out Scheduler> = Scheduler.EDITOR_SENSITIVE_TASK_SCHEDULER
 
+    private fun now(): String =
+        LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss.SSS"))
 }

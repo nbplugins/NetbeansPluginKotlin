@@ -18,6 +18,8 @@
 package io.github.nbplugins.kotlin.nbm.diagnostics.parser
 
 import java.beans.PropertyChangeListener
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import java.util.Collections
 import javax.swing.event.ChangeListener
 import javax.swing.text.Document
@@ -27,7 +29,6 @@ import org.jetbrains.kotlin.log.KotlinLogger
 import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectHelper.isScanning
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.jetbrains.kotlin.psi.KtFile
-import org.netbeans.api.java.source.SourceUtils
 import org.netbeans.api.project.Project
 import org.netbeans.modules.parsing.api.*
 import org.netbeans.modules.parsing.spi.*
@@ -75,13 +76,8 @@ class KotlinParser : Parser() {
         cancel = false
 
         val fo = snapshot.source.fileObject
-        KotlinLogger.INSTANCE.logInfo("KotlinParser.parse called for ${fo?.path}")
+        KotlinLogger.INSTANCE.logInfo("[TIME] KotlinParser.parse called for ${fo?.path} at ${now()}")
         snapshot.source.getDocument(false)?.let { installPasteFilterIfNeeded(it) }
-
-        if (SourceUtils.isScanInProgress()) {
-            KotlinLogger.INSTANCE.logInfo("KotlinParser.parse: scan in progress, skipping ${fo?.path}")
-            return
-        }
 
         val project = ProjectUtils.getKotlinProjectForFileObject(fo)
         if (project == null) {
@@ -106,7 +102,11 @@ class KotlinParser : Parser() {
             Companion.file = ktFile
             // Keep the session's LVF-backed KtFile PSI in sync with the current editor snapshot.
             if (fo != null) {
+                val tSession = System.nanoTime()
                 KotlinAnalysisAPISession.getSession(project).updateFileContent(fo.path, snapshotText)
+                KotlinLogger.INSTANCE.logInfo(
+                    "[PERF] KotlinParser.parse: getSession+updateFileContent=${(System.nanoTime() - tSession) / 1_000_000}ms for ${fo.path}"
+                )
             }
             KotlinLogger.INSTANCE.logInfo("KotlinParser.parse: done for ${fo?.path}")
         } catch (ex: Throwable) {
@@ -148,4 +148,7 @@ class KotlinParser : Parser() {
         cancel = true
         KotlinLogger.INSTANCE.logInfo("Parser cancel ${reason.name}")
     }
+
+    private fun now(): String =
+        LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss.SSS"))
 }

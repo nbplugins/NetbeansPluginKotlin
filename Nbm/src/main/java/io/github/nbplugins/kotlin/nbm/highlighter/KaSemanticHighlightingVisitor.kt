@@ -83,6 +83,7 @@ class KaSemanticHighlightingVisitor(private val kaKtFile: KtFile) {
                 highlightDeprecated(positions)
             }
         }
+
         return positions
     }
 
