@@ -1,0 +1,7 @@
+package intentions
+
+fun test(x: Int): String = when (x) {
+    1 -> "one"
+    2 -> "two"
+    else -> "other"
+}

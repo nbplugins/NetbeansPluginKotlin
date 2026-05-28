@@ -1,0 +1,10 @@
+package intentions
+
+enum class Dir { North, South, East, West }
+
+fun test(d: Dir) = when (d) {
+    Dir.North -> 1
+    Dir.South -> TODO()
+    Dir.East -> TODO()
+    Dir.West -> TODO()
+}

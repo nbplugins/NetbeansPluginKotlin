@@ -1,0 +1,9 @@
+package intentions
+
+fun test(x: Int): String {
+    if (x <= 0) {
+        return "non-positive"
+    } else {
+        return "positive"
+    }
+}

@@ -57,4 +57,39 @@ class KaIntentionsTest : KaIntentionTestBase("KaIntentions test", "intentions") 
     fun testKaReplaceSizeCheckWithIsNotEmpty() = doTest("replaceSizeCheckWithIsNotEmpty") { doc, kaKtFile, psi ->
         KaReplaceSizeCheckWithIsNotEmptyIntention(doc, kaKtFile, psi)
     }
+
+    /** K2 path for "Add remaining when branches". */
+    fun testKaAddWhenRemainingBranches() = doTest("addWhenRemainingBranches") { doc, kaKtFile, psi ->
+        KaAddWhenRemainingBranchesIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Merge ifs". */
+    fun testKaMergeIfs() = doTest("mergeIfs") { doc, kaKtFile, psi ->
+        KaMergeIfsIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Split if into two". */
+    fun testKaSplitIf() = doTest("splitIf") { doc, kaKtFile, psi ->
+        KaSplitIfIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Invert 'if' condition". */
+    fun testKaInvertIfCondition() = doTest("invertIfCondition") { doc, kaKtFile, psi ->
+        KaInvertIfConditionIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Replace 'if' with 'when'". */
+    fun testKaIfToWhen() = doTest("ifToWhen") { doc, kaKtFile, psi ->
+        KaIfToWhenIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Replace 'when' with 'if'". */
+    fun testKaWhenToIf() = doTest("whenToIf") { doc, kaKtFile, psi ->
+        KaWhenToIfIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Flatten 'when' expression". */
+    fun testKaFlattenWhen() = doTest("flattenWhen") { doc, kaKtFile, psi ->
+        KaFlattenWhenIntention(doc, kaKtFile, psi)
+    }
 }

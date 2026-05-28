@@ -1,9 +1,9 @@
 package intentions
 
-fun mergeIfs() {
-    val integer = 5
-    if (integer > 3) {
-        if (integer < 7) {
+fun test(a: Boolean, b: Boolean) {
+    if (a) {
+        if (b) {
+            println("both")
         }
     }
 }

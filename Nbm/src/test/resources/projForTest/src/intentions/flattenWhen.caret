@@ -1,0 +1,9 @@
+package intentions
+
+fun test(x: Int): String = <caret>when (x) {
+    1 -> "one"
+    else -> when (x) {
+        2 -> "two"
+        else -> "other"
+    }
+}

@@ -26,15 +26,22 @@ import io.github.nbplugins.kotlin.nbm.hints.KaUnusedImportsComputer
 import io.github.nbplugins.kotlin.nbm.hints.KaUnusedParameterChecker
 import io.github.nbplugins.kotlin.nbm.hints.fixes.KaImplementMembersFix
 import io.github.nbplugins.kotlin.nbm.hints.fixes.KaQuickFix
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddWhenRemainingBranchesIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChangeReturnTypeIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertToBlockBodyIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertToExpressionBodyIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertTryFinallyToUseCallIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaFlattenWhenIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaIfToWhenIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaInvertIfConditionIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaMergeIfsIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveEmptyClassBodyIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveEmptyPrimaryConstructorIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveExplicitTypeIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaReplaceSizeCheckWithIsNotEmptyIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaSplitIfIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaSpecifyTypeIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaWhenToIfIntention
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.hints.KotlinRuleContext
 import org.jetbrains.kotlin.hints.KotlinRule
@@ -75,7 +82,15 @@ class KotlinHintsProvider : HintsProvider {
                 KaConvertTryFinallyToUseCallIntention(doc, kaKtFile, psi),
                 KaReplaceSizeCheckWithIsNotEmptyIntention(doc, kaKtFile, psi),
                 KaRemoveEmptyClassBodyIntention(doc, kaKtFile, psi),
-                KaRemoveEmptyPrimaryConstructorIntention(doc, kaKtFile, psi)
+                KaRemoveEmptyPrimaryConstructorIntention(doc, kaKtFile, psi),
+                // Group A — When / If
+                KaAddWhenRemainingBranchesIntention(doc, kaKtFile, psi),
+                KaIfToWhenIntention(doc, kaKtFile, psi),
+                KaWhenToIfIntention(doc, kaKtFile, psi),
+                KaFlattenWhenIntention(doc, kaKtFile, psi),
+                KaMergeIfsIntention(doc, kaKtFile, psi),
+                KaSplitIfIntention(doc, kaKtFile, psi),
+                KaInvertIfConditionIntention(doc, kaKtFile, psi)
             ).filter { it.isApplicable(psi.textRange.startOffset) }
         }
 

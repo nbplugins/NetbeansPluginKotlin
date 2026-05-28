@@ -1,0 +1,489 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.github.nbplugins</groupId>
+    <artifactId>netbeans-plugin-kotlin</artifactId>
+    <version>0.10.16-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+  <artifactId>netbeans-plugin-kotlin-intention-utils</artifactId>
+  <packaging>jar</packaging>
+  <name>Netbeans Plugin Kotlin Intention Utils</name>
+  <description>
+    Utility classes for K2 intentions and quick-fixes, compiled from submodules/IntellijCommunity:
+    - base/util: AbstractKotlinBundle
+    - base/resources: KotlinBundle
+    - base/psi: PsiLinesUtils, IfThenUtils
+    - base/util: GenericPsiUtils (reformat/reformatted)
+    - base/analysis-api/analysis-api-utils: shortenUtils, ImportInsertion, KotlinImportPathComparator,
+      CallParameterInfoProvider
+    - code-insight/impl-base: AddRemainingWhenBranchesUtils, RemoveArgumentNamesUtils, MergeIfsUtils
+    Local stubs: replaced(), isInsideAnnotationEntryArgumentList() for standalone (non-IDE) mode.
+  </description>
+
+  <build>
+    <!--
+      Sources are copied from multiple submodule directories to target/generated-sources/intention-utils/
+      so that gmavenplus patches can modify copies without dirtying the git submodule, and so that
+      kotlin-maven-plugin can compile from a single <sourceDirectory>.
+    -->
+    <sourceDirectory>${project.build.directory}/generated-sources/intention-utils</sourceDirectory>
+
+    <plugins>
+      <!--
+        Copy Kotlin sources from submodule source roots into
+        target/generated-sources/intention-utils/, preserving package directory structure.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <executions>
+          <!-- base/util: AbstractKotlinBundle (parent of KotlinBundle) -->
+          <execution>
+            <id>copy-abstract-bundle</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/util/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/util/AbstractKotlinBundle.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- base/resources: KotlinBundle (message catalogue for Kotlin plugin) -->
+          <execution>
+            <id>copy-kotlin-bundle</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/resources/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/resources/KotlinBundle.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- base/util: GenericPsiUtils (reformat / reformatted extension functions) -->
+          <execution>
+            <id>copy-generic-psi-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/util/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/util/GenericPsiUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- base/psi: PsiLinesUtils (getLineCount, getLineNumber, isMultiLine) -->
+          <execution>
+            <id>copy-psi-lines-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/psi/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/psi/PsiLinesUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- base/psi: IfThenUtils (if-expression PSI helpers) -->
+          <execution>
+            <id>copy-if-then-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/psi/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/psi/IfThenUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- analysis-api-utils: ImportInsertion (addImport extension on KtFile) -->
+          <execution>
+            <id>copy-import-insertion</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/analysis-api/analysis-api-utils/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/psi/imports/ImportInsertion.kt</include>
+                    <include>org/jetbrains/kotlin/idea/base/psi/imports/KotlinImportPathComparator.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- analysis-api-utils: shortenUtils (shortenReferences + ShortenCommand.invokeShortening) -->
+          <execution>
+            <id>copy-shorten-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/analysis-api/analysis-api-utils/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/analysis/api/utils/shortenUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- analysis-api-utils: CallParameterInfoProvider (parameter mapping utilities) -->
+          <execution>
+            <id>copy-call-param-info</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/analysis-api/analysis-api-utils/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/analysis/api/utils/CallParameterInfoProvider.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- impl-base/intentions: AddRemainingWhenBranchesUtils, RemoveArgumentNamesUtils -->
+          <execution>
+            <id>copy-impl-base-intentions</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/impl-base/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsights/impl/base/intentions/AddRemainingWhenBranchesUtils.kt</include>
+                    <include>org/jetbrains/kotlin/idea/codeinsights/impl/base/intentions/RemoveArgumentNamesUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- impl-base/inspections: MergeIfsUtils -->
+          <execution>
+            <id>copy-impl-base-inspections</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/impl-base/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsights/impl/base/inspections/MergeIfsUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- Local stubs: replaced(), isInsideAnnotationEntryArgumentList() -->
+          <execution>
+            <id>copy-stubs</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/src/main/kotlin</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
+        Patch API incompatibilities between IntelliJ-internal code (used by submodule sources)
+        and standalone compilation without full IntelliJ IDE on the classpath:
+
+        1. MergeIfsUtils.kt: remove import and usage of findExistingEditor (IDE editor API).
+           The caret-position side-effect is omitted; the merge logic still works correctly.
+      -->
+      <plugin>
+        <groupId>org.codehaus.gmavenplus</groupId>
+        <artifactId>gmavenplus-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>patch-intention-utils-compat</id>
+            <phase>generate-sources</phase>
+            <goals><goal>execute</goal></goals>
+            <configuration>
+              <scripts>
+                <script><![CDATA[
+import java.nio.file.*
+
+def srcDir = new File(project.build.directory, 'generated-sources/intention-utils')
+
+def patches = [
+  // MergeIfsUtils.kt: findExistingEditor() is an IDE-only API for moving the editor caret.
+  // Removing both the import and the usage; the merge transformation still works correctly.
+  [file: 'org/jetbrains/kotlin/idea/codeinsights/impl/base/inspections/MergeIfsUtils.kt',
+   old:  'import org.jetbrains.kotlin.idea.codeinsight.utils.findExistingEditor\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/codeinsights/impl/base/inspections/MergeIfsUtils.kt',
+   old:  '            element.findExistingEditor()?.caretModel?.moveToOffset(element.startOffset)\n',
+   new_: ''],
+  // MergeIfsUtils.kt: safeAs<KtBlockExpression>() generates an UNCHECKED_CAST compiler error in 2.2.
+  // Replace with a regular as? cast wrapped in parentheses to preserve operator precedence.
+  [file: 'org/jetbrains/kotlin/idea/codeinsights/impl/base/inspections/MergeIfsUtils.kt',
+   old:  'import org.jetbrains.kotlin.utils.addToStdlib.safeAs\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/codeinsights/impl/base/inspections/MergeIfsUtils.kt',
+   old:  'then.safeAs<KtBlockExpression>()',
+   new_: '(then as? KtBlockExpression)'],
+
+  // shortenUtils.kt: allowAnalysisOnEdt/allowAnalysisFromWriteAction are IntelliJ EDT/write-action
+  // guards not applicable in standalone (NetBeans) mode; replace with direct analyze {} call.
+  [file: 'org/jetbrains/kotlin/idea/base/analysis/api/utils/shortenUtils.kt',
+   old:  'import org.jetbrains.kotlin.analysis.api.permissions.KaAllowAnalysisFromWriteAction\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/base/analysis/api/utils/shortenUtils.kt',
+   old:  'import org.jetbrains.kotlin.analysis.api.permissions.KaAllowAnalysisOnEdt\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/base/analysis/api/utils/shortenUtils.kt',
+   old:  'import org.jetbrains.kotlin.analysis.api.permissions.allowAnalysisFromWriteAction\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/base/analysis/api/utils/shortenUtils.kt',
+   old:  'import org.jetbrains.kotlin.analysis.api.permissions.allowAnalysisOnEdt\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/base/analysis/api/utils/shortenUtils.kt',
+   old:  '@OptIn(KaAllowAnalysisOnEdt::class)\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/base/analysis/api/utils/shortenUtils.kt',
+   old:  '    val shortenCommand = allowAnalysisOnEdt {\n        @OptIn(KaAllowAnalysisFromWriteAction::class)\n        allowAnalysisFromWriteAction {\n            analyze(file) {\n                collectPossibleReferenceShortenings(file, range, shortenOptions, classShortenStrategy, callableShortenStrategy)\n            }\n        }\n    }',
+   new_: '    val shortenCommand = analyze(file) {\n        collectPossibleReferenceShortenings(file, range, shortenOptions, classShortenStrategy, callableShortenStrategy)\n    }'],
+
+  // CallParameterInfoProvider.kt: isNotSubTypeOf is an internal extension not in public API;
+  // replace with the public isSubtypeOf negated.
+  [file: 'org/jetbrains/kotlin/idea/base/analysis/api/utils/CallParameterInfoProvider.kt',
+   old:  'argumentType.isNotSubTypeOf(parameterForArgument.returnType, subtypingErrorTypePolicy)',
+   new_: '!argumentType.isSubtypeOf(parameterForArgument.returnType, subtypingErrorTypePolicy)'],
+
+  // CallParameterInfoProvider.kt: isJavaSourceOrLibrary() checks KaSymbolOrigin (internal utility).
+  // In standalone mode (NetBeans), Java annotation argument detection is not required.
+  [file: 'org/jetbrains/kotlin/idea/base/analysis/api/utils/CallParameterInfoProvider.kt',
+   old:  '        if (!signature.symbol.origin.isJavaSourceOrLibrary()) return false\n',
+   new_: '        return false // isJavaSourceOrLibrary: not applicable in standalone mode\n'],
+]
+
+patches.each { p ->
+  def f = new File(srcDir, p.file)
+  if (!f.exists()) { log.warn("patch target not found: ${p.file}"); return }
+  def text = f.text
+  if (!text.contains(p.old)) { log.warn("patch target not found in ${p.file}: '${p.old.take(80)}'"); return }
+  f.text = text.replace(p.old, p.new_)
+  log.info("Patched ${p.file}")
+}
+                ]]></script>
+              </scripts>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-maven-plugin</artifactId>
+        <configuration>
+          <languageVersion>${kotlin.runtime.languageVersion}</languageVersion>
+          <apiVersion>${kotlin.runtime.languageVersion}</apiVersion>
+          <jvmTarget>17</jvmTarget>
+          <args>
+            <arg>-Xskip-metadata-version-check</arg>
+            <!-- context() receivers used by CallParameterInfoProvider, isArrayOfCall -->
+            <arg>-Xcontext-receivers</arg>
+            <!-- shortenUtils.kt and AddRemainingWhenBranchesUtils.kt use @KaIdeApi-gated APIs
+                 (ShortenCommand properties, collectPossibleReferenceShortenings, ShortenStrategy values) -->
+            <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaIdeApi</arg>
+          </args>
+          <sourceDirs>
+            <sourceDir>${project.build.directory}/generated-sources/intention-utils</sourceDir>
+          </sourceDirs>
+        </configuration>
+        <executions>
+          <execution>
+            <id>compile</id>
+            <phase>process-sources</phase>
+            <goals><goal>compile</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <compilerArgument>-proc:none</compilerArgument>
+        </configuration>
+        <executions>
+          <execution>
+            <id>default-compile</id>
+            <phase>compile</phase>
+            <goals><goal>compile</goal></goals>
+            <configuration>
+              <sourceDirs>
+                <sourceDir>${project.build.directory}/generated-sources/intention-utils</sourceDir>
+              </sourceDirs>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <dependencies>
+    <!-- IntelliJ platform: PsiElement, Module, CodeStyleManager, etc. -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <!-- PsiClassOwner: supertype of KtFile accessed by ImportInsertion + shortenUtils -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.java</groupId>
+      <artifactId>java-psi</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <!-- DocumentUtil, CodeEditUtil -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core-impl</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>analysis-impl</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <!-- CodeStyleSettings, CustomCodeStyleSettings -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>code-style</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Kotlin PSI (KtFile, KtExpression, KtPsiFactory, …) -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-compiler-ir-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <!-- safeAs, StandardNames, WhenMissingCase -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-compiler-common-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <!-- Analysis API: KaSession, KaFunctionSignature, ShortenCommand, … -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-impl-base-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <!--
+      KotlinPackageEntry, KotlinPackageEntryTable (in core/formatter), kotlinCustomSettings
+      extension (in formatter/minimal/codeStyleUtils.kt compiled as CodeStyleUtilsKt).
+      KotlinImportPathComparator.kt depends on all three.
+    -->
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-formatter</artifactId>
+      <version>${project.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.jetbrains</groupId>
+      <artifactId>annotations</artifactId>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+</project>
