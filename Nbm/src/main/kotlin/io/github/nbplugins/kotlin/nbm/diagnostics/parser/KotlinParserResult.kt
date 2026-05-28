@@ -57,7 +57,7 @@ class KotlinParserResult(
         if (kaKtFile != null) {
             runCatching {
                 analyze(kaKtFile) {
-                    val k2Diagnostics = kaKtFile.collectDiagnostics(KaDiagnosticCheckerFilter.ONLY_COMMON_CHECKERS)
+                    val k2Diagnostics = kaKtFile.collectDiagnostics(KaDiagnosticCheckerFilter.EXTENDED_AND_COMMON_CHECKERS)
                         .filter { it.severity != KaSeverity.INFO }
                     KotlinLogger.INSTANCE.logInfo(
                         "K2 diagnostics for ${file.name}: ${k2Diagnostics.size} diagnostic(s)"
