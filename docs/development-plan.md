@@ -480,8 +480,8 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
 - **E2** — Extended diagnostics and highlighting:
   - [x] `@Deprecated` symbols: grey-strike rendering via `KaSymbol.deprecationStatus`
     (added as `KOTLIN_DEPRECATED` token in color parity work, branch `feature/e2-idea-color-parity`)
-  - [ ] Unused variables / unused parameters: K2 `KaDiagnosticProvider` checks
-  - [ ] Full K2 diagnostic set (exhaustive `when`, type mismatch, unresolved reference) exposed
+  - [x] Unused variables / unused parameters: K2 `KaDiagnosticProvider` checks
+  - [x] Full K2 diagnostic set (exhaustive `when`, type mismatch, unresolved reference) exposed
     in the NetBeans gutter + error stripe
 
 - **E3** — Parameter info and inlay hints:

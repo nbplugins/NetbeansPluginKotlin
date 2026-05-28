@@ -53,4 +53,43 @@ class KaUnusedImportsComputerTest : KotlinTestCase("KaUnusedImportsComputer", "q
         // implementMembers.kt has no import directives, so result must be empty
         assertTrue("Expected no hints for a file with no imports", hints.isEmpty())
     }
+
+    /**
+     * Verifies that [KaUnusedImportsComputer] detects exactly one unused import in
+     * [unusedImport.kt], which imports `java.io.File` (unused) and `java.util.HashMap` (used).
+     */
+    fun testUnusedImportDetected() {
+        val file = dir.getFileObject("unusedImport.kt") ?: return
+        val kaKtFile = getKaKtFileOrSkip(file.path) ?: return
+
+        val ktFile = KotlinPsiManager.getParsedFile(file)!!
+        val parserResult = KotlinParserResult(null, ktFile, file, project, kaKtFile)
+
+        val hints = KaUnusedImportsComputer(parserResult, kaKtFile).getUnusedImports()
+        assertEquals("Expected exactly 1 unused import hint", 1, hints.size)
+        assertEquals("Hint description must be 'Unused import'", "Unused import", hints[0].description)
+        assertTrue(
+            "Hint fix must contain 'Remove unused import'",
+            hints[0].fixes?.any { it.description == "Remove unused import" } == true
+        )
+    }
+
+    /**
+     * Verifies that [KaUnusedImportsComputer] produces no hint for [unusedImport.kt]'s used
+     * import (`java.util.HashMap`) — i.e. the used import is not falsely flagged.
+     */
+    fun testUsedImportProducesNoHint() {
+        val file = dir.getFileObject("unusedImport.kt") ?: return
+        val kaKtFile = getKaKtFileOrSkip(file.path) ?: return
+
+        val ktFile = KotlinPsiManager.getParsedFile(file)!!
+        val parserResult = KotlinParserResult(null, ktFile, file, project, kaKtFile)
+
+        val hints = KaUnusedImportsComputer(parserResult, kaKtFile).getUnusedImports()
+        val hintTexts = hints.map { it.description }
+        assertFalse(
+            "java.util.HashMap is used as return type — must not be reported as unused",
+            hintTexts.any { it.contains("HashMap") }
+        )
+    }
 }

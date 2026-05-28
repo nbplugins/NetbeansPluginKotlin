@@ -23,6 +23,7 @@ import javax.swing.text.Document
 import javax.swing.text.StyledDocument
 import io.github.nbplugins.kotlin.nbm.hints.KaApplicableIntention
 import io.github.nbplugins.kotlin.nbm.hints.KaUnusedImportsComputer
+import io.github.nbplugins.kotlin.nbm.hints.KaUnusedParameterChecker
 import io.github.nbplugins.kotlin.nbm.hints.fixes.KaImplementMembersFix
 import io.github.nbplugins.kotlin.nbm.hints.fixes.KaQuickFix
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChangeReturnTypeIntention
@@ -185,6 +186,7 @@ class KotlinHintsProvider : HintsProvider {
                 })
                 addAll(hintsComputer.hints)
                 addAll(KaUnusedImportsComputer(parserResult, kaKtFile).getUnusedImports())
+                addAll(KaUnusedParameterChecker(parserResult, kaKtFile).getUnusedParameterHints())
             }
         }
     }

@@ -1,3 +1,3 @@
 package diagnostics
 
-fun func(str : String) {}
+private fun func(str: String) {}
