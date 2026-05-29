@@ -63,6 +63,12 @@ import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveSingleArgumentNam
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaPutCallsOnSeparateLinesIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChopArgumentListIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaJoinArgumentListIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertPropertyGetterToInitializerIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertPropertyInitializerToGetterIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddGetterIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddSetterIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaSplitPropertyDeclarationIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaMovePropertyToConstructorIntention
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.hints.KotlinRuleContext
 import org.jetbrains.kotlin.hints.KotlinRule
@@ -136,7 +142,15 @@ class KotlinHintsProvider : HintsProvider {
                 KaRemoveSingleArgumentNameIntention(doc, kaKtFile, psi),
                 KaPutCallsOnSeparateLinesIntention(doc, kaKtFile, psi),
                 KaChopArgumentListIntention(doc, kaKtFile, psi),
-                KaJoinArgumentListIntention(doc, kaKtFile, psi)
+                KaJoinArgumentListIntention(doc, kaKtFile, psi),
+
+                // Group E — Property / declaration
+                KaConvertPropertyGetterToInitializerIntention(doc, kaKtFile, psi),
+                KaConvertPropertyInitializerToGetterIntention(doc, kaKtFile, psi),
+                KaAddGetterIntention(doc, kaKtFile, psi),
+                KaAddSetterIntention(doc, kaKtFile, psi),
+                KaSplitPropertyDeclarationIntention(doc, kaKtFile, psi),
+                KaMovePropertyToConstructorIntention(doc, kaKtFile, psi)
             ).filter { it.isApplicable(psi.textRange.startOffset) }
         }
 

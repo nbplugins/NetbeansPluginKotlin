@@ -203,4 +203,36 @@ class KaIntentionsTest : KaIntentionTestBase("KaIntentions test", "intentions") 
     fun testKaJoinArgumentList() = doTest("kaJoinArgumentList") { doc, kaKtFile, psi ->
         KaJoinArgumentListIntention(doc, kaKtFile, psi)
     }
+
+    // ── Group E — Property / declaration ─────────────────────────────────────
+
+    /** K2 path for "Convert property getter to initializer". */
+    fun testKaConvertPropertyGetterToInitializer() = doTest("kaConvertPropertyGetterToInitializer") { doc, kaKtFile, psi ->
+        KaConvertPropertyGetterToInitializerIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Convert property initializer to getter". */
+    fun testKaConvertPropertyInitializerToGetter() = doTest("kaConvertPropertyInitializerToGetter") { doc, kaKtFile, psi ->
+        KaConvertPropertyInitializerToGetterIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Add getter". */
+    fun testKaAddGetter() = doTest("kaAddGetter") { doc, kaKtFile, psi ->
+        KaAddGetterIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Add setter". */
+    fun testKaAddSetter() = doTest("kaAddSetter") { doc, kaKtFile, psi ->
+        KaAddSetterIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Split property declaration". */
+    fun testKaSplitPropertyDeclaration() = doTest("kaSplitPropertyDeclaration") { doc, kaKtFile, psi ->
+        KaSplitPropertyDeclarationIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Move to constructor". */
+    fun testKaMovePropertyToConstructor() = doTest("kaMovePropertyToConstructor") { doc, kaKtFile, psi ->
+        KaMovePropertyToConstructorIntention(doc, kaKtFile, psi)
+    }
 }

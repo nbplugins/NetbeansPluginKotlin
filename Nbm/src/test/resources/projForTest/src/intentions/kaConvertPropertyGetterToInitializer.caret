@@ -1,0 +1,6 @@
+package intentions
+
+class ConvertGetterToInit {
+    val x: Int
+        get() = <caret>42
+}
