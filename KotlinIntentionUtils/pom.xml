@@ -21,7 +21,11 @@
       CallParameterInfoProvider
     - code-insight/impl-base: AddRemainingWhenBranchesUtils, RemoveArgumentNamesUtils, MergeIfsUtils,
       StringTemplateUtils, BuildStringUtils (psi/)
-    Local stubs: replaced(), isInsideAnnotationEntryArgumentList(), isToString() for standalone (non-IDE) mode.
+    - code-insight/utils: ConvertLambdaToReferenceUtils, ImplicitThisUtils
+    - refactorings/k2: ConvertReferenceToLambdaUtil, LambdaToAnonymousFunctionUtil, BranchedFoldingUtils
+    Local stubs: replaced(), copied(), isInsideAnnotationEntryArgumentList(), isToString(),
+      KotlinNameSuggester, getReceiverKtType(), moveFunctionLiteralOutsideParenthesesIfPossible(),
+      getLastLambdaExpression(), dereferenceValidPointers() for standalone (non-IDE) mode.
   </description>
 
   <build>
@@ -283,6 +287,106 @@
             </configuration>
           </execution>
 
+          <!-- code-insight/utils: ConvertLambdaToReferenceUtils -->
+          <execution>
+            <id>copy-convert-lambda-to-reference-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/utils/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/ConvertLambdaToReferenceUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- code-insight/utils: ImplicitThisUtils (ImplicitReceiverInfo, getImplicitReceiverInfo) -->
+          <execution>
+            <id>copy-implicit-this-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/utils/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/ImplicitThisUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- refactorings/k2: ConvertReferenceToLambdaUtil -->
+          <execution>
+            <id>copy-convert-reference-to-lambda-util</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/util/ConvertReferenceToLambdaUtil.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- refactorings/k2: LambdaToAnonymousFunctionUtil -->
+          <execution>
+            <id>copy-lambda-to-anonymous-function-util</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/util/LambdaToAnonymousFunctionUtil.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- refactorings/k2: BranchedFoldingUtils (used by LambdaToAnonymousFunctionUtil) -->
+          <execution>
+            <id>copy-branched-folding-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/util/BranchedFoldingUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
           <!-- Local stubs: replaced(), isInsideAnnotationEntryArgumentList() -->
           <execution>
             <id>copy-stubs</id>
@@ -400,6 +504,40 @@ def patches = [
   [file: 'org/jetbrains/kotlin/idea/codeinsight/utils/AnalysisUtilsStubs.kt',
    old:  'functionSymbol.returnType.isString',
    new_: 'functionSymbol.returnType.isStringType'],
+
+  // ConvertReferenceToLambdaUtil.kt: inject getReceiverKtType import (provided by CallableReferenceStubs.kt).
+  [file: 'org/jetbrains/kotlin/idea/k2/refactoring/util/ConvertReferenceToLambdaUtil.kt',
+   old:  'import org.jetbrains.kotlin.analysis.api.symbols.*\n',
+   new_: 'import org.jetbrains.kotlin.analysis.api.symbols.*\nimport org.jetbrains.kotlin.idea.codeinsight.utils.getReceiverKtType\n'],
+
+  // ConvertReferenceToLambdaUtil.kt: KaNamedClassOrObjectSymbol → KaNamedClassSymbol (isInner is on KaNamedClassSymbol in 2.3.21).
+  [file: 'org/jetbrains/kotlin/idea/k2/refactoring/util/ConvertReferenceToLambdaUtil.kt',
+   old:  'symbol is KaNamedClassOrObjectSymbol && symbol.isInner',
+   new_: 'symbol is KaNamedClassSymbol && symbol.isInner'],
+
+  // BranchedFoldingUtils.kt: isNothing → isNothingType in Analysis API 2.3.21.
+  // isNothingType is an extension property on KaType in KaSession context.
+  [file: 'org/jetbrains/kotlin/idea/k2/refactoring/util/BranchedFoldingUtils.kt',
+   old:  'e.expressionType?.isNothing ?: false',
+   new_: 'e.expressionType?.isNothingType ?: false'],
+  [file: 'org/jetbrains/kotlin/idea/k2/refactoring/util/BranchedFoldingUtils.kt',
+   old:  'if (expression.expressionType?.isNothing == true) FoldableReturns(emptyList(), true) else FoldableReturns.NotFoldable',
+   new_: 'if (expression.expressionType?.isNothingType == true) FoldableReturns(emptyList(), true) else FoldableReturns.NotFoldable'],
+  [file: 'org/jetbrains/kotlin/idea/k2/refactoring/util/BranchedFoldingUtils.kt',
+   old:  'if (expression.expressionType?.isNothing == true) emptyList() else null',
+   new_: 'if (expression.expressionType?.isNothingType == true) emptyList() else null'],
+
+  // BranchedFoldingUtils.kt: isEqualTo → semanticallyEquals, isSubTypeOf → isSubtypeOf in Analysis API 2.3.21.
+  // These are extension functions on KaType in KaSession context.
+  [file: 'org/jetbrains/kotlin/idea/k2/refactoring/util/BranchedFoldingUtils.kt',
+   old:  'return nonNullableRightTypeOfFirst.isEqualTo(nonNullableRightTypeOfSecond) ||\n                (first.operationToken == KtTokens.EQ && nonNullableRightTypeOfSecond.isSubTypeOf(leftType))',
+   new_: 'return nonNullableRightTypeOfFirst.semanticallyEquals(nonNullableRightTypeOfSecond) ||\n                (first.operationToken == KtTokens.EQ && nonNullableRightTypeOfSecond.isSubtypeOf(leftType))'],
+
+  // LambdaToAnonymousFunctionUtil.kt: isUnit → isUnitType in Analysis API 2.3.21.
+  // isUnitType is an extension property on KaType in KaSession context.
+  [file: 'org/jetbrains/kotlin/idea/k2/refactoring/util/LambdaToAnonymousFunctionUtil.kt',
+   old:  'functionSymbol.returnType.takeIf { !it.isUnit && it !is KaErrorType }',
+   new_: 'functionSymbol.returnType.takeIf { !it.isUnitType && it !is KaErrorType }'],
 ]
 
 patches.each { p ->

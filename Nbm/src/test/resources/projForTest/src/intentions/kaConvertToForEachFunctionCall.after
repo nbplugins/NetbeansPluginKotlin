@@ -1,0 +1,7 @@
+package intentions
+
+fun kaConvertToForEachFunctionCall(list: List<String>) {
+    list.forEach { item ->
+        println(item)
+}
+}

@@ -124,4 +124,41 @@ class KaIntentionsTest : KaIntentionTestBase("KaIntentions test", "intentions") 
     fun testKaConvertStringTemplateToBuildString() = doTest("kaConvertStringTemplateToBuildString") { doc, kaKtFile, psi ->
         KaConvertStringTemplateToBuildStringIntention(doc, kaKtFile, psi)
     }
+
+    // ── Group C — Lambda / function reference ─────────────────────────────────
+
+    /** K2 path for "Convert lambda to reference". */
+    fun testKaConvertLambdaToReference() = doTest("kaConvertLambdaToReference") { doc, kaKtFile, psi ->
+        KaConvertLambdaToReferenceIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Convert reference to lambda". */
+    fun testKaConvertReferenceToLambda() = doTest("kaConvertReferenceToLambda") { doc, kaKtFile, psi ->
+        KaConvertReferenceToLambdaIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Convert to anonymous function". */
+    fun testKaLambdaToAnonymousFunction() = doTest("kaLambdaToAnonymousFunction") { doc, kaKtFile, psi ->
+        KaLambdaToAnonymousFunctionIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Put lambda body on multiple lines". */
+    fun testKaConvertLambdaToMultiLine() = doTest("kaConvertLambdaToMultiLine") { doc, kaKtFile, psi ->
+        KaConvertLambdaToMultiLineIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Put lambda body on one line". */
+    fun testKaConvertLambdaToSingleLine() = doTest("kaConvertLambdaToSingleLine") { doc, kaKtFile, psi ->
+        KaConvertLambdaToSingleLineIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Replace 'forEach' with a 'for' loop". */
+    fun testKaConvertForEachToForLoop() = doTest("kaConvertForEachToForLoop") { doc, kaKtFile, psi ->
+        KaConvertForEachToForLoopIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Replace 'for' loop with 'forEach' call". */
+    fun testKaConvertToForEachFunctionCall() = doTest("kaConvertToForEachFunctionCall") { doc, kaKtFile, psi ->
+        KaConvertToForEachFunctionCallIntention(doc, kaKtFile, psi)
+    }
 }

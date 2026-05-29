@@ -1,0 +1,7 @@
+package intentions
+
+fun kaConvertForEachToForLoop(list: List<String>) {
+    for (item in list) {
+println(item)
+}
+}

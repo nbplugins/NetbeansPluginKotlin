@@ -48,6 +48,13 @@ import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertToRawStringTempl
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaToRawStringLiteralIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertConcatenationToBuildStringIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertStringTemplateToBuildStringIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertLambdaToReferenceIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertReferenceToLambdaIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaLambdaToAnonymousFunctionIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertLambdaToMultiLineIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertLambdaToSingleLineIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertForEachToForLoopIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertToForEachFunctionCallIntention
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.hints.KotlinRuleContext
 import org.jetbrains.kotlin.hints.KotlinRule
@@ -103,7 +110,15 @@ class KotlinHintsProvider : HintsProvider {
                 KaConvertToRawStringTemplateIntention(doc, kaKtFile, psi),
                 KaToRawStringLiteralIntention(doc, kaKtFile, psi),
                 KaConvertConcatenationToBuildStringIntention(doc, kaKtFile, psi),
-                KaConvertStringTemplateToBuildStringIntention(doc, kaKtFile, psi)
+                KaConvertStringTemplateToBuildStringIntention(doc, kaKtFile, psi),
+                // Group C — Lambda / function reference
+                KaConvertLambdaToReferenceIntention(doc, kaKtFile, psi),
+                KaConvertReferenceToLambdaIntention(doc, kaKtFile, psi),
+                KaLambdaToAnonymousFunctionIntention(doc, kaKtFile, psi),
+                KaConvertLambdaToMultiLineIntention(doc, kaKtFile, psi),
+                KaConvertLambdaToSingleLineIntention(doc, kaKtFile, psi),
+                KaConvertForEachToForLoopIntention(doc, kaKtFile, psi),
+                KaConvertToForEachFunctionCallIntention(doc, kaKtFile, psi)
             ).filter { it.isApplicable(psi.textRange.startOffset) }
         }
 

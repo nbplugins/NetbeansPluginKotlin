@@ -29,6 +29,14 @@ import org.jetbrains.kotlin.psi.KtElement
 inline fun <reified T : PsiElement> PsiElement.replaced(newElement: T): T = replace(newElement) as T
 
 /**
+ * Simplified `copied` — copies this element in the PSI tree and returns the copy cast to [T].
+ * Used by [LambdaToAnonymousFunctionUtil.prepareFunctionText] to operate on a file copy without
+ * mutating the original source.
+ */
+@Suppress("UNCHECKED_CAST")
+inline fun <reified T : PsiElement> T.copied(): T = copy() as T
+
+/**
  * Stub for `KtElement.isInsideAnnotationEntryArgumentList()`.
  * Returns `false` — annotation-argument-list detection is not needed in standalone mode.
  * The only caller ([CallParameterInfoProvider]) skips annotation entries when `false`, which is correct.
