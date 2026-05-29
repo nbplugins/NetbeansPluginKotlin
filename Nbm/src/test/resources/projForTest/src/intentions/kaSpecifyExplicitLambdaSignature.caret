@@ -1,0 +1,5 @@
+package intentions
+
+fun kaSpecifyExplicitLambdaSignature() {
+    val f: (Int) -> Int = { <caret>it + 1 }
+}

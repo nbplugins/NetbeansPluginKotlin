@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.10.22-SNAPSHOT</version>
+    <version>0.10.25-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-intention-utils</artifactId>
@@ -407,6 +407,286 @@
             </configuration>
           </execution>
 
+          <!-- base/code-insight: CommentSaver (preserves comments across PSI mutations) -->
+          <execution>
+            <id>copy-comment-saver</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/code-insight/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/util/CommentSaver.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- formatter/minimal: FormatterUtil (provides isLineBreak(), leafIgnoringWhitespace(), …) -->
+          <execution>
+            <id>copy-formatter-util</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/formatter/minimal/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/util/FormatterUtil.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- base/code-insight: PsiPrecedences (expression operator precedence for SwapBinaryExpression) -->
+          <execution>
+            <id>copy-psi-precedences</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/code-insight/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/util/PsiPrecedences.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- code-insight/utils: ExpressionSimplificationUtils (IElementType.negate() for De Morgan's) -->
+          <execution>
+            <id>copy-expression-simplification-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/utils/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/ExpressionSimplificationUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- code-insight/utils: KotlinPsiUtils (negate(), isAnnotatedDeep(), removeRedundantGetter/Setter) -->
+          <execution>
+            <id>copy-kotlin-psi-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/utils/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/KotlinPsiUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- code-insight/utils: EmptinessCheckFunctionUtils (invertSelectorFunction for De Morgan's) -->
+          <execution>
+            <id>copy-emptiness-check-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/utils/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/EmptinessCheckFunctionUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- code-insight/utils: DemorgansLawUtils (De Morgan's law transformation) -->
+          <execution>
+            <id>copy-demorgan-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/utils/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/DemorgansLawUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- code-insight/utils: ConvertToExpressionBodyUtils (singleReturnExpressionOrNull for RedundantTypeArgs) -->
+          <execution>
+            <id>copy-convert-to-expression-body-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/utils/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/ConvertToExpressionBodyUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- code-insight/utils: TypeParameterUtils (collectTypeParametersOnWhichReturnTypeDepends) -->
+          <execution>
+            <id>copy-type-param-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/utils/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/TypeParameterUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- code-insight/utils: RemoveExplicitTypeArgumentsUtils (PSI applicability + apply) -->
+          <execution>
+            <id>copy-remove-type-args-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/utils/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/RemoveExplicitTypeArgumentsUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- code-insight/utils: InsertExplicitTypeArgumentsUtils (getRenderedTypeArguments, addTypeArguments) -->
+          <execution>
+            <id>copy-insert-type-args-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/utils/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/InsertExplicitTypeArgumentsUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- refactorings/k2: RedundantExplicitTypeArgumentsUtil (areTypeArgumentsRedundant) -->
+          <execution>
+            <id>copy-redundant-type-args-util</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/util/RedundantExplicitTypeArgumentsUtil.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- refactorings/common: ExplicitLambdaSignatureUtil (getExplicitLambdaSignature, specifyExplicitLambdaSignature) -->
+          <execution>
+            <id>copy-explicit-lambda-sig-util</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.common/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/refactoring/util/ExplicitLambdaSignatureUtil.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- refactorings/common: OperatorToFunctionConverter (operator → explicit function call) -->
+          <execution>
+            <id>copy-operator-to-function-conv</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.common/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/refactoring/intentions/OperatorToFunctionConverter.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
           <!-- Local stubs: replaced(), isInsideAnnotationEntryArgumentList() -->
           <execution>
             <id>copy-stubs</id>
@@ -558,6 +838,160 @@ def patches = [
   [file: 'org/jetbrains/kotlin/idea/k2/refactoring/util/LambdaToAnonymousFunctionUtil.kt',
    old:  'functionSymbol.returnType.takeIf { !it.isUnit && it !is KaErrorType }',
    new_: 'functionSymbol.returnType.takeIf { !it.isUnitType && it !is KaErrorType }'],
+
+  // ExpressionSimplificationUtils.kt: remove allowAnalysisOnEdt/allowAnalysisFromWriteAction wrappers
+  // (IntelliJ EDT guards not applicable in standalone/NetBeans mode; replace with direct analyze {}).
+  [file: 'org/jetbrains/kotlin/idea/codeinsight/utils/ExpressionSimplificationUtils.kt',
+   old:  'import org.jetbrains.kotlin.analysis.api.permissions.KaAllowAnalysisFromWriteAction\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/codeinsight/utils/ExpressionSimplificationUtils.kt',
+   old:  'import org.jetbrains.kotlin.analysis.api.permissions.KaAllowAnalysisOnEdt\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/codeinsight/utils/ExpressionSimplificationUtils.kt',
+   old:  'import org.jetbrains.kotlin.analysis.api.permissions.allowAnalysisFromWriteAction\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/codeinsight/utils/ExpressionSimplificationUtils.kt',
+   old:  'import org.jetbrains.kotlin.analysis.api.permissions.allowAnalysisOnEdt\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/codeinsight/utils/ExpressionSimplificationUtils.kt',
+   old:  '        @OptIn(KaAllowAnalysisOnEdt::class)\n        allowAnalysisOnEdt {\n            @OptIn(KaAllowAnalysisFromWriteAction::class)\n            allowAnalysisFromWriteAction {\n                analyze(expression) {\n                    fun KaType?.isFloatingPoint() = this != null && (isFloat || isDouble)\n                    return !expression.left?.expressionType.isFloatingPoint() && !expression.right?.expressionType.isFloatingPoint()\n                }\n            }\n        }',
+   new_: '        analyze(expression) {\n            fun KaType?.isFloatingPoint() = this != null && (isFloatType || isDoubleType)\n            return !expression.left?.expressionType.isFloatingPoint() && !expression.right?.expressionType.isFloatingPoint()\n        }'],
+
+  // OperatorToFunctionConverter.kt: remove allowAnalysisOnEdt/allowAnalysisFromWriteAction wrappers
+  // and safeAs<T>() (generates UNCHECKED_CAST in Kotlin 2.2).
+  [file: 'org/jetbrains/kotlin/idea/refactoring/intentions/OperatorToFunctionConverter.kt',
+   old:  'import org.jetbrains.kotlin.utils.addToStdlib.safeAs\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/refactoring/intentions/OperatorToFunctionConverter.kt',
+   old:  'qualifiedExpression.selectorExpression.safeAs<KtCallExpression>()',
+   new_: '(qualifiedExpression.selectorExpression as? KtCallExpression)'],
+  [file: 'org/jetbrains/kotlin/idea/refactoring/intentions/OperatorToFunctionConverter.kt',
+   old:  'receiverExpression.safeAs<KtDotQualifiedExpression>()',
+   new_: '(receiverExpression as? KtDotQualifiedExpression)'],
+  [file: 'org/jetbrains/kotlin/idea/refactoring/intentions/OperatorToFunctionConverter.kt',
+   old:  'element.parent?.safeAs<KtQualifiedExpression>()',
+   new_: '(element.parent as? KtQualifiedExpression)'],
+  [file: 'org/jetbrains/kotlin/idea/refactoring/intentions/OperatorToFunctionConverter.kt',
+   old:  'import org.jetbrains.kotlin.analysis.api.permissions.KaAllowAnalysisFromWriteAction\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/refactoring/intentions/OperatorToFunctionConverter.kt',
+   old:  'import org.jetbrains.kotlin.analysis.api.permissions.KaAllowAnalysisOnEdt\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/refactoring/intentions/OperatorToFunctionConverter.kt',
+   old:  'import org.jetbrains.kotlin.analysis.api.permissions.allowAnalysisFromWriteAction\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/refactoring/intentions/OperatorToFunctionConverter.kt',
+   old:  'import org.jetbrains.kotlin.analysis.api.permissions.allowAnalysisOnEdt\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/refactoring/intentions/OperatorToFunctionConverter.kt',
+   old:  '    @OptIn(KaAllowAnalysisOnEdt::class)\n    private fun isOfNullableType(expression: KtExpression): Boolean? = allowAnalysisOnEdt {\n        @OptIn(KaAllowAnalysisFromWriteAction::class)\n        allowAnalysisFromWriteAction {\n            analyze(expression) {\n                expression.expressionType?.isMarkedNullable\n            }\n        }\n    }',
+   new_: '    private fun isOfNullableType(expression: KtExpression): Boolean? = analyze(expression) {\n        expression.expressionType?.isMarkedNullable\n    }'],
+  [file: 'org/jetbrains/kotlin/idea/refactoring/intentions/OperatorToFunctionConverter.kt',
+   old:  '    @OptIn(KaAllowAnalysisOnEdt::class)\n    private fun getCalledFunctionName(element: KtBinaryExpression): Name? = allowAnalysisOnEdt {\n        @OptIn(KaAllowAnalysisFromWriteAction::class)\n        allowAnalysisFromWriteAction {\n            analyze(element) {\n                val resolvedCall = element.resolveToCall()?.singleFunctionCallOrNull()\n                val targetSymbol = resolvedCall?.partiallyAppliedSymbol?.symbol\n\n                (targetSymbol as? KaNamedSymbol)?.name\n            }\n        }\n    }',
+   new_: '    private fun getCalledFunctionName(element: KtBinaryExpression): Name? = analyze(element) {\n        val resolvedCall = element.resolveToCall()?.singleFunctionCallOrNull()\n        val targetSymbol = resolvedCall?.partiallyAppliedSymbol?.symbol\n\n        (targetSymbol as? KaNamedSymbol)?.name\n    }'],
+
+  // InsertExplicitTypeArgumentsUtils.kt: ShortenReferencesFacility is an IDE service unavailable
+  // in standalone mode; remove the call entirely — getRenderedTypeArguments already renders short names.
+  [file: 'org/jetbrains/kotlin/idea/codeinsight/utils/InsertExplicitTypeArgumentsUtils.kt',
+   old:  'import org.jetbrains.kotlin.idea.base.codeInsight.ShortenReferencesFacility\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/codeinsight/utils/InsertExplicitTypeArgumentsUtils.kt',
+   old:  '    ShortenReferencesFacility.getInstance().shorten(newArgumentList)\n',
+   new_: ''],
+
+  // ExplicitLambdaSignatureUtil.kt: same ShortenReferencesFacility removal.
+  // getExplicitLambdaSignature renders types with short names, so shortening is a no-op.
+  [file: 'org/jetbrains/kotlin/idea/refactoring/util/ExplicitLambdaSignatureUtil.kt',
+   old:  'import org.jetbrains.kotlin.idea.base.codeInsight.ShortenReferencesFacility\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/refactoring/util/ExplicitLambdaSignatureUtil.kt',
+   old:  '    for (parameter in element.valueParameters) {\n        ShortenReferencesFacility.getInstance().shorten(parameter)\n    }\n',
+   new_: ''],
+
+  // DemorgansLawUtils.kt: safeAs<T>() generates UNCHECKED_CAST in Kotlin 2.2; replace with as?.
+  // Also remove UnsafeCastFunction OptIn (no longer needed after removing safeAs).
+  // isBoolean → isBooleanType (Analysis API 2.3.21 rename).
+  [file: 'org/jetbrains/kotlin/idea/codeinsight/utils/DemorgansLawUtils.kt',
+   old:  'import org.jetbrains.kotlin.utils.addToStdlib.UnsafeCastFunction\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/codeinsight/utils/DemorgansLawUtils.kt',
+   old:  'import org.jetbrains.kotlin.utils.addToStdlib.safeAs\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/codeinsight/utils/DemorgansLawUtils.kt',
+   old:  '    @OptIn(UnsafeCastFunction::class)\n    fun prepareContext',
+   new_: '    fun prepareContext'],
+  [file: 'org/jetbrains/kotlin/idea/codeinsight/utils/DemorgansLawUtils.kt',
+   old:  'operand.safeAs<KtQualifiedExpression>()',
+   new_: '(operand as? KtQualifiedExpression)'],
+  [file: 'org/jetbrains/kotlin/idea/codeinsight/utils/DemorgansLawUtils.kt',
+   old:  'this.expressionType?.isBoolean == true',
+   new_: 'this.expressionType?.isBooleanType == true'],
+
+  // RedundantExplicitTypeArgumentsUtil.kt: isSubTypeOf → isSubtypeOf (Analysis API 2.3.21 rename).
+  [file: 'org/jetbrains/kotlin/idea/k2/refactoring/util/RedundantExplicitTypeArgumentsUtil.kt',
+   old:  'argumentType.isSubTypeOf(sig.returnType)',
+   new_: 'argumentType.isSubtypeOf(sig.returnType)'],
+  // RedundantExplicitTypeArgumentsUtil.kt: isEqualTo → semanticallyEquals (first occurrence in isApplicableType).
+  [file: 'org/jetbrains/kotlin/idea/k2/refactoring/util/RedundantExplicitTypeArgumentsUtil.kt',
+   old:  'return type.isEqualTo(expectedType) ||',
+   new_: 'return type.semanticallyEquals(expectedType) ||'],
+  // RedundantExplicitTypeArgumentsUtil.kt: receiverParameter?.type → receiverParameter?.returnType
+  // (KaReceiverParameterSymbol has no .type property; returnType is inherited from KaCallableSymbol).
+  [file: 'org/jetbrains/kotlin/idea/k2/refactoring/util/RedundantExplicitTypeArgumentsUtil.kt',
+   old:  'resolvedCall.partiallyAppliedSymbol.symbol.receiverParameter?.type',
+   new_: 'resolvedCall.partiallyAppliedSymbol.symbol.receiverParameter?.returnType'],
+  // RedundantExplicitTypeArgumentsUtil.kt: isEqualTo → semanticallyEquals (second occurrence,
+  // inside withNullability call — different pattern from the first occurrence above).
+  [file: 'org/jetbrains/kotlin/idea/k2/refactoring/util/RedundantExplicitTypeArgumentsUtil.kt',
+   old:  'type.withNullability(KaTypeNullability.NULLABLE).isEqualTo(expectedType)',
+   new_: 'type.withNullability(KaTypeNullability.NULLABLE).semanticallyEquals(expectedType)'],
+
+  // KotlinPsiUtils.kt: remove createArgumentWithoutName — identical function exists in ArgumentUtils.kt
+  // (same package, same parameter types → conflicting overload).
+  [file: 'org/jetbrains/kotlin/idea/codeinsight/utils/KotlinPsiUtils.kt',
+   old:  'fun createArgumentWithoutName(argument: KtValueArgument, isVararg: Boolean = false, isArrayOf: Boolean = false): List<KtValueArgument> {\n    if (!argument.isNamed()) return listOf(argument.copied())\n    val argumentExpr = argument.getArgumentExpression() ?: return emptyList()\n    val psiFactory = KtPsiFactory(argument)\n    return when {\n        isVararg && argumentExpr is KtCollectionLiteralExpression ->\n            argumentExpr.getInnerExpressions().map { psiFactory.createArgument(it) }\n\n        isVararg && argumentExpr is KtCallExpression && isArrayOf ->\n            argumentExpr.valueArguments.map { psiFactory.createArgument(it.getArgumentExpression()) }\n\n        else -> listOf(psiFactory.createArgument(argumentExpr, name = null, isVararg))\n    }\n}\n',
+   new_: ''],
+  // KotlinPsiUtils.kt: remove isReferenceToBuiltInEnumFunction — requires ENUM_STATIC_METHOD_NAMES
+  // and canBeReferenceToBuiltInEnumFunction from EnumUtils.kt which we don't copy.
+  [file: 'org/jetbrains/kotlin/idea/codeinsight/utils/KotlinPsiUtils.kt',
+   old:  'context(KaSession)\nfun KtCallExpression.isReferenceToBuiltInEnumFunction(): Boolean {\n    val calleeExpression = this.calleeExpression ?: return false\n    return (calleeExpression as? KtSimpleNameExpression)?.getReferencedNameAsName() in ENUM_STATIC_METHOD_NAMES && calleeExpression.isSynthesizedFunction()\n}\n\ncontext(KaSession)\nfun KtCallableReferenceExpression.isReferenceToBuiltInEnumFunction(): Boolean {\n    return this.canBeReferenceToBuiltInEnumFunction() && this.callableReference.isSynthesizedFunction()\n}\n',
+   new_: ''],
+
+  // OperatorToFunctionConverter.kt: LanguageFeature.OperatorRem was removed in Kotlin 2.3.21
+  // (it was a compatibility flag for pre-1.1 operator rem; rem is always supported in Kotlin 2.x).
+  [file: 'org/jetbrains/kotlin/idea/refactoring/intentions/OperatorToFunctionConverter.kt',
+   old:  'val remSupported = element.languageVersionSettings.supportsFeature(LanguageFeature.OperatorRem)',
+   new_: 'val remSupported = true'],
+
+  // InsertExplicitTypeArgumentsUtils.kt: KaType sealed hierarchy may have new subtypes in 2.3.21;
+  // add else branch to make the when expression exhaustive.
+  [file: 'org/jetbrains/kotlin/idea/codeinsight/utils/InsertExplicitTypeArgumentsUtils.kt',
+   old:  '    is KaTypeParameterType, is KaCapturedType, is KaDynamicType -> false\n}',
+   new_: '    is KaTypeParameterType, is KaCapturedType, is KaDynamicType -> false\n    else -> false\n}'],
+
+  // InsertExplicitTypeArgumentsUtils.kt: use WITH_SHORT_NAMES renderer so that inferred type
+  // arguments are rendered without package qualifiers (e.g. "Int" not "kotlin.Int").
+  // The original code relied on ShortenReferencesFacility which is unavailable in standalone mode.
+  [file: 'org/jetbrains/kotlin/idea/codeinsight/utils/InsertExplicitTypeArgumentsUtils.kt',
+   old:  'import org.jetbrains.kotlin.types.Variance\n',
+   new_: 'import org.jetbrains.kotlin.analysis.api.renderer.types.impl.KaTypeRendererForSource\nimport org.jetbrains.kotlin.types.Variance\n'],
+  [file: 'org/jetbrains/kotlin/idea/codeinsight/utils/InsertExplicitTypeArgumentsUtils.kt',
+   old:  'add(type.render(position = Variance.IN_VARIANCE))',
+   new_: 'add(type.render(KaTypeRendererForSource.WITH_SHORT_NAMES, position = Variance.IN_VARIANCE))'],
+
+  // ExplicitLambdaSignatureUtil.kt: use WITH_SHORT_NAMES renderer for the same reason.
+  [file: 'org/jetbrains/kotlin/idea/refactoring/util/ExplicitLambdaSignatureUtil.kt',
+   old:  'import org.jetbrains.kotlin.types.Variance\n',
+   new_: 'import org.jetbrains.kotlin.analysis.api.renderer.types.impl.KaTypeRendererForSource\nimport org.jetbrains.kotlin.types.Variance\n'],
+  [file: 'org/jetbrains/kotlin/idea/refactoring/util/ExplicitLambdaSignatureUtil.kt',
+   old:  'param.returnType.render(position = Variance.IN_VARIANCE)',
+   new_: 'param.returnType.render(KaTypeRendererForSource.WITH_SHORT_NAMES, position = Variance.IN_VARIANCE)'],
+  // ExplicitLambdaSignatureUtil.kt: fix else-branch (implicit 'it' param has null psi) to also use WITH_SHORT_NAMES.
+  // param.render() uses the default renderer which produces fully qualified names; instead render
+  // name + type explicitly.
+  [file: 'org/jetbrains/kotlin/idea/refactoring/util/ExplicitLambdaSignatureUtil.kt',
+   old:  '} else param.render()',
+   new_: '} else param.name.asString() + ": " + param.returnType.render(KaTypeRendererForSource.WITH_SHORT_NAMES, position = Variance.IN_VARIANCE)'],
 ]
 
 patches.each { p ->

@@ -73,6 +73,12 @@ import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddBracesIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveBracesIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddBracesToAllBranchesIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveBracesFromAllBranchesIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertBinaryExpressionWithDemorgansLawIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaOperatorToFunctionIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaSwapBinaryExpressionIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaInsertExplicitTypeArgumentsIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveExplicitTypeArgumentsIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaSpecifyExplicitLambdaSignatureIntention
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.hints.KotlinRuleContext
 import org.jetbrains.kotlin.hints.KotlinRule
@@ -160,7 +166,15 @@ class KotlinHintsProvider : HintsProvider {
                 KaAddBracesIntention(doc, kaKtFile, psi),
                 KaRemoveBracesIntention(doc, kaKtFile, psi),
                 KaAddBracesToAllBranchesIntention(doc, kaKtFile, psi),
-                KaRemoveBracesFromAllBranchesIntention(doc, kaKtFile, psi)
+                KaRemoveBracesFromAllBranchesIntention(doc, kaKtFile, psi),
+
+                // Group G — Expressions / operators
+                KaConvertBinaryExpressionWithDemorgansLawIntention(doc, kaKtFile, psi),
+                KaOperatorToFunctionIntention(doc, kaKtFile, psi),
+                KaSwapBinaryExpressionIntention(doc, kaKtFile, psi),
+                KaInsertExplicitTypeArgumentsIntention(doc, kaKtFile, psi),
+                KaRemoveExplicitTypeArgumentsIntention(doc, kaKtFile, psi),
+                KaSpecifyExplicitLambdaSignatureIntention(doc, kaKtFile, psi)
             ).filter { it.isApplicable(psi.textRange.startOffset) }
         }
 

@@ -257,4 +257,36 @@ class KaIntentionsTest : KaIntentionTestBase("KaIntentions test", "intentions") 
     fun testKaRemoveBracesFromAllBranches() = doTest("kaRemoveBracesFromAllBranches") { doc, kaKtFile, psi ->
         KaRemoveBracesFromAllBranchesIntention(doc, kaKtFile, psi)
     }
+
+    // ── Group G — Expressions / operators ───────────────────────────────────
+
+    /** K2 path for "Replace '&&' with '||'" (De Morgan's law). */
+    fun testKaDemorgan() = doTest("kaDemorgan") { doc, kaKtFile, psi ->
+        KaConvertBinaryExpressionWithDemorgansLawIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Replace overloaded operator with function call". */
+    fun testKaOperatorToFunction() = doTest("kaOperatorToFunction") { doc, kaKtFile, psi ->
+        KaOperatorToFunctionIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Flip binary expression". */
+    fun testKaSwapBinaryExpression() = doTest("kaSwapBinaryExpression") { doc, kaKtFile, psi ->
+        KaSwapBinaryExpressionIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Add explicit type arguments". */
+    fun testKaInsertExplicitTypeArguments() = doTest("kaInsertExplicitTypeArguments") { doc, kaKtFile, psi ->
+        KaInsertExplicitTypeArgumentsIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Remove explicit type arguments". */
+    fun testKaRemoveExplicitTypeArguments() = doTest("kaRemoveExplicitTypeArguments") { doc, kaKtFile, psi ->
+        KaRemoveExplicitTypeArgumentsIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Specify explicit lambda signature". */
+    fun testKaSpecifyExplicitLambdaSignature() = doTest("kaSpecifyExplicitLambdaSignature") { doc, kaKtFile, psi ->
+        KaSpecifyExplicitLambdaSignatureIntention(doc, kaKtFile, psi)
+    }
 }

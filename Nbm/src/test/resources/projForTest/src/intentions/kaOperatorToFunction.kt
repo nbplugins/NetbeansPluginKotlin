@@ -1,0 +1,5 @@
+package intentions
+
+fun kaOperatorToFunction(a: Int, b: Int): Int {
+    return a + b
+}
