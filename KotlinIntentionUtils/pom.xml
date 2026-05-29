@@ -19,8 +19,9 @@
     - base/util: GenericPsiUtils (reformat/reformatted)
     - base/analysis-api/analysis-api-utils: shortenUtils, ImportInsertion, KotlinImportPathComparator,
       CallParameterInfoProvider
-    - code-insight/impl-base: AddRemainingWhenBranchesUtils, RemoveArgumentNamesUtils, MergeIfsUtils
-    Local stubs: replaced(), isInsideAnnotationEntryArgumentList() for standalone (non-IDE) mode.
+    - code-insight/impl-base: AddRemainingWhenBranchesUtils, RemoveArgumentNamesUtils, MergeIfsUtils,
+      StringTemplateUtils, BuildStringUtils (psi/)
+    Local stubs: replaced(), isInsideAnnotationEntryArgumentList(), isToString() for standalone (non-IDE) mode.
   </description>
 
   <build>
@@ -222,6 +223,46 @@
             </configuration>
           </execution>
 
+          <!-- impl-base: StringTemplateUtils (buildStringTemplateForBinaryExpression, canBeConvertedToStringLiteral, …) -->
+          <execution>
+            <id>copy-string-template-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/impl-base/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsights/impl/base/StringTemplateUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- impl-base/psi: BuildStringUtils (generateBuildStringCall, generateBuildStringCallWithExtras) -->
+          <execution>
+            <id>copy-build-string-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/impl-base/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsights/impl/base/psi/BuildStringUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
           <!-- impl-base/inspections: MergeIfsUtils -->
           <execution>
             <id>copy-impl-base-inspections</id>
@@ -333,6 +374,32 @@ def patches = [
   [file: 'org/jetbrains/kotlin/idea/base/analysis/api/utils/CallParameterInfoProvider.kt',
    old:  '        if (!signature.symbol.origin.isJavaSourceOrLibrary()) return false\n',
    new_: '        return false // isJavaSourceOrLibrary: not applicable in standalone mode\n'],
+
+  // StringTemplateUtils.kt: KaNamedClassOrObjectSymbol was renamed to KaClassSymbol in Analysis API 2.3.21.
+  [file: 'org/jetbrains/kotlin/idea/codeinsights/impl/base/StringTemplateUtils.kt',
+   old:  'import org.jetbrains.kotlin.analysis.api.symbols.KaNamedClassOrObjectSymbol\n',
+   new_: 'import org.jetbrains.kotlin.analysis.api.symbols.KaClassSymbol\n'],
+  [file: 'org/jetbrains/kotlin/idea/codeinsights/impl/base/StringTemplateUtils.kt',
+   old:  'val classContainingPlus = plusOperation?.containingDeclaration as? KaNamedClassOrObjectSymbol',
+   new_: 'val classContainingPlus = plusOperation?.containingDeclaration as? KaClassSymbol'],
+
+  // StringTemplateUtils.kt: isString was renamed to isStringType in Analysis API 2.3.21.
+  [file: 'org/jetbrains/kotlin/idea/codeinsights/impl/base/StringTemplateUtils.kt',
+   old:  'if (expression.expressionType?.isString != true) return false',
+   new_: 'if (expression.expressionType?.isStringType != true) return false'],
+
+  // StringTemplateUtils.kt: ConstantValueKind was removed; KaConstantValue now uses nested interfaces.
+  [file: 'org/jetbrains/kotlin/idea/codeinsights/impl/base/StringTemplateUtils.kt',
+   old:  'import org.jetbrains.kotlin.types.ConstantValueKind\n',
+   new_: ''],
+  [file: 'org/jetbrains/kotlin/idea/codeinsights/impl/base/StringTemplateUtils.kt',
+   old:  '    val isChar = constantValue.constantValueKind == ConstantValueKind.Char\n  val stringValue = if (isChar) "${constantValue.value}" else constantValue.render()',
+   new_: '    val isChar = constantValue is org.jetbrains.kotlin.analysis.api.base.KaConstantValue.CharValue\n    val stringValue = if (isChar) "${(constantValue as org.jetbrains.kotlin.analysis.api.base.KaConstantValue.CharValue).value}" else constantValue.render()'],
+
+  // AnalysisUtilsStubs.kt: isString was renamed to isStringType in Analysis API 2.3.21.
+  [file: 'org/jetbrains/kotlin/idea/codeinsight/utils/AnalysisUtilsStubs.kt',
+   old:  'functionSymbol.returnType.isString',
+   new_: 'functionSymbol.returnType.isStringType'],
 ]
 
 patches.each { p ->

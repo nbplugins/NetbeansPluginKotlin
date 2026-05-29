@@ -42,6 +42,12 @@ import io.github.nbplugins.kotlin.nbm.hints.intentions.KaReplaceSizeCheckWithIsN
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaSplitIfIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaSpecifyTypeIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaWhenToIfIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertToStringTemplateIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertToConcatenatedStringIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertToRawStringTemplateIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaToRawStringLiteralIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertConcatenationToBuildStringIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertStringTemplateToBuildStringIntention
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.hints.KotlinRuleContext
 import org.jetbrains.kotlin.hints.KotlinRule
@@ -90,7 +96,14 @@ class KotlinHintsProvider : HintsProvider {
                 KaFlattenWhenIntention(doc, kaKtFile, psi),
                 KaMergeIfsIntention(doc, kaKtFile, psi),
                 KaSplitIfIntention(doc, kaKtFile, psi),
-                KaInvertIfConditionIntention(doc, kaKtFile, psi)
+                KaInvertIfConditionIntention(doc, kaKtFile, psi),
+                // Group B — String transformations
+                KaConvertToStringTemplateIntention(doc, kaKtFile, psi),
+                KaConvertToConcatenatedStringIntention(doc, kaKtFile, psi),
+                KaConvertToRawStringTemplateIntention(doc, kaKtFile, psi),
+                KaToRawStringLiteralIntention(doc, kaKtFile, psi),
+                KaConvertConcatenationToBuildStringIntention(doc, kaKtFile, psi),
+                KaConvertStringTemplateToBuildStringIntention(doc, kaKtFile, psi)
             ).filter { it.isApplicable(psi.textRange.startOffset) }
         }
 

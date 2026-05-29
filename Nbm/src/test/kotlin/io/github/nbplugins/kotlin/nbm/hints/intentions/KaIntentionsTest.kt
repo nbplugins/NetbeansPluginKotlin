@@ -92,4 +92,36 @@ class KaIntentionsTest : KaIntentionTestBase("KaIntentions test", "intentions") 
     fun testKaFlattenWhen() = doTest("flattenWhen") { doc, kaKtFile, psi ->
         KaFlattenWhenIntention(doc, kaKtFile, psi)
     }
+
+    // ── Group B — String transformations ─────────────────────────────────────
+
+    /** K2 path for "Convert concatenation to template". */
+    fun testKaConvertToStringTemplate() = doTest("convertToStringTemplate") { doc, kaKtFile, psi ->
+        KaConvertToStringTemplateIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Convert string template to concatenated string". */
+    fun testKaConvertToConcatenatedString() = doTest("convertToConcatenatedString") { doc, kaKtFile, psi ->
+        KaConvertToConcatenatedStringIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Convert concatenation to raw string". */
+    fun testKaConvertToRawStringTemplate() = doTest("kaConvertToRawStringTemplate") { doc, kaKtFile, psi ->
+        KaConvertToRawStringTemplateIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Convert to raw string literal". */
+    fun testKaToRawStringLiteral() = doTest("kaToRawStringLiteral") { doc, kaKtFile, psi ->
+        KaToRawStringLiteralIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Convert concatenation to 'buildString'". */
+    fun testKaConvertConcatenationToBuildString() = doTest("kaConvertConcatenationToBuildString") { doc, kaKtFile, psi ->
+        KaConvertConcatenationToBuildStringIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Convert string template to 'buildString'". */
+    fun testKaConvertStringTemplateToBuildString() = doTest("kaConvertStringTemplateToBuildString") { doc, kaKtFile, psi ->
+        KaConvertStringTemplateToBuildStringIntention(doc, kaKtFile, psi)
+    }
 }
