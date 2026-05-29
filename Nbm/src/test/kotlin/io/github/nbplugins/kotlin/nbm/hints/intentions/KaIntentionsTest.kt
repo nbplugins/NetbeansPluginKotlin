@@ -235,4 +235,26 @@ class KaIntentionsTest : KaIntentionTestBase("KaIntentions test", "intentions") 
     fun testKaMovePropertyToConstructor() = doTest("kaMovePropertyToConstructor") { doc, kaKtFile, psi ->
         KaMovePropertyToConstructorIntention(doc, kaKtFile, psi)
     }
+
+    // ── Group F — Braces ─────────────────────────────────────────────────────
+
+    /** K2 path for "Add braces". */
+    fun testKaAddBraces() = doTest("kaAddBraces") { doc, kaKtFile, psi ->
+        KaAddBracesIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Remove braces". */
+    fun testKaRemoveBraces() = doTest("kaRemoveBraces") { doc, kaKtFile, psi ->
+        KaRemoveBracesIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Add braces to all branches". */
+    fun testKaAddBracesToAllBranches() = doTest("kaAddBracesToAllBranches") { doc, kaKtFile, psi ->
+        KaAddBracesToAllBranchesIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Remove braces from all branches". */
+    fun testKaRemoveBracesFromAllBranches() = doTest("kaRemoveBracesFromAllBranches") { doc, kaKtFile, psi ->
+        KaRemoveBracesFromAllBranchesIntention(doc, kaKtFile, psi)
+    }
 }

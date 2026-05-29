@@ -69,6 +69,10 @@ import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddGetterIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddSetterIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaSplitPropertyDeclarationIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaMovePropertyToConstructorIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddBracesIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveBracesIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddBracesToAllBranchesIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveBracesFromAllBranchesIntention
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.hints.KotlinRuleContext
 import org.jetbrains.kotlin.hints.KotlinRule
@@ -150,7 +154,13 @@ class KotlinHintsProvider : HintsProvider {
                 KaAddGetterIntention(doc, kaKtFile, psi),
                 KaAddSetterIntention(doc, kaKtFile, psi),
                 KaSplitPropertyDeclarationIntention(doc, kaKtFile, psi),
-                KaMovePropertyToConstructorIntention(doc, kaKtFile, psi)
+                KaMovePropertyToConstructorIntention(doc, kaKtFile, psi),
+
+                // Group F — Braces
+                KaAddBracesIntention(doc, kaKtFile, psi),
+                KaRemoveBracesIntention(doc, kaKtFile, psi),
+                KaAddBracesToAllBranchesIntention(doc, kaKtFile, psi),
+                KaRemoveBracesFromAllBranchesIntention(doc, kaKtFile, psi)
             ).filter { it.isApplicable(psi.textRange.startOffset) }
         }
 
