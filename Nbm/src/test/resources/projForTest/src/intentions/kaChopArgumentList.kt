@@ -1,0 +1,7 @@
+package intentions
+
+fun kaChopArgumentList(x: Int, y: Int, z: Int) = x + y + z
+
+fun testChop() {
+    kaChopArgumentList(1, 2, 3)
+}

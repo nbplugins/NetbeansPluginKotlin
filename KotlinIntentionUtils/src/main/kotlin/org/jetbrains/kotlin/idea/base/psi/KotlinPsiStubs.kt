@@ -18,7 +18,11 @@
 package org.jetbrains.kotlin.idea.base.psi
 
 import com.intellij.psi.PsiElement
+import org.jetbrains.kotlin.psi.KtCallElement
 import org.jetbrains.kotlin.psi.KtElement
+import org.jetbrains.kotlin.psi.KtLambdaArgument
+import org.jetbrains.kotlin.psi.KtValueArgument
+import org.jetbrains.kotlin.psi.KtValueArgumentList
 
 /**
  * Simplified `replaced` — replaces this element in the PSI tree and returns the replacement cast to [T].
@@ -42,3 +46,11 @@ inline fun <reified T : PsiElement> T.copied(): T = copy() as T
  * The only caller ([CallParameterInfoProvider]) skips annotation entries when `false`, which is correct.
  */
 fun KtElement.isInsideAnnotationEntryArgumentList(): Boolean = false
+
+/**
+ * Returns the [KtCallElement] that owns [argument].
+ * Mirrors `KotlinPsiUtils.getCallElement` from `base/psi` which is not available at compile time.
+ */
+fun getCallElement(argument: KtValueArgument): KtCallElement? =
+    if (argument is KtLambdaArgument) argument.parent as? KtCallElement
+    else (argument.parent as? KtValueArgumentList)?.parent as? KtCallElement

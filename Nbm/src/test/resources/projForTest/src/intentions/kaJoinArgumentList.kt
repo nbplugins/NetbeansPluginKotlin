@@ -1,0 +1,11 @@
+package intentions
+
+fun kaJoinArgumentList(x: Int, y: Int, z: Int) = x + y + z
+
+fun testJoin() {
+    kaJoinArgumentList(
+        1,
+        2,
+        3
+    )
+}

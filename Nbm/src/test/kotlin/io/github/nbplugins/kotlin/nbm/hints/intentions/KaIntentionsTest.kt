@@ -161,4 +161,46 @@ class KaIntentionsTest : KaIntentionTestBase("KaIntentions test", "intentions") 
     fun testKaConvertToForEachFunctionCall() = doTest("kaConvertToForEachFunctionCall") { doc, kaKtFile, psi ->
         KaConvertToForEachFunctionCallIntention(doc, kaKtFile, psi)
     }
+
+    // ── Group D — Named call arguments ────────────────────────────────────────
+
+    /** K2 path for "Add names to call arguments". */
+    fun testKaAddNamesToCallArguments() = doTest("kaAddNamesToCallArguments") { doc, kaKtFile, psi ->
+        KaAddNamesToCallArgumentsIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Add names to this argument and following arguments". */
+    fun testKaAddNamesToFollowingArguments() = doTest("kaAddNamesToFollowingArguments") { doc, kaKtFile, psi ->
+        KaAddNamesToFollowingArgumentsIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Add name to argument". */
+    fun testKaAddNameToArgument() = doTest("kaAddNameToArgument") { doc, kaKtFile, psi ->
+        KaAddNameToArgumentIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Remove all argument names". */
+    fun testKaRemoveAllArgumentNames() = doTest("kaRemoveAllArgumentNames") { doc, kaKtFile, psi ->
+        KaRemoveAllArgumentNamesIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Remove argument name". */
+    fun testKaRemoveSingleArgumentName() = doTest("kaRemoveSingleArgumentName") { doc, kaKtFile, psi ->
+        KaRemoveSingleArgumentNameIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Put calls on separate lines". */
+    fun testKaPutCallsOnSeparateLines() = doTest("kaPutCallsOnSeparateLines") { doc, kaKtFile, psi ->
+        KaPutCallsOnSeparateLinesIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Put arguments on separate lines". */
+    fun testKaChopArgumentList() = doTest("kaChopArgumentList") { doc, kaKtFile, psi ->
+        KaChopArgumentListIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Put arguments on one line". */
+    fun testKaJoinArgumentList() = doTest("kaJoinArgumentList") { doc, kaKtFile, psi ->
+        KaJoinArgumentListIntention(doc, kaKtFile, psi)
+    }
 }

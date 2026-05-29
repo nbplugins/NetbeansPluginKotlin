@@ -55,6 +55,14 @@ import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertLambdaToMultiLin
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertLambdaToSingleLineIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertForEachToForLoopIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertToForEachFunctionCallIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddNamesToCallArgumentsIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddNamesToFollowingArgumentsIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddNameToArgumentIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveAllArgumentNamesIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveSingleArgumentNameIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaPutCallsOnSeparateLinesIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChopArgumentListIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaJoinArgumentListIntention
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.hints.KotlinRuleContext
 import org.jetbrains.kotlin.hints.KotlinRule
@@ -118,7 +126,17 @@ class KotlinHintsProvider : HintsProvider {
                 KaConvertLambdaToMultiLineIntention(doc, kaKtFile, psi),
                 KaConvertLambdaToSingleLineIntention(doc, kaKtFile, psi),
                 KaConvertForEachToForLoopIntention(doc, kaKtFile, psi),
-                KaConvertToForEachFunctionCallIntention(doc, kaKtFile, psi)
+                KaConvertToForEachFunctionCallIntention(doc, kaKtFile, psi),
+
+                // Group D — Named call arguments
+                KaAddNamesToCallArgumentsIntention(doc, kaKtFile, psi),
+                KaAddNamesToFollowingArgumentsIntention(doc, kaKtFile, psi),
+                KaAddNameToArgumentIntention(doc, kaKtFile, psi),
+                KaRemoveAllArgumentNamesIntention(doc, kaKtFile, psi),
+                KaRemoveSingleArgumentNameIntention(doc, kaKtFile, psi),
+                KaPutCallsOnSeparateLinesIntention(doc, kaKtFile, psi),
+                KaChopArgumentListIntention(doc, kaKtFile, psi),
+                KaJoinArgumentListIntention(doc, kaKtFile, psi)
             ).filter { it.isApplicable(psi.textRange.startOffset) }
         }
 

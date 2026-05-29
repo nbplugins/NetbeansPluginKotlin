@@ -1,0 +1,7 @@
+package intentions
+
+fun kaRemoveAllArgumentNames(x: Int, y: Int): Int = x + y
+
+fun use() {
+    kaRemoveAllArgumentNames(x = <caret>1, y = 2)
+}

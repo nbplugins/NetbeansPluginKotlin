@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.10.16-SNAPSHOT</version>
+    <version>0.10.18-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-intention-utils</artifactId>
@@ -301,6 +301,26 @@
                   <filtering>false</filtering>
                   <includes>
                     <include>org/jetbrains/kotlin/idea/codeinsight/utils/ConvertLambdaToReferenceUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- code-insight/utils: NamedArgumentUtils (addArgumentName, addArgumentNames, associateArgumentNamesStartingAt, getStableNameFor) -->
+          <execution>
+            <id>copy-named-argument-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/intention-utils</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/utils/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/NamedArgumentUtils.kt</include>
                   </includes>
                 </resource>
               </resources>
