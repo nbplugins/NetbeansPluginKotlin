@@ -28,6 +28,38 @@ import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtPsiFactory
 
 /**
+ * Detects the indent step near [offset] by looking at [windowLines] lines before and after it.
+ *
+ * Collects the leading-whitespace lengths of non-empty lines in the window, sorts the unique
+ * values, and returns the minimum positive difference between adjacent levels — that is the
+ * actual indent step used around this position. Falls back to 4 spaces when no difference can
+ * be determined. Tab-indented files are detected by the presence of a leading tab and return
+ * `"\t"`.
+ */
+fun detectIndentStep(docText: String, offset: Int, windowLines: Int = 10): String {
+    // Find line boundaries of the window
+    var lineStart = offset
+    while (lineStart > 0 && docText[lineStart - 1] != '\n') lineStart--
+    var start = lineStart
+    repeat(windowLines) { if (start > 0) start = docText.lastIndexOf('\n', start - 1).let { if (it < 0) 0 else it + 1 } }
+    var end = offset
+    repeat(windowLines) { end = docText.indexOf('\n', end + 1).let { if (it < 0) docText.length else it } }
+
+    val indents = mutableSetOf<Int>()
+    var useTab = false
+    for (line in docText.substring(start, end).lineSequence()) {
+        if (line.isBlank()) continue
+        if (line.startsWith("\t")) { useTab = true; break }
+        val w = line.length - line.trimStart().length
+        if (w > 0) indents.add(w)
+    }
+    if (useTab) return "\t"
+    val sorted = indents.sorted()
+    val step = sorted.zipWithNext { a, b -> b - a }.filter { it > 0 }.minOrNull() ?: sorted.firstOrNull() ?: 4
+    return " ".repeat(step)
+}
+
+/**
  * Returns the PSI anchor for inserting / removing a type annotation on [element].
  *
  * This mirrors [org.jetbrains.kotlin.hints.intentions.getAnchor] for use in the K2 path.

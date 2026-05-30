@@ -79,5 +79,6 @@ internal fun makeBlock(exprText: String, exprStartOffset: Int, docText: String):
     var lineStart = exprStartOffset
     while (lineStart > 0 && docText[lineStart - 1] != '\n') lineStart--
     val lineIndent = docText.substring(lineStart, exprStartOffset).takeWhile { it == ' ' || it == '\t' }
-    return "{\n$lineIndent    $exprText\n$lineIndent}"
+    val step = detectIndentStep(docText, exprStartOffset)
+    return "{\n$lineIndent$step$exprText\n$lineIndent}"
 }

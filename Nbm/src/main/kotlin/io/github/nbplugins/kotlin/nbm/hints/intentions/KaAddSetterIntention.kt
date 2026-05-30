@@ -87,13 +87,15 @@ class KaAddSetterIntention(
         val insertAfter = property.getter?.textRange?.endOffset
             ?: property.textRange.endOffset
 
-        val docText = doc.getText(0, propStart)
-        val lastNewline = docText.lastIndexOf('\n')
-        val indent = if (lastNewline >= 0) docText.substring(lastNewline + 1).takeWhile { it.isWhitespace() } else ""
-        val ai = "$indent    "
+        val fullDocText = doc.getText(0, doc.length)
+        val docTextBefore = fullDocText.substring(0, propStart)
+        val lastNewline = docTextBefore.lastIndexOf('\n')
+        val indent = if (lastNewline >= 0) docTextBefore.substring(lastNewline + 1).takeWhile { it.isWhitespace() } else ""
+        val step = detectIndentStep(fullDocText, propStart)
+        val ai = "$indent$step"
 
         val setterText = if (property.hasInitializer()) {
-            "\n${ai}set(value) {\n${ai}    field = value\n${ai}}"
+            "\n${ai}set(value) {\n${ai}${step}field = value\n${ai}}"
         } else {
             "\n${ai}set(value) {\n${ai}}"
         }

@@ -75,7 +75,7 @@ class KaChopArgumentListIntention(
         val listStart = argList.textRange.startOffset
         val lineStart = fileText.lastIndexOf('\n', listStart - 1) + 1
         val lineIndent = fileText.substring(lineStart, listStart).takeWhile { it == ' ' || it == '\t' }
-        val indentStep = detectIndentStep(fileText)
+        val indentStep = detectIndentStep(fileText, listStart)
         val argIndent = lineIndent + indentStep
 
         val newText = buildString {
@@ -98,16 +98,4 @@ class KaChopArgumentListIntention(
         }
     }
 
-    /**
-     * Detects the indent step used in [fileText] by finding the first indented line.
-     * Falls back to four spaces.
-     */
-    private fun detectIndentStep(fileText: String): String {
-        for (line in fileText.lineSequence()) {
-            if (line.startsWith("\t")) return "\t"
-            if (line.startsWith("    ")) return "    "
-            if (line.length >= 2 && line.startsWith("  ") && !line.startsWith("    ")) return "  "
-        }
-        return "    "
-    }
 }

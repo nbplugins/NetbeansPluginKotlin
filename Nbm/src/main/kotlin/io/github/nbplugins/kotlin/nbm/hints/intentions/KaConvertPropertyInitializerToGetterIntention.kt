@@ -111,13 +111,15 @@ class KaConvertPropertyInitializerToGetterIntention(
         val typeAnnotation = if (typeText != null) ": $typeText" else ""
 
         // Determine the indentation of this property line
-        val docText = doc.getText(0, propStart)
-        val lastNewline = docText.lastIndexOf('\n')
-        val indent = if (lastNewline >= 0) docText.substring(lastNewline + 1).takeWhile { it.isWhitespace() } else ""
+        val fullDocText = doc.getText(0, doc.length)
+        val docTextBefore = fullDocText.substring(0, propStart)
+        val lastNewline = docTextBefore.lastIndexOf('\n')
+        val indent = if (lastNewline >= 0) docTextBefore.substring(lastNewline + 1).takeWhile { it.isWhitespace() } else ""
+        val step = detectIndentStep(fullDocText, propStart)
 
-        val getterLine = "\n${indent}    get() = ${initializer.text}"
+        val getterLine = "\n${indent}${step}get() = ${initializer.text}"
         val setterLine = if (property.isVar && property.setter == null)
-            "\n${indent}    set(value) {\n${indent}        TODO(\"Not yet implemented\")\n${indent}    }" else ""
+            "\n${indent}${step}set(value) {\n${indent}${step}${step}TODO(\"Not yet implemented\")\n${indent}${step}}" else ""
 
         val newText = "${propText.substring(0, declEnd)}$typeAnnotation$getterLine$setterLine"
         doc.atomicChange {
