@@ -1,0 +1,7 @@
+package intentions
+
+fun test(x: Int): String {
+    if (x == 1) return "one"
+    else if (x == 2) return "two"
+    else return "other"
+}

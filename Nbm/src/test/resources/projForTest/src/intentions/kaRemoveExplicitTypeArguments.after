@@ -1,0 +1,5 @@
+package intentions
+
+fun kaRemoveExplicitTypeArguments(): List<Int> {
+    return listOf(1, 2, 3)
+}

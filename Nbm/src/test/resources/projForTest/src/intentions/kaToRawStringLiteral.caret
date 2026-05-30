@@ -1,0 +1,3 @@
+package intentions
+
+fun kaToRawStringLiteral() = "Hello\"Wor<caret>ld"

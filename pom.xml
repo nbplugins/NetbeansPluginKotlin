@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin</artifactId>
-  <version>0.10.15-SNAPSHOT</version>
+  <version>0.10.26-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin</name>
   <properties>
@@ -25,13 +25,14 @@
     <jetbrains.annotations.version>26.0.2</jetbrains.annotations.version>
     <nbm.maven.plugin.version>14.4</nbm.maven.plugin.version>
     <surefire.version>3.5.5</surefire.version>
-    <maven.compiler.release>17</maven.compiler.release>
+    <maven.compiler.release>21</maven.compiler.release>
   </properties>
   <modules>
     <module>CoreImpl</module>
     <module>KotlinCompilerCliBase</module>
     <module>KotlinFormatter</module>
     <module>KotlinHighlighting</module>
+    <module>KotlinIntentionUtils</module>
     <module>KotlinIcons</module>
     <module>Nbm</module>
   </modules>
@@ -201,6 +202,11 @@
       <dependency>
         <groupId>io.github.nbplugins</groupId>
         <artifactId>netbeans-plugin-kotlin-highlighting</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.nbplugins</groupId>
+        <artifactId>netbeans-plugin-kotlin-intention-utils</artifactId>
         <version>${project.version}</version>
       </dependency>
 

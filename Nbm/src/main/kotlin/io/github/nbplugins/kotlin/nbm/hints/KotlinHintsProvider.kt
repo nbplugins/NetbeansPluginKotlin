@@ -26,15 +26,64 @@ import io.github.nbplugins.kotlin.nbm.hints.KaUnusedImportsComputer
 import io.github.nbplugins.kotlin.nbm.hints.KaUnusedParameterChecker
 import io.github.nbplugins.kotlin.nbm.hints.fixes.KaImplementMembersFix
 import io.github.nbplugins.kotlin.nbm.hints.fixes.KaQuickFix
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddWhenRemainingBranchesIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChangeReturnTypeIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertToBlockBodyIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertToExpressionBodyIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertTryFinallyToUseCallIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaFlattenWhenIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaIfToWhenIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaInvertIfConditionIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaMergeIfsIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveEmptyClassBodyIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveEmptyPrimaryConstructorIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveExplicitTypeIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaReplaceSizeCheckWithIsNotEmptyIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaSplitIfIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaSpecifyTypeIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaWhenToIfIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertToStringTemplateIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertToConcatenatedStringIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertToRawStringTemplateIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaToRawStringLiteralIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertConcatenationToBuildStringIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertStringTemplateToBuildStringIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertLambdaToReferenceIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertReferenceToLambdaIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaLambdaToAnonymousFunctionIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertLambdaToMultiLineIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertLambdaToSingleLineIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertForEachToForLoopIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertToForEachFunctionCallIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddNamesToCallArgumentsIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddNamesToFollowingArgumentsIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddNameToArgumentIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveAllArgumentNamesIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveSingleArgumentNameIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaPutCallsOnSeparateLinesIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChopArgumentListIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaJoinArgumentListIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertPropertyGetterToInitializerIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertPropertyInitializerToGetterIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddGetterIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddSetterIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaSplitPropertyDeclarationIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaMovePropertyToConstructorIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddBracesIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveBracesIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddBracesToAllBranchesIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveBracesFromAllBranchesIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertBinaryExpressionWithDemorgansLawIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaOperatorToFunctionIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaSwapBinaryExpressionIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaInsertExplicitTypeArgumentsIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveExplicitTypeArgumentsIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaSpecifyExplicitLambdaSignatureIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddOpenModifierIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChangeVisibilityToPublicIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChangeVisibilityToPrivateIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChangeVisibilityToProtectedIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChangeVisibilityToInternalIntention
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.hints.KotlinRuleContext
 import org.jetbrains.kotlin.hints.KotlinRule
@@ -75,7 +124,69 @@ class KotlinHintsProvider : HintsProvider {
                 KaConvertTryFinallyToUseCallIntention(doc, kaKtFile, psi),
                 KaReplaceSizeCheckWithIsNotEmptyIntention(doc, kaKtFile, psi),
                 KaRemoveEmptyClassBodyIntention(doc, kaKtFile, psi),
-                KaRemoveEmptyPrimaryConstructorIntention(doc, kaKtFile, psi)
+                KaRemoveEmptyPrimaryConstructorIntention(doc, kaKtFile, psi),
+                // Group A — When / If
+                KaAddWhenRemainingBranchesIntention(doc, kaKtFile, psi),
+                KaIfToWhenIntention(doc, kaKtFile, psi),
+                KaWhenToIfIntention(doc, kaKtFile, psi),
+                KaFlattenWhenIntention(doc, kaKtFile, psi),
+                KaMergeIfsIntention(doc, kaKtFile, psi),
+                KaSplitIfIntention(doc, kaKtFile, psi),
+                KaInvertIfConditionIntention(doc, kaKtFile, psi),
+                // Group B — String transformations
+                KaConvertToStringTemplateIntention(doc, kaKtFile, psi),
+                KaConvertToConcatenatedStringIntention(doc, kaKtFile, psi),
+                KaConvertToRawStringTemplateIntention(doc, kaKtFile, psi),
+                KaToRawStringLiteralIntention(doc, kaKtFile, psi),
+                KaConvertConcatenationToBuildStringIntention(doc, kaKtFile, psi),
+                KaConvertStringTemplateToBuildStringIntention(doc, kaKtFile, psi),
+                // Group C — Lambda / function reference
+                KaConvertLambdaToReferenceIntention(doc, kaKtFile, psi),
+                KaConvertReferenceToLambdaIntention(doc, kaKtFile, psi),
+                KaLambdaToAnonymousFunctionIntention(doc, kaKtFile, psi),
+                KaConvertLambdaToMultiLineIntention(doc, kaKtFile, psi),
+                KaConvertLambdaToSingleLineIntention(doc, kaKtFile, psi),
+                KaConvertForEachToForLoopIntention(doc, kaKtFile, psi),
+                KaConvertToForEachFunctionCallIntention(doc, kaKtFile, psi),
+
+                // Group D — Named call arguments
+                KaAddNamesToCallArgumentsIntention(doc, kaKtFile, psi),
+                KaAddNamesToFollowingArgumentsIntention(doc, kaKtFile, psi),
+                KaAddNameToArgumentIntention(doc, kaKtFile, psi),
+                KaRemoveAllArgumentNamesIntention(doc, kaKtFile, psi),
+                KaRemoveSingleArgumentNameIntention(doc, kaKtFile, psi),
+                KaPutCallsOnSeparateLinesIntention(doc, kaKtFile, psi),
+                KaChopArgumentListIntention(doc, kaKtFile, psi),
+                KaJoinArgumentListIntention(doc, kaKtFile, psi),
+
+                // Group E — Property / declaration
+                KaConvertPropertyGetterToInitializerIntention(doc, kaKtFile, psi),
+                KaConvertPropertyInitializerToGetterIntention(doc, kaKtFile, psi),
+                KaAddGetterIntention(doc, kaKtFile, psi),
+                KaAddSetterIntention(doc, kaKtFile, psi),
+                KaSplitPropertyDeclarationIntention(doc, kaKtFile, psi),
+                KaMovePropertyToConstructorIntention(doc, kaKtFile, psi),
+
+                // Group F — Braces
+                KaAddBracesIntention(doc, kaKtFile, psi),
+                KaRemoveBracesIntention(doc, kaKtFile, psi),
+                KaAddBracesToAllBranchesIntention(doc, kaKtFile, psi),
+                KaRemoveBracesFromAllBranchesIntention(doc, kaKtFile, psi),
+
+                // Group G — Expressions / operators
+                KaConvertBinaryExpressionWithDemorgansLawIntention(doc, kaKtFile, psi),
+                KaOperatorToFunctionIntention(doc, kaKtFile, psi),
+                KaSwapBinaryExpressionIntention(doc, kaKtFile, psi),
+                KaInsertExplicitTypeArgumentsIntention(doc, kaKtFile, psi),
+                KaRemoveExplicitTypeArgumentsIntention(doc, kaKtFile, psi),
+                KaSpecifyExplicitLambdaSignatureIntention(doc, kaKtFile, psi),
+
+                // Group H — Modifiers / visibility
+                KaAddOpenModifierIntention(doc, kaKtFile, psi),
+                KaChangeVisibilityToPublicIntention(doc, kaKtFile, psi),
+                KaChangeVisibilityToPrivateIntention(doc, kaKtFile, psi),
+                KaChangeVisibilityToProtectedIntention(doc, kaKtFile, psi),
+                KaChangeVisibilityToInternalIntention(doc, kaKtFile, psi)
             ).filter { it.isApplicable(psi.textRange.startOffset) }
         }
 

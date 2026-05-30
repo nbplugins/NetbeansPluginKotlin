@@ -1,0 +1,5 @@
+package intentions
+
+class AddSetter {
+    var x: Int = 5
+}

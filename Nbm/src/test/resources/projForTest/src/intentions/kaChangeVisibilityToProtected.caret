@@ -1,0 +1,5 @@
+package intentions
+
+open class KaChangeVisibilityToProtectedFoo {
+    <caret>fun bar(): Int = 42
+}

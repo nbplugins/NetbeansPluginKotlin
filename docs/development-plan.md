@@ -484,16 +484,15 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
   - [x] Full K2 diagnostic set (exhaustive `when`, type mismatch, unresolved reference) exposed
     in the NetBeans gutter + error stripe
 
-- **E3** — Parameter info and inlay hints:
-  - Ctrl+P (ParameterInfo): implement CSL `ParameterInfo` service;
-    show function signature popup with active parameter highlighted
-  - Inlay hints (parameter names at call sites): research NetBeans 23 inlay-hints API;
-    if unavailable, emulate via Editor annotations / `OffsetsBag`;
-    use `KaFunctionCall.argumentMapping` to obtain parameter names
+- [x] **E3** — Parameter info and inlay hints:
+  - [x] Ctrl+P (ParameterInfo): CSL `ParameterInfo` service; function signature popup with active parameter highlighted (PR #86)
+  - [ ] Inlay hints (parameter names at call sites): deferred — no public NetBeans 23 inlay-hints API found
 
 - **E4** — Extended intentions and quick-fixes matching IDEA set:
-  - Add missing `when` branches, convert expression/statement lambdas,
-    convert function to property, convert val↔var, introduce variable, etc.
+  - Add missing `when` branches, if↔when conversions, string template↔concat↔buildString conversions,
+    lambda↔reference↔anonymous function conversions, forEach↔for loop, named argument add/remove,
+    brace add/remove, property accessor generation, De Morgan's law, type argument insert/remove,
+    null-safety fixes, type mismatch fixes, modifier fixes, and more (~45 intentions + fixes)
 
 - **E5** — Formatter settings UI:
   - Port or adapt 6 IntelliJ formatter UI sources excluded from `bundled-jars/KotlinFormatter`

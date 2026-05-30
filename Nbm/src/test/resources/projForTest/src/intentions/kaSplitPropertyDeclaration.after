@@ -1,0 +1,6 @@
+package intentions
+
+fun splitPropertyDeclaration() {
+    val x: Int
+    x = 42
+}

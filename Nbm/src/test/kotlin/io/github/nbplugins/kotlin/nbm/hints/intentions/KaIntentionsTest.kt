@@ -57,4 +57,268 @@ class KaIntentionsTest : KaIntentionTestBase("KaIntentions test", "intentions") 
     fun testKaReplaceSizeCheckWithIsNotEmpty() = doTest("replaceSizeCheckWithIsNotEmpty") { doc, kaKtFile, psi ->
         KaReplaceSizeCheckWithIsNotEmptyIntention(doc, kaKtFile, psi)
     }
+
+    /** K2 path for "Add remaining when branches". */
+    fun testKaAddWhenRemainingBranches() = doTest("addWhenRemainingBranches") { doc, kaKtFile, psi ->
+        KaAddWhenRemainingBranchesIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Merge ifs". */
+    fun testKaMergeIfs() = doTest("mergeIfs") { doc, kaKtFile, psi ->
+        KaMergeIfsIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Split if into two". */
+    fun testKaSplitIf() = doTest("splitIf") { doc, kaKtFile, psi ->
+        KaSplitIfIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Invert 'if' condition". */
+    fun testKaInvertIfCondition() = doTest("invertIfCondition") { doc, kaKtFile, psi ->
+        KaInvertIfConditionIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Replace 'if' with 'when'". */
+    fun testKaIfToWhen() = doTest("ifToWhen") { doc, kaKtFile, psi ->
+        KaIfToWhenIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Replace 'when' with 'if'". */
+    fun testKaWhenToIf() = doTest("whenToIf") { doc, kaKtFile, psi ->
+        KaWhenToIfIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Flatten 'when' expression". */
+    fun testKaFlattenWhen() = doTest("flattenWhen") { doc, kaKtFile, psi ->
+        KaFlattenWhenIntention(doc, kaKtFile, psi)
+    }
+
+    // ── Group B — String transformations ─────────────────────────────────────
+
+    /** K2 path for "Convert concatenation to template". */
+    fun testKaConvertToStringTemplate() = doTest("convertToStringTemplate") { doc, kaKtFile, psi ->
+        KaConvertToStringTemplateIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Convert string template to concatenated string". */
+    fun testKaConvertToConcatenatedString() = doTest("convertToConcatenatedString") { doc, kaKtFile, psi ->
+        KaConvertToConcatenatedStringIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Convert concatenation to raw string". */
+    fun testKaConvertToRawStringTemplate() = doTest("kaConvertToRawStringTemplate") { doc, kaKtFile, psi ->
+        KaConvertToRawStringTemplateIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Convert to raw string literal". */
+    fun testKaToRawStringLiteral() = doTest("kaToRawStringLiteral") { doc, kaKtFile, psi ->
+        KaToRawStringLiteralIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Convert concatenation to 'buildString'". */
+    fun testKaConvertConcatenationToBuildString() = doTest("kaConvertConcatenationToBuildString") { doc, kaKtFile, psi ->
+        KaConvertConcatenationToBuildStringIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Convert string template to 'buildString'". */
+    fun testKaConvertStringTemplateToBuildString() = doTest("kaConvertStringTemplateToBuildString") { doc, kaKtFile, psi ->
+        KaConvertStringTemplateToBuildStringIntention(doc, kaKtFile, psi)
+    }
+
+    // ── Group C — Lambda / function reference ─────────────────────────────────
+
+    /** K2 path for "Convert lambda to reference". */
+    fun testKaConvertLambdaToReference() = doTest("kaConvertLambdaToReference") { doc, kaKtFile, psi ->
+        KaConvertLambdaToReferenceIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Convert reference to lambda". */
+    fun testKaConvertReferenceToLambda() = doTest("kaConvertReferenceToLambda") { doc, kaKtFile, psi ->
+        KaConvertReferenceToLambdaIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Convert to anonymous function". */
+    fun testKaLambdaToAnonymousFunction() = doTest("kaLambdaToAnonymousFunction") { doc, kaKtFile, psi ->
+        KaLambdaToAnonymousFunctionIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Put lambda body on multiple lines". */
+    fun testKaConvertLambdaToMultiLine() = doTest("kaConvertLambdaToMultiLine") { doc, kaKtFile, psi ->
+        KaConvertLambdaToMultiLineIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Put lambda body on one line". */
+    fun testKaConvertLambdaToSingleLine() = doTest("kaConvertLambdaToSingleLine") { doc, kaKtFile, psi ->
+        KaConvertLambdaToSingleLineIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Replace 'forEach' with a 'for' loop". */
+    fun testKaConvertForEachToForLoop() = doTest("kaConvertForEachToForLoop") { doc, kaKtFile, psi ->
+        KaConvertForEachToForLoopIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Replace 'for' loop with 'forEach' call". */
+    fun testKaConvertToForEachFunctionCall() = doTest("kaConvertToForEachFunctionCall") { doc, kaKtFile, psi ->
+        KaConvertToForEachFunctionCallIntention(doc, kaKtFile, psi)
+    }
+
+    // ── Group D — Named call arguments ────────────────────────────────────────
+
+    /** K2 path for "Add names to call arguments". */
+    fun testKaAddNamesToCallArguments() = doTest("kaAddNamesToCallArguments") { doc, kaKtFile, psi ->
+        KaAddNamesToCallArgumentsIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Add names to this argument and following arguments". */
+    fun testKaAddNamesToFollowingArguments() = doTest("kaAddNamesToFollowingArguments") { doc, kaKtFile, psi ->
+        KaAddNamesToFollowingArgumentsIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Add name to argument". */
+    fun testKaAddNameToArgument() = doTest("kaAddNameToArgument") { doc, kaKtFile, psi ->
+        KaAddNameToArgumentIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Remove all argument names". */
+    fun testKaRemoveAllArgumentNames() = doTest("kaRemoveAllArgumentNames") { doc, kaKtFile, psi ->
+        KaRemoveAllArgumentNamesIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Remove argument name". */
+    fun testKaRemoveSingleArgumentName() = doTest("kaRemoveSingleArgumentName") { doc, kaKtFile, psi ->
+        KaRemoveSingleArgumentNameIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Put calls on separate lines". */
+    fun testKaPutCallsOnSeparateLines() = doTest("kaPutCallsOnSeparateLines") { doc, kaKtFile, psi ->
+        KaPutCallsOnSeparateLinesIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Put arguments on separate lines". */
+    fun testKaChopArgumentList() = doTest("kaChopArgumentList") { doc, kaKtFile, psi ->
+        KaChopArgumentListIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Put arguments on one line". */
+    fun testKaJoinArgumentList() = doTest("kaJoinArgumentList") { doc, kaKtFile, psi ->
+        KaJoinArgumentListIntention(doc, kaKtFile, psi)
+    }
+
+    // ── Group E — Property / declaration ─────────────────────────────────────
+
+    /** K2 path for "Convert property getter to initializer". */
+    fun testKaConvertPropertyGetterToInitializer() = doTest("kaConvertPropertyGetterToInitializer") { doc, kaKtFile, psi ->
+        KaConvertPropertyGetterToInitializerIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Convert property initializer to getter". */
+    fun testKaConvertPropertyInitializerToGetter() = doTest("kaConvertPropertyInitializerToGetter") { doc, kaKtFile, psi ->
+        KaConvertPropertyInitializerToGetterIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Add getter". */
+    fun testKaAddGetter() = doTest("kaAddGetter") { doc, kaKtFile, psi ->
+        KaAddGetterIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Add setter". */
+    fun testKaAddSetter() = doTest("kaAddSetter") { doc, kaKtFile, psi ->
+        KaAddSetterIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Split property declaration". */
+    fun testKaSplitPropertyDeclaration() = doTest("kaSplitPropertyDeclaration") { doc, kaKtFile, psi ->
+        KaSplitPropertyDeclarationIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Move to constructor". */
+    fun testKaMovePropertyToConstructor() = doTest("kaMovePropertyToConstructor") { doc, kaKtFile, psi ->
+        KaMovePropertyToConstructorIntention(doc, kaKtFile, psi)
+    }
+
+    // ── Group F — Braces ─────────────────────────────────────────────────────
+
+    /** K2 path for "Add braces". */
+    fun testKaAddBraces() = doTest("kaAddBraces") { doc, kaKtFile, psi ->
+        KaAddBracesIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Remove braces". */
+    fun testKaRemoveBraces() = doTest("kaRemoveBraces") { doc, kaKtFile, psi ->
+        KaRemoveBracesIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Add braces to all branches". */
+    fun testKaAddBracesToAllBranches() = doTest("kaAddBracesToAllBranches") { doc, kaKtFile, psi ->
+        KaAddBracesToAllBranchesIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Remove braces from all branches". */
+    fun testKaRemoveBracesFromAllBranches() = doTest("kaRemoveBracesFromAllBranches") { doc, kaKtFile, psi ->
+        KaRemoveBracesFromAllBranchesIntention(doc, kaKtFile, psi)
+    }
+
+    // ── Group G — Expressions / operators ───────────────────────────────────
+
+    /** K2 path for "Replace '&&' with '||'" (De Morgan's law). */
+    fun testKaDemorgan() = doTest("kaDemorgan") { doc, kaKtFile, psi ->
+        KaConvertBinaryExpressionWithDemorgansLawIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Replace overloaded operator with function call". */
+    fun testKaOperatorToFunction() = doTest("kaOperatorToFunction") { doc, kaKtFile, psi ->
+        KaOperatorToFunctionIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Flip binary expression". */
+    fun testKaSwapBinaryExpression() = doTest("kaSwapBinaryExpression") { doc, kaKtFile, psi ->
+        KaSwapBinaryExpressionIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Add explicit type arguments". */
+    fun testKaInsertExplicitTypeArguments() = doTest("kaInsertExplicitTypeArguments") { doc, kaKtFile, psi ->
+        KaInsertExplicitTypeArgumentsIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Remove explicit type arguments". */
+    fun testKaRemoveExplicitTypeArguments() = doTest("kaRemoveExplicitTypeArguments") { doc, kaKtFile, psi ->
+        KaRemoveExplicitTypeArgumentsIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Specify explicit lambda signature". */
+    fun testKaSpecifyExplicitLambdaSignature() = doTest("kaSpecifyExplicitLambdaSignature") { doc, kaKtFile, psi ->
+        KaSpecifyExplicitLambdaSignatureIntention(doc, kaKtFile, psi)
+    }
+
+    // ── Group H — Modifiers / visibility ────────────────────────────────────
+
+    /** K2 path for "Make 'open'" on a final function in an open class. */
+    fun testKaAddOpenModifier() = doTest("kaAddOpenModifier") { doc, kaKtFile, psi ->
+        KaAddOpenModifierIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Make 'open'" not applicable on a function in a final class. */
+    fun testKaAddOpenModifierNotApplicable() = doTest("kaAddOpenModifierNotApplicable", applicable = false) { doc, kaKtFile, psi ->
+        KaAddOpenModifierIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Make public" (removes explicit private modifier). */
+    fun testKaChangeVisibilityToPublic() = doTest("kaChangeVisibilityToPublic") { doc, kaKtFile, psi ->
+        KaChangeVisibilityToPublicIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Make private". */
+    fun testKaChangeVisibilityToPrivate() = doTest("kaChangeVisibilityToPrivate") { doc, kaKtFile, psi ->
+        KaChangeVisibilityToPrivateIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Make protected". */
+    fun testKaChangeVisibilityToProtected() = doTest("kaChangeVisibilityToProtected") { doc, kaKtFile, psi ->
+        KaChangeVisibilityToProtectedIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Make internal". */
+    fun testKaChangeVisibilityToInternal() = doTest("kaChangeVisibilityToInternal") { doc, kaKtFile, psi ->
+        KaChangeVisibilityToInternalIntention(doc, kaKtFile, psi)
+    }
 }

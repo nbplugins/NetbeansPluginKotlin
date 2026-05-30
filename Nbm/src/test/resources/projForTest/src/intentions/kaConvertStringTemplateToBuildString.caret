@@ -1,0 +1,5 @@
+package intentions
+
+fun kaConvertStringTemplateToBuildString(name: String) {
+    val s = "Hello ${na<caret>me}!"
+}

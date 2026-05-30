@@ -1,0 +1,5 @@
+package intentions
+
+class KaChangeVisibilityToPublicFoo {
+    fun bar(): Int = 42
+}

@@ -1,0 +1,5 @@
+package intentions
+
+class AddGetter {
+    var <caret>x: Int = 5
+}

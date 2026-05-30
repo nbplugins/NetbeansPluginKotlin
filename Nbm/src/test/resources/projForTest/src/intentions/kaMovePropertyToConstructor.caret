@@ -1,0 +1,5 @@
+package intentions
+
+class MovePropertyToConstructor {
+    val <caret>name: String = "default"
+}

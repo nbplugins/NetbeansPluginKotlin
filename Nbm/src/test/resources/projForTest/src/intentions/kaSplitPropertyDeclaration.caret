@@ -1,0 +1,5 @@
+package intentions
+
+fun splitPropertyDeclaration() {
+    val <caret>x = 42
+}

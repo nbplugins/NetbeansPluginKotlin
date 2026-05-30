@@ -1,0 +1,9 @@
+package intentions
+
+fun kaConvertConcatenationToBuildString(name: String) {
+    val s = buildString {
+append("Hello ")
+append(name)
+append("!")
+}
+}

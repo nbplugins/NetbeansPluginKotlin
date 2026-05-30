@@ -1,0 +1,5 @@
+package intentions
+
+fun kaConvertLambdaToReference(list: List<String>): List<String> {
+    return list.map(kotlin.String::uppercase)
+}

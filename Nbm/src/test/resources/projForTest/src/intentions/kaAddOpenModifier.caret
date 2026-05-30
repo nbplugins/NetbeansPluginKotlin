@@ -1,0 +1,5 @@
+package intentions
+
+open class KaAddOpenModifierFoo {
+    <caret>fun bar(): Int = 42
+}
