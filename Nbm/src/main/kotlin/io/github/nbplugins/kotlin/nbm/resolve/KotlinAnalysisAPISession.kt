@@ -180,6 +180,8 @@ class KotlinAnalysisAPISession private constructor(
             "[PERF] KotlinAnalysisAPISession '$moduleName': buildStandaloneAnalysisAPISession total=${(System.nanoTime() - tBuild) / 1_000_000}ms"
         )
 
+        installPomModel(session)
+
         val tProvider = System.nanoTime()
         installLiveDeclarationProvider(session)
         KotlinLogger.INSTANCE.logInfo(
@@ -205,6 +207,21 @@ class KotlinAnalysisAPISession private constructor(
      *
      * @param session the freshly-built standalone session whose project services are patched
      */
+    /**
+     * Registers a [NoOpPomModel] on the session's project. The IntelliJ
+     * `ChangeUtil.prepareAndRunChangeAction` queries `PomManager.getModel(project)`
+     * during every PSI mutation (e.g. `PsiElement.replace()`); without this the
+     * call throws because the standalone container has no `PomModel` service.
+     */
+    private fun installPomModel(session: StandaloneAnalysisAPISession) {
+        val project = session.project
+        val mock = project as? com.intellij.mock.MockComponentManager ?: return
+        if (project.getService(com.intellij.pom.PomModel::class.java) == null) {
+            mock.registerService(com.intellij.pom.PomModel::class.java, NoOpPomModel())
+            KotlinLogger.INSTANCE.logInfo("Registered NoOpPomModel for project ${project.name}")
+        }
+    }
+
     private fun installLiveDeclarationProvider(session: StandaloneAnalysisAPISession) {
         val project = session.project
         val mock = project as? com.intellij.mock.MockComponentManager ?: return
@@ -258,23 +275,29 @@ class KotlinAnalysisAPISession private constructor(
                 }
             }
             registerHighlightInfoFilterEP()
+            registerStandaloneServices()
             appEnvInitialized = true
         }
 
         /**
-         * Registers extension points required by IDEA semantic highlighting code in the
-         * standalone application container.
+         * Registers extension points required by IDEA semantic highlighting and PSI mutation
+         * code in the standalone application container.
          *
-         * The IDEA highlighters query several EPs at runtime. In standalone mode these EPs are
-         * never registered, causing {@link IllegalArgumentException}. Registering them as empty
-         * points makes the EP lookups return empty lists so all highlights are accepted and no
-         * extensions are invoked.
+         * The IDEA highlighters and PSI tree operations query several EPs at runtime. In
+         * standalone mode these EPs are never registered, causing {@link IllegalArgumentException}.
+         * Registering them as empty points makes the EP lookups return empty lists so all
+         * highlights are accepted and no extensions are invoked.
          *
          * EPs registered:
          * - {@code com.intellij.daemon.highlightInfoFilter}: queried by {@code HighlightInfoB.isAcceptedByFilters()}
          *   and {@code AnnotationSessionImpl.create()} at highlight-creation time.
          * - {@code org.jetbrains.kotlin.callHighlighterExtension}: queried by
          *   {@code FunctionCallHighlighter.getHighlightInfoTypeForCallFromExtension()}.
+         * - {@code com.intellij.treeCopyHandler}: queried by {@code ChangeUtil.encodeInformation()}
+         *   when any PSI element is replaced (e.g. {@code PsiElement.replace()}). Required by
+         *   modcommand-based quick-fixes that perform PSI mutations.
+         * - {@code com.intellij.treeGenerator}: queried by {@code ChangeUtil.generateTreeElement()}
+         *   during PSI element copy/replacement.
          */
         private fun registerHighlightInfoFilterEP() {
             val app = com.intellij.openapi.application.ApplicationManager.getApplication()
@@ -284,6 +307,12 @@ class KotlinAnalysisAPISession private constructor(
                 com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE)
             registerEpIfAbsent(area, "org.jetbrains.kotlin.callHighlighterExtension",
                 "org.jetbrains.kotlin.idea.highlighting.KotlinCallHighlighterExtension",
+                com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE)
+            registerEpIfAbsent(area, "com.intellij.treeCopyHandler",
+                "com.intellij.psi.impl.source.tree.TreeCopyHandler",
+                com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE)
+            registerEpIfAbsent(area, "com.intellij.treeGenerator",
+                "com.intellij.psi.impl.source.tree.TreeGenerator",
                 com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE)
         }
 
@@ -299,13 +328,23 @@ class KotlinAnalysisAPISession private constructor(
          */
         private fun registerStandaloneServices() {
             val app = com.intellij.openapi.application.ApplicationManager.getApplication() as? MockApplication
-                ?: return
+            if (app == null) {
+                KotlinLogger.INSTANCE.logInfo("registerStandaloneServices: app is not MockApplication (was ${com.intellij.openapi.application.ApplicationManager.getApplication()?.javaClass?.name}); skipping")
+                return
+            }
             if (app.getService(com.intellij.util.concurrency.TransferredWriteActionService::class.java) == null) {
                 app.registerService(
                     com.intellij.util.concurrency.TransferredWriteActionService::class.java,
                     com.intellij.util.concurrency.TransferredWriteActionServiceImpl::class.java
                 )
                 KotlinLogger.INSTANCE.logInfo("Registered TransferredWriteActionService stub")
+            }
+            if (app.getService(com.intellij.psi.impl.source.codeStyle.IndentHelper::class.java) == null) {
+                app.registerService(
+                    com.intellij.psi.impl.source.codeStyle.IndentHelper::class.java,
+                    com.intellij.psi.impl.source.codeStyle.NoOpIndentHelper::class.java
+                )
+                KotlinLogger.INSTANCE.logInfo("Registered NoOpIndentHelper stub")
             }
         }
 

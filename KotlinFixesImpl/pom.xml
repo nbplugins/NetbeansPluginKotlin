@@ -1,0 +1,394 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.github.nbplugins</groupId>
+    <artifactId>netbeans-plugin-kotlin</artifactId>
+    <version>0.10.44-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+  <artifactId>netbeans-plugin-kotlin-fixes-impl</artifactId>
+  <packaging>jar</packaging>
+  <name>Netbeans Plugin Kotlin Fixes Impl</name>
+  <description>
+    K2 quick-fix action classes compiled from submodules/IntellijCommunity
+    (code-insight/api, frontend-independent/quickfix, code-insight/fixes-k2)
+    plus standalone extracted fix classes for private inner types.
+    Exposes KotlinPsiUpdateModCommandAction (with public invoke()) and all
+    concrete fix classes (AddDataModifierFix, RemoveArgumentFix, etc.) for
+    use by the NetBeans adapter layer in the Nbm module.
+  </description>
+
+  <build>
+    <!--
+      Sources are copied from multiple submodule directories and local src/main/kotlin
+      to target/generated-sources/fixes/ so that gmavenplus patches can modify copies
+      without dirtying the git submodule, and kotlin-maven-plugin compiles from one sourceDirectory.
+    -->
+    <sourceDirectory>${project.build.directory}/generated-sources/fixes</sourceDirectory>
+
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <executions>
+
+          <!-- code-insight/api: KotlinPsiUpdateModCommandAction (invoke() made public by gmavenplus patch) -->
+          <execution>
+            <id>copy-modcommand-action</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/fixes</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/api/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/api/applicable/intentions/KotlinPsiUpdateModCommandAction.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- frontend-independent: public fix action classes (extend KotlinPsiUpdateModCommandAction) -->
+          <execution>
+            <id>copy-frontend-independent-fixes</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/fixes</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/frontend-independent/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/quickfix/RemoveArgumentFix.kt</include>
+                    <include>org/jetbrains/kotlin/idea/quickfix/AddReifiedToTypeParameterOfFunctionFix.kt</include>
+                    <include>org/jetbrains/kotlin/idea/quickfix/AddReturnExpressionFix.kt</include>
+                    <include>org/jetbrains/kotlin/idea/quickfix/AddJvmInlineAnnotationFix.kt</include>
+                    <include>org/jetbrains/kotlin/idea/quickfix/ChangeObjectToClassFix.kt</include>
+                    <include>org/jetbrains/kotlin/idea/quickfix/RemoveDefaultParameterValueFix.kt</include>
+                    <include>org/jetbrains/kotlin/idea/quickfix/MoveTypeAliasToTopLevelFix.kt</include>
+                    <include>org/jetbrains/kotlin/idea/quickfix/RemoveSupertypeFix.kt</include>
+                    <include>org/jetbrains/kotlin/idea/quickfix/TooLongCharLiteralToStringFix.kt</include>
+                    <include>org/jetbrains/kotlin/idea/quickfix/RemoveNoConstructorFix.kt</include>
+                    <include>org/jetbrains/kotlin/idea/quickfix/ChangeToFunctionInvocationFix.kt</include>
+                    <include>org/jetbrains/kotlin/idea/quickfix/MakeOverriddenMemberOpenFixUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- code-insight/impl-base: AddAccessorUtils (needed by AddAccessorsQuickFix) -->
+          <execution>
+            <id>copy-impl-base-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/fixes</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/impl-base/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsights/impl/base/intentions/AddAccessorUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- Local standalone fix classes (public versions of fixes-k2 private inner classes) -->
+          <execution>
+            <id>copy-local-fixes</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/fixes</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/src/main/kotlin</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+        </executions>
+      </plugin>
+
+      <!--
+        Patch API incompatibilities:
+        1. Make KotlinPsiUpdateModCommandAction.invoke() public so KaModCommandFix can call it directly.
+        2. Remove ContextProvider import/reference not needed in this standalone context.
+      -->
+      <plugin>
+        <groupId>org.codehaus.gmavenplus</groupId>
+        <artifactId>gmavenplus-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>patch-fixes-impl</id>
+            <phase>generate-sources</phase>
+            <goals><goal>execute</goal></goals>
+            <configuration>
+              <scripts>
+                <script><![CDATA[
+import java.nio.file.*
+
+def srcDir = new File(project.build.directory, 'generated-sources/fixes')
+
+def patches = [
+  // Make invoke() public so KaModCommandFix can call it directly without reflection
+  [file: 'org/jetbrains/kotlin/idea/codeinsight/api/applicable/intentions/KotlinPsiUpdateModCommandAction.kt',
+   old:  'protected abstract fun invoke(',
+   new_: 'public abstract fun invoke('],
+]
+
+// Remove ClassBased inner class from KotlinPsiUpdateModCommandAction — we only use ElementBased,
+// and ClassBased imports ContextProvider/getElementContext/KtElement which are not in our classpath.
+def modCommandFile = new File(srcDir,
+  'org/jetbrains/kotlin/idea/codeinsight/api/applicable/intentions/KotlinPsiUpdateModCommandAction.kt')
+if (modCommandFile.exists()) {
+  def lines = modCommandFile.readLines()
+  def out = []
+  def skipImports = [
+    'import org.jetbrains.kotlin.idea.codeinsight.api.applicable.ContextProvider',
+    'import org.jetbrains.kotlin.idea.codeinsight.api.applicable.getElementContext',
+    'import org.jetbrains.kotlin.psi.KtElement',
+    // Note: kotlin.reflect.KClass is kept — used in the sealed class constructor signature
+  ]
+  def inClassBased = false
+  def braceDepth = 0
+  lines.each { line ->
+    if (skipImports.any { line.startsWith(it) }) return
+    if (!inClassBased && line.contains('abstract class ClassBased')) {
+      inClassBased = true
+      braceDepth = 0
+    }
+    if (inClassBased) {
+      braceDepth += line.count('{') - line.count('}')
+      if (braceDepth <= 0 && line.contains('}')) { inClassBased = false }
+      return
+    }
+    out << line
+  }
+  modCommandFile.text = out.join('\n')
+  log.info("Removed ClassBased from KotlinPsiUpdateModCommandAction.kt")
+}
+
+patches.each { p ->
+  def f = new File(srcDir, p.file)
+  if (!f.exists()) { log.warn("patch target not found: ${p.file}"); return }
+  def text = f.text
+  if (!text.contains(p.old)) { log.warn("patch target not found in ${p.file}: '${p.old}'"); return }
+  f.text = text.replace(p.old, p.new_)
+  log.info("Patched ${p.file}")
+}
+
+// AddAccessorUtils: replace 'startOffset' extension (not on classpath) with 'textRange.startOffset'
+def addAccessorUtilsFile = new File(srcDir,
+  'org/jetbrains/kotlin/idea/codeinsights/impl/base/intentions/AddAccessorUtils.kt')
+if (addAccessorUtilsFile.exists()) {
+  def text = addAccessorUtilsFile.text
+  text = text.replace('import org.jetbrains.kotlin.psi.psiUtil.startOffset\n', '')
+  text = text.replace('.startOffset', '.textRange.startOffset')
+  addAccessorUtilsFile.text = text
+  log.info("Patched AddAccessorUtils.kt: removed startOffset import, use textRange.startOffset")
+}
+
+// AddJvmInlineAnnotationFix: replace 'addAnnotation(ClassId)' (from base/code-insight, not on classpath)
+// with direct KtPsiFactory annotation entry creation.
+def addJvmInlineFile = new File(srcDir, 'org/jetbrains/kotlin/idea/quickfix/AddJvmInlineAnnotationFix.kt')
+if (addJvmInlineFile.exists()) {
+  def text = addJvmInlineFile.text
+  text = text.replace('import org.jetbrains.kotlin.idea.util.addAnnotation\n', '')
+  text = text.replace('import org.jetbrains.kotlin.name.ClassId\n', '')
+  text = text.replace('import org.jetbrains.kotlin.name.FqName\n', '')
+  text = text.replace(
+    '''        val jvmInlineFqName = FqName("kotlin.jvm.JvmInline")
+        val jvmInlineClassId = ClassId.topLevel(jvmInlineFqName)
+        element.addAnnotation(jvmInlineClassId)''',
+    '''        element.addAnnotationEntry(KtPsiFactory(actionContext.project).createAnnotationEntry("@kotlin.jvm.JvmInline"))'''
+  )
+  // add KtPsiFactory import if not already present
+  if (!text.contains('import org.jetbrains.kotlin.psi.KtPsiFactory')) {
+    text = text.replace('import org.jetbrains.kotlin.psi.KtClass\n',
+                        'import org.jetbrains.kotlin.psi.KtClass\nimport org.jetbrains.kotlin.psi.KtPsiFactory\n')
+  }
+  addJvmInlineFile.text = text
+  log.info("Patched AddJvmInlineAnnotationFix.kt: replaced addAnnotation(ClassId) with KtPsiFactory")
+}
+
+// AddReturnExpressionFix: remove safeAs and endOffset (not on classpath); simplify invoke body.
+def addReturnExprFile = new File(srcDir, 'org/jetbrains/kotlin/idea/quickfix/AddReturnExpressionFix.kt')
+if (addReturnExprFile.exists()) {
+  def text = addReturnExprFile.text
+  text = text.replace('import org.jetbrains.kotlin.psi.psiUtil.endOffset\n', '')
+  text = text.replace('import org.jetbrains.kotlin.utils.addToStdlib.safeAs\n', '')
+  text = text.replace('import org.jetbrains.kotlin.psi.KtReturnExpression\n', '')
+  // Replace the body: remove safeAs cast, updater.select, updater.moveCaretTo
+  text = text.replace(
+    '''        val returnExpression = psiFactory.createExpression("return TODO(\\"${KotlinBundle.message("provide.return.value")}\\")")
+        val todo = bodyBlock.addBefore(returnExpression, rBrace).safeAs<KtReturnExpression>()?.returnedExpression ?: return
+        updater.select(todo)
+        updater.moveCaretTo(todo.endOffset)''',
+    '''        val returnExpression = psiFactory.createExpression("return TODO(\\"Provide return value\\")")
+        bodyBlock.addBefore(returnExpression, rBrace)'''
+  )
+  addReturnExprFile.text = text
+  log.info("Patched AddReturnExpressionFix.kt: removed safeAs/endOffset, simplified invoke body")
+}
+                ]]></script>
+              </scripts>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-maven-plugin</artifactId>
+        <configuration>
+          <languageVersion>${kotlin.runtime.languageVersion}</languageVersion>
+          <apiVersion>${kotlin.runtime.languageVersion}</apiVersion>
+          <jvmTarget>17</jvmTarget>
+          <args>
+            <arg>-Xskip-metadata-version-check</arg>
+            <!-- context() receivers used by some fix utilities -->
+            <arg>-Xcontext-receivers</arg>
+            <arg>-opt-in=kotlin.RequiresOptIn</arg>
+            <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaExperimentalApi</arg>
+            <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaIdeApi</arg>
+          </args>
+          <sourceDirs>
+            <sourceDir>${project.build.directory}/generated-sources/fixes</sourceDir>
+          </sourceDirs>
+        </configuration>
+        <executions>
+          <execution>
+            <id>compile</id>
+            <phase>process-sources</phase>
+            <goals><goal>compile</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <compilerArgument>-proc:none</compilerArgument>
+        </configuration>
+        <executions>
+          <execution>
+            <id>default-compile</id>
+            <phase>compile</phase>
+            <goals><goal>compile</goal></goals>
+            <configuration>
+              <sourceDirs>
+                <sourceDir>${project.build.directory}/generated-sources/fixes</sourceDir>
+              </sourceDirs>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <dependencies>
+    <!-- IntelliJ platform: PsiElement, Project, modcommand API -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>analysis</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>extensions</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <!-- core-impl:193: provides StubBasedPsiElementBase, LazyParseablePsiElement, ASTWrapperPsiElement,
+         PsiFileBase, PsiClassOwner — base classes that kotlin-compiler-common-for-ide PSI types extend -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core-impl</artifactId>
+      <version>193.7288.26</version>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <!-- Kotlin PSI (KtExpression, KtClass, KtParameter, etc.) -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-compiler-ir-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-compiler-common-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <!-- Analysis API: KaSession, KaFirDiagnostic, etc. -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-impl-base-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <!-- java-psi: PsiClassOwner, PsiClassOwnerEx — supertypes of KtFile needed for compilation -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.java</groupId>
+      <artifactId>java-psi</artifactId>
+      <version>${intellij.platform.253.version}</version>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <!-- KotlinIntentionUtils: KotlinBundle, AddRemainingWhenBranchesUtils, etc. -->
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-intention-utils</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.jetbrains</groupId>
+      <artifactId>annotations</artifactId>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+</project>
