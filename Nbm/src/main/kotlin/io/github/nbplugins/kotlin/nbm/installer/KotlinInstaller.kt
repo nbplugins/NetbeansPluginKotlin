@@ -19,7 +19,11 @@ package io.github.nbplugins.kotlin.nbm.installer
 
 import org.jetbrains.kotlin.project.KotlinSources
 import org.jetbrains.kotlin.installer.KotlinUpdater
+import io.github.nbplugins.kotlin.nbm.highlighter.KaSemanticHighlightingVisitor
+import io.github.nbplugins.kotlin.nbm.highlighter.KotlinSemanticHighlightsLayerFactory
+import io.github.nbplugins.kotlin.nbm.hover.KotlinTooltipHighlightsLayerFactory
 import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectHelper
+import org.netbeans.modules.parsing.api.Source
 import org.netbeans.modules.parsing.api.indexing.IndexingManager
 import org.openide.filesystems.FileObject
 import org.openide.loaders.DataObject
@@ -40,8 +44,22 @@ class KotlinInstaller : ModuleInstall() {
     override fun restored() {
         FakeIntellijHome.StartingUp().run()
         KotlinAnalysisAPISession.initApplicationEnvironment()
-        WindowManager.getDefault().invokeWhenUIReady { 
+        WindowManager.getDefault().invokeWhenUIReady {
             ProjectUtils.checkKtHome()
+            // Pre-warm sessions for .kt files already open at startup (restored from previous session).
+            // Their "opened" events fired before our listener was registered, so handle them explicitly.
+            WindowManager.getDefault().registry.opened
+                .filterIsInstance<TopComponent>()
+                .mapNotNull { tc -> tc.lookup?.lookup(DataObject::class.java)?.primaryFile }
+                .filter { it.mimeType == "text/x-kotlin" }
+                .forEach { file ->
+                    KotlinLogger.INSTANCE.logInfo("[TIME] KotlinInstaller: .kt file already open at startup ${file.path} at ${now()}")
+                    checkProjectConfiguration(file)
+                    val proj = ProjectUtils.getKotlinProjectForFileObject(file) ?: return@forEach
+                    org.openide.util.RequestProcessor.getDefault().post {
+                        preAnalyzeFile(file, proj)
+                    }
+                }
             WindowManager.getDefault().registry.addPropertyChangeListener listener@{
                 if (it.propertyName == "opened") {
                     val newHashSet = it.newValue as HashSet<*>
@@ -76,6 +94,28 @@ class KotlinInstaller : ModuleInstall() {
         }
     }
     
+    /**
+     * Builds the K2 session for [proj] and runs semantic analysis on [file] directly, without
+     * waiting for [org.netbeans.modules.parsing.spi.Scheduler.EDITOR_SENSITIVE_TASK_SCHEDULER].
+     * Called on a background thread for `.kt` files restored from the previous NetBeans session so
+     * that highlights are ready before the user clicks on the tab.
+     */
+    private fun preAnalyzeFile(file: FileObject, proj: org.netbeans.api.project.Project) {
+        runCatching {
+            val session = KotlinAnalysisAPISession.getSession(proj)
+            val kaKtFile = session.getKtFileForPath(file.path) ?: return
+            val highlights = KaSemanticHighlightingVisitor(kaKtFile).computeHighlightingRanges()
+            val doc = Source.create(file).getDocument(true) ?: return
+            KotlinSemanticHighlightsLayerFactory.applyHighlights(doc, highlights)
+            KotlinTooltipHighlightsLayerFactory.applyTooltipRanges(doc, highlights.keys)
+            KotlinLogger.INSTANCE.logInfo(
+                "[TIME] KotlinInstaller: startup pre-analysis applied for ${file.path} at ${now()} (${highlights.size} ranges)"
+            )
+        }.onFailure { ex ->
+            KotlinLogger.INSTANCE.logWarning("Startup pre-analysis failed for ${file.path}:\n${ex.stackTraceToString()}")
+        }
+    }
+
     private fun checkVirtualSourceProvider(file: FileObject) {
         val project = ProjectUtils.getKotlinProjectForFileObject(file) ?: return
         if (!KotlinProjectHelper.hasJavaFiles(project)) {
