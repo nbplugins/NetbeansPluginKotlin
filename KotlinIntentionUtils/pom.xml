@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.10.32-SNAPSHOT</version>
+    <version>0.10.44-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-intention-utils</artifactId>
@@ -79,6 +79,26 @@
                   <filtering>false</filtering>
                   <includes>
                     <include>org/jetbrains/kotlin/idea/base/resources/KotlinBundle.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- KotlinBundle.properties: copied into classpath under messages/ so DynamicBundle resolves it -->
+          <execution>
+            <id>copy-kotlin-bundle-properties</id>
+            <phase>generate-resources</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.outputDirectory}/messages</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/resources/resources-en/messages</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>KotlinBundle.properties</include>
                   </includes>
                 </resource>
               </resources>

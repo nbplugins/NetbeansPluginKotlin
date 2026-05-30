@@ -24,8 +24,24 @@ import javax.swing.text.StyledDocument
 import io.github.nbplugins.kotlin.nbm.hints.KaApplicableIntention
 import io.github.nbplugins.kotlin.nbm.hints.KaUnusedImportsComputer
 import io.github.nbplugins.kotlin.nbm.hints.KaUnusedParameterChecker
+import io.github.nbplugins.kotlin.nbm.hints.fixes.KaAddAccessorsFix
+import io.github.nbplugins.kotlin.nbm.hints.fixes.KaAddInlineModifierFix
+import io.github.nbplugins.kotlin.nbm.hints.fixes.KaAddJvmInlineFix
+import io.github.nbplugins.kotlin.nbm.hints.fixes.KaAddReturnExpressionFix
+import io.github.nbplugins.kotlin.nbm.hints.fixes.KaAddSuspendModifierFix
+import io.github.nbplugins.kotlin.nbm.hints.fixes.KaAddTypeAnnotationToValueParamFix
+import io.github.nbplugins.kotlin.nbm.hints.fixes.KaAddValVarToConstructorParamFix
+import io.github.nbplugins.kotlin.nbm.hints.fixes.KaAddWhenRemainingBranchFix
+import io.github.nbplugins.kotlin.nbm.hints.fixes.KaChangeObjectToClassFix
+import io.github.nbplugins.kotlin.nbm.hints.fixes.KaChangeToFunctionInvocationFix
 import io.github.nbplugins.kotlin.nbm.hints.fixes.KaImplementMembersFix
+import io.github.nbplugins.kotlin.nbm.hints.fixes.KaMoveTypeAliasToTopLevelFix
 import io.github.nbplugins.kotlin.nbm.hints.fixes.KaQuickFix
+import io.github.nbplugins.kotlin.nbm.hints.fixes.KaRemoveArgumentFix
+import io.github.nbplugins.kotlin.nbm.hints.fixes.KaRemoveDefaultParameterValueFix
+import io.github.nbplugins.kotlin.nbm.hints.fixes.KaRemoveNoConstructorFix
+import io.github.nbplugins.kotlin.nbm.hints.fixes.KaRemoveSupertypeFix
+import io.github.nbplugins.kotlin.nbm.hints.fixes.KaTooLongCharLiteralFix
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddWhenRemainingBranchesIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChangeReturnTypeIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaConvertToBlockBodyIntention
@@ -190,14 +206,37 @@ class KotlinHintsProvider : HintsProvider {
             ).filter { it.isApplicable(psi.textRange.startOffset) }
         }
 
-        private fun KaDiagnosticError.listOfK2QuickFixes(kaKtFile: KtFile): List<KaQuickFix> = listOf(
-            KaImplementMembersFix(this, kaKtFile)
+        private fun KaDiagnosticError.listOfK2QuickFixes(kaKtFile: KtFile, doc: Document): List<KaQuickFix> = listOf(
+            KaImplementMembersFix(this, kaKtFile),
+            // Modifier additions
+            KaAddReturnExpressionFix(this, doc, kaKtFile),
+            KaAddJvmInlineFix(this, doc, kaKtFile),
+            KaAddValVarToConstructorParamFix(this, doc, kaKtFile),
+            KaChangeObjectToClassFix(this, doc, kaKtFile),
+            KaRemoveDefaultParameterValueFix(this, doc, kaKtFile),
+            KaAddInlineModifierFix(this, doc, kaKtFile),
+            KaAddSuspendModifierFix(this, doc, kaKtFile),
+            // Expression text edits
+            KaRemoveArgumentFix(this, doc, kaKtFile),
+            KaChangeToFunctionInvocationFix(this, doc, kaKtFile),
+            KaMoveTypeAliasToTopLevelFix(this, doc, kaKtFile),
+            KaTooLongCharLiteralFix(this, doc, kaKtFile),
+            // Supertype / constructor
+            KaRemoveSupertypeFix(this, doc, kaKtFile),
+            KaRemoveNoConstructorFix(this, doc, kaKtFile),
+            // Properties / initialization
+            KaAddAccessorsFix(this, doc, kaKtFile),
+            KaAddTypeAnnotationToValueParamFix(this, doc, kaKtFile),
+            // When
+            KaAddWhenRemainingBranchFix(this, doc, kaKtFile),
         ).filter(KaQuickFix::isApplicable)
 
-        private fun RuleContext.k2QuickFixList(kaKtFile: KtFile): List<KaQuickFix> =
-            parserResult.diagnostics
+        private fun RuleContext.k2QuickFixList(kaKtFile: KtFile): List<KaQuickFix> {
+            val doc = parserResult.snapshot?.source?.getDocument(false) ?: return emptyList()
+            return parserResult.diagnostics
                 .filterIsInstance(KaDiagnosticError::class.java)
-                .flatMap { it.listOfK2QuickFixes(kaKtFile) }
+                .flatMap { it.listOfK2QuickFixes(kaKtFile, doc) }
+        }
 
         /**
          * Wraps a K2 [HintFix] so that after [HintFix.implement] runs, the file is saved and
