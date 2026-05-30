@@ -1,4 +1,4 @@
-# 0.10
+# 0.10.12 (2026-05-30)
 
 - Fixed semantic highlighting being completely absent for Kotlin files where K2 symbol resolution crashes on a single element (e.g. due to FIR phase ordering in projects targeting JVM 1.8): before-resolve highlights (class/function/property/parameter names, annotation entries) are now always applied, and K2-resolve highlights accumulate up to the failing element instead of being discarded entirely.
 - Added 17 K2 quick-fixes matching IDEA: modifier fixes (add `@JvmInline`, add `val`/`var` to constructor parameter, add `suspend`, add `noinline`/`crossinline`, convert object with constructor to class, add return expression), expression fixes (remove extra argument, convert to function invocation, move nested type alias to top level, convert char literal to string), supertype/constructor fixes (remove supertype, remove constructor invocation), property fixes (add getter/setter accessors, add explicit type annotation to parameter), and `when` fix (add remaining branches).
