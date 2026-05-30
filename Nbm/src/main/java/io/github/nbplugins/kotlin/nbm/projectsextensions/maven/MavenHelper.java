@@ -21,11 +21,14 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -261,6 +264,71 @@ public class MavenHelper {
         }
 
         return dependencyProjects;
+    }
+
+    /**
+     * Returns the list of source directories declared in {@code kotlin-maven-plugin}'s
+     * {@code <sourceDirs>} configuration, with {@code ${project.basedir}} resolved to
+     * the project's base directory.
+     *
+     * <p>NetBeans reads the Maven POM statically and does not evaluate plugin bindings,
+     * so source directories added by {@code kotlin-maven-plugin} at build time (e.g.
+     * {@code src/main/kotlin}) are invisible to the standard {@link
+     * org.netbeans.api.java.classpath.ClassPath#SOURCE} query. This method reads them
+     * directly from the plugin configuration via reflection.
+     *
+     * <p>Both {@code <source>} and {@code <sourceDir>} child element names are supported
+     * since different versions of the plugin use different names.
+     *
+     * @param proj the NetBeans project (must be a Maven project with
+     *             {@code getOriginalMavenProject()} accessible via reflection)
+     * @return deduplicated list of absolute paths; empty list if the plugin is absent
+     *         or an error occurs
+     */
+    public static List<String> getKotlinPluginSourceDirs(Project proj) {
+        Object mavenProject = getOriginalMavenProject(proj);
+        if (mavenProject == null) return Collections.emptyList();
+        try {
+            File baseDir = (File) mavenProject.getClass().getMethod("getBasedir").invoke(mavenProject);
+            String baseDirPath = baseDir.getAbsolutePath();
+
+            Object buildPlugins = mavenProject.getClass().getMethod("getBuildPlugins").invoke(mavenProject);
+            if (!(buildPlugins instanceof Collection)) return Collections.emptyList();
+
+            Set<String> result = new LinkedHashSet<>();
+            for (Object plugin : (Collection<?>) buildPlugins) {
+                String gId = (String) plugin.getClass().getMethod("getGroupId").invoke(plugin);
+                String aId = (String) plugin.getClass().getMethod("getArtifactId").invoke(plugin);
+                if (!"org.jetbrains.kotlin".equals(gId) || !"kotlin-maven-plugin".equals(aId)) continue;
+
+                Object executions = plugin.getClass().getMethod("getExecutions").invoke(plugin);
+                if (!(executions instanceof Collection)) continue;
+                for (Object exec : (Collection<?>) executions) {
+                    Object config = exec.getClass().getMethod("getConfiguration").invoke(exec);
+                    if (config == null) continue;
+                    Object sourceDirsNode = config.getClass()
+                            .getMethod("getChild", String.class).invoke(config, "sourceDirs");
+                    if (sourceDirsNode == null) continue;
+                    // kotlin-maven-plugin uses <source> or <sourceDir> depending on version
+                    for (String childName : new String[]{"source", "sourceDir"}) {
+                        Object[] children = (Object[]) sourceDirsNode.getClass()
+                                .getMethod("getChildren", String.class).invoke(sourceDirsNode, childName);
+                        for (Object child : children) {
+                            String val = (String) child.getClass().getMethod("getValue").invoke(child);
+                            if (val == null || val.isBlank()) continue;
+                            val = val.replace("${project.basedir}", baseDirPath).trim();
+                            File resolved = new File(val);
+                            if (!resolved.isAbsolute()) resolved = new File(baseDir, val);
+                            result.add(resolved.getAbsolutePath());
+                        }
+                    }
+                }
+            }
+            return new ArrayList<>(result);
+        } catch (ReflectiveOperationException ex) {
+            KotlinLogger.INSTANCE.logException("getKotlinPluginSourceDirs failed", ex);
+            return Collections.emptyList();
+        }
     }
 
 }
