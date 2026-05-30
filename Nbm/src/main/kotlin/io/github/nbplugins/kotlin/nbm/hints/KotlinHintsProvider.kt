@@ -79,6 +79,11 @@ import io.github.nbplugins.kotlin.nbm.hints.intentions.KaSwapBinaryExpressionInt
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaInsertExplicitTypeArgumentsIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaRemoveExplicitTypeArgumentsIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaSpecifyExplicitLambdaSignatureIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaAddOpenModifierIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChangeVisibilityToPublicIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChangeVisibilityToPrivateIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChangeVisibilityToProtectedIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChangeVisibilityToInternalIntention
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.hints.KotlinRuleContext
 import org.jetbrains.kotlin.hints.KotlinRule
@@ -174,7 +179,14 @@ class KotlinHintsProvider : HintsProvider {
                 KaSwapBinaryExpressionIntention(doc, kaKtFile, psi),
                 KaInsertExplicitTypeArgumentsIntention(doc, kaKtFile, psi),
                 KaRemoveExplicitTypeArgumentsIntention(doc, kaKtFile, psi),
-                KaSpecifyExplicitLambdaSignatureIntention(doc, kaKtFile, psi)
+                KaSpecifyExplicitLambdaSignatureIntention(doc, kaKtFile, psi),
+
+                // Group H — Modifiers / visibility
+                KaAddOpenModifierIntention(doc, kaKtFile, psi),
+                KaChangeVisibilityToPublicIntention(doc, kaKtFile, psi),
+                KaChangeVisibilityToPrivateIntention(doc, kaKtFile, psi),
+                KaChangeVisibilityToProtectedIntention(doc, kaKtFile, psi),
+                KaChangeVisibilityToInternalIntention(doc, kaKtFile, psi)
             ).filter { it.isApplicable(psi.textRange.startOffset) }
         }
 

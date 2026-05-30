@@ -1,0 +1,5 @@
+package intentions
+
+class KaChangeVisibilityToPrivateFoo {
+    <caret>fun bar(): Int = 42
+}

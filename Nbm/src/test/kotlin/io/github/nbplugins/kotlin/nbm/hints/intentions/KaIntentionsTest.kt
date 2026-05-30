@@ -289,4 +289,36 @@ class KaIntentionsTest : KaIntentionTestBase("KaIntentions test", "intentions") 
     fun testKaSpecifyExplicitLambdaSignature() = doTest("kaSpecifyExplicitLambdaSignature") { doc, kaKtFile, psi ->
         KaSpecifyExplicitLambdaSignatureIntention(doc, kaKtFile, psi)
     }
+
+    // ── Group H — Modifiers / visibility ────────────────────────────────────
+
+    /** K2 path for "Make 'open'" on a final function in an open class. */
+    fun testKaAddOpenModifier() = doTest("kaAddOpenModifier") { doc, kaKtFile, psi ->
+        KaAddOpenModifierIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Make 'open'" not applicable on a function in a final class. */
+    fun testKaAddOpenModifierNotApplicable() = doTest("kaAddOpenModifierNotApplicable", applicable = false) { doc, kaKtFile, psi ->
+        KaAddOpenModifierIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Make public" (removes explicit private modifier). */
+    fun testKaChangeVisibilityToPublic() = doTest("kaChangeVisibilityToPublic") { doc, kaKtFile, psi ->
+        KaChangeVisibilityToPublicIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Make private". */
+    fun testKaChangeVisibilityToPrivate() = doTest("kaChangeVisibilityToPrivate") { doc, kaKtFile, psi ->
+        KaChangeVisibilityToPrivateIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Make protected". */
+    fun testKaChangeVisibilityToProtected() = doTest("kaChangeVisibilityToProtected") { doc, kaKtFile, psi ->
+        KaChangeVisibilityToProtectedIntention(doc, kaKtFile, psi)
+    }
+
+    /** K2 path for "Make internal". */
+    fun testKaChangeVisibilityToInternal() = doTest("kaChangeVisibilityToInternal") { doc, kaKtFile, psi ->
+        KaChangeVisibilityToInternalIntention(doc, kaKtFile, psi)
+    }
 }

@@ -1,0 +1,5 @@
+package intentions
+
+class KaChangeVisibilityToInternalFoo {
+    internal fun bar(): Int = 42
+}
