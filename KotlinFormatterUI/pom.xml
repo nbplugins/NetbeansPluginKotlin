@@ -1,0 +1,365 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.github.nbplugins</groupId>
+    <artifactId>netbeans-plugin-kotlin</artifactId>
+    <version>0.11.0-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+  <artifactId>netbeans-plugin-kotlin-formatter-ui</artifactId>
+  <packaging>jar</packaging>
+  <name>Netbeans Plugin Kotlin Formatter UI</name>
+  <description>
+    IntelliJ platform UI components (JBTable, JBScrollPane, ComboBox, Kotlin UI DSL, etc.)
+    compiled from submodules/IntellijCommunity platform sources, plus stubs for
+    CodeStyleAbstractPanel / TabbedLanguageCodeStylePanel that omit the IntelliJ editor
+    preview infrastructure not available in a NetBeans runtime.
+
+    Used by KotlinFormatter to compile the six Kotlin formatter settings-UI panels
+    (KotlinCodeStylePanel, KotlinOtherSettingsPanel, KotlinSaveStylePanel,
+    ImportSettingsPanel, BaseKotlinImportLayoutPanel, KotlinLanguageCodeStyleSettingsProvider)
+    that were excluded from the KotlinFormatter build in D6.
+  </description>
+
+  <build>
+    <!--
+      Sources are copied from the IntellijCommunity submodule into
+      target/formatter-ui-sources/ and compiled together with local stubs in
+      src/main/java/. kotlin-maven-plugin does not support source exclusions, so
+      the copy-resources step filters out files that cannot compile in this context.
+    -->
+    <sourceDirectory>${project.build.directory}/formatter-ui-sources</sourceDirectory>
+
+    <plugins>
+      <!-- Step 1: copy submodule platform-api UI sources and Kotlin DSL into target/ -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <executions>
+          <!-- Kotlin UI DSL: copy gridLayout files (all safe, no unresolvable deps) -->
+          <execution>
+            <id>copy-dsl-gridlayout</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/formatter-ui-sources/com/intellij/ui/dsl/gridLayout</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/platform/platform-api/src/com/intellij/ui/dsl/gridLayout</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- Kotlin UI DSL builder: only DslComponentProperty (from local utils.kt stub)
+               is needed by formatter panels.  ButtonsGroup/RowsRange/SpacingConfiguration
+               are not needed and have unresolvable deps so they are not copied. -->
+          <!-- (builder/ files are provided via copy-kotlin-stubs: utils.kt stub) -->
+          <!-- Kotlin UI DSL: UiDslException (top-level file) -->
+          <execution>
+            <id>copy-dsl-root</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/formatter-ui-sources/com/intellij/ui/dsl</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/platform/platform-api/src/com/intellij/ui/dsl</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>UiDslException.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- Individual Java UI component files from platform-api.
+               JBTable/JBScrollPane/SimpleListCellRenderer use sun.swing.* so they are
+               provided as local stubs (copy-stubs runs last and overwrites these). -->
+          <execution>
+            <id>copy-ui-components</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/formatter-ui-sources/com/intellij/ui/table</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/platform/platform-api/src/com/intellij/ui/table</directory>
+                  <filtering>false</filtering>
+                  <includes><include>JBTable.java</include></includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <execution>
+            <id>copy-ui-scroll</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/formatter-ui-sources/com/intellij/ui/components</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/platform/platform-api/src/com/intellij/ui/components</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>JBScrollPane.java</include>
+                    <include>JBCheckBox.java</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <execution>
+            <id>copy-ui-openapi</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/formatter-ui-sources/com/intellij/openapi/ui</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/platform/platform-api/src/com/intellij/openapi/ui</directory>
+                  <filtering>false</filtering>
+                  <includes><include>ComboBox.java</include></includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <execution>
+            <id>copy-ui-misc</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/formatter-ui-sources/com/intellij/ui</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/platform/platform-api/src/com/intellij/ui</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>JBIntSpinner.java</include>
+                    <include>IdeBorderFactory.java</include>
+                    <include>SimpleListCellRenderer.java</include>
+                    <include>ColoredTableCellRenderer.java</include>
+                    <include>ToolbarDecorator.java</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <execution>
+            <id>copy-ui-panels</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/formatter-ui-sources/com/intellij/ui/components/panels</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/platform/platform-api/src/com/intellij/ui/components/panels</directory>
+                  <filtering>false</filtering>
+                  <includes><include>VerticalLayout.java</include></includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <execution>
+            <id>copy-tableutil</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/formatter-ui-sources/com/intellij/ui</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/platform/util/ui/src/com/intellij/ui</directory>
+                  <filtering>false</filtering>
+                  <includes><include>TableUtil.java</include></includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <execution>
+            <id>copy-dumbaware</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/formatter-ui-sources/com/intellij/openapi/project</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/platform/ide-core/src/com/intellij/openapi/project</directory>
+                  <filtering>false</filtering>
+                  <includes><include>DumbAwareAction.java</include></includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <execution>
+            <id>copy-smart-indent</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/formatter-ui-sources/com/intellij/application/options</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/platform/lang-api/src/com/intellij/application/options</directory>
+                  <filtering>false</filtering>
+                  <includes><include>SmartIndentOptionsEditor.java</include></includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- Local Java stubs: override submodule versions that use sun.swing.* or
+               provide missing classes (CodeStyleAbstractPanel, JBTable stub, etc.) -->
+          <execution>
+            <id>copy-stubs</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/formatter-ui-sources</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/src/main/java</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- Local Kotlin stubs: override submodule Kotlin files that have
+               unresolvable deps (utils.kt → DslComponentProperty-only stub) and
+               plain-Swing replacements for DSL-using formatter panels -->
+          <execution>
+            <id>copy-kotlin-stubs</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/formatter-ui-sources</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/src/main/kotlin</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-maven-plugin</artifactId>
+        <configuration>
+          <languageVersion>${kotlin.runtime.languageVersion}</languageVersion>
+          <apiVersion>${kotlin.runtime.languageVersion}</apiVersion>
+          <jvmTarget>17</jvmTarget>
+          <args>
+            <arg>-Xskip-metadata-version-check</arg>
+          </args>
+          <sourceDirs>
+            <sourceDir>${project.build.directory}/formatter-ui-sources</sourceDir>
+          </sourceDirs>
+        </configuration>
+        <executions>
+          <execution>
+            <id>compile</id>
+            <phase>process-sources</phase>
+            <goals><goal>compile</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <compilerArgument>-proc:none</compilerArgument>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <dependencies>
+    <!-- Versions managed by parent pom dependencyManagement -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>code-style</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>code-style-impl</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core-impl</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <!-- core-ui: SimpleTextAttributes, BooleanTableCellRenderer, SimpleColoredComponent -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core-ui</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>util</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <!-- util-ui: JBUI, JBInsets, TableUtil, UIUtil -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>util-ui</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <!-- editor-ui: EditorColorsScheme, EditorHighlighter, AnAction, AnActionEvent -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>editor-ui</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <!-- KotlinFormatter provides KotlinCodeStyleSettings, KotlinBundle, KotlinLanguage, etc. -->
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-formatter</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <!-- KotlinHighlighting provides KotlinHighlightingColors at compile time -->
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-highlighting</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-compiler-ir-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains</groupId>
+      <artifactId>annotations</artifactId>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+</project>

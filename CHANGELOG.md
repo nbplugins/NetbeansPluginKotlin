@@ -1,3 +1,6 @@
+- Added Kotlin formatter settings panel in Tools → Options → Editors → Formatting → Language: Kotlin with an "Other" tab (trailing-comma options) and an "Imports" tab (star-import thresholds, import-nested-classes, import-layout order with add/remove/up/down toolbar); settings persist in the standard NetBeans editor preferences for `text/x-kotlin` and are applied immediately to the formatter.
+- Fixed hardcoded 4-space indent in the Kotlin formatter: indent size, tab size, and use-tabs option are now read from the standard NetBeans editor preferences (Tools → Options → Editor → Formatting → Language: Kotlin), so the Kotlin formatter respects per-language settings set in the global "All Languages" tab or overridden per-language.
+
 # 0.10.12 (2026-05-30)
 
 - Fixed semantic highlighting being completely absent for Kotlin files where K2 symbol resolution crashes on a single element (e.g. due to FIR phase ordering in projects targeting JVM 1.8): before-resolve highlights (class/function/property/parameter names, annotation entries) are now always applied, and K2-resolve highlights accumulate up to the failing element instead of being discarded entirely.

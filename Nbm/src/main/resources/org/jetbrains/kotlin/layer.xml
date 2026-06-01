@@ -273,6 +273,31 @@
             </folder>
     </folder>
 
+    <!-- Kotlin formatting category panels shown in
+         Tools → Options → Editors → Formatting → Language: Kotlin.
+         Each file entry registers a PreferencesCustomizer.Factory whose create(Preferences)
+         method returns the panel for that category. -->
+    <folder name="Editors">
+        <folder name="Formatting">
+            <folder name="text">
+                <folder name="x-kotlin">
+                    <!-- "Other" panel: trailing comma options -->
+                    <file name="io-github-nbplugins-kotlin-nbm-formatting-options-KotlinOtherSettingsFactory.instance">
+                        <attr name="instanceOf" stringvalue="org.netbeans.modules.options.editor.spi.PreferencesCustomizer$Factory"/>
+                        <attr name="instanceCreate" methodvalue="io.github.nbplugins.kotlin.nbm.formatting.options.KotlinOtherSettingsFactory.getController"/>
+                        <attr name="position" intvalue="600"/>
+                    </file>
+                    <!-- "Imports" panel: star-import thresholds and import layout order -->
+                    <file name="io-github-nbplugins-kotlin-nbm-formatting-options-KotlinImportsSettingsFactory.instance">
+                        <attr name="instanceOf" stringvalue="org.netbeans.modules.options.editor.spi.PreferencesCustomizer$Factory"/>
+                        <attr name="instanceCreate" methodvalue="io.github.nbplugins.kotlin.nbm.formatting.options.KotlinImportsSettingsFactory.getController"/>
+                        <attr name="position" intvalue="500"/>
+                    </file>
+                </folder>
+            </folder>
+        </folder>
+    </folder>
+
     <folder name="OptionsDialog">
         <folder name="PreviewExamples">
             <folder name="text">
