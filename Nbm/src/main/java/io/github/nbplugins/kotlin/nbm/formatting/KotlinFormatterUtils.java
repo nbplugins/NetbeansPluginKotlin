@@ -132,7 +132,7 @@ public class KotlinFormatterUtils {
     private static void initializeSettings(IndentOptions options) {
         options.USE_TAB_CHARACTER = !IndenterUtil.isSpacesForTabs();
         options.INDENT_SIZE = IndenterUtil.getDefaultIndent();
-        options.TAB_SIZE = IndenterUtil.getDefaultIndent();
+        options.TAB_SIZE = IndenterUtil.getTabSize();
     }
     
     private static NetBeansDocumentFormattingModel buildModel(KtFile ktFile,
