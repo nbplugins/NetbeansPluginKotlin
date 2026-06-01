@@ -8,6 +8,7 @@ import org.jetbrains.kotlin.idea.core.formatter.KotlinCodeStyleSettings
 import org.jetbrains.kotlin.idea.core.formatter.KotlinPackageEntry
 import org.jetbrains.kotlin.idea.core.formatter.KotlinPackageEntryTable
 import java.util.prefs.Preferences
+import org.openide.util.NbPreferences
 
 /**
  * Bridge between NetBeans [Preferences] and IntelliJ [KotlinCodeStyleSettings].
@@ -130,6 +131,14 @@ object KotlinCodeStylePreferences {
             null
         }
     }
+
+    /**
+     * Returns the canonical [Preferences] node for Kotlin formatter settings.
+     *
+     * All callers (the Options UI panel and the formatter itself) must use this
+     * method so that reads and writes target the same node.
+     */
+    fun prefs(): Preferences = NbPreferences.forModule(KotlinCodeStylePreferences::class.java)
 
     /**
      * Loads settings from [prefs] into the global formatter settings singleton.

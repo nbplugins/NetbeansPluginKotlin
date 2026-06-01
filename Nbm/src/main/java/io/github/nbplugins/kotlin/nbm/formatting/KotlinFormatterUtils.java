@@ -50,6 +50,7 @@ import org.jetbrains.kotlin.formatting.NetBeansDocumentFormattingModel;
 import org.jetbrains.kotlin.formatting.NetBeansFormattingModel;
 import org.jetbrains.kotlin.formatting.IndenterUtil;
 import org.jetbrains.kotlin.idea.formatter.KotlinSpacingRulesKt;
+import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferences;
 import io.github.nbplugins.kotlin.nbm.model.KotlinEnvironment;
 import org.jetbrains.kotlin.psi.KtFile;
 import org.jetbrains.kotlin.psi.KtPsiFactory;
@@ -136,9 +137,10 @@ public class KotlinFormatterUtils {
     }
     
     private static NetBeansDocumentFormattingModel buildModel(KtFile ktFile,
-            Block rootBlock, CodeStyleSettings settings, String source, 
+            Block rootBlock, CodeStyleSettings settings, String source,
             boolean forLineIndentation) {
         initializeSettings(settings.getIndentOptions());
+        KotlinCodeStylePreferences.INSTANCE.loadIntoGlobal(KotlinCodeStylePreferences.INSTANCE.prefs());
         NetBeansFormattingModel formattingDocumentModel =
                 new NetBeansFormattingModel(
                         new DocumentImpl(ktFile.getViewProvider().getContents(), true),

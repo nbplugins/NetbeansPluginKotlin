@@ -274,6 +274,17 @@
     </folder>
 
     <folder name="OptionsDialog">
+        <!-- Tools → Options → Kotlin top-level category.
+             Registered manually (annotation processing disabled, -proc:none).
+             Format mirrors what OptionsPanelControllerProcessor generates for
+             @OptionsPanelController.TopLevelRegistration. -->
+        <file name="Kotlin.instance">
+            <attr name="instanceCreate" methodvalue="org.netbeans.spi.options.OptionsCategory.createCategory"/>
+            <attr name="controller" newvalue="io.github.nbplugins.kotlin.nbm.options.KotlinOptionsPanelController"/>
+            <attr name="categoryName" bundlevalue="io.github.nbplugins.kotlin.nbm.options.Bundle#OptionsCategory_Name_Kotlin"/>
+            <attr name="iconBase" stringvalue="io/github/nbplugins/kotlin/nbm/options/kotlin-options.png"/>
+            <attr name="position" intvalue="1600"/>
+        </file>
         <folder name="PreviewExamples">
             <folder name="text">
                 <file name="x-kotlin" url="nbres:/io/github/nbplugins/kotlin/nbm/preview.kt"/>
