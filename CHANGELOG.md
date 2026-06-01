@@ -1,4 +1,4 @@
-- Added Kotlin formatter settings panel in Tools → Options → Editors → Formatting → Language: Kotlin with an "Other" tab (trailing-comma options) and an "Imports" tab (star-import thresholds, import-nested-classes, import-layout order with add/remove/up/down toolbar); settings persist in the standard NetBeans editor preferences for `text/x-kotlin` and are applied immediately to the formatter.
+- Added Kotlin to the language list in Tools → Options → Editors → Formatting with a "Tabs and Indents" tab. The preview pane updates live as indent size, tab size, and expand-tabs are changed, reflecting the actual Kotlin formatter output.
 - Fixed hardcoded 4-space indent in the Kotlin formatter: indent size, tab size, and use-tabs option are now read from the standard NetBeans editor preferences (Tools → Options → Editor → Formatting → Language: Kotlin), so the Kotlin formatter respects per-language settings set in the global "All Languages" tab or overridden per-language.
 
 # 0.10.12 (2026-05-30)

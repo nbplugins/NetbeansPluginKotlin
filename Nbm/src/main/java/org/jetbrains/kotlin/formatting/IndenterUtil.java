@@ -19,11 +19,13 @@
 package org.jetbrains.kotlin.formatting;
 
 import com.intellij.psi.impl.source.tree.LeafPsiElement;
+import javax.swing.text.Document;
 import org.jetbrains.kotlin.utils.LineEndUtil;
 import org.jetbrains.kotlin.lexer.KtTokens;
 import org.netbeans.api.editor.mimelookup.MimeLookup;
 import org.netbeans.api.editor.mimelookup.MimePath;
 import org.netbeans.api.editor.settings.SimpleValueNames;
+import org.netbeans.modules.editor.indent.api.IndentUtils;
 import java.util.prefs.Preferences;
 
 /**
@@ -39,6 +41,37 @@ public class IndenterUtil {
     /** Fallback indent size when NetBeans preferences are unavailable. */
     private static final int FALLBACK_INDENT = 4;
 
+    /**
+     * Thread-local Document override. When set (during format/indent of a
+     * specific document), the static getters read indent settings from the
+     * document's properties via IndentUtils instead of the global MimeLookup
+     * preferences node. Required so the Formatting Options preview, which
+     * configures transient SimpleValueNames.* on its preview document, reflects
+     * indent changes immediately without modifying global preferences.
+     */
+    private static final ThreadLocal<Document> CURRENT_DOC = new ThreadLocal<>();
+
+    /**
+     * Runs {@code body} with {@code doc} bound as the current document context
+     * for indent lookups on this thread.
+     *
+     * @param doc  document whose indent properties should drive lookups
+     * @param body code to execute under that binding
+     */
+    public static void withDocument(Document doc, Runnable body) {
+        Document previous = CURRENT_DOC.get();
+        CURRENT_DOC.set(doc);
+        try {
+            body.run();
+        } finally {
+            if (previous == null) {
+                CURRENT_DOC.remove();
+            } else {
+                CURRENT_DOC.set(previous);
+            }
+        }
+    }
+
     /** Returns the NetBeans editor preferences node for {@code text/x-kotlin}. */
     private static Preferences kotlinPrefs() {
         return MimeLookup.getLookup(MimePath.parse("text/x-kotlin"))
@@ -53,6 +86,10 @@ public class IndenterUtil {
      * @return number of spaces (or tab-equivalent columns) per indent level
      */
     public static int getDefaultIndent() {
+        Document doc = CURRENT_DOC.get();
+        if (doc != null) {
+            return IndentUtils.indentLevelSize(doc);
+        }
         Preferences prefs = kotlinPrefs();
         if (prefs == null) {
             return FALLBACK_INDENT;
@@ -68,6 +105,10 @@ public class IndenterUtil {
      * @return {@code true} if spaces should be used for indentation
      */
     public static boolean isSpacesForTabs() {
+        Document doc = CURRENT_DOC.get();
+        if (doc != null) {
+            return IndentUtils.isExpandTabs(doc);
+        }
         Preferences prefs = kotlinPrefs();
         if (prefs == null) {
             return true;
@@ -82,6 +123,10 @@ public class IndenterUtil {
      * @return number of columns per tab character
      */
     public static int getTabSize() {
+        Document doc = CURRENT_DOC.get();
+        if (doc != null) {
+            return IndentUtils.tabSize(doc);
+        }
         Preferences prefs = kotlinPrefs();
         if (prefs == null) {
             return FALLBACK_INDENT;
