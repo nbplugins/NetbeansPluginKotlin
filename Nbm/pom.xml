@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.10-SNAPSHOT</version>
+    <version>0.11.11-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-nbm</artifactId>
@@ -242,10 +242,6 @@
     <dependency>
       <groupId>io.github.nbplugins</groupId>
       <artifactId>netbeans-plugin-kotlin-formatter</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.github.nbplugins</groupId>
-      <artifactId>netbeans-plugin-kotlin-formatter-ui</artifactId>
     </dependency>
     <dependency>
       <groupId>io.github.nbplugins</groupId>

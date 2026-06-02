@@ -17,6 +17,8 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.options
 
+import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterBlankLinesPanel
+import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterIndentPanel
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterOtherPanel
 import java.awt.BorderLayout
 import java.util.prefs.Preferences
@@ -34,10 +36,14 @@ import javax.swing.JTabbedPane
  */
 class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout()) {
 
+    private val indentPanel = KotlinFormatterIndentPanel(onChange)
+    private val blankLinesPanel = KotlinFormatterBlankLinesPanel(onChange)
     private val otherPanel = KotlinFormatterOtherPanel(onChange)
 
     init {
         val tabs = JTabbedPane()
+        tabs.addTab("Tabs & Indent", indentPanel)
+        tabs.addTab("Blank Lines", blankLinesPanel)
         tabs.addTab("Other", otherPanel)
         add(tabs, BorderLayout.CENTER)
     }
@@ -48,6 +54,8 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
      * @param prefs source preferences node
      */
     fun load(prefs: Preferences) {
+        indentPanel.load(prefs)
+        blankLinesPanel.load(prefs)
         otherPanel.load(prefs)
     }
 
@@ -57,6 +65,8 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
      * @param prefs target preferences node
      */
     fun store(prefs: Preferences) {
+        indentPanel.store(prefs)
+        blankLinesPanel.store(prefs)
         otherPanel.store(prefs)
     }
 }

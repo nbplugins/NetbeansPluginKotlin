@@ -12,6 +12,11 @@
 
 | Commit | Description |
 |--------|-------------|
+| *(pending)* | Added Tabs & Indent and Blank Lines panels; removed KotlinFormatterUI |
+| `3c76f5c8` | Saved E5 session state to docs/e5-session-state.md |
+| `f1f15365` | Rewrote KotlinCodeStylePreferences to use IDEA-style XML serialization |
+| `d6cc45b1` | Added Tools → Options → Kotlin top-level category with Formatter/Other tab |
+| `9ed85b70` | Added Kotlin to Tools → Options → Editors → Formatting |
 | `40aa8924` | Added Kotlin formatter settings UI (E5): Other and Imports panels |
 | `081dee91` | Started release 0.11; marked E4 done; fixed hardcoded indent in IndenterUtil |
 
@@ -52,12 +57,47 @@ Encapsulates all `org.jdom.*` usage. Static methods:
 `CodeStyleSettings` as intermediary (no flat keys). Added test-helper accessors:
 `isTrailingCommaDeclSelected()`, `isTrailingCommaCallSelected()`, `setTrailingCommaDeclSelected(Boolean)`.
 
+### KotlinFormatterIndentPanel
+
+`Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/options/formatter/KotlinFormatterIndentPanel.kt`
+
+"Tabs & Indent" tab. Four controls mapped to `CodeStyleSettings.getIndentOptions()`:
+- Tab size (spinner 1–20) → `TAB_SIZE`
+- Indent (spinner 1–20) → `INDENT_SIZE`
+- Continuation indent (spinner 1–20) → `CONTINUATION_INDENT_SIZE`
+- Use tab character (checkbox) → `USE_TAB_CHARACTER`
+
+Uses `isLoading` guard so spinners/checkbox don't fire `onChange` during `load()`.
+
+### KotlinFormatterBlankLinesPanel
+
+`Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/options/formatter/KotlinFormatterBlankLinesPanel.kt`
+
+"Blank Lines" tab. Two spinners (0–5) for `KotlinCodeStyleSettings`:
+- Around 'when' branches with block body → `BLANK_LINES_AROUND_BLOCK_WHEN_BRANCHES`
+- Before declaration with comment/annotation → `BLANK_LINES_BEFORE_DECLARATION_WITH_COMMENT_OR_ANNOTATION_ON_SEPARATE_LINE`
+
+### KotlinFormatterUI module removed
+
+`KotlinFormatterUI/` directory deleted. Module removed from root `pom.xml` modules list and
+from `Nbm/pom.xml` dependencies. The module was dead code since `d6cc45b1` removed the
+friend-restricted factory classes.
+
+### Stale KotlinCompilerCliBase repack fixed
+
+`KotlinCompilerCliBase/target/repack.stamp` was stale — JAR contained stripped
+`org/jdom/Element.class` from `kotlin-compiler.jar` (missing `Element(String)` constructor),
+causing `NoSuchMethodError` in `KotlinCodeStyleSerializer.serializeKotlinSettings()`. Deleting
+the stamp forced a rebuild and the exclusion rule `!name.startsWith('org/jdom/')` now takes effect.
+
 ### Tests
 
-All 406 tests pass. New/rewritten tests:
+All 412 tests pass. New tests:
 - `KotlinCodeStylePreferencesTest` — 7 tests for XML round-trip (booleans, integers, package tables,
   ALL_OTHER_IMPORTS sentinel, IndentOptions, empty prefs, malformed XML)
 - `KotlinFormatterOtherPanelTest` — 3 tests (defaults, round-trip, onChange not called on load)
+- `KotlinFormatterIndentPanelTest` — 3 tests (defaults, round-trip, onChange not called on load)
+- `KotlinFormatterBlankLinesPanelTest` — 3 tests (defaults, round-trip, onChange not called on load)
 
 ---
 
@@ -88,7 +128,7 @@ Layout identical to IDEA's Kotlin code style panel:
 
 ## Next Steps (priority order)
 
-### Step 1 — StyleBar + KotlinCodeStyleProfileRegistry
+### Step 1 — StyleBar + KotlinCodeStyleProfileRegistry (deferred)
 
 JComboBox with built-in styles (Kotlin Official, Obsolete, IDE defaults) + Save/Delete buttons.
 
@@ -111,17 +151,17 @@ dependency). Based on IDEA's `OptionTreeWithPreviewPanel` as reference.
 
 New file: `Nbm/.../options/formatter/OptionTreePanel.kt`
 
-### Step 3 — Remaining 5 formatter panels
+### Step 3 — Remaining 3 formatter panels
 
 All in `io.github.nbplugins.kotlin.nbm.options.formatter`:
 
-| Panel | Controls |
-|-------|----------|
-| `KotlinFormatterIndentPanel` | Indent size, tab size, use tabs, continuation indent (spinners + checkbox) |
-| `KotlinFormatterSpacesPanel` | JTree with 14 boolean checkboxes |
-| `KotlinFormatterWrappingPanel` | JTree with JComboBox leaves (Don't wrap / Wrap if long / Wrap always) |
-| `KotlinFormatterBlankLinesPanel` | Spinners for blank line counts |
-| `KotlinFormatterImportsPanel` | Star-import thresholds + KotlinPackageEntryTable editor |
+| Panel | Controls | Status |
+|-------|----------|--------|
+| `KotlinFormatterSpacesPanel` | JTree with 14 boolean checkboxes | ❌ pending |
+| `KotlinFormatterWrappingPanel` | JTree with JComboBox leaves (Don't wrap / Wrap if long / Wrap always) | ❌ pending |
+| `KotlinFormatterImportsPanel` | Star-import thresholds + KotlinPackageEntryTable editor | ❌ pending |
+
+(Indent and BlankLines panels are done — see "What is done" above.)
 
 ### Step 4 — KotlinFormattingPreviewPane
 
@@ -152,11 +192,13 @@ Registered in project Properties dialog via `ProjectCustomizer`.
 | File | Role |
 |------|------|
 | `KotlinFormatter/src/main/java/io/github/nbplugins/kotlin/formatter/KotlinCodeStyleSerializer.java` | XML serialize/deserialize (all JDOM code here) |
-| `Nbm/.../formatting/options/KotlinCodeStylePreferences.kt` | Prefs bridge — delegates to Serializer, no JDOM |
-| `Nbm/.../options/KotlinOptionsPanelController.kt` | OptionsPanelController for Tools→Options→Kotlin |
-| `Nbm/.../options/KotlinOptionsPanel.kt` | Root panel (to be restructured with StyleBar + split + preview) |
-| `Nbm/.../options/formatter/KotlinFormatterOtherPanel.kt` | "Other" tab (trailing comma checkboxes) |
-| `Nbm/.../reformatting/formatUtils.kt` | `formatPreview()` for project-less preview |
+| `Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/formatting/options/KotlinCodeStylePreferences.kt` | Prefs bridge — delegates to Serializer, no JDOM |
+| `Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/options/KotlinOptionsPanelController.kt` | OptionsPanelController for Tools→Options→Kotlin |
+| `Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/options/KotlinOptionsPanel.kt` | Root panel (to be restructured with StyleBar + split + preview) |
+| `Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/options/formatter/KotlinFormatterIndentPanel.kt` | "Tabs & Indent" tab (spinners + checkbox) |
+| `Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/options/formatter/KotlinFormatterBlankLinesPanel.kt` | "Blank Lines" tab (spinners) |
+| `Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/options/formatter/KotlinFormatterOtherPanel.kt` | "Other" tab (trailing comma checkboxes) |
+| `Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/reformatting/formatUtils.kt` | `formatPreview()` for project-less preview |
 | `KotlinCompilerCliBase/pom.xml` | Groovy repack script with classpath exclusions |
 
 ---
