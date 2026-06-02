@@ -18,6 +18,7 @@
 package io.github.nbplugins.kotlin.nbm.options.formatter
 
 import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferences
+import io.github.nbplugins.kotlin.nbm.formatting.options.kotlinCustomSettings
 import java.awt.Component
 import java.util.prefs.Preferences
 import javax.swing.BoxLayout
@@ -54,30 +55,40 @@ class KotlinFormatterOtherPanel(private val onChange: () -> Unit) : JPanel() {
     }
 
     /**
-     * Populates the checkboxes from [prefs].
+     * Populates the checkboxes from [prefs] by deserializing into a temporary
+     * settings object and reading the trailing-comma fields.
      *
      * @param prefs source preferences node
      */
     fun load(prefs: Preferences) {
-        trailingCommaDecl.isSelected =
-            prefs.getBoolean(KotlinCodeStylePreferences.KEY_ALLOW_TRAILING_COMMA, false)
-        trailingCommaCall.isSelected =
-            prefs.getBoolean(KotlinCodeStylePreferences.KEY_ALLOW_TRAILING_COMMA_ON_CALL_SITE, false)
+        val tmp = com.intellij.psi.codeStyle.CodeStyleSettings()
+        KotlinCodeStylePreferences.load(prefs, tmp)
+        val ks = tmp.kotlinCustomSettings
+        trailingCommaDecl.isSelected = ks.ALLOW_TRAILING_COMMA
+        trailingCommaCall.isSelected = ks.ALLOW_TRAILING_COMMA_ON_CALL_SITE
     }
 
+    /** Returns whether the "Allow trailing comma in declarations" checkbox is selected. */
+    fun isTrailingCommaDeclSelected(): Boolean = trailingCommaDecl.isSelected
+
+    /** Returns whether the "Allow trailing comma on call site" checkbox is selected. */
+    fun isTrailingCommaCallSelected(): Boolean = trailingCommaCall.isSelected
+
+    /** Sets the "Allow trailing comma in declarations" checkbox state without firing onChange. */
+    fun setTrailingCommaDeclSelected(selected: Boolean) { trailingCommaDecl.isSelected = selected }
+
     /**
-     * Writes the checkboxes' current state to [prefs].
+     * Writes the checkboxes' current state to [prefs], merging with any existing
+     * settings so that other fields are not overwritten.
      *
      * @param prefs target preferences node
      */
     fun store(prefs: Preferences) {
-        prefs.putBoolean(
-            KotlinCodeStylePreferences.KEY_ALLOW_TRAILING_COMMA,
-            trailingCommaDecl.isSelected
-        )
-        prefs.putBoolean(
-            KotlinCodeStylePreferences.KEY_ALLOW_TRAILING_COMMA_ON_CALL_SITE,
-            trailingCommaCall.isSelected
-        )
+        val tmp = com.intellij.psi.codeStyle.CodeStyleSettings()
+        KotlinCodeStylePreferences.load(prefs, tmp)
+        val ks = tmp.kotlinCustomSettings
+        ks.ALLOW_TRAILING_COMMA = trailingCommaDecl.isSelected
+        ks.ALLOW_TRAILING_COMMA_ON_CALL_SITE = trailingCommaCall.isSelected
+        KotlinCodeStylePreferences.save(tmp, prefs)
     }
 }

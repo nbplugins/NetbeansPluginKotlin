@@ -5,17 +5,16 @@ package io.github.nbplugins.kotlin.nbm.formatting.options
 import io.github.nbplugins.kotlin.nbm.formatting.KotlinFormatterUtils
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.nbm.startup.FakeIntellijHome
-import org.netbeans.junit.NbTestCase
 import org.jetbrains.kotlin.idea.core.formatter.KotlinCodeStyleSettings
 import org.jetbrains.kotlin.idea.core.formatter.KotlinPackageEntry
-import org.jetbrains.kotlin.idea.core.formatter.KotlinPackageEntryTable
+import org.netbeans.junit.NbTestCase
 import java.util.prefs.Preferences
 
 /**
  * Tests for [KotlinCodeStylePreferences].
  *
- * <p>Uses an in-process [Preferences] node and the global KotlinFormatterUtils
- * settings singleton initialised by the IntelliJ application environment.
+ * <p>Verifies XML round-trip serialization via [KotlinCodeStyleSerializer] for
+ * both [KotlinCodeStyleSettings] and [IndentOptions].
  */
 class KotlinCodeStylePreferencesTest : NbTestCase("KotlinCodeStylePreferencesTest") {
 
@@ -27,83 +26,69 @@ class KotlinCodeStylePreferencesTest : NbTestCase("KotlinCodeStylePreferencesTes
         KotlinAnalysisAPISession.initApplicationEnvironment()
     }
 
-    /** Returns an isolated in-memory preferences node for each test. */
-    private fun freshPrefs(): Preferences =
-        Preferences.userRoot().node("test-kotlin-code-style-${System.nanoTime()}")
-
     override fun tearDown() {
         super.tearDown()
-        // Reset global settings to defaults so tests do not pollute each other.
+        // Reset to defaults so tests do not pollute each other.
         val ks = settings.kotlinCustomSettings
         ks.ALLOW_TRAILING_COMMA = false
         ks.ALLOW_TRAILING_COMMA_ON_CALL_SITE = false
         ks.NAME_COUNT_TO_USE_STAR_IMPORT = KotlinCodeStyleSettings.DEFAULT_NAME_COUNT_TO_USE_STAR_IMPORT
         ks.NAME_COUNT_TO_USE_STAR_IMPORT_FOR_MEMBERS = KotlinCodeStyleSettings.DEFAULT_NAME_COUNT_TO_USE_STAR_IMPORT_FOR_MEMBERS
-        ks.IMPORT_NESTED_CLASSES = false
+        val opts = settings.getIndentOptions()
+        opts.INDENT_SIZE = 4
+        opts.CONTINUATION_INDENT_SIZE = 8
+        opts.TAB_SIZE = 4
+        opts.USE_TAB_CHARACTER = false
     }
 
-    /** Verifies that [KotlinCodeStylePreferences.save] writes boolean fields to prefs. */
-    fun testSaveBooleans() {
+    /** Returns an isolated in-memory preferences node for each test. */
+    private fun freshPrefs(): Preferences =
+        Preferences.userRoot().node("test-kotlin-code-style-${System.nanoTime()}")
+
+    /** Verifies that boolean field changes survive a save/load round-trip. */
+    fun testRoundTripBooleans() {
         val prefs = freshPrefs()
-        val ks = settings.kotlinCustomSettings
-        ks.ALLOW_TRAILING_COMMA = true
-        ks.ALLOW_TRAILING_COMMA_ON_CALL_SITE = false
+        settings.kotlinCustomSettings.ALLOW_TRAILING_COMMA = true
+        settings.kotlinCustomSettings.ALLOW_TRAILING_COMMA_ON_CALL_SITE = true
 
         KotlinCodeStylePreferences.save(settings, prefs)
-
-        assertTrue(prefs.getBoolean(KotlinCodeStylePreferences.KEY_ALLOW_TRAILING_COMMA, false))
-        assertFalse(prefs.getBoolean(KotlinCodeStylePreferences.KEY_ALLOW_TRAILING_COMMA_ON_CALL_SITE, true))
-    }
-
-    /** Verifies that [KotlinCodeStylePreferences.load] reads boolean fields from prefs. */
-    fun testLoadBooleans() {
-        val prefs = freshPrefs()
-        prefs.putBoolean(KotlinCodeStylePreferences.KEY_ALLOW_TRAILING_COMMA, true)
-        prefs.putBoolean(KotlinCodeStylePreferences.KEY_ALLOW_TRAILING_COMMA_ON_CALL_SITE, true)
-
+        settings.kotlinCustomSettings.ALLOW_TRAILING_COMMA = false
+        settings.kotlinCustomSettings.ALLOW_TRAILING_COMMA_ON_CALL_SITE = false
         KotlinCodeStylePreferences.load(prefs, settings)
 
-        val ks = settings.kotlinCustomSettings
-        assertTrue(ks.ALLOW_TRAILING_COMMA)
-        assertTrue(ks.ALLOW_TRAILING_COMMA_ON_CALL_SITE)
+        assertTrue(settings.kotlinCustomSettings.ALLOW_TRAILING_COMMA)
+        assertTrue(settings.kotlinCustomSettings.ALLOW_TRAILING_COMMA_ON_CALL_SITE)
     }
 
-    /** Verifies that [KotlinCodeStylePreferences.save] writes integer threshold fields. */
-    fun testSaveIntegers() {
+    /** Verifies that integer fields survive a save/load round-trip. */
+    fun testRoundTripIntegers() {
         val prefs = freshPrefs()
-        val ks = settings.kotlinCustomSettings
-        ks.NAME_COUNT_TO_USE_STAR_IMPORT = 7
-        ks.NAME_COUNT_TO_USE_STAR_IMPORT_FOR_MEMBERS = 2
+        settings.kotlinCustomSettings.NAME_COUNT_TO_USE_STAR_IMPORT = 7
+        settings.kotlinCustomSettings.NAME_COUNT_TO_USE_STAR_IMPORT_FOR_MEMBERS = 2
 
         KotlinCodeStylePreferences.save(settings, prefs)
-
-        assertEquals(7, prefs.getInt(KotlinCodeStylePreferences.KEY_NAME_COUNT_TO_USE_STAR_IMPORT, 0))
-        assertEquals(2, prefs.getInt(KotlinCodeStylePreferences.KEY_NAME_COUNT_TO_USE_STAR_IMPORT_FOR_MEMBERS, 0))
-    }
-
-    /** Verifies that [KotlinCodeStylePreferences.load] reads integer threshold fields. */
-    fun testLoadIntegers() {
-        val prefs = freshPrefs()
-        prefs.putInt(KotlinCodeStylePreferences.KEY_NAME_COUNT_TO_USE_STAR_IMPORT, 10)
-        prefs.putInt(KotlinCodeStylePreferences.KEY_NAME_COUNT_TO_USE_STAR_IMPORT_FOR_MEMBERS, 4)
-
+        settings.kotlinCustomSettings.NAME_COUNT_TO_USE_STAR_IMPORT = 5
+        settings.kotlinCustomSettings.NAME_COUNT_TO_USE_STAR_IMPORT_FOR_MEMBERS = 3
         KotlinCodeStylePreferences.load(prefs, settings)
 
-        val ks = settings.kotlinCustomSettings
-        assertEquals(10, ks.NAME_COUNT_TO_USE_STAR_IMPORT)
-        assertEquals(4, ks.NAME_COUNT_TO_USE_STAR_IMPORT_FOR_MEMBERS)
+        assertEquals(7, settings.kotlinCustomSettings.NAME_COUNT_TO_USE_STAR_IMPORT)
+        assertEquals(2, settings.kotlinCustomSettings.NAME_COUNT_TO_USE_STAR_IMPORT_FOR_MEMBERS)
     }
 
-    /** Verifies a round-trip save/load preserves non-special package entries. */
+    /** Verifies that the package star-imports table survives a save/load round-trip. */
     fun testRoundTripPackageTable() {
         val prefs = freshPrefs()
         val ks = settings.kotlinCustomSettings
-        ks.PACKAGES_TO_USE_STAR_IMPORTS.copyFrom(KotlinPackageEntryTable())
+        ks.PACKAGES_TO_USE_STAR_IMPORTS.copyFrom(
+            org.jetbrains.kotlin.idea.core.formatter.KotlinPackageEntryTable()
+        )
         ks.PACKAGES_TO_USE_STAR_IMPORTS.addEntry(KotlinPackageEntry("com.example", true))
         ks.PACKAGES_TO_USE_STAR_IMPORTS.addEntry(KotlinPackageEntry("org.test", false))
 
         KotlinCodeStylePreferences.save(settings, prefs)
-        ks.PACKAGES_TO_USE_STAR_IMPORTS.copyFrom(KotlinPackageEntryTable())
+        ks.PACKAGES_TO_USE_STAR_IMPORTS.copyFrom(
+            org.jetbrains.kotlin.idea.core.formatter.KotlinPackageEntryTable()
+        )
         KotlinCodeStylePreferences.load(prefs, settings)
 
         assertEquals(2, ks.PACKAGES_TO_USE_STAR_IMPORTS.entryCount)
@@ -113,16 +98,20 @@ class KotlinCodeStylePreferencesTest : NbTestCase("KotlinCodeStylePreferencesTes
         assertFalse(ks.PACKAGES_TO_USE_STAR_IMPORTS.getEntryAt(1).withSubpackages)
     }
 
-    /** Verifies a round-trip save/load preserves the ALL_OTHER_IMPORTS_ENTRY sentinel. */
+    /** Verifies that the ALL_OTHER_IMPORTS sentinel survives a save/load round-trip. */
     fun testRoundTripAllOtherSentinel() {
         val prefs = freshPrefs()
         val ks = settings.kotlinCustomSettings
-        ks.PACKAGES_IMPORT_LAYOUT.copyFrom(KotlinPackageEntryTable())
+        ks.PACKAGES_IMPORT_LAYOUT.copyFrom(
+            org.jetbrains.kotlin.idea.core.formatter.KotlinPackageEntryTable()
+        )
         ks.PACKAGES_IMPORT_LAYOUT.addEntry(KotlinPackageEntry.ALL_OTHER_IMPORTS_ENTRY)
         ks.PACKAGES_IMPORT_LAYOUT.addEntry(KotlinPackageEntry("java", true))
 
         KotlinCodeStylePreferences.save(settings, prefs)
-        ks.PACKAGES_IMPORT_LAYOUT.copyFrom(KotlinPackageEntryTable())
+        ks.PACKAGES_IMPORT_LAYOUT.copyFrom(
+            org.jetbrains.kotlin.idea.core.formatter.KotlinPackageEntryTable()
+        )
         KotlinCodeStylePreferences.load(prefs, settings)
 
         assertEquals(2, ks.PACKAGES_IMPORT_LAYOUT.entryCount)
@@ -130,15 +119,45 @@ class KotlinCodeStylePreferencesTest : NbTestCase("KotlinCodeStylePreferencesTes
         assertEquals("java", ks.PACKAGES_IMPORT_LAYOUT.getEntryAt(1).packageName)
     }
 
-    /** Verifies [KotlinCodeStylePreferences.load] uses field defaults when prefs node is empty. */
-    fun testLoadFromEmptyPrefsUsesDefaults() {
+    /** Verifies that IndentOptions survive a save/load round-trip. */
+    fun testRoundTripIndentOptions() {
         val prefs = freshPrefs()
-        val ks = settings.kotlinCustomSettings
-        ks.ALLOW_TRAILING_COMMA = true
+        val opts = settings.getIndentOptions()
+        opts.INDENT_SIZE = 2
+        opts.CONTINUATION_INDENT_SIZE = 4
+        opts.TAB_SIZE = 2
+        opts.USE_TAB_CHARACTER = true
+
+        KotlinCodeStylePreferences.save(settings, prefs)
+        opts.INDENT_SIZE = 4
+        opts.CONTINUATION_INDENT_SIZE = 8
+        opts.TAB_SIZE = 4
+        opts.USE_TAB_CHARACTER = false
+        KotlinCodeStylePreferences.load(prefs, settings)
+
+        assertEquals(2, opts.INDENT_SIZE)
+        assertEquals(4, opts.CONTINUATION_INDENT_SIZE)
+        assertEquals(2, opts.TAB_SIZE)
+        assertTrue(opts.USE_TAB_CHARACTER)
+    }
+
+    /** Verifies that loading from an empty prefs node leaves settings unchanged. */
+    fun testLoadFromEmptyPrefsKeepsCurrentValues() {
+        val prefs = freshPrefs()
+        settings.kotlinCustomSettings.ALLOW_TRAILING_COMMA = true
 
         KotlinCodeStylePreferences.load(prefs, settings)
 
-        // When prefs is empty the existing field value (true) is kept as the fallback.
-        assertTrue(ks.ALLOW_TRAILING_COMMA)
+        assertTrue(settings.kotlinCustomSettings.ALLOW_TRAILING_COMMA)
+    }
+
+    /** Verifies that malformed XML in prefs is handled without throwing. */
+    fun testLoadMalformedXmlIsIgnored() {
+        val prefs = freshPrefs()
+        prefs.put(KotlinCodeStylePreferences.PREFS_KEY_KOTLIN, "not-valid-xml<<<")
+        prefs.put(KotlinCodeStylePreferences.PREFS_KEY_INDENT, "also-invalid")
+
+        // Must not throw; settings remain at their previous values.
+        KotlinCodeStylePreferences.load(prefs, settings)
     }
 }

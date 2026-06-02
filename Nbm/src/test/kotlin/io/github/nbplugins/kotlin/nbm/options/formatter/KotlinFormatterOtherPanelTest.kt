@@ -17,70 +17,68 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.options.formatter
 
+import com.intellij.psi.codeStyle.CodeStyleSettings
 import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferences
-import java.util.prefs.AbstractPreferences
-import java.util.prefs.BackingStoreException
-import java.util.prefs.Preferences
-import org.junit.Test
+import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
+import io.github.nbplugins.kotlin.nbm.startup.FakeIntellijHome
 import org.netbeans.junit.NbTestCase
+import java.util.prefs.Preferences
 
 /**
  * Tests for [KotlinFormatterOtherPanel].
+ *
+ * <p>Uses the full IntelliJ environment so that [KotlinCodeStylePreferences]
+ * serialization (via [io.github.nbplugins.kotlin.formatter.KotlinCodeStyleSerializer])
+ * can create [CodeStyleSettings] instances correctly.
  */
 class KotlinFormatterOtherPanelTest : NbTestCase("KotlinFormatterOtherPanelTest") {
 
-    /** In-memory [Preferences] stub for testing without a real NetBeans runtime. */
-    private class MapPreferences : AbstractPreferences(null, "") {
-        private val map = mutableMapOf<String, String>()
-        override fun putSpi(key: String, value: String) { map[key] = value }
-        override fun getSpi(key: String): String? = map[key]
-        override fun removeSpi(key: String) { map.remove(key) }
-        override fun removeNodeSpi() = Unit
-        override fun keysSpi(): Array<String> = map.keys.toTypedArray()
-        override fun childrenNamesSpi(): Array<String> = emptyArray()
-        override fun childSpi(name: String): AbstractPreferences = MapPreferences()
-        override fun syncSpi() = Unit
-        override fun flushSpi() = Unit
+    override fun setUp() {
+        super.setUp()
+        FakeIntellijHome.startUp()
+        KotlinAnalysisAPISession.initApplicationEnvironment()
     }
 
-    /** Default checkbox state is false (matches KotlinCodeStyleSettings defaults). */
-    @Test
+    private fun freshPrefs(): Preferences =
+        Preferences.userRoot().node("test-other-panel-${System.nanoTime()}")
+
+    /** Checkboxes are unchecked when prefs node is empty (matches KotlinCodeStyleSettings defaults). */
     fun testDefaultsAreFalse() {
-        val prefs: Preferences = MapPreferences()
         val panel = KotlinFormatterOtherPanel {}
-        panel.load(prefs)
-        // checkboxes should be unchecked when prefs contains no values
-        val trailingDecl = prefs.getBoolean(KotlinCodeStylePreferences.KEY_ALLOW_TRAILING_COMMA, false)
-        val trailingCall = prefs.getBoolean(KotlinCodeStylePreferences.KEY_ALLOW_TRAILING_COMMA_ON_CALL_SITE, false)
-        assertFalse(trailingDecl)
-        assertFalse(trailingCall)
+        panel.load(freshPrefs())
+        assertFalse(panel.isTrailingCommaDeclSelected())
+        assertFalse(panel.isTrailingCommaCallSelected())
     }
 
-    /** store() writes what was loaded back to prefs unchanged. */
-    @Test
+    /** store() followed by a fresh load() on the same prefs preserves checkbox state. */
     fun testRoundTrip() {
-        val prefs: Preferences = MapPreferences()
-        prefs.putBoolean(KotlinCodeStylePreferences.KEY_ALLOW_TRAILING_COMMA, true)
-        prefs.putBoolean(KotlinCodeStylePreferences.KEY_ALLOW_TRAILING_COMMA_ON_CALL_SITE, false)
+        val prefs = freshPrefs()
+
+        // Populate prefs with trailing comma = true via a settings object.
+        val src = CodeStyleSettings()
+        src.getCustomSettings(org.jetbrains.kotlin.idea.core.formatter.KotlinCodeStyleSettings::class.java)
+            .ALLOW_TRAILING_COMMA = true
+        KotlinCodeStylePreferences.save(src, prefs)
 
         val panel = KotlinFormatterOtherPanel {}
         panel.load(prefs)
+        assertTrue(panel.isTrailingCommaDeclSelected())
 
-        // write to a fresh prefs node
-        val out: Preferences = MapPreferences()
+        // Flip the checkbox and store.
+        panel.setTrailingCommaDeclSelected(false)
+        val out = freshPrefs()
         panel.store(out)
 
-        assertTrue(out.getBoolean(KotlinCodeStylePreferences.KEY_ALLOW_TRAILING_COMMA, false))
-        assertFalse(out.getBoolean(KotlinCodeStylePreferences.KEY_ALLOW_TRAILING_COMMA_ON_CALL_SITE, true))
+        val panel2 = KotlinFormatterOtherPanel {}
+        panel2.load(out)
+        assertFalse(panel2.isTrailingCommaDeclSelected())
     }
 
     /** onChange callback is not invoked during load(). */
-    @Test
     fun testOnChangeNotCalledOnLoad() {
-        val prefs: Preferences = MapPreferences()
         var callCount = 0
         val panel = KotlinFormatterOtherPanel { callCount++ }
-        panel.load(prefs)
+        panel.load(freshPrefs())
         assertEquals(0, callCount)
     }
 }
