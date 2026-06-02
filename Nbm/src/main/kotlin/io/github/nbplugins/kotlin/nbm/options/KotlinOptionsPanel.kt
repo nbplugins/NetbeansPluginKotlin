@@ -17,46 +17,72 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.options
 
+import com.intellij.psi.codeStyle.CodeStyleSettings
+import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferences
+import io.github.nbplugins.kotlin.nbm.formatting.options.kotlinCustomSettings
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterBlankLinesPanel
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterIndentPanel
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterOtherPanel
+import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormattingPreviewPane
+import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinStyleBar
 import java.awt.BorderLayout
 import java.util.prefs.Preferences
 import javax.swing.JPanel
+import javax.swing.JSplitPane
 import javax.swing.JTabbedPane
 
 /**
  * Root panel for Tools → Options → Kotlin.
  *
- * <p>Contains a tabbed pane with formatter sub-panels. The [onChange] callback
- * is forwarded to each sub-panel so that [KotlinOptionsPanelController] can
- * track whether the user has made unsaved changes.
+ * <p>Layout: a [KotlinStyleBar] (code-style preset selector) at the top, with
+ * a [JSplitPane] below that shows the formatter tabs on the left and a live
+ * [KotlinFormattingPreviewPane] on the right.
+ *
+ * <p>The [onChange] callback is forwarded to [KotlinOptionsPanelController] so
+ * that the Options dialog can track whether unsaved changes exist.
  *
  * @param onChange called whenever any control in any sub-panel changes value
  */
 class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout()) {
 
-    private val indentPanel = KotlinFormatterIndentPanel(onChange)
-    private val blankLinesPanel = KotlinFormatterBlankLinesPanel(onChange)
-    private val otherPanel = KotlinFormatterOtherPanel(onChange)
+    private val indentPanel = KotlinFormatterIndentPanel(::onSettingChanged)
+    private val blankLinesPanel = KotlinFormatterBlankLinesPanel(::onSettingChanged)
+    private val otherPanel = KotlinFormatterOtherPanel(::onSettingChanged)
+
+    private val previewPane = KotlinFormattingPreviewPane(::collectSettingsInto)
+    private val styleBar = KotlinStyleBar(::onStyleApplied)
+
+    private val tabs = JTabbedPane()
+    private val splitPane = JSplitPane(JSplitPane.HORIZONTAL_SPLIT, tabs, previewPane).apply {
+        resizeWeight = 0.55
+    }
 
     init {
-        val tabs = JTabbedPane()
         tabs.addTab("Tabs & Indent", indentPanel)
         tabs.addTab("Blank Lines", blankLinesPanel)
         tabs.addTab("Other", otherPanel)
-        add(tabs, BorderLayout.CENTER)
+        add(styleBar, BorderLayout.NORTH)
+        add(splitPane, BorderLayout.CENTER)
+    }
+
+    override fun addNotify() {
+        super.addNotify()
+        splitPane.setDividerLocation(0.55)
     }
 
     /**
-     * Populates all sub-panels from [prefs].
+     * Populates all sub-panels from [prefs] and syncs the style bar.
      *
      * @param prefs source preferences node
      */
     fun load(prefs: Preferences) {
+        val tmp = CodeStyleSettings()
+        KotlinCodeStylePreferences.load(prefs, tmp)
+        styleBar.setCurrentStyle(tmp.kotlinCustomSettings.CODE_STYLE_DEFAULTS)
         indentPanel.load(prefs)
         blankLinesPanel.load(prefs)
         otherPanel.load(prefs)
+        previewPane.scheduleRefresh()
     }
 
     /**
@@ -65,6 +91,24 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
      * @param prefs target preferences node
      */
     fun store(prefs: Preferences) {
+        indentPanel.store(prefs)
+        blankLinesPanel.store(prefs)
+        otherPanel.store(prefs)
+    }
+
+    private fun onSettingChanged() {
+        onChange()
+        previewPane.scheduleRefresh()
+    }
+
+    private fun onStyleApplied(settings: CodeStyleSettings) {
+        val prefs = KotlinCodeStylePreferences.prefs()
+        KotlinCodeStylePreferences.save(settings, prefs)
+        load(prefs)
+        onChange()
+    }
+
+    private fun collectSettingsInto(prefs: Preferences) {
         indentPanel.store(prefs)
         blankLinesPanel.store(prefs)
         otherPanel.store(prefs)
