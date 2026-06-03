@@ -17,19 +17,25 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.options.formatter
 
+import com.intellij.psi.codeStyle.CodeStyleSettings
 import io.github.nbplugins.kotlin.nbm.formatting.KotlinFormatterUtils
 import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferences
+import org.netbeans.api.editor.mimelookup.MimeLookup
+import org.netbeans.api.editor.mimelookup.MimePath
+import org.netbeans.api.editor.settings.SimpleValueNames
 import org.netbeans.api.project.ui.OpenProjects
 import java.awt.BorderLayout
-import java.awt.Font
 import java.util.concurrent.ConcurrentHashMap
+import java.util.logging.Level
+import java.util.logging.Logger
 import java.util.prefs.AbstractPreferences
 import java.util.prefs.Preferences
+import javax.swing.JEditorPane
 import javax.swing.JPanel
 import javax.swing.JScrollPane
-import javax.swing.JTextArea
 import javax.swing.SwingUtilities
 import javax.swing.Timer
+import javax.swing.text.Document
 
 /**
  * Read-only preview pane that shows how the current formatter settings affect
@@ -46,21 +52,32 @@ import javax.swing.Timer
  *                        must write the current panel state into that node so
  *                        the preview picks it up via
  *                        [KotlinCodeStylePreferences.loadIntoGlobal]
+ * @param projectProvider returns the project to use for formatting, or null when
+ *                        no project is available; defaults to the first open project
  */
 class KotlinFormattingPreviewPane(
-    private val collectSettings: (Preferences) -> Unit
+    private val collectSettings: (Preferences) -> Unit,
+    private val projectProvider: () -> org.netbeans.api.project.Project? =
+        { OpenProjects.getDefault().openProjects.firstOrNull() }
 ) : JPanel(BorderLayout()) {
 
+    private val LOG = Logger.getLogger(KotlinFormattingPreviewPane::class.java.name)
+
     private val rawCode: String = loadRawCode()
-    private val textArea = JTextArea(rawCode).apply {
+
+    private val editorPane = JEditorPane().apply {
+        val kit = MimeLookup.getLookup(MimePath.parse("text/x-kotlin"))
+            .lookup(javax.swing.text.EditorKit::class.java)
+        if (kit != null) editorKit = kit
         isEditable = false
-        font = Font(Font.MONOSPACED, Font.PLAIN, 12)
+        text = rawCode
         caretPosition = 0
     }
+    private val scrollPane = JScrollPane(editorPane)
     private var timer: Timer? = null
 
     init {
-        add(JScrollPane(textArea), BorderLayout.CENTER)
+        add(scrollPane, BorderLayout.CENTER)
     }
 
     /**
@@ -88,26 +105,66 @@ class KotlinFormattingPreviewPane(
     fun getRawCode(): String = rawCode
 
     /** Returns the current text shown in the preview area. For tests only. */
-    fun getText(): String = textArea.text
+    fun getText(): String = editorPane.text
+
+    /** Returns the editor pane's document. For tests only. */
+    fun getDocument(): Document = editorPane.document
 
     private fun refresh() {
-        val project = OpenProjects.getDefault().openProjects.firstOrNull() ?: run {
-            textArea.text = rawCode
-            textArea.caretPosition = 0
-            return
-        }
         val tempPrefs = MapPreferences()
         collectSettings(tempPrefs)
-        KotlinCodeStylePreferences.loadIntoGlobal(tempPrefs)
-        val formatted = try {
-            KotlinFormatterUtils.formatCode(rawCode, "preview.kt", project, "\n")
-        } catch (_: Exception) {
+        val tempSettings = CodeStyleSettings().also {
+            KotlinFormatterUtils.registerKotlinProvider(it)
+            KotlinCodeStylePreferences.load(tempPrefs, it)
+        }
+        // Push indent geometry onto the editor document so that the NetBeans EditorKit's
+        // indent-guide rendering picks up live spinner values (the renderer reads these
+        // keys via IndentUtils.tabSize/isExpandTabs/indentLevelSize). EXPAND_TABS keeps the
+        // checkbox value so guides appear when "Use tab character" is on, disappear when off.
+        val opts = tempSettings.indentOptions
+        val doc = editorPane.document
+        doc.putProperty(SimpleValueNames.TAB_SIZE, opts.TAB_SIZE)
+        doc.putProperty(SimpleValueNames.EXPAND_TABS, !opts.USE_TAB_CHARACTER)
+        doc.putProperty(SimpleValueNames.INDENT_SHIFT_WIDTH, opts.INDENT_SIZE)
+
+        // Force the formatter to always emit spaces. The preview text must look identical
+        // whether "Use tab character" is on or off; only the indent-guide visibility (driven
+        // by EXPAND_TABS above) should change.
+        tempSettings.indentOptions.USE_TAB_CHARACTER = false
+
+        val project = projectProvider()
+        val formatted = if (project == null) {
             rawCode
+        } else {
+            try {
+                KotlinFormatterUtils.formatCodeWithSettings(rawCode, "preview.kt", project, "\n", tempSettings)
+            } catch (_: Exception) { rawCode }
         }
+        val viewPos = scrollPane.viewport.viewPosition
+        val savedCaret = editorPane.caretPosition
+        val viewSize = scrollPane.viewport.viewSize
+        LOG.log(Level.INFO, "preview refresh: viewport before = {0}, caret = {1}, viewSize = {2}",
+                arrayOf(viewPos, savedCaret, viewSize))
+        editorPane.text = formatted
+        LOG.log(Level.INFO, "preview refresh: viewport just after setText = {0}, viewSize = {1}",
+                arrayOf(scrollPane.viewport.viewPosition, scrollPane.viewport.viewSize))
+        // Pin caret to 0 so any caret-driven "ensure visible" scroll lands at the top,
+        // not at the end of the new text (which is what JTextComponent.setText leaves it at).
+        editorPane.caretPosition = 0
+        // Restore viewport via nested invokeLater so we run after any BaseCaret/View layout
+        // events that queue their own invokeLater calls — those would otherwise scroll the
+        // viewport back to the caret after our first restore.
         SwingUtilities.invokeLater {
-            textArea.text = formatted
-            textArea.caretPosition = 0
+            scrollPane.viewport.viewPosition = viewPos
+            LOG.log(Level.INFO, "preview refresh: viewport restored (1st pass) = {0}",
+                    scrollPane.viewport.viewPosition)
+            SwingUtilities.invokeLater {
+                scrollPane.viewport.viewPosition = viewPos
+                LOG.log(Level.INFO, "preview refresh: viewport restored (2nd pass) = {0}, viewSize = {1}",
+                        arrayOf(scrollPane.viewport.viewPosition, scrollPane.viewport.viewSize))
+            }
         }
+        editorPane.repaint()
     }
 
     private fun loadRawCode(): String =

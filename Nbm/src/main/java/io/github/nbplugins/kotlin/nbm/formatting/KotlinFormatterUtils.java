@@ -67,23 +67,73 @@ public class KotlinFormatterUtils {
 
     static {
         settings = new CodeStyleSettings();
-        // Register KotlinCommonCodeStyleSettings so that CodeStyleSettings.getCommonSettings(KotlinLanguage)
-        // returns a KotlinCommonCodeStyleSettings instance (required by codeStyleUtils.kt cast).
-        settings.registerCommonSettings(new LanguageCodeStyleProvider() {
+        registerKotlinProvider(settings);
+    }
+
+    /**
+     * Registers the Kotlin {@link LanguageCodeStyleProvider} on the given {@link CodeStyleSettings}
+     * so that {@link CodeStyleSettings#getCommonSettings(Language)} returns a
+     * {@link KotlinCommonCodeStyleSettings} instance and {@link CodeStyleSettings#getCustomSettings}
+     * returns a {@link KotlinCodeStyleSettings} instance.
+     *
+     * <p>Must be called on every freshly constructed {@code CodeStyleSettings} that will be used
+     * for Kotlin formatting (the static singleton and any per-call preview instance).
+     */
+    public static void registerKotlinProvider(CodeStyleSettings s) {
+        s.registerCommonSettings(new LanguageCodeStyleProvider() {
             @Override public Language getLanguage() { return KotlinLanguage.INSTANCE; }
             @Override public CommonCodeStyleSettings getDefaultCommonSettings() {
-                KotlinCommonCodeStyleSettings s = new KotlinCommonCodeStyleSettings();
-                s.initIndentOptions();
-                return s;
+                KotlinCommonCodeStyleSettings c = new KotlinCommonCodeStyleSettings();
+                c.initIndentOptions();
+                return c;
             }
-            @Override public DocCommentSettings getDocCommentSettings(CodeStyleSettings s) { return DocCommentSettings.DEFAULTS; }
+            @Override public DocCommentSettings getDocCommentSettings(CodeStyleSettings cs) { return DocCommentSettings.DEFAULTS; }
             @Override public Set<String> getSupportedFields() { return Collections.emptySet(); }
-            @Override public CustomCodeStyleSettings createCustomSettings(CodeStyleSettings s) { return new KotlinCodeStyleSettings(s); }
+            @Override public CustomCodeStyleSettings createCustomSettings(CodeStyleSettings cs) { return new KotlinCodeStyleSettings(cs); }
         });
     }
 
     public static CodeStyleSettings getSettings() {
         return settings;
+    }
+
+    /**
+     * Formats {@code source} using the supplied {@code customSettings} without touching
+     * the global {@link #settings} singleton and without reloading from NbPreferences.
+     *
+     * <p>Used by the Tools&nbsp;&rarr;&nbsp;Options preview pane to render unsaved
+     * spinner/checkbox state. The normal {@link #formatCode(String, String, Project, String)}
+     * path overrides indent options from {@code IndenterUtil} and reloads the global
+     * settings from {@link KotlinCodeStylePreferences#prefs()} inside {@code buildModel},
+     * which would defeat any preview values; this method skips both steps.
+     *
+     * @param source         Kotlin source to format
+     * @param fileName       virtual file name passed to the PSI factory
+     * @param project        project providing the PSI factory
+     * @param lineSeparator  line separator used when constructing the formatter
+     * @param customSettings settings instance (must have the Kotlin provider registered;
+     *                       see {@link #registerKotlinProvider(CodeStyleSettings)})
+     */
+    public static String formatCodeWithSettings(String source, String fileName, Project project,
+            String lineSeparator, CodeStyleSettings customSettings) {
+        KtPsiFactory psiFactory = createPsiFactory(project);
+        KtFile ktFile = createKtFile(source, psiFactory, fileName);
+        new FormatterImpl();
+        Block rootBlock = new KotlinBlock(ktFile.getNode(),
+                NodeAlignmentStrategy.getNullStrategy(),
+                Indent.getNoneIndent(),
+                null,
+                customSettings,
+                KotlinSpacingRulesKt.createSpacingBuilder(customSettings, KotlinSpacingBuilderUtilImpl.INSTANCE));
+        NetBeansFormattingModel formattingDocumentModel =
+                new NetBeansFormattingModel(
+                        new DocumentImpl(ktFile.getViewProvider().getContents(), true),
+                        ktFile, customSettings, false);
+        NetBeansDocumentFormattingModel formattingModel = new NetBeansDocumentFormattingModel(
+                ktFile, rootBlock, formattingDocumentModel, source, customSettings);
+        FormatTextRanges ranges = new FormatTextRanges(ktFile.getTextRange(), true);
+        new FormatterImpl().format(formattingModel, customSettings, customSettings.getIndentOptions(), ranges);
+        return formattingModel.getNewText();
     }
     
     public static KtPsiFactory createPsiFactory(Project project) {
