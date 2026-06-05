@@ -18,6 +18,8 @@
 package io.github.nbplugins.kotlin.nbm.options.formatter
 
 import com.intellij.psi.codeStyle.CodeStyleSettings
+import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferences
+import io.github.nbplugins.kotlin.nbm.formatting.options.kotlinCustomSettings
 import org.jetbrains.kotlin.idea.formatter.KotlinObsoleteStyleGuide
 import org.jetbrains.kotlin.idea.formatter.KotlinOfficialStyleGuide
 import java.awt.Component
@@ -32,14 +34,23 @@ import javax.swing.JPanel
  * Toolbar panel shown at the top of Tools → Options → Kotlin.
  *
  * <p>Contains a "Style:" label and a drop-down listing the three built-in
- * Kotlin code-style presets. Selecting a preset creates a fresh
- * [CodeStyleSettings] with the preset applied and passes it to [onStyleApplied].
+ * Kotlin code-style presets. Selecting a preset applies the preset on top of
+ * the caller-supplied base settings and passes the result to [onStyleApplied].
  *
- * @param onStyleApplied called with the fully-populated [CodeStyleSettings] when
- *                       the user picks a preset from the drop-down
+ * @param onStyleApplied        called with the merged [CodeStyleSettings] when
+ *                              the user picks a preset from the drop-down
+ * @param currentSettingsProvider returns a [CodeStyleSettings] populated with the
+ *                              panel's current (possibly unsaved) state; used as the
+ *                              base for style-preset application so that fields the
+ *                              preset does not explicitly define are preserved.
+ *                              DEFAULTS ignores this and always starts from a blank
+ *                              [CodeStyleSettings].
  */
 class KotlinStyleBar(
-    private val onStyleApplied: (CodeStyleSettings) -> Unit
+    private val onStyleApplied: (CodeStyleSettings) -> Unit,
+    private val currentSettingsProvider: () -> CodeStyleSettings = {
+        CodeStyleSettings().also { KotlinCodeStylePreferences.load(KotlinCodeStylePreferences.prefs(), it) }
+    }
 ) : JPanel(FlowLayout(FlowLayout.LEFT, 8, 4)) {
 
     /** Built-in code-style presets shown in the drop-down. */
@@ -82,10 +93,25 @@ class KotlinStyleBar(
     }
 
     private fun applySelected() {
-        val settings = CodeStyleSettings()
+        combo.hidePopup()
+        // For DEFAULTS use a completely fresh instance so every setting reverts to its
+        // class-level default.  For preset styles, start from the currently persisted
+        // settings so that fields the style guide does not explicitly define (e.g.
+        // ALLOW_TRAILING_COMMA in OBSOLETE) are preserved rather than silently reset
+        // to the class default.
+        //
+        // Use applyToKotlinCustomSettings instead of apply() to avoid the unsafe
+        // `as KotlinCommonCodeStyleSettings` cast in the kotlinCommonSettings extension
+        // property, which throws ClassCastException in standalone (non-IDEA) mode.
+        // CommonCodeStyleSettings fields are not serialised by KotlinCodeStyleSerializer
+        // and therefore have no effect here regardless.
+        val settings = when (combo.selectedItem as BuiltInStyle) {
+            BuiltInStyle.DEFAULTS -> CodeStyleSettings()
+            else -> currentSettingsProvider()
+        }
         when (combo.selectedItem as BuiltInStyle) {
-            BuiltInStyle.OFFICIAL -> KotlinOfficialStyleGuide.apply(settings)
-            BuiltInStyle.OBSOLETE -> KotlinObsoleteStyleGuide.apply(settings)
+            BuiltInStyle.OFFICIAL -> KotlinOfficialStyleGuide.applyToKotlinCustomSettings(settings.kotlinCustomSettings)
+            BuiltInStyle.OBSOLETE -> KotlinObsoleteStyleGuide.applyToKotlinCustomSettings(settings.kotlinCustomSettings)
             BuiltInStyle.DEFAULTS -> {}
         }
         onStyleApplied(settings)

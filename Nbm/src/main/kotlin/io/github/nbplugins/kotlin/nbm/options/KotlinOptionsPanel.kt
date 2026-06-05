@@ -50,7 +50,7 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
     private val otherPanel = KotlinFormatterOtherPanel(::onSettingChanged)
 
     private val previewPane = KotlinFormattingPreviewPane(::collectSettingsInto)
-    private val styleBar = KotlinStyleBar(::onStyleApplied)
+    private val styleBar = KotlinStyleBar(::onStyleApplied, ::collectCurrentSettings)
 
     private val tabs = JTabbedPane()
     private val splitPane = JSplitPane(JSplitPane.HORIZONTAL_SPLIT, tabs, previewPane).apply {
@@ -108,7 +108,41 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
         onChange()
     }
 
+    /**
+     * Returns a [CodeStyleSettings] reflecting the live panel state (including any
+     * unsaved changes), overlaid on the currently persisted Kotlin custom settings.
+     * Used by [KotlinStyleBar] as the base when applying a style preset so that
+     * fields the preset does not explicitly define are preserved.
+     */
+    private fun collectCurrentSettings(): CodeStyleSettings {
+        val settings = CodeStyleSettings()
+        // Seed with persisted Kotlin custom settings (CODE_STYLE_DEFAULTS,
+        // CONTINUATION_INDENT_* flags, etc.) for fields not shown in any panel.
+        KotlinCodeStylePreferences.load(KotlinCodeStylePreferences.prefs(), settings)
+        // Override with live panel values (may have unsaved changes).
+        settings.indentOptions.apply {
+            TAB_SIZE = indentPanel.getTabSize()
+            INDENT_SIZE = indentPanel.getIndentSize()
+            CONTINUATION_INDENT_SIZE = indentPanel.getContinuationIndentSize()
+            USE_TAB_CHARACTER = indentPanel.isUseTabCharacter()
+        }
+        settings.kotlinCustomSettings.apply {
+            ALLOW_TRAILING_COMMA = otherPanel.isTrailingCommaDeclSelected()
+            ALLOW_TRAILING_COMMA_ON_CALL_SITE = otherPanel.isTrailingCommaCallSelected()
+            BLANK_LINES_AROUND_BLOCK_WHEN_BRANCHES = blankLinesPanel.getBlankLinesWhenBranches()
+            BLANK_LINES_BEFORE_DECLARATION_WITH_COMMENT_OR_ANNOTATION_ON_SEPARATE_LINE =
+                blankLinesPanel.getBlankLinesDeclWithAnnotation()
+        }
+        return settings
+    }
+
     private fun collectSettingsInto(prefs: Preferences) {
+        // Seed with the persisted KotlinCodeStyleSettings so style-preset fields
+        // (CODE_STYLE_DEFAULTS, CONTINUATION_INDENT_*, WRAP_*, etc.) survive into the
+        // preview. Panel stores overlay only their own fields on top of this base.
+        KotlinCodeStylePreferences.prefs()
+            .get(KotlinCodeStylePreferences.PREFS_KEY_KOTLIN, null)
+            ?.let { prefs.put(KotlinCodeStylePreferences.PREFS_KEY_KOTLIN, it) }
         indentPanel.store(prefs)
         blankLinesPanel.store(prefs)
         otherPanel.store(prefs)
