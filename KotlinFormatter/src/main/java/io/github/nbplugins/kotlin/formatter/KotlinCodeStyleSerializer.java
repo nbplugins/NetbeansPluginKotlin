@@ -73,7 +73,7 @@ public final class KotlinCodeStyleSerializer {
         "BLOCK_COMMENT_AT_FIRST_COLUMN", "BLOCK_COMMENT_ADD_SPACE",
     };
 
-    /** {@link CommonCodeStyleSettings} int (wrap-mode) fields shown in the Wrapping panel. */
+    /** {@link CommonCodeStyleSettings} int fields shown in the Wrapping and Blank Lines panels. */
     private static final String[] COMMON_INT_FIELDS = {
         "RIGHT_MARGIN", "WRAP_ON_TYPING",
         "METHOD_PARAMETERS_WRAP", "CALL_PARAMETERS_WRAP",
@@ -81,6 +81,9 @@ public final class KotlinCodeStyleSerializer {
         "ASSIGNMENT_WRAP", "ENUM_CONSTANTS_WRAP",
         "METHOD_ANNOTATION_WRAP", "CLASS_ANNOTATION_WRAP",
         "PARAMETER_ANNOTATION_WRAP", "FIELD_ANNOTATION_WRAP", "VARIABLE_ANNOTATION_WRAP",
+        // Blank Lines panel
+        "KEEP_BLANK_LINES_IN_DECLARATIONS", "KEEP_BLANK_LINES_IN_CODE",
+        "KEEP_BLANK_LINES_BEFORE_RBRACE", "BLANK_LINES_AFTER_CLASS_HEADER",
     };
 
     private KotlinCodeStyleSerializer() {}

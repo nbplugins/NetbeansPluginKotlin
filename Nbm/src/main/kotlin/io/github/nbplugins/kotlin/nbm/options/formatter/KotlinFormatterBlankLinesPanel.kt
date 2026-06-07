@@ -18,8 +18,11 @@
 package io.github.nbplugins.kotlin.nbm.options.formatter
 
 import com.intellij.psi.codeStyle.CodeStyleSettings
+import io.github.nbplugins.kotlin.nbm.formatting.KotlinFormatterUtils
 import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferences
 import io.github.nbplugins.kotlin.nbm.formatting.options.kotlinCustomSettings
+import org.jetbrains.kotlin.idea.KotlinLanguage
+import java.awt.Font
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
 import java.awt.Insets
@@ -34,15 +37,23 @@ import javax.swing.border.EmptyBorder
  * Sub-panel for "Blank Lines" Kotlin code-style settings shown in
  * Tools → Options → Kotlin → Blank Lines.
  *
- * <p>Exposes two blank-line count fields from
- * {@link org.jetbrains.kotlin.idea.core.formatter.KotlinCodeStyleSettings} stored
- * under {@link KotlinCodeStylePreferences#PREFS_KEY_KOTLIN}.
+ * <p>Exposes "Keep maximum blank lines" fields from
+ * {@link com.intellij.psi.codeStyle.CommonCodeStyleSettings} and
+ * "Minimum blank lines" fields from
+ * {@link org.jetbrains.kotlin.idea.core.formatter.KotlinCodeStyleSettings}.
  *
  * @param onChange called whenever any control changes value; forwarded to the
  *                 parent panel so the Options dialog can track unsaved changes
  */
 class KotlinFormatterBlankLinesPanel(private val onChange: () -> Unit) : JPanel(GridBagLayout()) {
 
+    // Keep maximum blank lines (CommonCodeStyleSettings)
+    private val keepInDeclarationsSpinner = JSpinner(SpinnerNumberModel(2, 0, 10, 1))
+    private val keepInCodeSpinner = JSpinner(SpinnerNumberModel(2, 0, 10, 1))
+    private val keepBeforeRbraceSpinner = JSpinner(SpinnerNumberModel(2, 0, 10, 1))
+
+    // Minimum blank lines (CommonCodeStyleSettings + KotlinCodeStyleSettings)
+    private val afterClassHeaderSpinner = JSpinner(SpinnerNumberModel(0, 0, 5, 1))
     private val whenBranchesSpinner = JSpinner(SpinnerNumberModel(0, 0, 5, 1))
     private val declAnnotationSpinner = JSpinner(SpinnerNumberModel(1, 0, 5, 1))
 
@@ -56,6 +67,15 @@ class KotlinFormatterBlankLinesPanel(private val onChange: () -> Unit) : JPanel(
             anchor = GridBagConstraints.WEST
         }
 
+        fun addSectionHeader(title: String, row: Int) {
+            gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 2
+            gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0.0
+            val label = JLabel(title)
+            label.font = label.font.deriveFont(Font.BOLD)
+            add(label, gbc)
+            gbc.gridwidth = 1
+        }
+
         fun addRow(label: String, spinner: JSpinner, row: Int) {
             gbc.gridx = 0; gbc.gridy = row; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0.0
             add(JLabel(label), gbc)
@@ -63,15 +83,26 @@ class KotlinFormatterBlankLinesPanel(private val onChange: () -> Unit) : JPanel(
             add(spinner, gbc)
         }
 
-        addRow("Around 'when' branches with block body:", whenBranchesSpinner, 0)
-        addRow("Before declaration with comment/annotation:", declAnnotationSpinner, 1)
+        addSectionHeader("Keep maximum blank lines", 0)
+        addRow("In declarations:", keepInDeclarationsSpinner, 1)
+        addRow("In code:", keepInCodeSpinner, 2)
+        addRow("Before '}':", keepBeforeRbraceSpinner, 3)
+
+        addSectionHeader("Minimum blank lines", 4)
+        addRow("After class header:", afterClassHeaderSpinner, 5)
+        addRow("Around 'when' branches with {}:", whenBranchesSpinner, 6)
+        addRow("Before declaration with comment or annotation:", declAnnotationSpinner, 7)
 
         // Filler row to push controls to the top
-        gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 2; gbc.fill = GridBagConstraints.BOTH
+        gbc.gridx = 0; gbc.gridy = 8; gbc.gridwidth = 2; gbc.fill = GridBagConstraints.BOTH
         gbc.weightx = 1.0; gbc.weighty = 1.0
         add(JPanel(), gbc)
 
         val fireChange: (Any) -> Unit = { if (!isLoading) onChange() }
+        keepInDeclarationsSpinner.addChangeListener(fireChange)
+        keepInCodeSpinner.addChangeListener(fireChange)
+        keepBeforeRbraceSpinner.addChangeListener(fireChange)
+        afterClassHeaderSpinner.addChangeListener(fireChange)
         whenBranchesSpinner.addChangeListener(fireChange)
         declAnnotationSpinner.addChangeListener(fireChange)
     }
@@ -83,10 +114,16 @@ class KotlinFormatterBlankLinesPanel(private val onChange: () -> Unit) : JPanel(
      */
     fun load(prefs: Preferences) {
         val tmp = CodeStyleSettings()
+        KotlinFormatterUtils.registerKotlinProvider(tmp)
         KotlinCodeStylePreferences.load(prefs, tmp)
+        val cs = tmp.getCommonSettings(KotlinLanguage.INSTANCE)
         val ks = tmp.kotlinCustomSettings
         isLoading = true
         try {
+            keepInDeclarationsSpinner.value = cs.KEEP_BLANK_LINES_IN_DECLARATIONS
+            keepInCodeSpinner.value = cs.KEEP_BLANK_LINES_IN_CODE
+            keepBeforeRbraceSpinner.value = cs.KEEP_BLANK_LINES_BEFORE_RBRACE
+            afterClassHeaderSpinner.value = cs.BLANK_LINES_AFTER_CLASS_HEADER
             whenBranchesSpinner.value = ks.BLANK_LINES_AROUND_BLOCK_WHEN_BRANCHES
             declAnnotationSpinner.value =
                 ks.BLANK_LINES_BEFORE_DECLARATION_WITH_COMMENT_OR_ANNOTATION_ON_SEPARATE_LINE
@@ -103,19 +140,49 @@ class KotlinFormatterBlankLinesPanel(private val onChange: () -> Unit) : JPanel(
      */
     fun store(prefs: Preferences) {
         val tmp = CodeStyleSettings()
+        KotlinFormatterUtils.registerKotlinProvider(tmp)
         KotlinCodeStylePreferences.load(prefs, tmp)
+        val cs = tmp.getCommonSettings(KotlinLanguage.INSTANCE)
         val ks = tmp.kotlinCustomSettings
+        cs.KEEP_BLANK_LINES_IN_DECLARATIONS = keepInDeclarationsSpinner.value as Int
+        cs.KEEP_BLANK_LINES_IN_CODE = keepInCodeSpinner.value as Int
+        cs.KEEP_BLANK_LINES_BEFORE_RBRACE = keepBeforeRbraceSpinner.value as Int
+        cs.BLANK_LINES_AFTER_CLASS_HEADER = afterClassHeaderSpinner.value as Int
         ks.BLANK_LINES_AROUND_BLOCK_WHEN_BRANCHES = whenBranchesSpinner.value as Int
         ks.BLANK_LINES_BEFORE_DECLARATION_WITH_COMMENT_OR_ANNOTATION_ON_SEPARATE_LINE =
             declAnnotationSpinner.value as Int
         KotlinCodeStylePreferences.save(tmp, prefs)
     }
 
+    /** Returns the current "keep in declarations" spinner value. */
+    fun getKeepInDeclarations(): Int = keepInDeclarationsSpinner.value as Int
+
+    /** Returns the current "keep in code" spinner value. */
+    fun getKeepInCode(): Int = keepInCodeSpinner.value as Int
+
+    /** Returns the current "keep before '}'" spinner value. */
+    fun getKeepBeforeRbrace(): Int = keepBeforeRbraceSpinner.value as Int
+
+    /** Returns the current "after class header" spinner value. */
+    fun getAfterClassHeader(): Int = afterClassHeaderSpinner.value as Int
+
     /** Returns the current "around when branches" spinner value. */
     fun getBlankLinesWhenBranches(): Int = whenBranchesSpinner.value as Int
 
     /** Returns the current "before decl with annotation" spinner value. */
     fun getBlankLinesDeclWithAnnotation(): Int = declAnnotationSpinner.value as Int
+
+    /** Sets the "keep in declarations" spinner without firing onChange. */
+    fun setKeepInDeclarations(value: Int) { keepInDeclarationsSpinner.value = value }
+
+    /** Sets the "keep in code" spinner without firing onChange. */
+    fun setKeepInCode(value: Int) { keepInCodeSpinner.value = value }
+
+    /** Sets the "keep before '}'" spinner without firing onChange. */
+    fun setKeepBeforeRbrace(value: Int) { keepBeforeRbraceSpinner.value = value }
+
+    /** Sets the "after class header" spinner without firing onChange. */
+    fun setAfterClassHeader(value: Int) { afterClassHeaderSpinner.value = value }
 
     /** Sets the "around when branches" spinner without firing onChange. */
     fun setBlankLinesWhenBranches(value: Int) { whenBranchesSpinner.value = value }

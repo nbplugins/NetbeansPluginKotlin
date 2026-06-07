@@ -18,10 +18,12 @@
 package io.github.nbplugins.kotlin.nbm.options.formatter
 
 import com.intellij.psi.codeStyle.CodeStyleSettings
+import io.github.nbplugins.kotlin.nbm.formatting.KotlinFormatterUtils
 import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferences
 import io.github.nbplugins.kotlin.nbm.formatting.options.kotlinCustomSettings
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.nbm.startup.FakeIntellijHome
+import org.jetbrains.kotlin.idea.KotlinLanguage
 import org.netbeans.junit.NbTestCase
 import java.util.prefs.Preferences
 
@@ -43,19 +45,24 @@ class KotlinFormatterBlankLinesPanelTest : NbTestCase("KotlinFormatterBlankLines
     private fun freshPrefs(): Preferences =
         Preferences.userRoot().node("test-blank-lines-panel-${System.nanoTime()}")
 
-    /** Spinners show KotlinCodeStyleSettings defaults when the prefs node is empty. */
+    /** All spinners show their defaults when the prefs node is empty. */
     fun testDefaults() {
         val panel = KotlinFormatterBlankLinesPanel {}
         panel.load(freshPrefs())
+        // Keep maximum blank lines (CommonCodeStyleSettings defaults)
+        assertEquals(2, panel.getKeepInDeclarations())
+        assertEquals(2, panel.getKeepInCode())
+        assertEquals(2, panel.getKeepBeforeRbrace())
+        // Minimum blank lines (CommonCodeStyleSettings + KotlinCodeStyleSettings defaults)
+        assertEquals(0, panel.getAfterClassHeader())
         assertEquals(0, panel.getBlankLinesWhenBranches())
         assertEquals(1, panel.getBlankLinesDeclWithAnnotation())
     }
 
-    /** store() followed by a fresh load() on the same prefs preserves both values. */
+    /** store() then load() on the same prefs preserves KotlinCodeStyleSettings fields. */
     fun testRoundTrip() {
         val prefs = freshPrefs()
 
-        // Write non-default blank lines.
         val src = CodeStyleSettings()
         val ks = src.kotlinCustomSettings
         ks.BLANK_LINES_AROUND_BLOCK_WHEN_BRANCHES = 2
@@ -67,7 +74,6 @@ class KotlinFormatterBlankLinesPanelTest : NbTestCase("KotlinFormatterBlankLines
         assertEquals(2, panel.getBlankLinesWhenBranches())
         assertEquals(3, panel.getBlankLinesDeclWithAnnotation())
 
-        // Change via setter and store to a fresh prefs node.
         panel.setBlankLinesWhenBranches(1)
         val out = freshPrefs()
         panel.store(out)
@@ -76,6 +82,39 @@ class KotlinFormatterBlankLinesPanelTest : NbTestCase("KotlinFormatterBlankLines
         panel2.load(out)
         assertEquals(1, panel2.getBlankLinesWhenBranches())
         assertEquals(3, panel2.getBlankLinesDeclWithAnnotation())
+    }
+
+    /** store() then load() on the same prefs preserves CommonCodeStyleSettings fields. */
+    fun testRoundTripCommonSettings() {
+        val prefs = freshPrefs()
+
+        val src = CodeStyleSettings()
+        KotlinFormatterUtils.registerKotlinProvider(src)
+        val cs = src.getCommonSettings(KotlinLanguage.INSTANCE)
+        cs.KEEP_BLANK_LINES_IN_DECLARATIONS = 5
+        cs.KEEP_BLANK_LINES_IN_CODE = 4
+        cs.KEEP_BLANK_LINES_BEFORE_RBRACE = 3
+        cs.BLANK_LINES_AFTER_CLASS_HEADER = 2
+        KotlinCodeStylePreferences.save(src, prefs)
+
+        val panel = KotlinFormatterBlankLinesPanel {}
+        panel.load(prefs)
+        assertEquals(5, panel.getKeepInDeclarations())
+        assertEquals(4, panel.getKeepInCode())
+        assertEquals(3, panel.getKeepBeforeRbrace())
+        assertEquals(2, panel.getAfterClassHeader())
+
+        panel.setKeepInDeclarations(1)
+        val out = freshPrefs()
+        panel.store(out)
+
+        val panel2 = KotlinFormatterBlankLinesPanel {}
+        panel2.load(out)
+        assertEquals(1, panel2.getKeepInDeclarations())
+        // other fields survive the partial store
+        assertEquals(4, panel2.getKeepInCode())
+        assertEquals(3, panel2.getKeepBeforeRbrace())
+        assertEquals(2, panel2.getAfterClassHeader())
     }
 
     /** onChange callback is not invoked during load(). */
