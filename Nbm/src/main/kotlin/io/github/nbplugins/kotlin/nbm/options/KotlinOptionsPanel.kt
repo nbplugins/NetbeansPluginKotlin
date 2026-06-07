@@ -24,6 +24,7 @@ import io.github.nbplugins.kotlin.nbm.formatting.options.kotlinCustomSettings
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterBlankLinesPanel
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterImportsPanel
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterIndentPanel
+import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterCodeGenPanel
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterOtherPanel
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterTabWithPreview
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormattingPreviewPane
@@ -56,7 +57,7 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
     private val spacesPanel = KotlinSettingsTreePanel(LanguageCodeStyleSettingsProvider.SettingsType.SPACING_SETTINGS, ::onSettingChanged)
     private val wrappingPanel = KotlinSettingsTreePanel(LanguageCodeStyleSettingsProvider.SettingsType.WRAPPING_AND_BRACES_SETTINGS, ::onSettingChanged)
     private val importsPanel = KotlinFormatterImportsPanel(::onSettingChanged)
-    private val codeGenPanel = KotlinSettingsTreePanel(LanguageCodeStyleSettingsProvider.SettingsType.COMMENTER_SETTINGS, ::onSettingChanged)
+    private val codeGenPanel = KotlinFormatterCodeGenPanel(::onSettingChanged)
 
     private val styleBar = KotlinStyleBar(::onStyleApplied, ::collectCurrentSettings)
 
