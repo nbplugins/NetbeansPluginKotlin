@@ -25,37 +25,91 @@ import javax.swing.BoxLayout
 import javax.swing.JCheckBox
 import javax.swing.JPanel
 import javax.swing.border.EmptyBorder
+import javax.swing.border.TitledBorder
 
 /**
  * Sub-panel for "Other" Kotlin code-style settings shown in
  * Tools → Options → Kotlin → Other.
  *
- * <p>Currently exposes two trailing-comma options whose defaults match the
- * IntelliJ IDEA Kotlin code style defaults ({@code false}).
+ * <p>Mirrors the IDEA layout: a "Trailing Comma" group with a master
+ * "Use trailing comma" toggle and 10 indented context sub-items.
+ * Declaration-site items (Type parameter list … Context receiver list) are
+ * read-only informational labels — they are always checked because they
+ * represent every context covered by {@code ALLOW_TRAILING_COMMA}.
+ * Call-site items (Collection literal expression … Value argument list) are
+ * individually clickable but collectively linked to
+ * {@code ALLOW_TRAILING_COMMA_ON_CALL_SITE} (a single boolean).
  *
- * @param onChange called whenever any control changes value; forwarded to the
- *                 parent panel so the Options dialog can track unsaved changes
+ * @param onChange called whenever any interactive control changes value
  */
 class KotlinFormatterOtherPanel(private val onChange: () -> Unit) : JPanel() {
 
-    private val trailingCommaDecl =
-        JCheckBox("Allow trailing comma in declarations")
-    private val trailingCommaCall =
-        JCheckBox("Allow trailing comma on call site")
+    private val cbMaster = JCheckBox("Use trailing comma")
+
+    /** Read-only items — always shown selected; just greyed when master is off. */
+    private val declItems: List<JCheckBox> = listOf(
+        JCheckBox("Type parameter list"),
+        JCheckBox("Destructuring declaration"),
+        JCheckBox("When entry"),
+        JCheckBox("Function literal"),
+        JCheckBox("Value parameter list"),
+        JCheckBox("Context receiver list"),
+    )
+
+    /** Interactive items — all linked to ALLOW_TRAILING_COMMA_ON_CALL_SITE. */
+    private val callSiteItems: List<JCheckBox> = listOf(
+        JCheckBox("Collection literal expression"),
+        JCheckBox("Type argument list"),
+        JCheckBox("Indices"),
+        JCheckBox("Value argument list"),
+    )
 
     init {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
         border = EmptyBorder(8, 8, 8, 8)
-        trailingCommaDecl.alignmentX = Component.LEFT_ALIGNMENT
-        trailingCommaCall.alignmentX = Component.LEFT_ALIGNMENT
-        add(trailingCommaDecl)
-        add(trailingCommaCall)
-        trailingCommaDecl.addActionListener { onChange() }
-        trailingCommaCall.addActionListener { onChange() }
+
+        val group = JPanel()
+        group.layout = BoxLayout(group, BoxLayout.Y_AXIS)
+        group.border = TitledBorder("Trailing Comma")
+        group.alignmentX = Component.LEFT_ALIGNMENT
+
+        cbMaster.alignmentX = Component.LEFT_ALIGNMENT
+        group.add(cbMaster)
+
+        declItems.forEach { cb ->
+            cb.isSelected = true
+            cb.isEnabled = false          // always greyed — non-interactive
+            cb.alignmentX = Component.LEFT_ALIGNMENT
+            cb.border = EmptyBorder(0, 20, 0, 0)
+            group.add(cb)
+        }
+
+        callSiteItems.forEach { cb ->
+            cb.isEnabled = false          // enabled only when master is on
+            cb.alignmentX = Component.LEFT_ALIGNMENT
+            cb.border = EmptyBorder(0, 20, 0, 0)
+            group.add(cb)
+        }
+
+        add(group)
+
+        cbMaster.addActionListener {
+            updateSubItemsEnabled()
+            onChange()
+        }
+
+        // Clicking any call-site item propagates the value to all others.
+        callSiteItems.forEach { cb ->
+            cb.addActionListener {
+                val v = cb.isSelected
+                callSiteItems.forEach { it.isSelected = v }
+                onChange()
+            }
+        }
     }
 
     /**
-     * Populates the checkboxes from [prefs] by deserializing into a temporary
+     * Populates the controls from [prefs] by deserializing into a temporary
      * settings object and reading the trailing-comma fields.
      *
      * @param prefs source preferences node
@@ -64,21 +118,13 @@ class KotlinFormatterOtherPanel(private val onChange: () -> Unit) : JPanel() {
         val tmp = com.intellij.psi.codeStyle.CodeStyleSettings()
         KotlinCodeStylePreferences.load(prefs, tmp)
         val ks = tmp.kotlinCustomSettings
-        trailingCommaDecl.isSelected = ks.ALLOW_TRAILING_COMMA
-        trailingCommaCall.isSelected = ks.ALLOW_TRAILING_COMMA_ON_CALL_SITE
+        cbMaster.isSelected = ks.ALLOW_TRAILING_COMMA
+        callSiteItems.forEach { it.isSelected = ks.ALLOW_TRAILING_COMMA_ON_CALL_SITE }
+        updateSubItemsEnabled()
     }
 
-    /** Returns whether the "Allow trailing comma in declarations" checkbox is selected. */
-    fun isTrailingCommaDeclSelected(): Boolean = trailingCommaDecl.isSelected
-
-    /** Returns whether the "Allow trailing comma on call site" checkbox is selected. */
-    fun isTrailingCommaCallSelected(): Boolean = trailingCommaCall.isSelected
-
-    /** Sets the "Allow trailing comma in declarations" checkbox state without firing onChange. */
-    fun setTrailingCommaDeclSelected(selected: Boolean) { trailingCommaDecl.isSelected = selected }
-
     /**
-     * Writes the checkboxes' current state to [prefs], merging with any existing
+     * Writes the controls' current state to [prefs], merging with any existing
      * settings so that other fields are not overwritten.
      *
      * @param prefs target preferences node
@@ -87,8 +133,17 @@ class KotlinFormatterOtherPanel(private val onChange: () -> Unit) : JPanel() {
         val tmp = com.intellij.psi.codeStyle.CodeStyleSettings()
         KotlinCodeStylePreferences.load(prefs, tmp)
         val ks = tmp.kotlinCustomSettings
-        ks.ALLOW_TRAILING_COMMA = trailingCommaDecl.isSelected
-        ks.ALLOW_TRAILING_COMMA_ON_CALL_SITE = trailingCommaCall.isSelected
+        ks.ALLOW_TRAILING_COMMA = cbMaster.isSelected
+        ks.ALLOW_TRAILING_COMMA_ON_CALL_SITE =
+            cbMaster.isSelected && callSiteItems.first().isSelected
         KotlinCodeStylePreferences.save(tmp, prefs)
+    }
+
+    /** Enables/disables sub-items based on the master checkbox state. */
+    private fun updateSubItemsEnabled() {
+        val on = cbMaster.isSelected
+        // Declaration items stay non-interactive (isEnabled=false always);
+        // only call-site items become interactive when master is on.
+        callSiteItems.forEach { it.isEnabled = on }
     }
 }

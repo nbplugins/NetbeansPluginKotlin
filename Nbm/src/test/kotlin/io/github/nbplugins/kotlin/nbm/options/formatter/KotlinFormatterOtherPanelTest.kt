@@ -21,15 +21,16 @@ import com.intellij.psi.codeStyle.CodeStyleSettings
 import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferences
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.nbm.startup.FakeIntellijHome
+import org.jetbrains.kotlin.idea.core.formatter.KotlinCodeStyleSettings
 import org.netbeans.junit.NbTestCase
 import java.util.prefs.Preferences
 
 /**
  * Tests for [KotlinFormatterOtherPanel].
  *
- * <p>Uses the full IntelliJ environment so that [KotlinCodeStylePreferences]
- * serialization (via [io.github.nbplugins.kotlin.formatter.KotlinCodeStyleSerializer])
- * can create [CodeStyleSettings] instances correctly.
+ * <p>Verifies the load/store round-trip for trailing-comma settings.
+ * The panel has no public accessors for checkbox state; correctness is
+ * validated by storing to a prefs node and reading back the settings.
  */
 class KotlinFormatterOtherPanelTest : NbTestCase("KotlinFormatterOtherPanelTest") {
 
@@ -42,36 +43,76 @@ class KotlinFormatterOtherPanelTest : NbTestCase("KotlinFormatterOtherPanelTest"
     private fun freshPrefs(): Preferences =
         Preferences.userRoot().node("test-other-panel-${System.nanoTime()}")
 
-    /** Checkboxes are unchecked when prefs node is empty (matches KotlinCodeStyleSettings defaults). */
+    private fun readSettings(prefs: Preferences): KotlinCodeStyleSettings {
+        val css = CodeStyleSettings()
+        KotlinCodeStylePreferences.load(prefs, css)
+        return css.getCustomSettings(KotlinCodeStyleSettings::class.java)
+    }
+
+    private fun writeSettings(prefs: Preferences, block: KotlinCodeStyleSettings.() -> Unit) {
+        val css = CodeStyleSettings()
+        css.getCustomSettings(KotlinCodeStyleSettings::class.java).block()
+        KotlinCodeStylePreferences.save(css, prefs)
+    }
+
+    /** Both settings are false when the prefs node is empty (raw KotlinCodeStyleSettings defaults). */
     fun testDefaultsAreFalse() {
         val panel = KotlinFormatterOtherPanel {}
         panel.load(freshPrefs())
-        assertFalse(panel.isTrailingCommaDeclSelected())
-        assertFalse(panel.isTrailingCommaCallSelected())
+        val out = freshPrefs()
+        panel.store(out)
+        val ks = readSettings(out)
+        assertFalse(ks.ALLOW_TRAILING_COMMA)
+        assertFalse(ks.ALLOW_TRAILING_COMMA_ON_CALL_SITE)
     }
 
-    /** store() followed by a fresh load() on the same prefs preserves checkbox state. */
-    fun testRoundTrip() {
+    /** ALLOW_TRAILING_COMMA=true is preserved through a load→store round-trip. */
+    fun testDeclRoundTrip() {
         val prefs = freshPrefs()
-
-        // Populate prefs with trailing comma = true via a settings object.
-        val src = CodeStyleSettings()
-        src.getCustomSettings(org.jetbrains.kotlin.idea.core.formatter.KotlinCodeStyleSettings::class.java)
-            .ALLOW_TRAILING_COMMA = true
-        KotlinCodeStylePreferences.save(src, prefs)
+        writeSettings(prefs) { ALLOW_TRAILING_COMMA = true }
 
         val panel = KotlinFormatterOtherPanel {}
         panel.load(prefs)
-        assertTrue(panel.isTrailingCommaDeclSelected())
-
-        // Flip the checkbox and store.
-        panel.setTrailingCommaDeclSelected(false)
         val out = freshPrefs()
         panel.store(out)
 
-        val panel2 = KotlinFormatterOtherPanel {}
-        panel2.load(out)
-        assertFalse(panel2.isTrailingCommaDeclSelected())
+        assertTrue(readSettings(out).ALLOW_TRAILING_COMMA)
+    }
+
+    /** Both settings=true are preserved when master is on. */
+    fun testCallSiteRoundTrip() {
+        val prefs = freshPrefs()
+        writeSettings(prefs) {
+            ALLOW_TRAILING_COMMA = true
+            ALLOW_TRAILING_COMMA_ON_CALL_SITE = true
+        }
+
+        val panel = KotlinFormatterOtherPanel {}
+        panel.load(prefs)
+        val out = freshPrefs()
+        panel.store(out)
+
+        val ks = readSettings(out)
+        assertTrue(ks.ALLOW_TRAILING_COMMA)
+        assertTrue(ks.ALLOW_TRAILING_COMMA_ON_CALL_SITE)
+    }
+
+    /** When master (ALLOW_TRAILING_COMMA) is false, call-site is stored as false regardless of its loaded value. */
+    fun testCallSiteForcedFalseWhenMasterOff() {
+        val prefs = freshPrefs()
+        writeSettings(prefs) {
+            ALLOW_TRAILING_COMMA = false
+            ALLOW_TRAILING_COMMA_ON_CALL_SITE = true   // unusual state: call-site on, master off
+        }
+
+        val panel = KotlinFormatterOtherPanel {}
+        panel.load(prefs)
+        val out = freshPrefs()
+        panel.store(out)
+
+        val ks = readSettings(out)
+        assertFalse(ks.ALLOW_TRAILING_COMMA)
+        assertFalse(ks.ALLOW_TRAILING_COMMA_ON_CALL_SITE)
     }
 
     /** onChange callback is not invoked during load(). */
