@@ -5,7 +5,9 @@ package io.github.nbplugins.kotlin.nbm.formatting.options
 import com.intellij.psi.codeStyle.CodeStyleSettings
 import io.github.nbplugins.kotlin.formatter.KotlinCodeStyleSerializer
 import io.github.nbplugins.kotlin.nbm.formatting.KotlinFormatterUtils
+import org.jetbrains.kotlin.idea.KotlinLanguage
 import org.jetbrains.kotlin.idea.core.formatter.KotlinCodeStyleSettings
+import org.jetbrains.kotlin.idea.formatter.KotlinCommonCodeStyleSettings
 import org.openide.util.NbPreferences
 import java.util.logging.Level
 import java.util.logging.Logger
@@ -32,12 +34,26 @@ object KotlinCodeStylePreferences {
     /** Preferences key for the serialized indent options XML. */
     const val PREFS_KEY_INDENT = "indentOptions"
 
+    /** Preferences key for the serialized [KotlinCommonCodeStyleSettings] XML. */
+    const val PREFS_KEY_COMMON = "kotlinCommonCodeStyleSettings"
+
     /**
      * Returns the canonical [Preferences] node for Kotlin formatter settings.
      *
      * All callers must use this method so that reads and writes target the same node.
      */
     fun prefs(): Preferences = NbPreferences.forModule(KotlinCodeStylePreferences::class.java)
+
+    /**
+     * Ensures that [KotlinFormatterUtils.registerKotlinProvider] has been called on [settings],
+     * so that [CodeStyleSettings.getCommonSettings] returns a [KotlinCommonCodeStyleSettings].
+     * Safe to call repeatedly: does nothing if the provider is already registered.
+     */
+    private fun ensureKotlinProviderRegistered(settings: CodeStyleSettings) {
+        if (settings.getCommonSettings(KotlinLanguage.INSTANCE) !is KotlinCommonCodeStyleSettings) {
+            KotlinFormatterUtils.registerKotlinProvider(settings)
+        }
+    }
 
     /**
      * Serializes [settings] to [prefs].
@@ -59,6 +75,15 @@ object KotlinCodeStylePreferences {
             prefs.put(PREFS_KEY_INDENT, KotlinCodeStyleSerializer.serializeIndentOptions(settings))
         } catch (e: Exception) {
             LOG.log(Level.WARNING, "Failed to serialize indent options", e)
+        }
+        ensureKotlinProviderRegistered(settings)
+        val cs = settings.getCommonSettings(KotlinLanguage.INSTANCE) as? KotlinCommonCodeStyleSettings
+        if (cs != null) {
+            try {
+                prefs.put(PREFS_KEY_COMMON, KotlinCodeStyleSerializer.serializeCommonSettings(cs))
+            } catch (e: Exception) {
+                LOG.log(Level.WARNING, "Failed to serialize Kotlin common code style settings", e)
+            }
         }
     }
 
@@ -84,6 +109,17 @@ object KotlinCodeStylePreferences {
                 KotlinCodeStyleSerializer.deserializeIndentOptions(xml, settings)
             } catch (e: Exception) {
                 LOG.log(Level.WARNING, "Failed to deserialize indent options", e)
+            }
+        }
+        prefs.get(PREFS_KEY_COMMON, null)?.let { xml ->
+            ensureKotlinProviderRegistered(settings)
+            val cs = settings.getCommonSettings(KotlinLanguage.INSTANCE) as? KotlinCommonCodeStyleSettings
+            if (cs != null) {
+                try {
+                    KotlinCodeStyleSerializer.deserializeCommonSettings(xml, cs)
+                } catch (e: Exception) {
+                    LOG.log(Level.WARNING, "Failed to deserialize Kotlin common code style settings", e)
+                }
             }
         }
     }

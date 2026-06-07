@@ -47,6 +47,8 @@ class KotlinFormatterIndentPanel(private val onChange: () -> Unit) : JPanel(Grid
     private val indentSizeSpinner = JSpinner(SpinnerNumberModel(4, 1, 20, 1))
     private val continuationIndentSpinner = JSpinner(SpinnerNumberModel(8, 1, 20, 1))
     private val useTabsCheckbox = JCheckBox("Use tab character")
+    private val smartTabsCheckbox = JCheckBox("Smart tabs")
+    private val keepIndentsCheckbox = JCheckBox("Keep indents on empty lines")
 
     /** True while load() is populating controls; suppresses onChange callbacks. */
     private var isLoading = false
@@ -65,17 +67,29 @@ class KotlinFormatterIndentPanel(private val onChange: () -> Unit) : JPanel(Grid
             add(component, gbc)
         }
 
-        addRow("Tab size:", tabSizeSpinner, 0)
-        addRow("Indent:", indentSizeSpinner, 1)
-        addRow("Continuation indent:", continuationIndentSpinner, 2)
-
-        // Checkbox spans both columns
-        gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 2; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0.0
+        // Layout matches IDEA's SmartIndentOptionsEditor order:
+        // Use tab character → Smart tabs (indented) → spinners → Keep indents on empty lines
+        gbc.gridx = 0; gbc.gridy = 0; gbc.gridwidth = 2; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0.0
         add(useTabsCheckbox, gbc)
         gbc.gridwidth = 1
 
+        // Smart tabs is a sub-item of "Use tab character" — add left indent via inset
+        gbc.gridx = 0; gbc.gridy = 1; gbc.gridwidth = 2; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0.0
+        gbc.insets = Insets(4, 24, 4, 4)  // extra left indent
+        add(smartTabsCheckbox, gbc)
+        gbc.gridwidth = 1
+        gbc.insets = Insets(4, 4, 4, 4)  // restore normal insets
+
+        addRow("Tab size:", tabSizeSpinner, 2)
+        addRow("Indent:", indentSizeSpinner, 3)
+        addRow("Continuation indent:", continuationIndentSpinner, 4)
+
+        gbc.gridx = 0; gbc.gridy = 5; gbc.gridwidth = 2; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0.0
+        add(keepIndentsCheckbox, gbc)
+        gbc.gridwidth = 1
+
         // Filler row to push controls to the top
-        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 2; gbc.fill = GridBagConstraints.BOTH
+        gbc.gridx = 0; gbc.gridy = 6; gbc.gridwidth = 2; gbc.fill = GridBagConstraints.BOTH
         gbc.weightx = 1.0; gbc.weighty = 1.0
         add(JPanel(), gbc)
 
@@ -83,7 +97,14 @@ class KotlinFormatterIndentPanel(private val onChange: () -> Unit) : JPanel(Grid
         tabSizeSpinner.addChangeListener(fireChange)
         indentSizeSpinner.addChangeListener(fireChange)
         continuationIndentSpinner.addChangeListener(fireChange)
-        useTabsCheckbox.addActionListener { if (!isLoading) onChange() }
+        useTabsCheckbox.addActionListener {
+            smartTabsCheckbox.isEnabled = useTabsCheckbox.isSelected
+            if (!isLoading) onChange()
+        }
+        smartTabsCheckbox.addActionListener { if (!isLoading) onChange() }
+        keepIndentsCheckbox.addActionListener { if (!isLoading) onChange() }
+
+        smartTabsCheckbox.isEnabled = false  // enabled only when "Use tab character" is on
     }
 
     /**
@@ -101,6 +122,9 @@ class KotlinFormatterIndentPanel(private val onChange: () -> Unit) : JPanel(Grid
             indentSizeSpinner.value = opts.INDENT_SIZE
             continuationIndentSpinner.value = opts.CONTINUATION_INDENT_SIZE
             useTabsCheckbox.isSelected = opts.USE_TAB_CHARACTER
+            smartTabsCheckbox.isSelected = opts.SMART_TABS
+            smartTabsCheckbox.isEnabled = opts.USE_TAB_CHARACTER
+            keepIndentsCheckbox.isSelected = opts.KEEP_INDENTS_ON_EMPTY_LINES
         } finally {
             isLoading = false
         }
@@ -120,6 +144,8 @@ class KotlinFormatterIndentPanel(private val onChange: () -> Unit) : JPanel(Grid
         opts.INDENT_SIZE = indentSizeSpinner.value as Int
         opts.CONTINUATION_INDENT_SIZE = continuationIndentSpinner.value as Int
         opts.USE_TAB_CHARACTER = useTabsCheckbox.isSelected
+        opts.SMART_TABS = smartTabsCheckbox.isSelected
+        opts.KEEP_INDENTS_ON_EMPTY_LINES = keepIndentsCheckbox.isSelected
         KotlinCodeStylePreferences.save(tmp, prefs)
     }
 
@@ -146,4 +172,16 @@ class KotlinFormatterIndentPanel(private val onChange: () -> Unit) : JPanel(Grid
 
     /** Sets the "Use tab character" checkbox without firing onChange. */
     fun setUseTabCharacter(selected: Boolean) { useTabsCheckbox.isSelected = selected }
+
+    /** Returns whether the "Smart tabs" checkbox is selected. */
+    fun isSmartTabs(): Boolean = smartTabsCheckbox.isSelected
+
+    /** Returns whether the "Keep indents on empty lines" checkbox is selected. */
+    fun isKeepIndentsOnEmptyLines(): Boolean = keepIndentsCheckbox.isSelected
+
+    /** Sets the "Smart tabs" checkbox without firing onChange. */
+    fun setSmartTabs(selected: Boolean) { smartTabsCheckbox.isSelected = selected }
+
+    /** Sets the "Keep indents on empty lines" checkbox without firing onChange. */
+    fun setKeepIndentsOnEmptyLines(selected: Boolean) { keepIndentsCheckbox.isSelected = selected }
 }

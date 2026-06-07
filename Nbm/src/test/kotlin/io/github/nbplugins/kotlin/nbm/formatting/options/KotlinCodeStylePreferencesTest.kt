@@ -2,11 +2,14 @@
 // Copyright 2026 nbplugins contributors
 package io.github.nbplugins.kotlin.nbm.formatting.options
 
+import com.intellij.psi.codeStyle.CodeStyleSettings
 import io.github.nbplugins.kotlin.nbm.formatting.KotlinFormatterUtils
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.nbm.startup.FakeIntellijHome
+import org.jetbrains.kotlin.idea.KotlinLanguage
 import org.jetbrains.kotlin.idea.core.formatter.KotlinCodeStyleSettings
 import org.jetbrains.kotlin.idea.core.formatter.KotlinPackageEntry
+import org.jetbrains.kotlin.idea.formatter.KotlinOfficialStyleGuide
 import org.netbeans.junit.NbTestCase
 import java.util.prefs.Preferences
 
@@ -39,6 +42,12 @@ class KotlinCodeStylePreferencesTest : NbTestCase("KotlinCodeStylePreferencesTes
         opts.CONTINUATION_INDENT_SIZE = 8
         opts.TAB_SIZE = 4
         opts.USE_TAB_CHARACTER = false
+        // Reset CommonCodeStyleSettings fields to Kotlin official style guide defaults.
+        val cs = settings.getCommonSettings(KotlinLanguage.INSTANCE)
+        KotlinOfficialStyleGuide.applyToCommonSettings(cs, false)
+        cs.SPACE_AROUND_ASSIGNMENT_OPERATORS = true
+        cs.SPACE_BEFORE_IF_PARENTHESES = true
+        cs.KEEP_LINE_BREAKS = true
     }
 
     /** Returns an isolated in-memory preferences node for each test. */
@@ -159,5 +168,42 @@ class KotlinCodeStylePreferencesTest : NbTestCase("KotlinCodeStylePreferencesTes
 
         // Must not throw; settings remain at their previous values.
         KotlinCodeStylePreferences.load(prefs, settings)
+    }
+
+    /** Verifies that CommonCodeStyleSettings boolean fields survive a save/load round-trip. */
+    fun testRoundTripCommonSettingsBooleans() {
+        val prefs = freshPrefs()
+        val cs = settings.getCommonSettings(org.jetbrains.kotlin.idea.KotlinLanguage.INSTANCE)
+        cs.SPACE_AROUND_ASSIGNMENT_OPERATORS = false
+        cs.SPACE_BEFORE_IF_PARENTHESES = false
+        cs.KEEP_LINE_BREAKS = false
+
+        KotlinCodeStylePreferences.save(settings, prefs)
+
+        cs.SPACE_AROUND_ASSIGNMENT_OPERATORS = true
+        cs.SPACE_BEFORE_IF_PARENTHESES = true
+        cs.KEEP_LINE_BREAKS = true
+        KotlinCodeStylePreferences.load(prefs, settings)
+
+        assertFalse(cs.SPACE_AROUND_ASSIGNMENT_OPERATORS)
+        assertFalse(cs.SPACE_BEFORE_IF_PARENTHESES)
+        assertFalse(cs.KEEP_LINE_BREAKS)
+    }
+
+    /** Verifies that CommonCodeStyleSettings int (wrap) fields survive a save/load round-trip. */
+    fun testRoundTripCommonSettingsWrap() {
+        val prefs = freshPrefs()
+        val cs = settings.getCommonSettings(org.jetbrains.kotlin.idea.KotlinLanguage.INSTANCE)
+        cs.METHOD_PARAMETERS_WRAP = com.intellij.psi.codeStyle.CodeStyleSettings.WRAP_AS_NEEDED
+        cs.CALL_PARAMETERS_WRAP = com.intellij.psi.codeStyle.CodeStyleSettings.DO_NOT_WRAP
+
+        KotlinCodeStylePreferences.save(settings, prefs)
+
+        cs.METHOD_PARAMETERS_WRAP = com.intellij.psi.codeStyle.CodeStyleSettings.DO_NOT_WRAP
+        cs.CALL_PARAMETERS_WRAP = com.intellij.psi.codeStyle.CodeStyleSettings.WRAP_ALWAYS
+        KotlinCodeStylePreferences.load(prefs, settings)
+
+        assertEquals(com.intellij.psi.codeStyle.CodeStyleSettings.WRAP_AS_NEEDED, cs.METHOD_PARAMETERS_WRAP)
+        assertEquals(com.intellij.psi.codeStyle.CodeStyleSettings.DO_NOT_WRAP, cs.CALL_PARAMETERS_WRAP)
     }
 }

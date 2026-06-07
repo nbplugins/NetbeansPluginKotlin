@@ -23,29 +23,38 @@ import utils.KotlinTestCase
 import java.util.prefs.Preferences
 
 /**
- * Verifies that the [KotlinFormattingPreviewPane] renders byte-identical
- * formatted text regardless of the **Use tab character** checkbox value.
+ * Verifies that the [KotlinFormattingPreviewPane] emits real tab characters
+ * when **Use tab character** is on, and spaces-only when it is off.
  *
- * <p>The UX intent is that toggling the checkbox only changes whether the
- * indent guides are drawn — the actual formatted text in the preview must
- * stay visually constant. This is enforced by [KotlinFormattingPreviewPane]
- * forcing {@code USE_TAB_CHARACTER = false} on the temporary settings before
- * calling the formatter.
+ * <p>When tabs are enabled the preview also sets
+ * {@code NON_PRINTABLE_CHARACTERS_VISIBLE = true} on the document so the
+ * NetBeans EditorKit renders the tab arrows (→) — this is tested visually
+ * via manual testing; these tests cover only the text content.
  */
 class KotlinFormatterPreviewInvarianceTest : KotlinTestCase(
     "KotlinFormatterPreviewInvarianceTest", "formatting"
 ) {
 
     /**
-     * Same Tab Size, same Indent Size, only Use tab character flipped — the
-     * preview text must match byte-for-byte.
+     * When Use tab character is on the formatter must emit at least one `\t`
+     * in the preview text.
      */
-    fun testPreviewTextDoesNotChangeOnTabToggle() {
-        val withTabs = renderPreview(useTab = true)
-        val withSpaces = renderPreview(useTab = false)
-        assertEquals(
-            "preview text must not change when toggling Use tab character",
-            withSpaces, withTabs
+    fun testPreviewWithTabsContainsTabCharacter() {
+        val text = renderPreview(useTab = true)
+        assertTrue(
+            "preview text must contain \\t when Use tab character is on",
+            text.contains('\t')
+        )
+    }
+
+    /**
+     * When Use tab character is off the formatter must emit no `\t` characters.
+     */
+    fun testPreviewWithSpacesContainsNoTabCharacter() {
+        val text = renderPreview(useTab = false)
+        assertFalse(
+            "preview text must not contain \\t when Use tab character is off",
+            text.contains('\t')
         )
     }
 

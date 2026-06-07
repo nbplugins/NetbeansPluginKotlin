@@ -66,7 +66,7 @@ class KotlinStyleBar(
     private var isLoading = false
 
     init {
-        add(JLabel("Style:"))
+        add(JLabel("Scheme:"))
         combo.renderer = object : DefaultListCellRenderer() {
             override fun getListCellRendererComponent(
                 list: JList<*>, value: Any?, index: Int, isSelected: Boolean, cellHasFocus: Boolean

@@ -63,7 +63,7 @@ class KotlinFormattingPreviewPane(
 
     private val LOG = Logger.getLogger(KotlinFormattingPreviewPane::class.java.name)
 
-    private val rawCode: String = loadRawCode()
+    private var rawCode: String = loadRawCode()
 
     private val editorPane = JEditorPane().apply {
         val kit = MimeLookup.getLookup(MimePath.parse("text/x-kotlin"))
@@ -78,6 +78,19 @@ class KotlinFormattingPreviewPane(
 
     init {
         add(scrollPane, BorderLayout.CENTER)
+    }
+
+    /**
+     * Switches the preview source to [code] and schedules a refresh.
+     *
+     * Call this when the active formatter tab changes so the preview shows
+     * source that exercises that tab's settings.
+     *
+     * @param code Kotlin source to use as the new preview input
+     */
+    fun setSource(code: String) {
+        rawCode = code
+        scheduleRefresh()
     }
 
     /**
@@ -126,11 +139,9 @@ class KotlinFormattingPreviewPane(
         doc.putProperty(SimpleValueNames.TAB_SIZE, opts.TAB_SIZE)
         doc.putProperty(SimpleValueNames.EXPAND_TABS, !opts.USE_TAB_CHARACTER)
         doc.putProperty(SimpleValueNames.INDENT_SHIFT_WIDTH, opts.INDENT_SIZE)
-
-        // Force the formatter to always emit spaces. The preview text must look identical
-        // whether "Use tab character" is on or off; only the indent-guide visibility (driven
-        // by EXPAND_TABS above) should change.
-        tempSettings.indentOptions.USE_TAB_CHARACTER = false
+        // Show tab arrows (→) in the preview when "Use tab character" is on so the user
+        // can see that the formatter will emit real \t characters.
+        doc.putProperty(SimpleValueNames.NON_PRINTABLE_CHARACTERS_VISIBLE, opts.USE_TAB_CHARACTER)
 
         val project = projectProvider()
         val formatted = if (project == null) {

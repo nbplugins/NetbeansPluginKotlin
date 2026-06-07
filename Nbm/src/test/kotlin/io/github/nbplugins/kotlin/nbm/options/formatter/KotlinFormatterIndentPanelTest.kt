@@ -50,19 +50,23 @@ class KotlinFormatterIndentPanelTest : NbTestCase("KotlinFormatterIndentPanelTes
         assertEquals(4, panel.getIndentSize())
         assertEquals(8, panel.getContinuationIndentSize())
         assertFalse(panel.isUseTabCharacter())
+        assertFalse(panel.isSmartTabs())
+        assertFalse(panel.isKeepIndentsOnEmptyLines())
     }
 
     /** store() followed by a fresh load() on the same prefs preserves all values. */
     fun testRoundTrip() {
         val prefs = freshPrefs()
 
-        // Write non-default indent options.
+        // Write non-default indent options including new fields.
         val src = CodeStyleSettings()
         val opts = src.indentOptions
         opts.TAB_SIZE = 2
         opts.INDENT_SIZE = 2
         opts.CONTINUATION_INDENT_SIZE = 4
         opts.USE_TAB_CHARACTER = true
+        opts.SMART_TABS = true
+        opts.KEEP_INDENTS_ON_EMPTY_LINES = true
         KotlinCodeStylePreferences.save(src, prefs)
 
         val panel = KotlinFormatterIndentPanel {}
@@ -71,9 +75,12 @@ class KotlinFormatterIndentPanelTest : NbTestCase("KotlinFormatterIndentPanelTes
         assertEquals(2, panel.getIndentSize())
         assertEquals(4, panel.getContinuationIndentSize())
         assertTrue(panel.isUseTabCharacter())
+        assertTrue(panel.isSmartTabs())
+        assertTrue(panel.isKeepIndentsOnEmptyLines())
 
         // Change via setter and store to a fresh prefs node.
         panel.setIndentSize(3)
+        panel.setKeepIndentsOnEmptyLines(false)
         val out = freshPrefs()
         panel.store(out)
 
@@ -83,6 +90,8 @@ class KotlinFormatterIndentPanelTest : NbTestCase("KotlinFormatterIndentPanelTes
         assertEquals(2, panel2.getTabSize())
         assertEquals(4, panel2.getContinuationIndentSize())
         assertTrue(panel2.isUseTabCharacter())
+        assertTrue(panel2.isSmartTabs())
+        assertFalse(panel2.isKeepIndentsOnEmptyLines())
     }
 
     /** onChange callback is not invoked during load(). */

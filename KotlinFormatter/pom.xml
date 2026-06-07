@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.22-SNAPSHOT</version>
+    <version>0.11.38-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-formatter</artifactId>
@@ -33,6 +33,10 @@
       <resource>
         <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/formatter/minimal/resources-en</directory>
       </resource>
+      <!-- KotlinBundle.properties for formatter message strings (formatter.title.* keys). -->
+      <resource>
+        <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/resources/resources-en</directory>
+      </resource>
     </resources>
 
     <plugins>
@@ -57,15 +61,15 @@
                   <!-- UI-panel files require IntelliJ UI toolkit (ComboBox, JBScrollPane, etc.)
                        absent from published platform Maven artifacts. Deferred to E5. -->
                   <excludes>
-                    <!-- UI panels: require IntelliJ UI toolkit absent from published platform Maven artifacts. Deferred to E5. -->
+                    <!-- UI panels: require IntelliJ UI toolkit absent from published platform Maven artifacts. Deferred to E8. -->
                     <exclude>**/KotlinSaveStylePanel.kt</exclude>
                     <exclude>**/KotlinCodeStylePanel.kt</exclude>
                     <exclude>**/KotlinOtherSettingsPanel.kt</exclude>
                     <exclude>**/BaseKotlinImportLayoutPanel.kt</exclude>
                     <exclude>**/ImportSettingsPanel.kt</exclude>
-                    <exclude>**/KotlinLanguageCodeStyleSettingsProvider.kt</exclude>
-                    <!-- Settings accessors: require CodeStylePropertyAccessor/CodeStylePropertiesUtil
-                         from code-style-api which is not published as a JAR. Not used by NetBeans formatter. -->
+                    <!-- Settings accessors: Java stubs provided in src/main/java/ so the provider compiles.
+                         The actual .kt implementations are excluded because they need CodeStylePropertiesUtil
+                         from code-style-api (not published). The stubs satisfy compilation only. -->
                     <exclude>**/KotlinCodeStylePropertyAccessor.kt</exclude>
                     <exclude>**/KotlinPackageEntryTableAccessor.kt</exclude>
                     <!-- Auto-indent provider: requires KotlinLangLineIndentProvider from
