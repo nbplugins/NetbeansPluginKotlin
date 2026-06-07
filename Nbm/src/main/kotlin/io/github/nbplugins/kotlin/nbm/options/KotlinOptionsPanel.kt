@@ -25,22 +25,23 @@ import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterBlankLine
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterImportsPanel
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterIndentPanel
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterOtherPanel
+import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterTabWithPreview
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormattingPreviewPane
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinSettingsTreePanel
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinStyleBar
 import java.awt.BorderLayout
 import java.util.prefs.Preferences
 import javax.swing.JPanel
-import javax.swing.JSplitPane
+import javax.swing.JScrollPane
 import javax.swing.JTabbedPane
-import javax.swing.event.ChangeListener
 
 /**
  * Root panel for Tools → Options → Kotlin.
  *
  * <p>Layout: a [KotlinStyleBar] (code-style preset selector) at the top, with
- * a [JSplitPane] below that shows the formatter tabs on the left and a live
- * [KotlinFormattingPreviewPane] on the right.
+ * a [JTabbedPane] below. Tabs that have a meaningful preview ([KotlinFormatterTabWithPreview])
+ * embed a live [KotlinFormattingPreviewPane] on the right side of an inner split pane.
+ * Tabs without a preview (Imports, Code Generation) are shown full-width.
  *
  * <p>The [onChange] callback is forwarded to [KotlinOptionsPanelController] so
  * that the Options dialog can track whether unsaved changes exist.
@@ -57,32 +58,31 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
     private val importsPanel = KotlinFormatterImportsPanel(::onSettingChanged)
     private val codeGenPanel = KotlinSettingsTreePanel(LanguageCodeStyleSettingsProvider.SettingsType.COMMENTER_SETTINGS, ::onSettingChanged)
 
-    private val previewPane = KotlinFormattingPreviewPane(::collectSettingsInto)
     private val styleBar = KotlinStyleBar(::onStyleApplied, ::collectCurrentSettings)
 
+    private val tabIndent   = KotlinFormatterTabWithPreview(indentPanel,     PREVIEW_GENERAL,      ::collectSettingsInto)
+    private val tabSpaces   = KotlinFormatterTabWithPreview(spacesPanel,     PREVIEW_GENERAL,      ::collectSettingsInto)
+    private val tabWrapping = KotlinFormatterTabWithPreview(wrappingPanel,   PREVIEW_WRAPPING,     ::collectSettingsInto)
+    private val tabBlank    = KotlinFormatterTabWithPreview(blankLinesPanel, PREVIEW_BLANK_LINES,  ::collectSettingsInto)
+    private val tabOther    = KotlinFormatterTabWithPreview(otherPanel,      PREVIEW_GENERAL,      ::collectSettingsInto)
+
+    private val previewPanes: List<KotlinFormattingPreviewPane> = listOf(
+        tabIndent.previewPane, tabSpaces.previewPane, tabWrapping.previewPane,
+        tabBlank.previewPane, tabOther.previewPane
+    )
+
     private val tabs = JTabbedPane()
-    private val splitPane = JSplitPane(JSplitPane.HORIZONTAL_SPLIT, tabs, previewPane).apply {
-        resizeWeight = 0.55
-    }
 
     init {
-        tabs.addTab("Tabs & Indent", indentPanel)
-        tabs.addTab("Spaces", spacesPanel)
-        tabs.addTab("Wrapping & Braces", wrappingPanel)
-        tabs.addTab("Blank Lines", blankLinesPanel)
-        tabs.addTab("Imports", importsPanel)
-        tabs.addTab("Other", otherPanel)
-        tabs.addTab("Code Generation", codeGenPanel)
-        tabs.addChangeListener(ChangeListener {
-            previewPane.setSource(previewForTab(tabs.getTitleAt(tabs.selectedIndex)))
-        })
+        tabs.addTab("Tabs & Indent",     tabIndent)
+        tabs.addTab("Spaces",            tabSpaces)
+        tabs.addTab("Wrapping & Braces", tabWrapping)
+        tabs.addTab("Blank Lines",       tabBlank)
+        tabs.addTab("Imports",           JScrollPane(importsPanel))
+        tabs.addTab("Other",             tabOther)
+        tabs.addTab("Code Generation",   codeGenPanel)
         add(styleBar, BorderLayout.NORTH)
-        add(splitPane, BorderLayout.CENTER)
-    }
-
-    override fun addNotify() {
-        super.addNotify()
-        splitPane.setDividerLocation(0.55)
+        add(tabs, BorderLayout.CENTER)
     }
 
     /**
@@ -101,7 +101,7 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
         importsPanel.load(prefs)
         otherPanel.load(prefs)
         codeGenPanel.load(prefs)
-        previewPane.setSource(previewForTab(tabs.getTitleAt(tabs.selectedIndex)))
+        previewPanes.forEach { it.scheduleRefresh() }
     }
 
     /**
@@ -121,7 +121,7 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
 
     private fun onSettingChanged() {
         onChange()
-        previewPane.scheduleRefresh()
+        previewPanes.forEach { it.scheduleRefresh() }
     }
 
     private fun onStyleApplied(settings: CodeStyleSettings) {
@@ -159,13 +159,6 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
         importsPanel.store(prefs)
         otherPanel.store(prefs)
         codeGenPanel.store(prefs)
-    }
-
-    /** Returns the appropriate preview source for the given tab title. */
-    private fun previewForTab(title: String): String = when (title) {
-        "Wrapping & Braces" -> PREVIEW_WRAPPING
-        "Blank Lines" -> PREVIEW_BLANK_LINES
-        else -> PREVIEW_GENERAL
     }
 
     companion object {
