@@ -112,9 +112,18 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
      * @param prefs source preferences node
      */
     fun load(prefs: Preferences) {
+        currentCustomSchemeName = prefs.get(PREFS_KEY_CUSTOM_SCHEME, null)
+        reloadPanels(prefs)
+    }
+
+    /**
+     * Reloads all sub-panels and the style-bar combo from [prefs] without
+     * touching [currentCustomSchemeName]. Used internally after a style preset
+     * is applied so the combo reflects the already-updated in-memory scheme name.
+     */
+    private fun reloadPanels(prefs: Preferences) {
         val tmp = CodeStyleSettings()
         KotlinCodeStylePreferences.load(prefs, tmp)
-        currentCustomSchemeName = prefs.get(PREFS_KEY_CUSTOM_SCHEME, null)
         styleBar.setCurrentScheme(tmp.kotlinCustomSettings.CODE_STYLE_DEFAULTS, currentCustomSchemeName)
         indentPanel.load(prefs)
         blankLinesPanel.load(prefs)
@@ -161,20 +170,10 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
     }
 
     private fun onStyleApplied(settings: CodeStyleSettings) {
-        // Determine custom scheme name from what the style bar currently shows.
-        val entry = styleBar.currentEntry()
-        currentCustomSchemeName = (entry as? CustomSchemeEntry)?.name
-
+        currentCustomSchemeName = (styleBar.currentEntry() as? CustomSchemeEntry)?.name
         val prefs = KotlinCodeStylePreferences.prefs()
         KotlinCodeStylePreferences.save(settings, prefs)
-        // Write the active custom scheme name before load() so that load() reads
-        // it back correctly from prefs (load reads PREFS_KEY_CUSTOM_SCHEME).
-        if (currentCustomSchemeName != null) {
-            prefs.put(PREFS_KEY_CUSTOM_SCHEME, currentCustomSchemeName!!)
-        } else {
-            prefs.remove(PREFS_KEY_CUSTOM_SCHEME)
-        }
-        load(prefs)
+        reloadPanels(prefs)
         onChange()
     }
 
