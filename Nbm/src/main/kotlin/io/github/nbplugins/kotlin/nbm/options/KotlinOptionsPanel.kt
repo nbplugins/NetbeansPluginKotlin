@@ -161,12 +161,19 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
     }
 
     private fun onStyleApplied(settings: CodeStyleSettings) {
-        // Update the current custom scheme name based on what the style bar selected.
+        // Determine custom scheme name from what the style bar currently shows.
         val entry = styleBar.currentEntry()
         currentCustomSchemeName = (entry as? CustomSchemeEntry)?.name
 
         val prefs = KotlinCodeStylePreferences.prefs()
         KotlinCodeStylePreferences.save(settings, prefs)
+        // Write the active custom scheme name before load() so that load() reads
+        // it back correctly from prefs (load reads PREFS_KEY_CUSTOM_SCHEME).
+        if (currentCustomSchemeName != null) {
+            prefs.put(PREFS_KEY_CUSTOM_SCHEME, currentCustomSchemeName!!)
+        } else {
+            prefs.remove(PREFS_KEY_CUSTOM_SCHEME)
+        }
         load(prefs)
         onChange()
     }
