@@ -30,6 +30,7 @@ import org.jetbrains.kotlin.idea.formatter.KotlinCommonCodeStyleSettings;
 import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.List;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Serializes and deserializes {@link KotlinCodeStyleSettings} and
@@ -233,6 +234,182 @@ public final class KotlinCodeStyleSerializer {
                 try { margins.add(Integer.parseInt(part.trim())); } catch (NumberFormatException ignore) {}
             }
             cs.setSoftMargins(margins);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // IDEA-compatible scheme export / import
+    // -------------------------------------------------------------------------
+
+    private static final String SCHEME_VERSION = "173";
+    private static final String CODE_SCHEME_ELEMENT = "code_scheme";
+    private static final String CSS_ELEMENT = "codeStyleSettings";
+    private static final String INDENT_OPTIONS_ELEMENT = "indentOptions";
+    private static final String OPTION_ELEMENT = "option";
+    private static final String LANGUAGE_KOTLIN = "kotlin";
+
+    /**
+     * Exports {@code settings} to an IDEA-compatible {@code <code_scheme>} XML string.
+     *
+     * <p>The produced XML mirrors the format IDEA uses for Kotlin code-style scheme
+     * files ({@code .idea/codeStyles/Project.xml}):
+     * <pre>
+     * {@code
+     * <code_scheme name="..." version="173">
+     *   <JetCodeStyleSettings>
+     *     <option name="ALLOW_TRAILING_COMMA" value="true"/>
+     *   </JetCodeStyleSettings>
+     *   <codeStyleSettings language="kotlin">
+     *     <option name="RIGHT_MARGIN" value="100"/>
+     *     <indentOptions>
+     *       <option name="INDENT_SIZE" value="4"/>
+     *     </indentOptions>
+     *   </codeStyleSettings>
+     * </code_scheme>
+     * }
+     * </pre>
+     *
+     * @param name     the scheme name written to the {@code name} attribute
+     * @param settings the source code-style settings
+     * @param cs       the Kotlin common code-style settings, or {@code null} to omit
+     *                 the {@code <codeStyleSettings language="kotlin">} block
+     * @return IDEA-compatible scheme XML string
+     * @throws Exception if serialization fails
+     */
+    public static String exportSchemeXml(String name, CodeStyleSettings settings,
+                                         @Nullable KotlinCommonCodeStyleSettings cs) throws Exception {
+        Element root = new Element(CODE_SCHEME_ELEMENT);
+        root.setAttribute("name", name);
+        root.setAttribute("version", SCHEME_VERSION);
+
+        // JetCodeStyleSettings — use IDEA's native writeExternal which produces <option> elements
+        KotlinCodeStyleSettings ks = settings.getCustomSettings(KotlinCodeStyleSettings.class);
+        KotlinCodeStyleSettings defaults = new KotlinCodeStyleSettings(CodeStyleSettings.getDefaults());
+        Element kotlinEl = new Element(KOTLIN_ELEMENT_NAME);
+        ks.writeExternal(kotlinEl, defaults);
+        root.addContent(kotlinEl);
+
+        // <codeStyleSettings language="kotlin">
+        Element cssEl = new Element(CSS_ELEMENT);
+        cssEl.setAttribute("language", LANGUAGE_KOTLIN);
+        if (cs != null) {
+            for (String fieldName : COMMON_BOOL_FIELDS) {
+                boolean val = CommonCodeStyleSettings.class.getField(fieldName).getBoolean(cs);
+                cssEl.addContent(optionElement(fieldName, String.valueOf(val)));
+            }
+            for (String fieldName : COMMON_INT_FIELDS) {
+                int val = CommonCodeStyleSettings.class.getField(fieldName).getInt(cs);
+                cssEl.addContent(optionElement(fieldName, String.valueOf(val)));
+            }
+        }
+
+        // <indentOptions> inside codeStyleSettings
+        IndentOptions opts = settings.getIndentOptions();
+        Element indentEl = new Element(INDENT_OPTIONS_ELEMENT);
+        indentEl.addContent(optionElement("INDENT_SIZE",              String.valueOf(opts.INDENT_SIZE)));
+        indentEl.addContent(optionElement("CONTINUATION_INDENT_SIZE", String.valueOf(opts.CONTINUATION_INDENT_SIZE)));
+        indentEl.addContent(optionElement("TAB_SIZE",                 String.valueOf(opts.TAB_SIZE)));
+        indentEl.addContent(optionElement("USE_TAB_CHARACTER",        String.valueOf(opts.USE_TAB_CHARACTER)));
+        indentEl.addContent(optionElement("SMART_TABS",               String.valueOf(opts.SMART_TABS)));
+        indentEl.addContent(optionElement("KEEP_INDENTS_ON_EMPTY_LINES", String.valueOf(opts.KEEP_INDENTS_ON_EMPTY_LINES)));
+        cssEl.addContent(indentEl);
+
+        root.addContent(cssEl);
+
+        StringWriter sw = new StringWriter();
+        new XMLOutputter(Format.getPrettyFormat()).output(root, sw);
+        return sw.toString();
+    }
+
+    /**
+     * Imports settings from an IDEA-compatible {@code <code_scheme>} XML string.
+     *
+     * <p>Reads the scheme name from the {@code name} attribute and writes it to
+     * {@code outName[0]}. Accepts both files produced by {@link #exportSchemeXml}
+     * and files exported directly from IntelliJ IDEA. Unknown fields are silently
+     * ignored.
+     *
+     * @param xml      IDEA-compatible {@code <code_scheme>} XML string
+     * @param outName  single-element array; {@code outName[0]} is set to the scheme name
+     * @param settings the target code-style settings
+     * @param cs       the Kotlin common code-style settings to populate, or {@code null}
+     *                 to skip the {@code <codeStyleSettings language="kotlin">} block
+     * @throws Exception if the XML is malformed or deserialization fails
+     */
+    public static void importSchemeXml(String xml, String[] outName, CodeStyleSettings settings,
+                                       @Nullable KotlinCommonCodeStyleSettings cs) throws Exception {
+        Element root = JDOMUtil.load((CharSequence) xml);
+        outName[0] = root.getAttributeValue("name");
+
+        // JetCodeStyleSettings
+        Element kotlinEl = root.getChild(KOTLIN_ELEMENT_NAME);
+        if (kotlinEl != null) {
+            KotlinCodeStyleSettings ks = settings.getCustomSettings(KotlinCodeStyleSettings.class);
+            ks.readExternal(kotlinEl);
+        }
+
+        // <codeStyleSettings language="kotlin">
+        Element cssEl = null;
+        for (Element child : root.getChildren(CSS_ELEMENT)) {
+            if (LANGUAGE_KOTLIN.equals(child.getAttributeValue("language"))) {
+                cssEl = child;
+                break;
+            }
+        }
+        if (cssEl != null) {
+            if (cs != null) {
+                for (Element option : cssEl.getChildren(OPTION_ELEMENT)) {
+                    String optName  = option.getAttributeValue("name");
+                    String optValue = option.getAttributeValue("value");
+                    if (optName == null || optValue == null) continue;
+                    applyOptionToBoolField(cs, optName, optValue);
+                    applyOptionToIntField(cs, optName, optValue);
+                }
+            }
+
+            // <indentOptions>
+            Element indentEl = cssEl.getChild(INDENT_OPTIONS_ELEMENT);
+            if (indentEl != null) {
+                IndentOptions opts = settings.getIndentOptions();
+                for (Element option : indentEl.getChildren(OPTION_ELEMENT)) {
+                    String optName  = option.getAttributeValue("name");
+                    String optValue = option.getAttributeValue("value");
+                    if (optName == null || optValue == null) continue;
+                    switch (optName) {
+                        case "INDENT_SIZE":               opts.INDENT_SIZE               = Integer.parseInt(optValue); break;
+                        case "CONTINUATION_INDENT_SIZE":  opts.CONTINUATION_INDENT_SIZE  = Integer.parseInt(optValue); break;
+                        case "TAB_SIZE":                  opts.TAB_SIZE                  = Integer.parseInt(optValue); break;
+                        case "USE_TAB_CHARACTER":         opts.USE_TAB_CHARACTER         = Boolean.parseBoolean(optValue); break;
+                        case "SMART_TABS":                opts.SMART_TABS                = Boolean.parseBoolean(optValue); break;
+                        case "KEEP_INDENTS_ON_EMPTY_LINES": opts.KEEP_INDENTS_ON_EMPTY_LINES = Boolean.parseBoolean(optValue); break;
+                    }
+                }
+            }
+        }
+    }
+
+    private static Element optionElement(String name, String value) {
+        Element el = new Element(OPTION_ELEMENT);
+        el.setAttribute("name", name);
+        el.setAttribute("value", value);
+        return el;
+    }
+
+    private static void applyOptionToBoolField(KotlinCommonCodeStyleSettings cs, String name, String value) {
+        for (String fieldName : COMMON_BOOL_FIELDS) {
+            if (fieldName.equals(name)) {
+                try { CommonCodeStyleSettings.class.getField(fieldName).setBoolean(cs, Boolean.parseBoolean(value)); } catch (Exception ignore) {}
+                return;
+            }
+        }
+    }
+
+    private static void applyOptionToIntField(KotlinCommonCodeStyleSettings cs, String name, String value) {
+        for (String fieldName : COMMON_INT_FIELDS) {
+            if (fieldName.equals(name)) {
+                try { CommonCodeStyleSettings.class.getField(fieldName).setInt(cs, Integer.parseInt(value)); } catch (Exception ignore) {}
+                return;
+            }
         }
     }
 }

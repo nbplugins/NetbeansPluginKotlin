@@ -21,6 +21,7 @@ import com.intellij.psi.codeStyle.CodeStyleSettings
 import com.intellij.psi.codeStyle.LanguageCodeStyleSettingsProvider
 import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferences
 import io.github.nbplugins.kotlin.nbm.formatting.options.kotlinCustomSettings
+import io.github.nbplugins.kotlin.nbm.options.formatter.CustomSchemeEntry
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterBlankLinesPanel
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterImportsPanel
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterIndentPanel
@@ -28,6 +29,7 @@ import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterCodeGenPa
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterOtherPanel
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormatterTabWithPreview
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinFormattingPreviewPane
+import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinSchemeManager
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinSettingsTreePanel
 import io.github.nbplugins.kotlin.nbm.options.formatter.KotlinStyleBar
 import java.awt.BorderLayout
@@ -39,7 +41,7 @@ import javax.swing.JTabbedPane
 /**
  * Root panel for Tools → Options → Kotlin.
  *
- * <p>Layout: a [KotlinStyleBar] (code-style preset selector) at the top, with
+ * <p>Layout: a [KotlinStyleBar] (scheme selector and gear menu) at the top, with
  * a [JTabbedPane] below. Tabs that have a meaningful preview ([KotlinFormatterTabWithPreview])
  * embed a live [KotlinFormattingPreviewPane] on the right side of an inner split pane.
  * Tabs without a preview (Imports, Code Generation) are shown full-width.
@@ -59,7 +61,21 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
     private val importsPanel = KotlinFormatterImportsPanel(::onSettingChanged)
     private val codeGenPanel = KotlinFormatterCodeGenPanel(::onSettingChanged)
 
-    private val styleBar = KotlinStyleBar(::onStyleApplied, ::collectCurrentSettings)
+    /**
+     * Name of the currently active custom scheme, or {@code null} if a built-in
+     * scheme is active. Updated on load and whenever the scheme changes via the
+     * gear menu.
+     */
+    private var currentCustomSchemeName: String? = null
+
+    private val styleBar = KotlinStyleBar(
+        onStyleApplied    = ::onStyleApplied,
+        currentSettingsProvider = ::collectCurrentSettings,
+        onSchemeListChanged = { newName ->
+            currentCustomSchemeName = newName
+            onChange()
+        }
+    )
 
     private val tabIndent   = KotlinFormatterTabWithPreview(indentPanel,     PREVIEW_GENERAL,      ::collectSettingsInto)
     private val tabSpaces   = KotlinFormatterTabWithPreview(spacesPanel,     PREVIEW_GENERAL,      ::collectSettingsInto)
@@ -89,12 +105,17 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
     /**
      * Populates all sub-panels from [prefs] and syncs the style bar.
      *
+     * <p>If a custom scheme name is stored in [prefs] under [PREFS_KEY_CUSTOM_SCHEME],
+     * the combo is set to that custom scheme entry. Otherwise the built-in entry
+     * matching the stored [KotlinCodeStyleSettings.CODE_STYLE_DEFAULTS] is shown.
+     *
      * @param prefs source preferences node
      */
     fun load(prefs: Preferences) {
         val tmp = CodeStyleSettings()
         KotlinCodeStylePreferences.load(prefs, tmp)
-        styleBar.setCurrentStyle(tmp.kotlinCustomSettings.CODE_STYLE_DEFAULTS)
+        currentCustomSchemeName = prefs.get(PREFS_KEY_CUSTOM_SCHEME, null)
+        styleBar.setCurrentScheme(tmp.kotlinCustomSettings.CODE_STYLE_DEFAULTS, currentCustomSchemeName)
         indentPanel.load(prefs)
         blankLinesPanel.load(prefs)
         spacesPanel.load(prefs)
@@ -108,6 +129,9 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
     /**
      * Writes all sub-panels' current state to [prefs].
      *
+     * <p>If a custom scheme is currently active, the saved state is also written
+     * back to [KotlinSchemeManager] so the scheme snapshot stays in sync.
+     *
      * @param prefs target preferences node
      */
     fun store(prefs: Preferences) {
@@ -118,6 +142,17 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
         importsPanel.store(prefs)
         otherPanel.store(prefs)
         codeGenPanel.store(prefs)
+
+        val customName = currentCustomSchemeName
+        if (customName != null) {
+            prefs.put(PREFS_KEY_CUSTOM_SCHEME, customName)
+            // Keep the scheme snapshot in sync with the saved settings.
+            val snapshot = CodeStyleSettings()
+            KotlinCodeStylePreferences.load(prefs, snapshot)
+            KotlinSchemeManager.updateScheme(customName, snapshot)
+        } else {
+            prefs.remove(PREFS_KEY_CUSTOM_SCHEME)
+        }
     }
 
     private fun onSettingChanged() {
@@ -126,6 +161,10 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
     }
 
     private fun onStyleApplied(settings: CodeStyleSettings) {
+        // Update the current custom scheme name based on what the style bar selected.
+        val entry = styleBar.currentEntry()
+        currentCustomSchemeName = (entry as? CustomSchemeEntry)?.name
+
         val prefs = KotlinCodeStylePreferences.prefs()
         KotlinCodeStylePreferences.save(settings, prefs)
         load(prefs)
@@ -163,6 +202,9 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
     }
 
     companion object {
+        /** Preferences key for the name of the active custom scheme, if any. */
+        const val PREFS_KEY_CUSTOM_SCHEME = "activeCustomSchemeName"
+
         /** General-purpose preview — used for Tabs & Indent, Spaces, Imports, Other. */
         val PREVIEW_GENERAL = """
             open class Some {
