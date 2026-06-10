@@ -75,6 +75,36 @@ class KaUnusedImportsComputerTest : KotlinTestCase("KaUnusedImportsComputer", "q
     }
 
     /**
+     * Regression test for the false-positive scenario where a file imports several symbols whose
+     * short names all appear in the body. The two-pass algorithm must report exactly
+     * one unused import (`java.io.File`) and leave `Duration`, `min`, `HashMap` as used.
+     */
+    fun testComplexFileFlagsOnlyTrulyUnused() {
+        val file = dir.getFileObject("unusedImportComplex.kt") ?: return
+        // The PSI-only pass works without binary deps, so don't skip on missing classpath here.
+        val kaKtFile = KotlinAnalysisAPISession.getSession(project).getKtFileForPath(file.path)
+            ?: return
+
+        val ktFile = KotlinPsiManager.getParsedFile(file)!!
+        val parserResult = KotlinParserResult(null, ktFile, file, project, kaKtFile)
+
+        val hints = KaUnusedImportsComputer(parserResult, kaKtFile).getUnusedImports()
+
+        // Hints are identified by the offset range of the unused import directive. Convert
+        // them to the imported short names so the assertions remain readable.
+        val unusedRanges = hints.map { it.range.start..it.range.end }
+        val unusedShortNames = unusedRanges.mapNotNull { range ->
+            val text = ktFile.text.substring(range.first, range.last)
+            Regex("""import\s+(?:[\w.]+\.)?(\w+)""").find(text)?.groupValues?.get(1)
+        }
+
+        assertEquals(
+            "Only java.io.File must be flagged unused; got: $unusedShortNames",
+            listOf("File"), unusedShortNames
+        )
+    }
+
+    /**
      * Verifies that [KaUnusedImportsComputer] produces no hint for [unusedImport.kt]'s used
      * import (`java.util.HashMap`) — i.e. the used import is not falsely flagged.
      */
