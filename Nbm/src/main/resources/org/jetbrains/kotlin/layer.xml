@@ -14,6 +14,14 @@
                 <attr name="displayName" stringvalue="Kotlin Files"/>
             </file>
         </folder>
+        <!-- CodeStylePreferences.Provider is looked up via Lookup.getDefault()
+             (i.e. global Lookup), not MIME-specific MimeLookup. Register here
+             so IndentUtils.indentLevelSize / tabSize / isExpandTabs for
+             text/x-kotlin documents pick up Kotlin formatter settings. -->
+        <file name="io-github-nbplugins-kotlin-nbm-formatting-options-KotlinCodeStylePreferencesProvider.instance">
+            <attr name="instanceClass" stringvalue="io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferencesProvider"/>
+            <attr name="instanceOf" stringvalue="org.netbeans.modules.editor.indent.spi.CodeStylePreferences$Provider"/>
+        </file>
     </folder>
 
     <!-- CSL language registration for text/x-kotlin -->

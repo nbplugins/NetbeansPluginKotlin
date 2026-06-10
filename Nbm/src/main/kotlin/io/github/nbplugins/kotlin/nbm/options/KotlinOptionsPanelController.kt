@@ -18,6 +18,7 @@
 package io.github.nbplugins.kotlin.nbm.options
 
 import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferences
+import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferencesProvider
 import io.github.nbplugins.kotlin.nbm.formatting.options.ProjectCodeStyleStorage
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
@@ -61,6 +62,7 @@ class KotlinOptionsPanelController : OptionsPanelController() {
         prefs.flush()
         KotlinCodeStylePreferences.loadIntoGlobal(prefs)
         ProjectCodeStyleStorage.onGlobalSettingsChanged()
+        KotlinCodeStylePreferencesProvider.notifyChanged(null)
         changed = false
     }
 

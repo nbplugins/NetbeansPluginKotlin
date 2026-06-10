@@ -18,6 +18,7 @@
 package io.github.nbplugins.kotlin.nbm.options
 
 import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferences
+import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferencesProvider
 import io.github.nbplugins.kotlin.nbm.formatting.options.ProjectCodeStyleStorage
 import org.netbeans.api.project.Project
 import java.awt.BorderLayout
@@ -104,6 +105,7 @@ class KotlinProjectOptionsPanelController(private val project: Project) {
         } else {
             ProjectCodeStyleStorage.onProjectSettingsSaved(project, s)
         }
+        KotlinCodeStylePreferencesProvider.notifyChanged(project)
     }
 
     /**
