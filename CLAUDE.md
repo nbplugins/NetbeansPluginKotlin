@@ -113,6 +113,8 @@ Sub-package mirrors the feature area. Current packages:
 - `io.github.nbplugins.kotlin.nbm.language` — language registration and configuration
 - `io.github.nbplugins.kotlin.nbm.model` — shared data models (e.g. highlight token types)
 - `io.github.nbplugins.kotlin.nbm.navigation` — go-to-definition, find usages
+- `io.github.nbplugins.kotlin.nbm.options` — Tools→Options→Kotlin panel controllers and root panel
+- `io.github.nbplugins.kotlin.nbm.options.formatter` — individual formatter panels (Indent, Spaces, Wrapping, BlankLines, Imports, Other), StyleBar, SchemeManager, OptionTreePanel, preview pane, project customizer
 - `io.github.nbplugins.kotlin.nbm.projectsextensions` — Maven/Gradle/Ant project integration
 - `io.github.nbplugins.kotlin.nbm.reformatting` — reformat-selection support
 - `io.github.nbplugins.kotlin.nbm.resolve` — K2 analysis session management

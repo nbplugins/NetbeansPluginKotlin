@@ -8,9 +8,8 @@ compiler API, and bring language support to a level comparable to the IDEA plugi
 
 Key constraints:
 - Existing packages (`org.jetbrains.kotlin.*`) are **not renamed**; new and substantially reworked
-  code goes into `io.github.nbkotlinplugin.*`.
-- Kotlin 1.9.25 + BindingContext (FE1.0) through B2–B6 (0.6.x). K2 Analysis API migration starts
-  in stage C (version 0.7.x).
+  code goes into `io.github.nbplugins.kotlin.nbm.*`.
+- Current state (0.11.x): K2-only architecture, Kotlin 2.3.21, platform era 253.
 - Java 17 — runtime for tests.
 
 ---
@@ -56,7 +55,7 @@ compatible version. Not a separate stage — done along the way.
 - [x] **B6** — Repoint `KotlinConverter` → `submodules/IntellijCommunity@232` (no binary artifact available for j2k); re-enable J2K/diagnostics tests
 - [x] **C** — K2 Analysis API migration (C1–C10 complete). Ships as 0.7.x.
 - [x] **D** — Compiler upgrade to kotlin-compiler-ir-for-ide 2.3.21 + analysis-api 2.3.21, platform 253 (D1–D7 ✅). Ships as 0.8.x.
-- [ ] **E** — Editor UX polish and missing features (E1–E12). Ships as 0.9.x+.
+- [ ] **E** — Editor UX polish and missing features (E1–E12). Ships as 0.9.x+. (E1–E5 ✅)
 
 B3–B6 ship as 0.6.x on `feature/kotlin-compiler-only`; single PR after B6 passes all 169 tests.
 Stage C ships as 0.7.x; C1–C10 complete.
@@ -89,11 +88,11 @@ Source packages are **not renamed**.
 
 ### A2. GitHub Actions CI/CD
 
-- [ ] Rename branch `master` → `main`
-- [ ] Copy and adapt `.github/workflows/build.yml` from `NetbeansClaudeCodePlugin`
-- [ ] Copy `build-scripts/autotag.sh`
-- [ ] Research licenses (Apache-2.0 / JetBrains / IntelliJ Community) — whether Maven Central deployment is allowed
-- [ ] Configure publishing (Maven Central or GitHub Packages)
+- [x] Rename branch `master` → `main`
+- [x] Copy and adapt `.github/workflows/build.yml` from `NetbeansClaudeCodePlugin`
+- [x] Copy `build-scripts/autotag.sh`
+- [ ] Research licenses (Apache-2.0 / JetBrains / IntelliJ Community) — whether Maven Central deployment is allowed (deferred)
+- [ ] Configure publishing (Maven Central or GitHub Packages) (deferred)
 
 Base on `.github/workflows/build.yml` and `build-scripts/autotag.sh` from `NetbeansClaudeCodePlugin`.
 Adaptations:
@@ -138,10 +137,10 @@ Adaptations:
 
 ### A3. MIME Type — Override Built-in NB Support
 
-- [ ] Study registration of `org.netbeans.modules.languages.kotlin` in NB sources
-- [ ] Choose override mechanism
-- [ ] Replace `text/x-kt` with `text/x-kotlin` in all plugin registrations
-- [ ] Register our services with higher priority than the built-in ones
+- [x] Study registration of `org.netbeans.modules.languages.kotlin` in NB sources
+- [x] Choose override mechanism
+- [x] Replace `text/x-kt` with `text/x-kotlin` in all plugin registrations
+- [x] Register our services with higher priority than the built-in ones
 
 NetBeans 12+ includes basic `.kt` highlighting via `org.netbeans.modules.languages.kotlin`
 (MIME type `text/x-kotlin`). Our plugin currently uses `text/x-kt`.
@@ -489,19 +488,22 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
   - [ ] Inlay hints (parameter names at call sites): deferred — no public NetBeans 23 inlay-hints API found
 
 - [x] **E4** — Extended intentions and quick-fixes matching IDEA set:
-  - Add missing `when` branches, if↔when conversions, string template↔concat↔buildString conversions,
+  - 43 code intentions (Groups A–H): missing `when` branches, if↔when conversions, string template↔concat↔buildString conversions,
     lambda↔reference↔anonymous function conversions, forEach↔for loop, named argument add/remove,
     brace add/remove, property accessor generation, De Morgan's law, type argument insert/remove,
-    null-safety fixes, type mismatch fixes, modifier fixes, and more (~45 intentions + fixes)
+    null-safety fixes, type mismatch fixes, modifier fixes, and more (PR #87)
+  - 17 K2 quick-fixes from IDEA with infrastructure for standalone PSI mutation (PR #90)
 
-- **E5** — Formatter settings UI:
-  - Port or adapt 6 IntelliJ formatter UI sources excluded from `bundled-jars/KotlinFormatter`
-    compilation in D6: `KotlinLanguageCodeStyleSettingsProvider`, `KotlinCodeStylePanel`,
-    `KotlinOtherSettingsPanel`, `KotlinSaveStylePanel`, `BaseKotlinImportLayoutPanel`,
-    `ImportSettingsPanel`
-  - Options: (a) rewrite against NetBeans `OptionsCategory`/`OptionsPanelController`,
-    or (b) add compile-time shims for missing IntelliJ UI types
-  - Expose at minimum: indent size, trailing comma, import ordering
+- [x] **E5** — Formatter settings UI (PR #93):
+  - `KotlinCodeStyleSerializer` / `KotlinCodeStylePreferences` — JDOM-based XML serialization (diff-from-defaults)
+  - `KotlinCodeStylePreferencesProvider` — NbPreferences bridge; `ProjectCodeStyleStorage` — per-project `.kotlin-code-style.xml`
+  - Tools→Options→Kotlin: `KotlinOptionsPanelController` + `KotlinOptionsPanel` with IDEA-style layout:
+    StyleBar (`KotlinStyleBar` + `KotlinSchemeManager` with Kotlin Official / Obsolete / IDE defaults profiles)
+    + JSplitPane (6-tab panel | live preview via `KotlinFormattingPreviewPane`)
+  - All 6 panels: `KotlinFormatterIndentPanel`, `KotlinFormatterSpacesPanel`, `KotlinFormatterCodeGenPanel`
+    (wrapping), `KotlinFormatterBlankLinesPanel`, `KotlinFormatterImportsPanel`, `KotlinFormatterOtherPanel`
+  - `OptionTreePanel` — reusable JTree with checkbox/combobox renderers
+  - Per-project: `KotlinProjectOptionsPanelController` + `KotlinProjectCustomizerProvider`
 
 - **E6** — New Kotlin Class wizard:
   - `WizardDescriptor` + `DataObjectFactory` integration
@@ -534,5 +536,6 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
 - **B2–B6** (Kotlin 1.9.25 + IntelliJ 232 bump, FE1.0 preserved): `0.6.x`
 - **C1–C10** (K2 Analysis API migration, kotlin-compiler 2.0.21): `0.7.x` ✓
 - **D1–D7** (kotlin-compiler-ir-for-ide 2.3.21, analysis-api 2.3.21, platform 253): `0.8.x` ✓
-- **E1–E12** (editor UX polish + missing features): `0.9.x`+
+- **E1–E5** ✓ (hover, diagnostics, parameter info, intentions/quick-fixes, formatter settings UI): `0.9.x` → `0.10.x` → `0.11.x`
+- **E6–E12** (New Class wizard, Find Usages, Go to Declaration, Rename, J2K, New Project, Debugger): `0.11.x`+
 - Major version `1.0.0`: when feature parity with the IDEA plugin reached
