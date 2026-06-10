@@ -19,6 +19,7 @@ package io.github.nbplugins.kotlin.nbm.options
 
 import com.intellij.psi.codeStyle.CodeStyleSettings
 import com.intellij.psi.codeStyle.LanguageCodeStyleSettingsProvider
+import io.github.nbplugins.kotlin.nbm.formatting.KotlinFormatterUtils
 import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferences
 import io.github.nbplugins.kotlin.nbm.formatting.options.kotlinCustomSettings
 import io.github.nbplugins.kotlin.nbm.options.formatter.CustomSchemeEntry
@@ -39,7 +40,8 @@ import javax.swing.JScrollPane
 import javax.swing.JTabbedPane
 
 /**
- * Root panel for Tools → Options → Kotlin.
+ * Root panel for Tools → Options → Kotlin (also reused by
+ * [KotlinProjectOptionsPanelController] for per-project formatter settings).
  *
  * <p>Layout: a [KotlinStyleBar] (scheme selector and gear menu) at the top, with
  * a [JTabbedPane] below. Tabs that have a meaningful preview ([KotlinFormatterTabWithPreview])
@@ -49,9 +51,19 @@ import javax.swing.JTabbedPane
  * <p>The [onChange] callback is forwarded to [KotlinOptionsPanelController] so
  * that the Options dialog can track whether unsaved changes exist.
  *
- * @param onChange called whenever any control in any sub-panel changes value
+ * <p>The [persistPrefs] lambda controls where "Apply" (scheme bar) saves the applied
+ * scheme's settings and where [collectSettingsInto] seeds invisible fields from.
+ * Defaults to the global formatter preferences node; pass a project-local node to
+ * avoid touching global settings from the project properties panel.
+ *
+ * @param onChange     called whenever any control in any sub-panel changes value
+ * @param persistPrefs returns the [Preferences] node used as the apply/seed target;
+ *                     defaults to [KotlinCodeStylePreferences.prefs]
  */
-class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout()) {
+class KotlinOptionsPanel(
+    private val onChange: () -> Unit,
+    private val persistPrefs: () -> Preferences = { KotlinCodeStylePreferences.prefs() }
+) : JPanel(BorderLayout()) {
 
     private val indentPanel = KotlinFormatterIndentPanel(::onSettingChanged)
     private val blankLinesPanel = KotlinFormatterBlankLinesPanel(::onSettingChanged)
@@ -169,9 +181,21 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
         previewPanes.forEach { it.scheduleRefresh() }
     }
 
+    /**
+     * Returns a snapshot of the current in-memory [CodeStyleSettings] reflecting
+     * any unsaved panel edits. Used by [KotlinProjectOptionsPanelController] on OK
+     * to compare against the global settings and decide whether to write project files.
+     *
+     * @return current settings snapshot
+     */
+    fun currentSettings(): CodeStyleSettings = collectCurrentSettings()
+
     private fun onStyleApplied(settings: CodeStyleSettings) {
         currentCustomSchemeName = (styleBar.currentEntry() as? CustomSchemeEntry)?.name
-        val prefs = KotlinCodeStylePreferences.prefs()
+        // Save to persistPrefs(): for the global panel this is KotlinCodeStylePreferences.prefs()
+        // (existing behaviour); for the project panel this is a project-local node so that
+        // global settings are never touched when browsing schemes in Project Properties.
+        val prefs = persistPrefs()
         KotlinCodeStylePreferences.save(settings, prefs)
         reloadPanels(prefs)
         onChange()
@@ -187,13 +211,16 @@ class KotlinOptionsPanel(private val onChange: () -> Unit) : JPanel(BorderLayout
         val tmp = java.util.prefs.Preferences.userRoot().node("kotlin-options-collect-${System.nanoTime()}")
         collectSettingsInto(tmp)
         val settings = CodeStyleSettings()
+        KotlinFormatterUtils.registerKotlinProvider(settings)
         KotlinCodeStylePreferences.load(tmp, settings)
         return settings
     }
 
     private fun collectSettingsInto(prefs: Preferences) {
-        // Seed with all persisted keys so style-preset fields not shown in any panel survive.
-        val persisted = KotlinCodeStylePreferences.prefs()
+        // Seed with all keys from persistPrefs() so style-preset fields not shown in any
+        // panel tab survive. For the global panel persistPrefs() == KotlinCodeStylePreferences.prefs()
+        // (unchanged behaviour). For the project panel it seeds from the project-local node.
+        val persisted = persistPrefs()
         for (key in listOf(KotlinCodeStylePreferences.PREFS_KEY_KOTLIN, KotlinCodeStylePreferences.PREFS_KEY_COMMON)) {
             persisted.get(key, null)?.let { prefs.put(key, it) }
         }

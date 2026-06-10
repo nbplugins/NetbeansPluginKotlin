@@ -21,6 +21,7 @@ import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.lang.reflect.Method;
 import org.jetbrains.kotlin.log.KotlinLogger;
+import io.github.nbplugins.kotlin.nbm.formatting.options.ProjectCodeStyleStorage;
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession;
 import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectHelper;
 import org.netbeans.api.progress.ProgressHandle;
@@ -48,6 +49,7 @@ public class MavenProjectOpenedHook extends ProjectOpenedHook{
     
     @Override
     protected void projectOpened() {
+        ProjectCodeStyleStorage.INSTANCE.onProjectOpened(project);
         Thread thread = new Thread(){
                 @Override
                 public void run(){
@@ -109,9 +111,10 @@ public class MavenProjectOpenedHook extends ProjectOpenedHook{
     }
     @Override
     protected void projectClosed() {
+        ProjectCodeStyleStorage.INSTANCE.onProjectClosed(project);
         KotlinProjectHelper.INSTANCE.removeProjectCache(project);
     }
-    
+
     private static class PomXmlChangeListener implements PropertyChangeListener, FileChangeListener {
 
         private final Project project;

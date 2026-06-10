@@ -62,8 +62,17 @@ import org.netbeans.api.project.Project;
  * @author Alexander.Baratynski
  */
 public class KotlinFormatterUtils {
-    
+
+    /** Global singleton — loaded from IDE preferences on startup and on settings change. */
     private static final CodeStyleSettings settings;
+
+    /**
+     * Per-call override for per-project settings. Set via {@link #pushSettings} before
+     * a format/indent call and cleared via {@link #popSettings} in a finally-block.
+     * Using a thread-local avoids mutating the global singleton for every format operation
+     * while remaining safe if formatting is ever parallelized.
+     */
+    private static final ThreadLocal<CodeStyleSettings> threadSettings = new ThreadLocal<>();
 
     static {
         settings = new CodeStyleSettings();
@@ -93,8 +102,37 @@ public class KotlinFormatterUtils {
         });
     }
 
+    /**
+     * Returns the effective {@link CodeStyleSettings} for the current formatting call.
+     *
+     * <p>Returns the thread-local override set by {@link #pushSettings} if present,
+     * otherwise falls back to the global IDE settings singleton.
+     *
+     * @return effective code-style settings
+     */
     public static CodeStyleSettings getSettings() {
-        return settings;
+        CodeStyleSettings override = threadSettings.get();
+        return override != null ? override : settings;
+    }
+
+    /**
+     * Sets a per-call settings override for the current thread. Must be paired with
+     * {@link #popSettings} in a finally-block. Called by {@code formatUtils.kt} and
+     * {@link org.jetbrains.kotlin.formatting.KotlinIndentStrategy} to activate
+     * per-project settings without mutating the global singleton.
+     *
+     * @param s the settings to use for the current format/indent call
+     */
+    public static void pushSettings(CodeStyleSettings s) {
+        threadSettings.set(s);
+    }
+
+    /**
+     * Clears the per-call settings override for the current thread. Must be called in a
+     * finally-block after {@link #pushSettings}.
+     */
+    public static void popSettings() {
+        threadSettings.remove();
     }
 
     /**
@@ -161,13 +199,14 @@ public class KotlinFormatterUtils {
     
     public static String formatRange(String source, TextRange range, KtPsiFactory psiFactory, String fileName) {
         KtFile ktFile = createKtFile(source, psiFactory, fileName);
+        CodeStyleSettings s = getSettings();
         Block rootBlock = new KotlinBlock(ktFile.getNode(),
                 NodeAlignmentStrategy.getNullStrategy(),
                 Indent.getNoneIndent(),
-                null,   
-                settings,
-                KotlinSpacingRulesKt.createSpacingBuilder(settings, KotlinSpacingBuilderUtilImpl.INSTANCE));
-        return formatRange(ktFile, rootBlock, settings, source, range);
+                null,
+                s,
+                KotlinSpacingRulesKt.createSpacingBuilder(s, KotlinSpacingBuilderUtilImpl.INSTANCE));
+        return formatRange(ktFile, rootBlock, s, source, range);
     }
     
     private static String formatRange(KtFile containingFile, Block rootBlock,
@@ -190,7 +229,9 @@ public class KotlinFormatterUtils {
             Block rootBlock, CodeStyleSettings settings, String source,
             boolean forLineIndentation) {
         initializeSettings(settings.getIndentOptions());
-        KotlinCodeStylePreferences.INSTANCE.loadIntoGlobal(KotlinCodeStylePreferences.INSTANCE.prefs());
+        // Settings are loaded into the global singleton once on project open and on settings
+        // change (Tools→Options OK / Project Properties OK). At format time the caller has
+        // already pushed the correct settings via pushSettings(), so no per-call I/O is needed.
         NetBeansFormattingModel formattingDocumentModel =
                 new NetBeansFormattingModel(
                         new DocumentImpl(ktFile.getViewProvider().getContents(), true),

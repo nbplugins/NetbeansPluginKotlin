@@ -20,6 +20,7 @@ package io.github.nbplugins.kotlin.nbm.reformatting
 import com.intellij.openapi.util.TextRange
 import javax.swing.text.Document
 import io.github.nbplugins.kotlin.nbm.formatting.KotlinFormatterUtils
+import io.github.nbplugins.kotlin.nbm.formatting.options.ProjectCodeStyleStorage
 import io.github.nbplugins.kotlin.nbm.navigation.moveCaretToOffset
 import org.jetbrains.kotlin.formatting.IndenterUtil
 import org.jetbrains.kotlin.utils.ProjectUtils
@@ -48,17 +49,24 @@ fun format(doc: Document, offset: Int, startOffset: Int = -1, endOffset: Int = -
     val currentText = doc.getText(0, doc.length)
     val project = proj ?: ProjectUtils.getKotlinProjectForFileObject(file)
     var formattedCode = ""
-    IndenterUtil.withDocument(doc) {
-        formattedCode = if (startOffset >= 0 && endOffset > startOffset) {
-            val psiFactory = KotlinFormatterUtils.createPsiFactory(project)
-            // Strip trailing newlines from the selection end so the IntelliJ formatter
-            // does not bleed into the first line of the statement that follows the selection.
-            var trimmedEnd = endOffset
-            while (trimmedEnd > startOffset && currentText[trimmedEnd - 1] == '\n') trimmedEnd--
-            KotlinFormatterUtils.formatRange(currentText, TextRange(startOffset, trimmedEnd), psiFactory, file.name)
-        } else {
-            KotlinFormatterUtils.formatCode(currentText, file.name, project, "\n")
+    // Push per-project (or global) settings once before any formatter call so that
+    // buildModel() and getSettings() always return the right settings without per-call I/O.
+    KotlinFormatterUtils.pushSettings(ProjectCodeStyleStorage.getSettings(project))
+    try {
+        IndenterUtil.withDocument(doc) {
+            formattedCode = if (startOffset >= 0 && endOffset > startOffset) {
+                val psiFactory = KotlinFormatterUtils.createPsiFactory(project)
+                // Strip trailing newlines from the selection end so the IntelliJ formatter
+                // does not bleed into the first line of the statement that follows the selection.
+                var trimmedEnd = endOffset
+                while (trimmedEnd > startOffset && currentText[trimmedEnd - 1] == '\n') trimmedEnd--
+                KotlinFormatterUtils.formatRange(currentText, TextRange(startOffset, trimmedEnd), psiFactory, file.name)
+            } else {
+                KotlinFormatterUtils.formatCode(currentText, file.name, project, "\n")
+            }
         }
+    } finally {
+        KotlinFormatterUtils.popSettings()
     }
     doc.remove(0, doc.length)
     doc.insertString(0, formattedCode, null)

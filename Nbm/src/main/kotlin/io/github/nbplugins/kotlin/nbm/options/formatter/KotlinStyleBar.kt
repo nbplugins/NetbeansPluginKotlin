@@ -231,8 +231,8 @@ class KotlinStyleBar(
             else -> settingsProvider()
         }
         when (style) {
-            BuiltInStyle.OFFICIAL -> KotlinOfficialStyleGuide.applyToKotlinCustomSettings(settings.kotlinCustomSettings)
-            BuiltInStyle.OBSOLETE -> KotlinObsoleteStyleGuide.applyToKotlinCustomSettings(settings.kotlinCustomSettings)
+            BuiltInStyle.OFFICIAL -> KotlinOfficialStyleGuide.apply(settings)
+            BuiltInStyle.OBSOLETE -> KotlinObsoleteStyleGuide.apply(settings)
             BuiltInStyle.DEFAULTS -> {}
         }
         onStyleApplied(settings)

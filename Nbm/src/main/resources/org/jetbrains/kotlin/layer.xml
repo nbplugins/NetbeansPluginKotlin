@@ -49,6 +49,32 @@
                 <file name="org.jetbrains.kotlin.projectsextensions.gradle.lookup.GradleProjectLookupProviderExtension.instance"/>
             </folder>
         </folder>
+        <!-- Kotlin Formatter category in Project Properties — registered manually because
+             -proc:none disables annotation processing (see CLAUDE.md). -->
+        <folder name="org-netbeans-modules-java-j2seproject">
+            <folder name="Customizer">
+                <file name="io-github-nbplugins-kotlin-nbm-projectsextensions-KotlinProjectCustomizerProvider.instance">
+                    <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectCustomizerProvider"/>
+                    <attr name="position" intvalue="900"/>
+                </file>
+            </folder>
+        </folder>
+        <folder name="org-netbeans-modules-maven">
+            <folder name="Customizer">
+                <file name="io-github-nbplugins-kotlin-nbm-projectsextensions-KotlinProjectCustomizerProvider.instance">
+                    <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectCustomizerProvider"/>
+                    <attr name="position" intvalue="900"/>
+                </file>
+            </folder>
+        </folder>
+        <folder name="org.netbeans.gradle.project">
+            <folder name="Customizer">
+                <file name="io-github-nbplugins-kotlin-nbm-projectsextensions-KotlinProjectCustomizerProvider.instance">
+                    <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectCustomizerProvider"/>
+                    <attr name="position" intvalue="900"/>
+                </file>
+            </folder>
+        </folder>
     </folder>
     
     <folder name="Loaders">

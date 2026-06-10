@@ -18,6 +18,7 @@
 package io.github.nbplugins.kotlin.nbm.options
 
 import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferences
+import io.github.nbplugins.kotlin.nbm.formatting.options.ProjectCodeStyleStorage
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
 import javax.swing.JComponent
@@ -51,12 +52,15 @@ class KotlinOptionsPanelController : OptionsPanelController() {
     }
 
     /**
-     * Persists the panel state to preferences and notifies the formatter.
+     * Persists the panel state to preferences, updates the global formatter singleton,
+     * and notifies any open projects that inherit global settings.
      */
     override fun applyChanges() {
         val prefs = KotlinCodeStylePreferences.prefs()
         getPanel().store(prefs)
         prefs.flush()
+        KotlinCodeStylePreferences.loadIntoGlobal(prefs)
+        ProjectCodeStyleStorage.onGlobalSettingsChanged()
         changed = false
     }
 
@@ -92,10 +96,10 @@ class KotlinOptionsPanelController : OptionsPanelController() {
 
     private fun getPanel(): KotlinOptionsPanel {
         if (panel == null) {
-            panel = KotlinOptionsPanel {
+            panel = KotlinOptionsPanel(onChange = {
                 changed = true
                 pcs.firePropertyChange(PROP_CHANGED, false, true)
-            }
+            })
         }
         return panel!!
     }
