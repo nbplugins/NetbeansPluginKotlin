@@ -488,7 +488,7 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
   - [x] Ctrl+P (ParameterInfo): CSL `ParameterInfo` service; function signature popup with active parameter highlighted (PR #86)
   - [ ] Inlay hints (parameter names at call sites): deferred — no public NetBeans 23 inlay-hints API found
 
-- **E4** — Extended intentions and quick-fixes matching IDEA set:
+- [x] **E4** — Extended intentions and quick-fixes matching IDEA set:
   - Add missing `when` branches, if↔when conversions, string template↔concat↔buildString conversions,
     lambda↔reference↔anonymous function conversions, forEach↔for loop, named argument add/remove,
     brace add/remove, property accessor generation, De Morgan's law, type argument insert/remove,

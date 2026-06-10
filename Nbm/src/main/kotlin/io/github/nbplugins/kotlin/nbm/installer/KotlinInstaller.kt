@@ -19,6 +19,8 @@ package io.github.nbplugins.kotlin.nbm.installer
 
 import org.jetbrains.kotlin.project.KotlinSources
 import org.jetbrains.kotlin.installer.KotlinUpdater
+import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferences
+import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferencesProvider
 import io.github.nbplugins.kotlin.nbm.highlighter.KaSemanticHighlightingVisitor
 import io.github.nbplugins.kotlin.nbm.highlighter.KotlinSemanticHighlightsLayerFactory
 import io.github.nbplugins.kotlin.nbm.hover.KotlinTooltipHighlightsLayerFactory
@@ -44,6 +46,15 @@ class KotlinInstaller : ModuleInstall() {
     override fun restored() {
         FakeIntellijHome.StartingUp().run()
         KotlinAnalysisAPISession.initApplicationEnvironment()
+        // KotlinCodeStylePreferences is otherwise loaded into the global formatter singleton
+        // only when the user clicks OK in Tools → Options → Kotlin. Load it here so the first
+        // format after restart uses persisted values rather than the in-memory defaults.
+        KotlinCodeStylePreferences.loadIntoGlobal(KotlinCodeStylePreferences.prefs())
+        // Push the loaded indent settings into the text/x-kotlin MIME Preferences node so
+        // that NetBeans' built-in indent-guide renderer (DocumentViewOp) and other MIME
+        // preference consumers see Kotlin's values from the very first .kt file opened
+        // after restart, not the NB defaults.
+        KotlinCodeStylePreferencesProvider.notifyChanged(null)
         WindowManager.getDefault().invokeWhenUIReady {
             ProjectUtils.checkKtHome()
             // Pre-warm sessions for .kt files already open at startup (restored from previous session).
@@ -55,6 +66,7 @@ class KotlinInstaller : ModuleInstall() {
                 .forEach { file ->
                     KotlinLogger.INSTANCE.logInfo("[TIME] KotlinInstaller: .kt file already open at startup ${file.path} at ${now()}")
                     checkProjectConfiguration(file)
+                    KotlinCodeStylePreferencesProvider.applyDocumentPropertiesForFile(file)
                     val proj = ProjectUtils.getKotlinProjectForFileObject(file) ?: return@forEach
                     org.openide.util.RequestProcessor.getDefault().post {
                         preAnalyzeFile(file, proj)
@@ -75,6 +87,7 @@ class KotlinInstaller : ModuleInstall() {
                                         )
                                         checkUpdates()
                                         checkProjectConfiguration(currentFile)
+                                        KotlinCodeStylePreferencesProvider.applyDocumentPropertiesForFile(currentFile)
                                         // Pre-warm the K2 session on a background thread so it is
                                         // ready before EDITOR_SENSITIVE_TASK_SCHEDULER fires the parser.
                                         val proj = ProjectUtils.getKotlinProjectForFileObject(currentFile)

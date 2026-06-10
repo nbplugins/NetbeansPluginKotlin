@@ -17,6 +17,7 @@
  *******************************************************************************/
 package org.jetbrains.kotlin.projectsextensions.gradle
 
+import io.github.nbplugins.kotlin.nbm.formatting.options.ProjectCodeStyleStorage
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectHelper
 import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectHelper.doInitialScan
@@ -32,6 +33,7 @@ import kotlin.concurrent.thread
 class GradleProjectOpenedHook(private val project: Project) : ProjectOpenedHook() {
 
     override fun projectOpened() {
+        ProjectCodeStyleStorage.onProjectOpened(project)
         thread {
             KotlinProjectHelper.postTask(Runnable {
                 val progressBar = ProgressHandleFactory.createHandle("Loading Kotlin environment")
@@ -44,6 +46,8 @@ class GradleProjectOpenedHook(private val project: Project) : ProjectOpenedHook(
         }
     }
 
-    override fun projectClosed() {}
+    override fun projectClosed() {
+        ProjectCodeStyleStorage.onProjectClosed(project)
+    }
     
 }

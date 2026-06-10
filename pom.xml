@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin</artifactId>
-  <version>0.10.45-SNAPSHOT</version>
+  <version>0.11.57-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin</name>
   <properties>
@@ -247,7 +247,7 @@
         <artifactId>kotlin-compiler-ir-for-ide</artifactId>
         <version>${kotlin.runtime.version}</version>
       </dependency>
-      <!-- core/core-impl/util: 253 era. Bundled via CoreImpl wrapper module. -->
+      <!-- core/core-impl/core-ui/util/util-ui/editor-ui: 253 era -->
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>core</artifactId>
@@ -256,6 +256,24 @@
       <dependency>
         <groupId>com.jetbrains.intellij.platform</groupId>
         <artifactId>core-impl</artifactId>
+        <version>${intellij.platform.253.version}</version>
+      </dependency>
+      <!-- core-ui: SimpleTextAttributes, BooleanTableCellRenderer, SimpleColoredComponent -->
+      <dependency>
+        <groupId>com.jetbrains.intellij.platform</groupId>
+        <artifactId>core-ui</artifactId>
+        <version>${intellij.platform.253.version}</version>
+      </dependency>
+      <!-- util-ui: JBUI, JBInsets, TableUtil, UIUtil, etc. -->
+      <dependency>
+        <groupId>com.jetbrains.intellij.platform</groupId>
+        <artifactId>util-ui</artifactId>
+        <version>${intellij.platform.253.version}</version>
+      </dependency>
+      <!-- editor-ui: AnAction, AnActionEvent, ActionUpdateThread, EditorColorsScheme, etc. -->
+      <dependency>
+        <groupId>com.jetbrains.intellij.platform</groupId>
+        <artifactId>editor-ui</artifactId>
         <version>${intellij.platform.253.version}</version>
       </dependency>
       <dependency>
@@ -461,6 +479,16 @@
       <dependency>
         <groupId>org.netbeans.api</groupId>
         <artifactId>org-netbeans-spi-editor-hints</artifactId>
+        <version>${netbeans.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.netbeans.api</groupId>
+        <artifactId>org-netbeans-modules-options-api</artifactId>
+        <version>${netbeans.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.netbeans.modules</groupId>
+        <artifactId>org-netbeans-modules-options-editor</artifactId>
         <version>${netbeans.version}</version>
       </dependency>
       <dependency>

@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.10.45-SNAPSHOT</version>
+    <version>0.11.57-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-compiler-cli-base</artifactId>
@@ -179,7 +179,19 @@ new ZipFile(kcompJar).withCloseable { zf ->
     if (!name.endsWith('.class')) return
     // Strip fastutil: provided separately as intellij-deps-fastutil; the bundled copy
     // conflicts with the version CoreImpl (util:253) was compiled against.
+    // Strip fastutil: provided separately as intellij-deps-fastutil.
+    // Strip org/jdom: provided by util-jdom:253 at runtime with full API;
+    // the kotlin-compiler copy has stripped constructors that break JDOM usage.
+    // Strip fastutil: provided separately as intellij-deps-fastutil.
+    // Strip org/jdom: provided by util-jdom:253 at runtime with full API.
+    // Strip com/intellij/util/xml/dom: provided by CoreImpl (util-xml-dom:253);
+    //   kotlin-compiler has an older StaxFactory missing createXmlStreamReader(Reader).
+    // Strip com/fasterxml/aalto: provided by aalto-xml:1.3.3 (compile dep of Nbm);
+    //   kotlin-compiler has an older Aalto missing CharSourceBootstrapper.construct(Reader).
     boolean keep = !name.startsWith('it/unimi/dsi/fastutil/') &&
+                   !name.startsWith('org/jdom/') &&
+                   !name.startsWith('com/intellij/util/xml/dom/') &&
+                   !name.startsWith('com/fasterxml/aalto/') &&
                    (forceInclude.contains(name) ||
                    (!forIdeEntries.contains(name) && !platformEntries.contains(name)))
     if (!keep) return

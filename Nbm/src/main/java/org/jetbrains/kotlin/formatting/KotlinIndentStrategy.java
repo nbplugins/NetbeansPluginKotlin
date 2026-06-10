@@ -26,6 +26,7 @@ import javax.swing.text.BadLocationException;
 import javax.swing.text.StyledDocument;
 import org.jetbrains.kotlin.idea.formatter.KotlinSpacingRulesKt;
 import io.github.nbplugins.kotlin.nbm.formatting.KotlinFormatterUtils;
+import io.github.nbplugins.kotlin.nbm.formatting.options.ProjectCodeStyleStorage;
 import org.jetbrains.kotlin.psi.KtFile;
 import org.jetbrains.kotlin.psi.KtPsiFactory;
 import org.jetbrains.kotlin.utils.ProjectUtils;
@@ -165,16 +166,23 @@ public class KotlinIndentStrategy {
         KtPsiFactory psiFactory = KotlinFormatterUtils.createPsiFactory(project);
         KtFile ktFile = KotlinFormatterUtils.createKtFile(text, psiFactory, file.getName());
 
-        CodeStyleSettings settings = KotlinFormatterUtils.getSettings();
-        KotlinBlock rootBlock = new KotlinBlock(ktFile.getNode(),
-                NodeAlignmentStrategy.getNullStrategy(),
-                Indent.getNoneIndent(),
-                null,
-                settings,
-                KotlinSpacingRulesKt.createSpacingBuilder(
-                        settings, KotlinFormatter.KotlinSpacingBuilderUtilImpl.INSTANCE));
-        
-        String newText = KotlinFormatterUtils.adjustIndent(ktFile, rootBlock, settings, offset, text);
+        // Push per-project (or global) settings for this indent call so that getSettings()
+        // returns the right CodeStyleSettings without per-keystroke I/O.
+        KotlinFormatterUtils.pushSettings(ProjectCodeStyleStorage.INSTANCE.getSettings(project));
+        String newText;
+        try {
+            CodeStyleSettings settings = KotlinFormatterUtils.getSettings();
+            KotlinBlock rootBlock = new KotlinBlock(ktFile.getNode(),
+                    NodeAlignmentStrategy.getNullStrategy(),
+                    Indent.getNoneIndent(),
+                    null,
+                    settings,
+                    KotlinSpacingRulesKt.createSpacingBuilder(
+                            settings, KotlinFormatter.KotlinSpacingBuilderUtilImpl.INSTANCE));
+            newText = KotlinFormatterUtils.adjustIndent(ktFile, rootBlock, settings, offset, text);
+        } finally {
+            KotlinFormatterUtils.popSettings();
+        }
         if (newText == null) {
             return "";
         }

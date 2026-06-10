@@ -22,66 +22,59 @@ import com.intellij.psi.impl.source.tree.LeafPsiElement;
 import org.jetbrains.kotlin.utils.LineEndUtil;
 import org.jetbrains.kotlin.lexer.KtTokens;
 
+/**
+ * Whitespace predicates and constants used by the Kotlin formatter pipeline.
+ */
 public class IndenterUtil {
     public static final char SPACE_CHAR = ' ';
     public static final char TAB_CHAR = '\t';
     public static final String TAB_STRING = Character.toString(TAB_CHAR);
-    public static final int DEFAULT_INDENT = 4;
-    
-    public static String createWhiteSpace(int curIndent, int countBreakLines, String lineSeparator) {
-        StringBuilder stringBuilder = new StringBuilder();
-        for (int i = 0; i < countBreakLines; i++) {
-            stringBuilder.append(lineSeparator);
-        }
-        
-        String whiteSpace = getIndentString();
-        for (int i = 0; i < curIndent; i++) {
-            stringBuilder.append(whiteSpace);
-        }
-        
-        return stringBuilder.toString();
-    }
-    
-    public static String getIndentString() {
-        if (isSpacesForTabs()) {
-            StringBuilder result = new StringBuilder();
-            for (int i = 0; i < getDefaultIndent(); i++) {
-               result.append(SPACE_CHAR);
-            }
-            return result.toString();
-        } else {
-            return new Character(TAB_CHAR).toString();
-        }
-    }
-    
+
+    /**
+     * Counts the number of newline characters in the given text.
+     *
+     * @param text text to scan
+     * @return count of {@code \n} characters
+     */
     public static int getLineSeparatorsOccurences(String text) {
         int result = 0;
-        
+
         for (char c : text.toCharArray()) {
             if (c == LineEndUtil.NEW_LINE_CHAR) {
                 result++;
             }
         }
-        
+
         return result;
     }
-    
+
+    /**
+     * Returns {@code true} if the given PSI element is a whitespace node that
+     * contains a newline character.
+     *
+     * @param psiElement leaf PSI element to inspect
+     * @return {@code true} if the element represents a newline
+     */
     public static boolean isNewLine(LeafPsiElement psiElement) {
         return psiElement.getElementType() == KtTokens.WHITE_SPACE && psiElement.getText().contains(LineEndUtil.NEW_LINE_STRING);
     }
-    
-    public static int getDefaultIndent() {
-        return DEFAULT_INDENT;
-    }
-    
-    public static boolean isSpacesForTabs() {
-        return true;
-    }
-    
+
+    /**
+     * Returns {@code true} if the character is a space or tab.
+     *
+     * @param c character to test
+     * @return {@code true} if {@code c} is a whitespace character
+     */
     public static boolean isWhiteSpaceChar(char c) {
         return c == SPACE_CHAR || c == TAB_CHAR;
     }
-    
+
+    /**
+     * Returns {@code true} if the character is a space, tab, or newline.
+     *
+     * @param c character to test
+     * @return {@code true} if {@code c} is whitespace or a newline
+     */
     public static boolean isWhiteSpaceOrNewLine(char c) {
         return c == SPACE_CHAR || c == TAB_CHAR || c == LineEndUtil.NEW_LINE_CHAR;
     }

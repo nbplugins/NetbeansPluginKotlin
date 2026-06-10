@@ -14,6 +14,14 @@
                 <attr name="displayName" stringvalue="Kotlin Files"/>
             </file>
         </folder>
+        <!-- CodeStylePreferences.Provider is looked up via Lookup.getDefault()
+             (i.e. global Lookup), not MIME-specific MimeLookup. Register here
+             so IndentUtils.indentLevelSize / tabSize / isExpandTabs for
+             text/x-kotlin documents pick up Kotlin formatter settings. -->
+        <file name="io-github-nbplugins-kotlin-nbm-formatting-options-KotlinCodeStylePreferencesProvider.instance">
+            <attr name="instanceClass" stringvalue="io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferencesProvider"/>
+            <attr name="instanceOf" stringvalue="org.netbeans.modules.editor.indent.spi.CodeStylePreferences$Provider"/>
+        </file>
     </folder>
 
     <!-- CSL language registration for text/x-kotlin -->
@@ -47,6 +55,32 @@
         <folder name="org.netbeans.gradle.project">
             <folder name="Lookup">
                 <file name="org.jetbrains.kotlin.projectsextensions.gradle.lookup.GradleProjectLookupProviderExtension.instance"/>
+            </folder>
+        </folder>
+        <!-- Kotlin Formatter category in Project Properties — registered manually because
+             -proc:none disables annotation processing (see CLAUDE.md). -->
+        <folder name="org-netbeans-modules-java-j2seproject">
+            <folder name="Customizer">
+                <file name="io-github-nbplugins-kotlin-nbm-projectsextensions-KotlinProjectCustomizerProvider.instance">
+                    <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectCustomizerProvider"/>
+                    <attr name="position" intvalue="900"/>
+                </file>
+            </folder>
+        </folder>
+        <folder name="org-netbeans-modules-maven">
+            <folder name="Customizer">
+                <file name="io-github-nbplugins-kotlin-nbm-projectsextensions-KotlinProjectCustomizerProvider.instance">
+                    <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectCustomizerProvider"/>
+                    <attr name="position" intvalue="900"/>
+                </file>
+            </folder>
+        </folder>
+        <folder name="org.netbeans.gradle.project">
+            <folder name="Customizer">
+                <file name="io-github-nbplugins-kotlin-nbm-projectsextensions-KotlinProjectCustomizerProvider.instance">
+                    <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectCustomizerProvider"/>
+                    <attr name="position" intvalue="900"/>
+                </file>
             </folder>
         </folder>
     </folder>
@@ -274,6 +308,17 @@
     </folder>
 
     <folder name="OptionsDialog">
+        <!-- Tools → Options → Kotlin top-level category.
+             Registered manually (annotation processing disabled, -proc:none).
+             Format mirrors what OptionsPanelControllerProcessor generates for
+             @OptionsPanelController.TopLevelRegistration. -->
+        <file name="Kotlin.instance">
+            <attr name="instanceCreate" methodvalue="org.netbeans.spi.options.OptionsCategory.createCategory"/>
+            <attr name="controller" newvalue="io.github.nbplugins.kotlin.nbm.options.KotlinOptionsPanelController"/>
+            <attr name="categoryName" bundlevalue="io.github.nbplugins.kotlin.nbm.options.Bundle#OptionsCategory_Name_Kotlin"/>
+            <attr name="iconBase" stringvalue="io/github/nbplugins/kotlin/nbm/options/kotlin-options.png"/>
+            <attr name="position" intvalue="1600"/>
+        </file>
         <folder name="PreviewExamples">
             <folder name="text">
                 <file name="x-kotlin" url="nbres:/io/github/nbplugins/kotlin/nbm/preview.kt"/>

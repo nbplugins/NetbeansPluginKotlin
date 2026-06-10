@@ -20,6 +20,7 @@
 package org.jetbrains.kotlin.projectsextensions.j2se;
 
 import org.jetbrains.kotlin.projectsextensions.j2se.buildextender.KotlinBuildExtender;
+import io.github.nbplugins.kotlin.nbm.formatting.options.ProjectCodeStyleStorage;
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession;
 import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectHelper;
 import io.github.nbplugins.kotlin.nbm.projectsextensions.j2se.J2SEProjectPropertiesModifier;
@@ -42,6 +43,7 @@ public class J2SEProjectOpenedHook extends ProjectOpenedHook {
 
     @Override
     protected void projectOpened() {
+        ProjectCodeStyleStorage.INSTANCE.onProjectOpened(project);
         Thread thread = new Thread() {
             @Override
             public void run() {
@@ -71,6 +73,7 @@ public class J2SEProjectOpenedHook extends ProjectOpenedHook {
 
     @Override
     protected void projectClosed() {
+        ProjectCodeStyleStorage.INSTANCE.onProjectClosed(project);
         KotlinProjectHelper.INSTANCE.removeProjectCache(project);
     }
 
