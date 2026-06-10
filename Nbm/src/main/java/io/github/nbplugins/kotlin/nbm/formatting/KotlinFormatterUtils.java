@@ -32,7 +32,6 @@ import com.intellij.psi.PsiElement;
 import com.intellij.lang.Language;
 import com.intellij.psi.codeStyle.CodeStyleSettings;
 import com.intellij.psi.codeStyle.CommonCodeStyleSettings;
-import com.intellij.psi.codeStyle.CommonCodeStyleSettings.IndentOptions;
 import com.intellij.psi.codeStyle.CustomCodeStyleSettings;
 import com.intellij.psi.codeStyle.DocCommentSettings;
 import com.intellij.psi.codeStyle.LanguageCodeStyleProvider;
@@ -48,9 +47,7 @@ import org.jetbrains.kotlin.formatting.NodeAlignmentStrategy;
 import org.jetbrains.kotlin.formatting.KotlinBlock;
 import org.jetbrains.kotlin.formatting.NetBeansDocumentFormattingModel;
 import org.jetbrains.kotlin.formatting.NetBeansFormattingModel;
-import org.jetbrains.kotlin.formatting.IndenterUtil;
 import org.jetbrains.kotlin.idea.formatter.KotlinSpacingRulesKt;
-import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferences;
 import io.github.nbplugins.kotlin.nbm.model.KotlinEnvironment;
 import org.jetbrains.kotlin.psi.KtFile;
 import org.jetbrains.kotlin.psi.KtPsiFactory;
@@ -137,13 +134,9 @@ public class KotlinFormatterUtils {
 
     /**
      * Formats {@code source} using the supplied {@code customSettings} without touching
-     * the global {@link #settings} singleton and without reloading from NbPreferences.
-     *
-     * <p>Used by the Tools&nbsp;&rarr;&nbsp;Options preview pane to render unsaved
-     * spinner/checkbox state. The normal {@link #formatCode(String, String, Project, String)}
-     * path overrides indent options from {@code IndenterUtil} and reloads the global
-     * settings from {@link KotlinCodeStylePreferences#prefs()} inside {@code buildModel},
-     * which would defeat any preview values; this method skips both steps.
+     * the global {@link #settings} singleton — used by the Tools&nbsp;&rarr;&nbsp;Options
+     * preview pane to render unsaved spinner/checkbox state with a fresh settings
+     * instance.
      *
      * @param source         Kotlin source to format
      * @param fileName       virtual file name passed to the PSI factory
@@ -219,19 +212,9 @@ public class KotlinFormatterUtils {
         return formattingModel.getNewText();
     }
     
-    private static void initializeSettings(IndentOptions options) {
-        options.USE_TAB_CHARACTER = !IndenterUtil.isSpacesForTabs();
-        options.INDENT_SIZE = IndenterUtil.getDefaultIndent();
-        options.TAB_SIZE = IndenterUtil.getTabSize();
-    }
-    
     private static NetBeansDocumentFormattingModel buildModel(KtFile ktFile,
             Block rootBlock, CodeStyleSettings settings, String source,
             boolean forLineIndentation) {
-        initializeSettings(settings.getIndentOptions());
-        // Settings are loaded into the global singleton once on project open and on settings
-        // change (Tools→Options OK / Project Properties OK). At format time the caller has
-        // already pushed the correct settings via pushSettings(), so no per-call I/O is needed.
         NetBeansFormattingModel formattingDocumentModel =
                 new NetBeansFormattingModel(
                         new DocumentImpl(ktFile.getViewProvider().getContents(), true),

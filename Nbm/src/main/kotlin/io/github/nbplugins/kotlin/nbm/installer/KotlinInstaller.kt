@@ -19,6 +19,7 @@ package io.github.nbplugins.kotlin.nbm.installer
 
 import org.jetbrains.kotlin.project.KotlinSources
 import org.jetbrains.kotlin.installer.KotlinUpdater
+import io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferences
 import io.github.nbplugins.kotlin.nbm.highlighter.KaSemanticHighlightingVisitor
 import io.github.nbplugins.kotlin.nbm.highlighter.KotlinSemanticHighlightsLayerFactory
 import io.github.nbplugins.kotlin.nbm.hover.KotlinTooltipHighlightsLayerFactory
@@ -44,6 +45,10 @@ class KotlinInstaller : ModuleInstall() {
     override fun restored() {
         FakeIntellijHome.StartingUp().run()
         KotlinAnalysisAPISession.initApplicationEnvironment()
+        // KotlinCodeStylePreferences is otherwise loaded into the global formatter singleton
+        // only when the user clicks OK in Tools → Options → Kotlin. Load it here so the first
+        // format after restart uses persisted values rather than the in-memory defaults.
+        KotlinCodeStylePreferences.loadIntoGlobal(KotlinCodeStylePreferences.prefs())
         WindowManager.getDefault().invokeWhenUIReady {
             ProjectUtils.checkKtHome()
             // Pre-warm sessions for .kt files already open at startup (restored from previous session).

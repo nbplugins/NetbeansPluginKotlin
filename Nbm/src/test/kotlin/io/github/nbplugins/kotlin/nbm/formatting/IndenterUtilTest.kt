@@ -22,71 +22,9 @@ import org.jetbrains.kotlin.formatting.IndenterUtil
 import org.netbeans.junit.NbTestCase
 
 /**
- * Tests for [IndenterUtil].
- *
- * Verifies fallback values and indentation-string construction.  The test
- * environment may not have a live {@code text/x-kotlin} MimeLookup preferences
- * node, so the fallback path (4 spaces, expand-tabs = true) must always produce
- * sensible results.
+ * Tests for the surviving [IndenterUtil] whitespace predicates.
  */
 class IndenterUtilTest : NbTestCase("IndenterUtilTest") {
-
-    /**
-     * When MimeLookup preferences are unavailable the indent size must fall
-     * back to 4.
-     */
-    fun testGetDefaultIndentFallback() {
-        val indent = IndenterUtil.getDefaultIndent()
-        assertTrue("indent size must be positive", indent > 0)
-    }
-
-    /**
-     * [IndenterUtil.isSpacesForTabs] must return a boolean without throwing.
-     */
-    fun testIsSpacesForTabsDoesNotThrow() {
-        // just must not throw; actual value depends on user preferences
-        IndenterUtil.isSpacesForTabs()
-    }
-
-    /**
-     * [IndenterUtil.getTabSize] must return a positive value.
-     */
-    fun testGetTabSizeIsPositive() {
-        assertTrue("tab size must be positive", IndenterUtil.getTabSize() > 0)
-    }
-
-    /**
-     * [IndenterUtil.getIndentString] length must match [IndenterUtil.getDefaultIndent]
-     * when spaces are used, or be exactly one tab when tabs are used.
-     */
-    fun testGetIndentStringConsistentWithSettings() {
-        val indentStr = IndenterUtil.getIndentString()
-        if (IndenterUtil.isSpacesForTabs()) {
-            assertEquals(IndenterUtil.getDefaultIndent(), indentStr.length)
-            assertTrue("all chars must be spaces", indentStr.all { it == ' ' })
-        } else {
-            assertEquals("\t", indentStr)
-        }
-    }
-
-    /**
-     * [IndenterUtil.createWhiteSpace] with zero breaks and zero indent must
-     * produce an empty string.
-     */
-    fun testCreateWhiteSpaceZeroIndent() {
-        val ws = IndenterUtil.createWhiteSpace(0, 0, "\n")
-        assertEquals("", ws)
-    }
-
-    /**
-     * [IndenterUtil.createWhiteSpace] with one break and one indent level must
-     * produce a newline followed by one indent unit.
-     */
-    fun testCreateWhiteSpaceOneBreakOneIndent() {
-        val ws = IndenterUtil.createWhiteSpace(1, 1, "\n")
-        val expected = "\n" + IndenterUtil.getIndentString()
-        assertEquals(expected, ws)
-    }
 
     /** [IndenterUtil.isWhiteSpaceChar] must recognise space and tab. */
     fun testIsWhiteSpaceChar() {

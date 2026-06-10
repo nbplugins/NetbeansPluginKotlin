@@ -316,27 +316,6 @@
                 <file name="x-kotlin" url="nbres:/io/github/nbplugins/kotlin/nbm/preview.kt"/>
             </folder>
         </folder>
-        <!-- Kotlin formatting panel shown in Tools → Options → Editors → Formatting → Language: Kotlin.
-             CustomizerSelector discovers PreferencesCustomizer.Factory instances via
-             Lookups.forPath("OptionsDialog/Editor/Formatting/" + mimeType).
-             options-editor's friends list excludes our module, so we cannot register custom
-             Factory implementations directly. Use the built-in default TabsAndIndents factory
-             (same pattern as languages.go / languages.yaml / languages.toml). Custom Imports
-             and Other panels will live in a separate Tools → Options panel until friend
-             status is granted upstream. -->
-        <folder name="Editor">
-            <folder name="Formatting">
-                <folder name="text">
-                    <folder name="x-kotlin">
-                        <file name="TabsAndIndents.instance">
-                            <attr name="instanceOf" stringvalue="org.netbeans.modules.options.editor.spi.PreferencesCustomizer$Factory"/>
-                            <attr name="instanceCreate" methodvalue="org.netbeans.modules.options.editor.spi.CustomizerFactories.createDefaultTabsAndIndentsCustomizerFactory"/>
-                            <attr name="position" intvalue="100"/>
-                        </file>
-                    </folder>
-                </folder>
-            </folder>
-        </folder>
     </folder>
 
     <folder name="QuickSearch">
