@@ -505,11 +505,10 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
   - `OptionTreePanel` — reusable JTree with checkbox/combobox renderers
   - Per-project: `KotlinProjectOptionsPanelController` + `KotlinProjectCustomizerProvider`
 
-- **E6** — New Kotlin Class wizard:
-  - `WizardDescriptor` + `DataObjectFactory` integration
-  - Variants matching IDEA: Class, Object, Interface, Enum class, Annotation class,
-    Sealed class, Abstract class
-  - Pre-fill package from selected folder; file created with correct template body
+- [x] **E6** — New Kotlin Class wizard (PR #TBD):
+  - Registered all 10 templates (Class, Interface, Data class, Enum, Annotation, Sealed class, Sealed interface, Abstract class, Object, File) in layer.xml; previously @TemplateRegistration annotations were silently ignored due to -proc:none
+  - Added KtDataClassWizardIterator, KtAnnotationWizardIterator, KtSealedClassWizardIterator, KtSealedInterfaceWizardIterator, KtAbstractClassWizardIterator
+  - FQN support (com.example.MyClass → package + short name) already present in TargetChooserPanelGUI
 
 - **E7** — Find Usages (Alt+F7): implement via `IndexSearcher`
 
