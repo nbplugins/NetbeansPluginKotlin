@@ -19,6 +19,10 @@ package org.jetbrains.kotlin.file.templates.defaultwizard;
 import com.google.common.collect.Lists;
 import java.awt.Component;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -31,6 +35,7 @@ import javax.swing.JComponent;
 import javax.swing.event.ChangeListener;
 import org.jetbrains.kotlin.file.templates.packagechooser.PackageChooser;
 import org.jetbrains.kotlin.file.templates.packagechooser.TargetChooserPanel;
+import org.jetbrains.kotlin.project.KotlinSourceGroup;
 import org.netbeans.api.java.project.JavaProjectConstants;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ProjectUtils;
@@ -39,7 +44,9 @@ import org.netbeans.api.project.Sources;
 import org.netbeans.api.project.ui.OpenProjects;
 import org.netbeans.spi.project.ui.templates.support.Templates;
 import org.openide.WizardDescriptor;
+import org.openide.filesystems.FileLock;
 import org.openide.filesystems.FileObject;
+import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession;
 import org.openide.loaders.DataFolder;
 import org.openide.loaders.DataObject;
 import org.openide.util.HelpCtx;
@@ -58,6 +65,28 @@ public abstract class KtDefaultWizardIterator implements WizardDescriptor.Instan
     private TargetChooserPanel packageChooserPanel;
     private List<WizardDescriptor.Panel<WizardDescriptor>> panels;
 
+    /**
+     * Returns source groups for Kotlin source roots ({@code src/main/kotlin},
+     * {@code src/test/kotlin}) of the given project. The Maven/Gradle NetBeans
+     * integration does not expose these as {@code SOURCES_TYPE_JAVA} groups, so
+     * the wizard would otherwise miss them and could not detect the package
+     * when invoked from a {@code src/main/kotlin/...} folder.
+     */
+    private static List<SourceGroup> kotlinSourceGroups(Project project) {
+        List<SourceGroup> result = new ArrayList<>();
+        FileObject projectDir = project.getProjectDirectory();
+        if (projectDir == null) {
+            return result;
+        }
+        for (String relPath : new String[]{"src/main/kotlin", "src/test/kotlin"}) {
+            FileObject root = projectDir.getFileObject(relPath);
+            if (root != null && root.isFolder()) {
+                result.add(new KotlinSourceGroup(root));
+            }
+        }
+        return result;
+    }
+
     private List<WizardDescriptor.Panel<WizardDescriptor>> getPanels() {
         if (panels == null) {
             Project project = Templates.getProject(wizard);
@@ -65,21 +94,25 @@ public abstract class KtDefaultWizardIterator implements WizardDescriptor.Instan
             
             if (project == null) {
                 List<SourceGroup> sourceGroups = Lists.newArrayList();
-                                        
+
                 for (Project proj : OpenProjects.getDefault().getOpenProjects()) {
                     Sources sources = ProjectUtils.getSources(proj);
                     if (sources != null) {
                         sourceGroups.addAll(Arrays.asList(
                                 sources.getSourceGroups(JavaProjectConstants.SOURCES_TYPE_JAVA)));
+                        sourceGroups.addAll(kotlinSourceGroups(proj));
                         project = proj;
                         break;
                     }
-                                    
+
                 }
                 groups = sourceGroups.toArray(new SourceGroup[sourceGroups.size()]);
             } else {
                 Sources sources = ProjectUtils.getSources(project);
-                groups = sources.getSourceGroups(JavaProjectConstants.SOURCES_TYPE_JAVA);
+                List<SourceGroup> sourceGroups = new ArrayList<>(Arrays.asList(
+                        sources.getSourceGroups(JavaProjectConstants.SOURCES_TYPE_JAVA)));
+                sourceGroups.addAll(kotlinSourceGroups(project));
+                groups = sourceGroups.toArray(new SourceGroup[0]);
             }
             packageChooserPanel = PackageChooser.createPackageChooser(project, groups, new KtWizardPanel(), type + " name");
             
@@ -108,26 +141,103 @@ public abstract class KtDefaultWizardIterator implements WizardDescriptor.Instan
         return panels;
     }
 
+    private static final java.util.logging.Logger LOG =
+            java.util.logging.Logger.getLogger(KtDefaultWizardIterator.class.getName());
+
     @Override
     public Set<?> instantiate() throws IOException {
-        Map<String, String> args = new HashMap<>();
-
         String packageName = PackageChooser.pack;
-        args.put("package", packageName);
-
         FileObject template = Templates.getTemplate(wizard);
-        DataObject dTemplate = DataObject.find(template);
-
         FileObject dir = Templates.getTargetFolder(wizard);
-        DataFolder df = DataFolder.findFolder(dir);
-
         String targetName = Templates.getTargetName(wizard);
 
-        DataObject dobj = dTemplate.createFromTemplate(df, targetName, args);
+        LOG.log(java.util.logging.Level.INFO,
+                "KtDefaultWizardIterator.instantiate: template={0} targetName={1} package={2} dir={3}",
+                new Object[]{
+                        template.getPath(),
+                        targetName,
+                        packageName,
+                        dir == null ? "null" : dir.getPath()
+                });
 
-        FileObject createdFile = dobj.getPrimaryFile();
+        FileObject createdFile;
+        try {
+            String templateBody = template.asText("UTF-8");
+            String rendered = renderTemplate(templateBody, packageName, targetName);
+            String ext = template.getExt();
+            createdFile = dir.createData(targetName, ext);
+            FileLock lock = createdFile.lock();
+            try (OutputStream out = createdFile.getOutputStream(lock);
+                 Writer w = new OutputStreamWriter(out, StandardCharsets.UTF_8)) {
+                w.write(rendered);
+            } finally {
+                lock.releaseLock();
+            }
 
-        return Collections.singleton(createdFile);
+            // The K2 Analysis API session is built once per project and freezes the
+            // list of source files at construction time. Any file created later is
+            // invisible to KaSession.getKtFileForPath(), so the Navigator structure
+            // scanner returns an empty list for it. Invalidate the session so it is
+            // rebuilt on the next access, picking up the freshly-created file.
+            Project project = Templates.getProject(wizard);
+            if (project != null) {
+                KotlinAnalysisAPISession.Companion.invalidate(project);
+            }
+        } catch (Throwable t) {
+            LOG.log(java.util.logging.Level.SEVERE,
+                    "KtDefaultWizardIterator.instantiate: manual render failed", t);
+            if (t instanceof IOException) throw (IOException) t;
+            if (t instanceof RuntimeException) throw (RuntimeException) t;
+            throw new IOException(t);
+        }
+
+        LOG.log(java.util.logging.Level.INFO,
+                "KtDefaultWizardIterator.instantiate: created={0} size={1}",
+                new Object[]{createdFile.getPath(), createdFile.getSize()});
+
+        DataObject createdDo = DataObject.find(createdFile);
+        return Collections.singleton(createdDo);
+    }
+
+    /**
+     * Manual template renderer — bypasses NetBeans' FreeMarker pipeline which
+     * silently produces empty files when the {@code freemarker} script engine
+     * is not visible to our module's classloader.
+     *
+     * <p>Supported syntax (all that current Kotlin templates use):
+     * <ul>
+     *   <li>{@code <#if package?? && package != ""> ... </#if>} — kept when
+     *       {@code pkg} is non-empty, otherwise stripped entirely (along with
+     *       its trailing newline);
+     *   <li>{@code ${package}} — replaced by {@code pkg};
+     *   <li>{@code ${name}} — replaced by {@code name}.
+     * </ul>
+     */
+    static String renderTemplate(String body, String pkg, String name) {
+        String src = body;
+        int ifStart = src.indexOf("<#if package?? && package != \"\">");
+        if (ifStart >= 0) {
+            int blockStart = ifStart + "<#if package?? && package != \"\">".length();
+            // Skip the newline immediately after the opening tag, if any.
+            if (blockStart < src.length() && src.charAt(blockStart) == '\n') {
+                blockStart++;
+            }
+            int closeStart = src.indexOf("</#if>", blockStart);
+            int blockEnd = closeStart;
+            int closeEnd = closeStart + "</#if>".length();
+            // Swallow the newline after the closing tag too, so blank lines
+            // don't accumulate when the block is dropped.
+            if (closeEnd < src.length() && src.charAt(closeEnd) == '\n') {
+                closeEnd++;
+            }
+            String inner = src.substring(blockStart, blockEnd);
+            String replacement = (pkg != null && !pkg.isEmpty()) ? inner : "";
+            src = src.substring(0, ifStart) + replacement + src.substring(closeEnd);
+        }
+        if (pkg == null) pkg = "";
+        src = src.replace("${package}", pkg);
+        src = src.replace("${name}", name == null ? "" : name);
+        return src;
     }
 
     @Override

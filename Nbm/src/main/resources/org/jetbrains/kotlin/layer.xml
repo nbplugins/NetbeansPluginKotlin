@@ -364,6 +364,8 @@
          Mirrors what TemplateRegistrationProcessor would generate for each @TemplateRegistration. -->
     <folder name="Templates">
         <folder name="Kotlin">
+            <attr name="displayName" bundlevalue="org.jetbrains.kotlin.Bundle#Templates/Kotlin"/>
+            <attr name="position" intvalue="890"/>
             <attr name="SystemFileSystem.localizingBundle" stringvalue="org.jetbrains.kotlin.Bundle"/>
             <file name="class.kt" url="nbresloc:/org/jetbrains/kotlin/file/templates/class.kt">
                 <attr boolvalue="true" name="template"/>
