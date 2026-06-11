@@ -2,5 +2,4 @@
 package ${package}
 
 </#if>
-enum class ${name} {
-}
+sealed class ${name}

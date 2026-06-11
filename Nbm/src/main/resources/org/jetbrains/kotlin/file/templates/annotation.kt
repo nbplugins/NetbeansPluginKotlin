@@ -2,5 +2,4 @@
 package ${package}
 
 </#if>
-enum class ${name} {
-}
+annotation class ${name}

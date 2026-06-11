@@ -29,14 +29,19 @@ class KotlinPrivilegedTemplates : PrivilegedTemplates {
     override fun getPrivilegedTemplates() = arrayOf(
             "Templates/Kotlin/class.kt",
             "Templates/Kotlin/interface.kt",
-            "Templates/Kotlin/content.kt",
+            "Templates/Kotlin/dataClass.kt",
             "Templates/Kotlin/enum.kt",
+            "Templates/Kotlin/annotation.kt",
+            "Templates/Kotlin/sealedClass.kt",
+            "Templates/Kotlin/sealedInterface.kt",
+            "Templates/Kotlin/abstractClass.kt",
             "Templates/Kotlin/object.kt",
+            "Templates/Kotlin/content.kt",
             "Templates/Classes/Class.java",
-            "Templates/Classes/Package", 
-            "Templates/Classes/Interface.java", 
-            "Templates/GUIForms/JPanel.java", 
-            "Templates/GUIForms/JFrame.java" 
+            "Templates/Classes/Package",
+            "Templates/Classes/Interface.java",
+            "Templates/GUIForms/JPanel.java",
+            "Templates/GUIForms/JFrame.java"
     )
     
 }

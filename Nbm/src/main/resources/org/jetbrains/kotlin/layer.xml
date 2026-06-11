@@ -358,4 +358,106 @@
          debugger.jpda module and is now Friend-restricted (not visible to non-friends).
          Re-enable after refactoring debugger code to access EditorContextBridge via reflection. -->
 
+    <!-- New File templates for Kotlin.
+         Registered manually because annotation processing is disabled (-proc:none) in pom.xml,
+         so @TemplateRegistration annotations on iterator classes do not produce layer entries.
+         Mirrors what TemplateRegistrationProcessor would generate for each @TemplateRegistration. -->
+    <folder name="Templates">
+        <folder name="Kotlin">
+            <attr name="displayName" bundlevalue="org.jetbrains.kotlin.Bundle#Templates/Kotlin"/>
+            <attr name="position" intvalue="890"/>
+            <attr name="SystemFileSystem.localizingBundle" stringvalue="org.jetbrains.kotlin.Bundle"/>
+            <file name="class.kt" url="nbresloc:/org/jetbrains/kotlin/file/templates/class.kt">
+                <attr boolvalue="true" name="template"/>
+                <attr intvalue="100" name="position"/>
+                <attr bundlevalue="org.jetbrains.kotlin.Bundle#Templates/Kotlin/class.kt" name="displayName"/>
+                <attr name="iconBase" stringvalue="org/jetbrains/kotlin/kt.png"/>
+                <attr name="instantiatingWizardURL" urlvalue="nbresloc:/org/jetbrains/kotlin/file/templates/ktClass.html"/>
+                <attr name="instantiatingIterator" newvalue="org.jetbrains.kotlin.file.templates.KtClassWizardIterator"/>
+                <attr name="javax.script.ScriptEngine" stringvalue="freemarker"/>
+            </file>
+            <file name="interface.kt" url="nbresloc:/org/jetbrains/kotlin/file/templates/interface.kt">
+                <attr boolvalue="true" name="template"/>
+                <attr intvalue="200" name="position"/>
+                <attr bundlevalue="org.jetbrains.kotlin.Bundle#Templates/Kotlin/interface.kt" name="displayName"/>
+                <attr name="iconBase" stringvalue="org/jetbrains/kotlin/kt.png"/>
+                <attr name="instantiatingWizardURL" urlvalue="nbresloc:/org/jetbrains/kotlin/file/templates/ktInterface.html"/>
+                <attr name="instantiatingIterator" newvalue="org.jetbrains.kotlin.file.templates.KtInterfaceWizardIterator"/>
+                <attr name="javax.script.ScriptEngine" stringvalue="freemarker"/>
+            </file>
+            <file name="dataClass.kt" url="nbresloc:/org/jetbrains/kotlin/file/templates/dataClass.kt">
+                <attr boolvalue="true" name="template"/>
+                <attr intvalue="300" name="position"/>
+                <attr bundlevalue="org.jetbrains.kotlin.Bundle#Templates/Kotlin/dataClass.kt" name="displayName"/>
+                <attr name="iconBase" stringvalue="org/jetbrains/kotlin/kt.png"/>
+                <attr name="instantiatingWizardURL" urlvalue="nbresloc:/org/jetbrains/kotlin/file/templates/ktDataClass.html"/>
+                <attr name="instantiatingIterator" newvalue="org.jetbrains.kotlin.file.templates.KtDataClassWizardIterator"/>
+                <attr name="javax.script.ScriptEngine" stringvalue="freemarker"/>
+            </file>
+            <file name="enum.kt" url="nbresloc:/org/jetbrains/kotlin/file/templates/enum.kt">
+                <attr boolvalue="true" name="template"/>
+                <attr intvalue="400" name="position"/>
+                <attr bundlevalue="org.jetbrains.kotlin.Bundle#Templates/Kotlin/enum.kt" name="displayName"/>
+                <attr name="iconBase" stringvalue="org/jetbrains/kotlin/kt.png"/>
+                <attr name="instantiatingWizardURL" urlvalue="nbresloc:/org/jetbrains/kotlin/file/templates/ktEnum.html"/>
+                <attr name="instantiatingIterator" newvalue="org.jetbrains.kotlin.file.templates.KtEnumWizardIterator"/>
+                <attr name="javax.script.ScriptEngine" stringvalue="freemarker"/>
+            </file>
+            <file name="annotation.kt" url="nbresloc:/org/jetbrains/kotlin/file/templates/annotation.kt">
+                <attr boolvalue="true" name="template"/>
+                <attr intvalue="500" name="position"/>
+                <attr bundlevalue="org.jetbrains.kotlin.Bundle#Templates/Kotlin/annotation.kt" name="displayName"/>
+                <attr name="iconBase" stringvalue="org/jetbrains/kotlin/kt.png"/>
+                <attr name="instantiatingWizardURL" urlvalue="nbresloc:/org/jetbrains/kotlin/file/templates/ktAnnotation.html"/>
+                <attr name="instantiatingIterator" newvalue="org.jetbrains.kotlin.file.templates.KtAnnotationWizardIterator"/>
+                <attr name="javax.script.ScriptEngine" stringvalue="freemarker"/>
+            </file>
+            <file name="sealedClass.kt" url="nbresloc:/org/jetbrains/kotlin/file/templates/sealedClass.kt">
+                <attr boolvalue="true" name="template"/>
+                <attr intvalue="600" name="position"/>
+                <attr bundlevalue="org.jetbrains.kotlin.Bundle#Templates/Kotlin/sealedClass.kt" name="displayName"/>
+                <attr name="iconBase" stringvalue="org/jetbrains/kotlin/kt.png"/>
+                <attr name="instantiatingWizardURL" urlvalue="nbresloc:/org/jetbrains/kotlin/file/templates/ktSealedClass.html"/>
+                <attr name="instantiatingIterator" newvalue="org.jetbrains.kotlin.file.templates.KtSealedClassWizardIterator"/>
+                <attr name="javax.script.ScriptEngine" stringvalue="freemarker"/>
+            </file>
+            <file name="sealedInterface.kt" url="nbresloc:/org/jetbrains/kotlin/file/templates/sealedInterface.kt">
+                <attr boolvalue="true" name="template"/>
+                <attr intvalue="700" name="position"/>
+                <attr bundlevalue="org.jetbrains.kotlin.Bundle#Templates/Kotlin/sealedInterface.kt" name="displayName"/>
+                <attr name="iconBase" stringvalue="org/jetbrains/kotlin/kt.png"/>
+                <attr name="instantiatingWizardURL" urlvalue="nbresloc:/org/jetbrains/kotlin/file/templates/ktSealedInterface.html"/>
+                <attr name="instantiatingIterator" newvalue="org.jetbrains.kotlin.file.templates.KtSealedInterfaceWizardIterator"/>
+                <attr name="javax.script.ScriptEngine" stringvalue="freemarker"/>
+            </file>
+            <file name="abstractClass.kt" url="nbresloc:/org/jetbrains/kotlin/file/templates/abstractClass.kt">
+                <attr boolvalue="true" name="template"/>
+                <attr intvalue="800" name="position"/>
+                <attr bundlevalue="org.jetbrains.kotlin.Bundle#Templates/Kotlin/abstractClass.kt" name="displayName"/>
+                <attr name="iconBase" stringvalue="org/jetbrains/kotlin/kt.png"/>
+                <attr name="instantiatingWizardURL" urlvalue="nbresloc:/org/jetbrains/kotlin/file/templates/ktAbstractClass.html"/>
+                <attr name="instantiatingIterator" newvalue="org.jetbrains.kotlin.file.templates.KtAbstractClassWizardIterator"/>
+                <attr name="javax.script.ScriptEngine" stringvalue="freemarker"/>
+            </file>
+            <file name="object.kt" url="nbresloc:/org/jetbrains/kotlin/file/templates/object.kt">
+                <attr boolvalue="true" name="template"/>
+                <attr intvalue="900" name="position"/>
+                <attr bundlevalue="org.jetbrains.kotlin.Bundle#Templates/Kotlin/object.kt" name="displayName"/>
+                <attr name="iconBase" stringvalue="org/jetbrains/kotlin/kt.png"/>
+                <attr name="instantiatingWizardURL" urlvalue="nbresloc:/org/jetbrains/kotlin/file/templates/ktObject.html"/>
+                <attr name="instantiatingIterator" newvalue="org.jetbrains.kotlin.file.templates.KtObjectWizardIterator"/>
+                <attr name="javax.script.ScriptEngine" stringvalue="freemarker"/>
+            </file>
+            <file name="content.kt" url="nbresloc:/org/jetbrains/kotlin/file/templates/content.kt">
+                <attr boolvalue="true" name="template"/>
+                <attr intvalue="1000" name="position"/>
+                <attr bundlevalue="org.jetbrains.kotlin.Bundle#Templates/Kotlin/content.kt" name="displayName"/>
+                <attr name="iconBase" stringvalue="org/jetbrains/kotlin/kt.png"/>
+                <attr name="instantiatingWizardURL" urlvalue="nbresloc:/org/jetbrains/kotlin/file/templates/kt.html"/>
+                <attr name="instantiatingIterator" newvalue="org.jetbrains.kotlin.file.templates.KtWizardIterator"/>
+                <attr name="javax.script.ScriptEngine" stringvalue="freemarker"/>
+            </file>
+        </folder>
+    </folder>
+
 </filesystem>
