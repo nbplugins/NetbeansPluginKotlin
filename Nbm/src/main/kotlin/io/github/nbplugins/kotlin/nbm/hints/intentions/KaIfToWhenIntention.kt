@@ -30,6 +30,7 @@ import org.jetbrains.kotlin.psi.KtPsiFactory
 import org.jetbrains.kotlin.psi.KtPsiUtil
 import io.github.nbplugins.kotlin.nbm.hints.KaApplicableIntention
 import io.github.nbplugins.kotlin.nbm.hints.atomicChange
+import io.github.nbplugins.kotlin.nbm.reformatting.format
 
 /**
  * Converts an if/else-if chain to a `when` expression.
@@ -83,6 +84,10 @@ class KaIfToWhenIntention(
             remove(startOffset, endOffset - startOffset)
             insertString(startOffset, whenText, null)
         }
+        val docText = doc.getText(0, doc.length)
+        var lineStart = startOffset
+        while (lineStart > 0 && docText[lineStart - 1] != '\n') lineStart--
+        format(doc, startOffset, lineStart, startOffset + whenText.length)
     }
 
     private fun buildWhenText(ifExpression: KtIfExpression): String? {

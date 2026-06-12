@@ -3,6 +3,7 @@
 package io.github.nbplugins.kotlin.nbm.hints.fixes
 
 import io.github.nbplugins.kotlin.nbm.diagnostics.KaDiagnosticError
+import io.github.nbplugins.kotlin.nbm.reformatting.format
 import org.jetbrains.kotlin.analysis.api.fir.diagnostics.KaFirDiagnostic
 import org.jetbrains.kotlin.diagnostics.WhenMissingCase
 import org.jetbrains.kotlin.hints.KotlinRule
@@ -66,6 +67,9 @@ class KaAddWhenRemainingBranchFix(
         val whenExpr = getWhenExpr() ?: return
         val missingCases = getMissingCases() ?: return
         val context = AddRemainingWhenBranchesUtils.Context(missingCases, null)
+        val rangeStart = whenExpr.textRange.startOffset
+        val originalEnd = whenExpr.textRange.endOffset
+        val lenBefore = doc.length
         KaModCommandFix(
             kaError,
             AddRemainingWhenBranchesQuickFix(whenExpr, context),
@@ -75,5 +79,10 @@ class KaAddWhenRemainingBranchFix(
             kaKtFile,
             getDescription()
         ).implement()
+        val newEnd = originalEnd + (doc.length - lenBefore)
+        val docText = doc.getText(0, doc.length)
+        var lineStart = rangeStart
+        while (lineStart > 0 && docText[lineStart - 1] != '\n') lineStart--
+        format(doc, rangeStart, lineStart, newEnd)
     }
 }

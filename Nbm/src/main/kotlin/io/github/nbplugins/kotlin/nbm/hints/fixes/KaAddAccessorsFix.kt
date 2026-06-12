@@ -3,6 +3,7 @@
 package io.github.nbplugins.kotlin.nbm.hints.fixes
 
 import io.github.nbplugins.kotlin.nbm.diagnostics.KaDiagnosticError
+import io.github.nbplugins.kotlin.nbm.reformatting.format
 import org.jetbrains.kotlin.hints.KotlinRule
 import org.jetbrains.kotlin.idea.k2.codeinsight.fixes.AddAccessorsQuickFix
 import org.jetbrains.kotlin.language.Priorities
@@ -69,8 +70,16 @@ class KaAddAccessorsFix(
         val addGetter = needsGetter(property)
         val addSetter = needsSetter(property)
         if (!addGetter && !addSetter) return
+        val rangeStart = property.textRange.startOffset
+        val originalEnd = property.textRange.endOffset
+        val lenBefore = doc.length
         KaModCommandFix(
             kaError, AddAccessorsQuickFix(property, addGetter, addSetter), property, Unit, doc, kaKtFile, getDescription()
         ).implement()
+        val newEnd = originalEnd + (doc.length - lenBefore)
+        val docText = doc.getText(0, doc.length)
+        var lineStart = rangeStart
+        while (lineStart > 0 && docText[lineStart - 1] != '\n') lineStart--
+        format(doc, rangeStart, lineStart, newEnd)
     }
 }

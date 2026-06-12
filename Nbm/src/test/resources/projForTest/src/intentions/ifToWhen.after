@@ -2,8 +2,8 @@ package intentions
 
 fun test(x: Int): String {
     when {
-x == 1 -> return "one"
-x == 2 -> return "two"
-else -> return "other"
-}
+        x == 1 -> return "one"
+        x == 2 -> return "two"
+        else -> return "other"
+    }
 }

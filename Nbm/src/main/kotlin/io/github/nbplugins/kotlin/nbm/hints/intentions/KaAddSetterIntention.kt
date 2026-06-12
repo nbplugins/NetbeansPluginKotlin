@@ -21,6 +21,7 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import io.github.nbplugins.kotlin.nbm.hints.KaApplicableIntention
 import io.github.nbplugins.kotlin.nbm.hints.atomicChange
+import io.github.nbplugins.kotlin.nbm.reformatting.format
 import javax.swing.text.Document
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtFile
@@ -103,5 +104,8 @@ class KaAddSetterIntention(
         doc.atomicChange {
             insertString(insertAfter, setterText, null)
         }
+        var lineStart = propStart
+        while (lineStart > 0 && fullDocText[lineStart - 1] != '\n') lineStart--
+        format(doc, propStart, lineStart, insertAfter + setterText.length)
     }
 }
