@@ -20,6 +20,7 @@ package io.github.nbplugins.kotlin.nbm.hints.intentions
 import com.intellij.psi.PsiElement
 import io.github.nbplugins.kotlin.nbm.hints.KaApplicableIntention
 import io.github.nbplugins.kotlin.nbm.hints.atomicChange
+import io.github.nbplugins.kotlin.nbm.reformatting.format
 import javax.swing.text.Document
 import org.jetbrains.kotlin.psi.KtBlockExpression
 import org.jetbrains.kotlin.psi.KtExpression
@@ -58,11 +59,15 @@ class KaAddBracesIntention(
         val (_, expr) = findTarget(psi.textRange.startOffset) ?: return
         val start = expr.textRange.startOffset
         val end = expr.textRange.endOffset
-        val block = makeBlock(expr.text, start, doc.getText(0, doc.length))
+        val docText = doc.getText(0, doc.length)
+        val block = makeBlock(expr.text, start, docText)
         doc.atomicChange {
             remove(start, end - start)
             insertString(start, block, null)
         }
+        var lineStart = start
+        while (lineStart > 0 && docText[lineStart - 1] != '\n') lineStart--
+        format(doc, start, lineStart, start + block.length)
     }
 
     /**

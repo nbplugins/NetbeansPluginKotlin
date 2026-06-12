@@ -91,6 +91,52 @@ abstract class KaIntentionTestBase(name: String, dir: String) : KotlinTestCase(n
     }
 
     /**
+     * Variant of [doTest] that compares the document content exactly (no whitespace normalisation).
+     *
+     * Use this when the test must verify that the formatter produced the expected indentation
+     * rather than only checking the structural (whitespace-free) equivalence.
+     */
+    protected fun doTestExact(
+        fileName: String,
+        applicable: Boolean = true,
+        factory: (
+            doc: javax.swing.text.Document,
+            kaKtFile: KtFile,
+            psi: com.intellij.psi.PsiElement
+        ) -> KaApplicableIntention
+    ) {
+        val file = dir.getFileObject("$fileName.kt") ?: return
+        val kaKtFile = getKaKtFileOrSkip(file.path) ?: return
+        val caret = getCaret(getDocumentForFileObject(dir, "$fileName.caret"))
+        assertNotNull(caret)
+        val doc = getDocumentForFileObject(dir, "$fileName.kt")
+        val psi = kaKtFile.findElementAt(caret) ?: run {
+            println("${javaClass.simpleName}: no K2 PSI at caret for $fileName — skipping")
+            return
+        }
+        val intention = factory(doc, kaKtFile, psi)
+        assertEquals(applicable, intention.isApplicable(caret))
+        if (!applicable) return
+        val originalContent = doc.getText(0, doc.length)
+        try {
+            intention.implement()
+            val afterText = dir.getFileObject("$fileName.after")?.asText() ?: return
+            val actual = doc.getText(0, doc.length)
+            assertEquals(
+                "Document content mismatch (exact) after implementing intention for $fileName",
+                afterText,
+                actual
+            )
+        } finally {
+            val current = doc.getText(0, doc.length)
+            if (current != originalContent) {
+                doc.remove(0, doc.length)
+                doc.insertString(0, originalContent, null)
+            }
+        }
+    }
+
+    /**
      * Runs an [KaApplicableIntention] test against the named fixture file.
      *
      * @param fileName       fixture file name (without extension)

@@ -22,6 +22,7 @@ import com.intellij.psi.PsiWhiteSpace
 import com.intellij.psi.util.PsiTreeUtil
 import io.github.nbplugins.kotlin.nbm.hints.KaApplicableIntention
 import io.github.nbplugins.kotlin.nbm.hints.atomicChange
+import io.github.nbplugins.kotlin.nbm.reformatting.format
 import javax.swing.text.Document
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtValueArgumentList
@@ -96,6 +97,7 @@ class KaChopArgumentListIntention(
             remove(start, end - start)
             insertString(start, newText, null)
         }
+        format(doc, start, lineStart, start + newText.length)
     }
 
 }

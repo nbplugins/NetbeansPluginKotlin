@@ -21,6 +21,7 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import io.github.nbplugins.kotlin.nbm.hints.KaApplicableIntention
 import io.github.nbplugins.kotlin.nbm.hints.atomicChange
+import io.github.nbplugins.kotlin.nbm.reformatting.format
 import javax.swing.text.Document
 import org.jetbrains.kotlin.psi.KtBlockExpression
 import org.jetbrains.kotlin.psi.KtExpression
@@ -74,12 +75,19 @@ class KaAddBracesToAllBranchesIntention(
             Triple(expr.textRange.startOffset, expr.textRange.endOffset,
                 makeBlock(expr.text, expr.textRange.startOffset, docText))
         }
+        val rangeStart = target.textRange.startOffset
+        val originalRangeEnd = target.textRange.endOffset
+        val lenBefore = doc.length
         doc.atomicChange {
             for ((start, end, block) in replacements) {
                 remove(start, end - start)
                 insertString(start, block, null)
             }
         }
+        val newRangeEnd = originalRangeEnd + (doc.length - lenBefore)
+        var lineStart = rangeStart
+        while (lineStart > 0 && docText[lineStart - 1] != '\n') lineStart--
+        format(doc, rangeStart, lineStart, newRangeEnd)
     }
 
     /**

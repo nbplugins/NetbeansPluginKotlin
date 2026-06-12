@@ -171,6 +171,47 @@ class KotlinCodeStylePreferencesProviderTest
         assertEquals(7, prefs!!.getInt(SimpleValueNames.INDENT_SHIFT_WIDTH, -1))
     }
 
+    /**
+     * Reproduces the bug where vertical indent-guide lines stayed on the global
+     * indent after a project with `.idea/codeStyles/Project.xml` was opened:
+     * if NetBeans queried [KotlinCodeStylePreferencesProvider.preferencesFor]
+     * *before* the project-opened hook populated the storage cache, the
+     * resulting [java.util.prefs.Preferences] instance captured the global
+     * value and was never refreshed when the hook ran later.
+     *
+     * [ProjectCodeStyleStorage.onProjectOpened] must call
+     * [KotlinCodeStylePreferencesProvider.notifyChanged] so the cached
+     * preferences view is refreshed in place.
+     */
+    fun testOnProjectOpenedRefreshesCachedProviderPreferences() {
+        // Global indent = 2.
+        KotlinFormatterUtils.getSettings().indentOptions.INDENT_SIZE = 2
+        KotlinCodeStylePreferencesProvider.notifyChanged(null)
+
+        // Pre-create the provider's per-project preferences — captures global=2,
+        // mirroring NetBeans's first-paint query before the project hook runs.
+        val prefs = KotlinCodeStylePreferencesProvider.preferencesFor(project)
+        assertEquals(2, prefs.getInt(SimpleValueNames.INDENT_SHIFT_WIDTH, -1))
+
+        // Persist a per-project override (indent=4) to .idea/codeStyles/Project.xml
+        // and then close to drop the storage cache entry — the on-disk file stays.
+        ProjectCodeStyleStorage.onProjectSettingsSaved(project, perProjectSettings(indentSize = 4))
+        ProjectCodeStyleStorage.onProjectClosed(project)
+
+        // Simulate the project-opened hook. The fix wires this to notifyChanged,
+        // which refreshes the already-cached preferences instance.
+        try {
+            ProjectCodeStyleStorage.onProjectOpened(project)
+            assertEquals(
+                "preferences view should reflect per-project indent after onProjectOpened",
+                4, prefs.getInt(SimpleValueNames.INDENT_SHIFT_WIDTH, -1)
+            )
+        } finally {
+            // Remove the .idea/codeStyles files so the workspace is clean.
+            ProjectCodeStyleStorage.onProjectSettingsCleared(project)
+        }
+    }
+
     /** forFile returns null for non-Kotlin MIME types so other languages are unaffected. */
     fun testForFileReturnsNullForNonKotlinMime() {
         val fo = dir.children.firstOrNull() ?: dir

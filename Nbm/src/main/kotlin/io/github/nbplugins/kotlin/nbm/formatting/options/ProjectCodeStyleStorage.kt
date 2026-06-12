@@ -79,6 +79,16 @@ object ProjectCodeStyleStorage {
         val settings = loadFromFile(project)
         if (settings != null) {
             cache[project] = settings
+            // Refresh any KotlinCodeStylePreferencesProvider view already cached for
+            // this project (e.g. created when NB queried indent settings during the
+            // editor's first paint, before this hook ran). Without this, the view
+            // stays frozen on the global indent and vertical indent guides ignore
+            // the just-loaded per-project override.
+            try {
+                KotlinCodeStylePreferencesProvider.notifyChanged(project)
+            } catch (e: Exception) {
+                LOG.log(Level.WARNING, "Failed to notify Kotlin code style provider after project open", e)
+            }
         }
     }
 
