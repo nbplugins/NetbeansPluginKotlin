@@ -22,6 +22,21 @@
             <attr name="instanceClass" stringvalue="io.github.nbplugins.kotlin.nbm.formatting.options.KotlinCodeStylePreferencesProvider"/>
             <attr name="instanceOf" stringvalue="org.netbeans.modules.editor.indent.spi.CodeStylePreferences$Provider"/>
         </file>
+        <!-- Refactoring services: @ServiceProvider annotations are not processed in this build
+             (-proc:none disables annotation processing for maven-compiler-plugin; the
+             kotlin-maven-plugin does not run JSR-269 processors). Register the factory and
+             provider here so that Rename (Alt+Shift+R) and Find Usages (Alt+F7) are discoverable
+             by the NetBeans refactoring infrastructure via Lookup.getDefault(). -->
+        <file name="org-jetbrains-kotlin-refactorings-rename-KotlinRefactoringsFactory.instance">
+            <attr name="instanceClass" stringvalue="org.jetbrains.kotlin.refactorings.rename.KotlinRefactoringsFactory"/>
+            <attr name="instanceOf" stringvalue="org.netbeans.modules.refactoring.spi.RefactoringPluginFactory"/>
+            <attr name="position" intvalue="100"/>
+        </file>
+        <file name="org-jetbrains-kotlin-refactorings-rename-KotlinActionsImplementationProvider.instance">
+            <attr name="instanceClass" stringvalue="org.jetbrains.kotlin.refactorings.rename.KotlinActionsImplementationProvider"/>
+            <attr name="instanceOf" stringvalue="org.netbeans.modules.refactoring.spi.ui.ActionsImplementationProvider"/>
+            <attr name="position" intvalue="400"/>
+        </file>
     </folder>
 
     <!-- CSL language registration for text/x-kotlin -->
@@ -110,6 +125,12 @@
                     <file name="org-netbeans-modules-debugger-ui-actions-DebugTestFileAction.shadow">
                         <attr name="originalFile" stringvalue="Actions/Debug/org-netbeans-modules-debugger-ui-actions-DebugTestFileAction.instance"/>
                         <attr name="position" intvalue="1268"/>
+                    </file>
+                    <!-- Find Usages in file-node right-click menu (mirrors Loaders/text/x-java/Actions registration
+                         added by refactoring-api for Java; that module only registers for x-java) -->
+                    <file name="WhereUsedAction.shadow">
+                        <attr name="originalFile" stringvalue="Actions/Refactoring/org-netbeans-modules-refactoring-api-ui-WhereUsedAction.instance"/>
+                        <attr name="position" intvalue="1900"/>
                     </file>
                 </folder>
                 <file name="RefactoringAll.instance">
@@ -216,6 +237,12 @@
                     <!-- GlyphGutterActions / KotlinToggleBreakpointAction disabled along with Debugger registration -->
 
                     <folder name="Popup">
+                        <!-- Find Usages directly in editor right-click menu (mirrors Editors/text/x-java/Popup
+                             registration added by refactoring-api for Java; that module only registers for x-java) -->
+                        <file name="WhereUsedAction.shadow">
+                            <attr name="originalFile" stringvalue="Actions/Refactoring/org-netbeans-modules-refactoring-api-ui-WhereUsedAction.instance"/>
+                            <attr name="position" intvalue="1400"/>
+                        </file>
                         <file name="RunFile.shadow">
                             <attr name="originalFile" stringvalue="Actions/Project/org-netbeans-modules-project-ui-RunSingle.instance"/>
                             <attr name="position" intvalue="1790"/>
