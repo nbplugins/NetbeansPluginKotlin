@@ -55,7 +55,7 @@ compatible version. Not a separate stage — done along the way.
 - [x] **B6** — Repoint `KotlinConverter` → `submodules/IntellijCommunity@232` (no binary artifact available for j2k); re-enable J2K/diagnostics tests
 - [x] **C** — K2 Analysis API migration (C1–C10 complete). Ships as 0.7.x.
 - [x] **D** — Compiler upgrade to kotlin-compiler-ir-for-ide 2.3.21 + analysis-api 2.3.21, platform 253 (D1–D7 ✅). Ships as 0.8.x.
-- [ ] **E** — Editor UX polish and missing features (E1–E12). Ships as 0.9.x+. (E1–E5 ✅)
+- [ ] **E** — Editor UX polish and missing features (E1–E12). Ships as 0.9.x+. (E1–E7 ✅)
 
 B3–B6 ship as 0.6.x on `feature/kotlin-compiler-only`; single PR after B6 passes all 169 tests.
 Stage C ships as 0.7.x; C1–C10 complete.
@@ -510,7 +510,13 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
   - Added KtDataClassWizardIterator, KtAnnotationWizardIterator, KtSealedClassWizardIterator, KtSealedInterfaceWizardIterator, KtAbstractClassWizardIterator
   - FQN support (com.example.MyClass → package + short name) already present in TargetChooserPanelGUI
 
-- **E7** — Find Usages (Alt+F7): implement via `IndexSearcher`
+- [x] **E7** — Find Usages (Alt+F7):
+  - `KaFindUsagesComputer` — K2 core: resolves target PSI at cursor, iterates all project KtFiles, collects `OffsetRange`s via `sym.psi == targetPsi` comparison
+  - `KotlinWhereUsedPlugin` — `RefactoringPlugin` wiring: extracts document/offset from lookup, calls computer, adds `KotlinFindUsagesResultElement` entries to bag
+  - `KotlinWhereUsedRefactoringUI` — `RefactoringUI` adapter: resolves symbol name for dialog title, no options panel
+  - `KotlinActionsImplementationProvider` — added `canFindUsages` / `doFindUsages`
+  - `KotlinRefactoringsFactory` — added `WhereUsedQuery` branch
+  - `layer.xml` — fixed silently-broken Rename refactoring (added Services/ entries for factory + provider, missing because `-proc:none` suppresses `@ServiceProvider`); added `WhereUsedAction.shadow` to editor popup and file-node context menu (mirrors x-java registration that refactoring-api adds only for Java)
 
 - **E8** — Go to Declaration (Ctrl+B): implement `DeclarationFinder`
 
