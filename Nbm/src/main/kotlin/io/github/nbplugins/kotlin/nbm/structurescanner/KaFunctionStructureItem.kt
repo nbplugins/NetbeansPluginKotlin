@@ -17,12 +17,14 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.structurescanner
 
-import org.jetbrains.kotlin.psi.KtNamedFunction
+import io.github.nbplugins.kotlin.nbm.navigation.KotlinElementHandle
 import io.github.nbplugins.kotlin.nbm.utils.KotlinImageProvider
+import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.netbeans.modules.csl.api.ElementKind
 import org.netbeans.modules.csl.api.HtmlFormatter
 import org.netbeans.modules.csl.api.Modifier
 import org.netbeans.modules.csl.api.StructureItem
+import org.openide.filesystems.FileObject
 
 /**
  * K2 structure item for a Kotlin function or method declaration.
@@ -40,13 +42,14 @@ import org.netbeans.modules.csl.api.StructureItem
  */
 class KaFunctionStructureItem(
     private val function: KtNamedFunction,
-    private val displayName: String
+    private val displayName: String,
+    private val fileObject: FileObject
 ) : StructureItem {
 
     override fun getName() = displayName
     override fun getSortText() = function.name
     override fun getHtml(formatter: HtmlFormatter) = displayName
-    override fun getElementHandle() = null
+    override fun getElementHandle() = KotlinElementHandle.fromPsi(function, fileObject)
     override fun getKind() = ElementKind.METHOD
     override fun getModifiers() = emptySet<Modifier>()
     override fun isLeaf() = true

@@ -66,7 +66,7 @@ object KaStructureScanner {
         val kaKtFile = session.getKtFileForPath(file.path) ?: return null
         return runCatching {
             analyze(kaKtFile) {
-                kaKtFile.declarations.mapNotNull { buildItem(it, isLeaf = false) }
+                kaKtFile.declarations.mapNotNull { buildItem(it, isLeaf = false, file) }
             }
         }.getOrElse { e ->
             KotlinLogger.INSTANCE.logException("K2 structure scan failed for ${file.path}", e)
@@ -83,10 +83,10 @@ object KaStructureScanner {
      * @param decl the PSI declaration to convert
      * @param isLeaf whether the resulting item should be rendered as a leaf node
      */
-    private fun KaSession.buildItem(decl: KtDeclaration, isLeaf: Boolean): StructureItem? = when (decl) {
-        is KtClassOrObject -> buildClassItem(decl, isLeaf)
-        is KtNamedFunction -> buildFunctionItem(decl, isLeaf)
-        is KtProperty -> buildPropertyItem(decl, isLeaf)
+    private fun KaSession.buildItem(decl: KtDeclaration, isLeaf: Boolean, file: FileObject): StructureItem? = when (decl) {
+        is KtClassOrObject -> buildClassItem(decl, isLeaf, file)
+        is KtNamedFunction -> buildFunctionItem(decl, isLeaf, file)
+        is KtProperty -> buildPropertyItem(decl, isLeaf, file)
         else -> null
     }
 
@@ -97,7 +97,7 @@ object KaStructureScanner {
      * list (as raw PSI text), and the return type rendered via [KaTypeRendererForSource].
      * The return type is omitted when it is `Unit`.
      */
-    private fun KaSession.buildFunctionItem(fn: KtNamedFunction, @Suppress("UNUSED_PARAMETER") isLeaf: Boolean): KaFunctionStructureItem {
+    private fun KaSession.buildFunctionItem(fn: KtNamedFunction, @Suppress("UNUSED_PARAMETER") isLeaf: Boolean, file: FileObject): KaFunctionStructureItem {
         val symbol = fn.symbol as? KaNamedFunctionSymbol
         val receiver = fn.receiverTypeReference?.text?.let { "$it." } ?: ""
         val params = fn.valueParameters.joinToString(prefix = "(", postfix = ")") { it.text }
@@ -107,7 +107,7 @@ object KaStructureScanner {
             ?.let { ": $it" }
             ?: ""
         val displayName = "$receiver${fn.name}$params$returnType"
-        return KaFunctionStructureItem(fn, displayName)
+        return KaFunctionStructureItem(fn, displayName, file)
     }
 
     /**
@@ -116,7 +116,7 @@ object KaStructureScanner {
      * The type is taken from the PSI type reference when present; otherwise it is resolved
      * from the [KaPropertySymbol] and rendered via [KaTypeRendererForSource].
      */
-    private fun KaSession.buildPropertyItem(prop: KtProperty, @Suppress("UNUSED_PARAMETER") isLeaf: Boolean): KaPropertyStructureItem {
+    private fun KaSession.buildPropertyItem(prop: KtProperty, @Suppress("UNUSED_PARAMETER") isLeaf: Boolean, file: FileObject): KaPropertyStructureItem {
         val symbol = prop.symbol as? KaPropertySymbol
         val type = prop.typeReference?.text?.let { ": $it" }
             ?: symbol?.returnType
@@ -124,7 +124,7 @@ object KaStructureScanner {
                 ?.render(KaTypeRendererForSource.WITH_SHORT_NAMES, Variance.INVARIANT)
                 ?.let { ": $it" }
             ?: ""
-        return KaPropertyStructureItem(prop, "${prop.name}$type")
+        return KaPropertyStructureItem(prop, "${prop.name}$type", file)
     }
 
     /**
@@ -134,12 +134,12 @@ object KaStructureScanner {
      * built recursively so that the entire tree is populated before returning from the
      * [analyze] block.
      */
-    private fun KaSession.buildClassItem(cls: KtClassOrObject, @Suppress("UNUSED_PARAMETER") isLeaf: Boolean): KaClassStructureItem {
+    private fun KaSession.buildClassItem(cls: KtClassOrObject, @Suppress("UNUSED_PARAMETER") isLeaf: Boolean, file: FileObject): KaClassStructureItem {
         val superTypes = cls.superTypeListEntries.let { entries ->
             if (entries.isNotEmpty()) entries.joinToString(prefix = "::") { it.text } else ""
         }
         val displayName = "${cls.name}$superTypes"
-        val nested = cls.declarations.mapNotNull { buildItem(it, isLeaf = true) }
-        return KaClassStructureItem(cls, displayName, nested)
+        val nested = cls.declarations.mapNotNull { buildItem(it, isLeaf = true, file) }
+        return KaClassStructureItem(cls, displayName, nested, file)
     }
 }

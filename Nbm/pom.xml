@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.72-SNAPSHOT</version>
+    <version>0.11.76-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-nbm</artifactId>
@@ -547,6 +547,12 @@
     <dependency>
       <groupId>org.netbeans.api</groupId>
       <artifactId>org-netbeans-modules-refactoring-api</artifactId>
+    </dependency>
+    <!-- TestLocator SPI: enables Ctrl+Alt+T (Go to Test / Tested class) for Kotlin files. -->
+    <dependency>
+      <groupId>org.netbeans.modules</groupId>
+      <artifactId>org-netbeans-modules-gototest</artifactId>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.netbeans.modules</groupId>

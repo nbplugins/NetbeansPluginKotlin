@@ -59,7 +59,7 @@ private fun gotoKotlinDeclaration(psi: PsiElement, fromElement: KtElement,
     return Pair(document, startOffset)
 }
 
-private fun findFileObjectForReferencedElement(psi: PsiElement, fromElement: KtElement,
+internal fun findFileObjectForReferencedElement(psi: PsiElement, fromElement: KtElement,
                                                currentFile: FileObject): FileObject? {
     if (fromElement.containingFile == psi.containingFile) return currentFile
 

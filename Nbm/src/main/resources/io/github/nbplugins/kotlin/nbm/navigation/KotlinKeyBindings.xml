@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE bindings PUBLIC "-//NetBeans//DTD Editor KeyBindings settings 1.0//EN"
+    "http://www.netbeans.org/dtds/EditorKeyBindings-1_0.dtd">
+<bindings>
+    <!-- Go to Super Implementation (Ctrl+Shift+P) — mirrors Java editor DefaultKeyBindings.xml -->
+    <bind actionName="goto-super-implementation" key="DS-P"/>
+    <!-- Go to Implementation (Ctrl+Alt+B) — mirrors Java editor DefaultKeyBindings.xml -->
+    <bind actionName="goto-implementation" key="DA-B"/>
+    <!-- Inspect Members (Ctrl+Shift+F12) — mirrors global ShowNavigatorAction shortcut -->
+    <bind actionName="kotlin-inspect-members" key="DS-F12"/>
+</bindings>

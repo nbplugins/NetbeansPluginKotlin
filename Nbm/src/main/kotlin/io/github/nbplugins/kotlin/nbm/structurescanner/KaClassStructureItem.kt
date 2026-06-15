@@ -17,12 +17,14 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.structurescanner
 
-import org.jetbrains.kotlin.psi.KtClassOrObject
+import io.github.nbplugins.kotlin.nbm.navigation.KotlinElementHandle
 import io.github.nbplugins.kotlin.nbm.utils.KotlinImageProvider
+import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.netbeans.modules.csl.api.ElementKind
 import org.netbeans.modules.csl.api.HtmlFormatter
 import org.netbeans.modules.csl.api.Modifier
 import org.netbeans.modules.csl.api.StructureItem
+import org.openide.filesystems.FileObject
 
 /**
  * K2 structure item for a Kotlin class, object, or interface declaration.
@@ -38,13 +40,14 @@ import org.netbeans.modules.csl.api.StructureItem
 class KaClassStructureItem(
     private val psiElement: KtClassOrObject,
     private val displayName: String,
-    private val nestedItems: List<StructureItem>
+    private val nestedItems: List<StructureItem>,
+    private val fileObject: FileObject
 ) : StructureItem {
 
     override fun getName() = displayName
     override fun getSortText() = psiElement.name
     override fun getHtml(formatter: HtmlFormatter) = displayName
-    override fun getElementHandle() = null
+    override fun getElementHandle() = KotlinElementHandle.fromPsi(psiElement, fileObject)
     override fun getKind() = ElementKind.CLASS
     override fun getModifiers() = emptySet<Modifier>()
     /** A class is a leaf only when it has no displayable members. */
