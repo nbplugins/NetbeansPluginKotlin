@@ -37,14 +37,6 @@
             <attr name="instanceOf" stringvalue="org.netbeans.modules.refactoring.spi.ui.ActionsImplementationProvider"/>
             <attr name="position" intvalue="400"/>
         </file>
-        <!-- TestLocator: enables Ctrl+Alt+T (Go to Test / Tested class) for Kotlin files.
-             Registered as a global service because org.netbeans.spi.gototest.TestLocator is looked
-             up via Lookup.getDefault() (registered in META-INF/services or layer Services/).
-             @ServiceProvider annotations are not processed (-proc:none). -->
-        <file name="io-github-nbplugins-kotlin-nbm-navigation-KotlinTestLocator.instance">
-            <attr name="instanceClass" stringvalue="io.github.nbplugins.kotlin.nbm.navigation.KotlinTestLocator"/>
-            <attr name="instanceOf" stringvalue="org.netbeans.spi.gototest.TestLocator"/>
-        </file>
     </folder>
 
     <!-- CSL language registration for text/x-kotlin -->
@@ -256,9 +248,11 @@
                             <file name="goto-declaration">
                                 <attr name="position" intvalue="200"/>
                             </file>
-                            <!-- Go to Test / Tested class (Ctrl+Alt+T) via gototest module -->
-                            <file name="org-netbeans-modules-gototest-GotoOppositeAction.shadow">
-                                <attr name="originalFile" stringvalue="Actions/UnitTests/org-netbeans-modules-gototest-GotoOppositeAction.instance"/>
+                            <!-- Go to Test / Tested class (Ctrl+Alt+T): custom Kotlin action.
+                                 Not using the gototest TestLocator SPI because that module's
+                                 friend-packages restriction prevents non-friend modules from
+                                 implementing TestLocator at runtime. -->
+                            <file name="kotlin-goto-test">
                                 <attr name="position" intvalue="220"/>
                             </file>
                             <file name="goto-super-implementation">
@@ -370,6 +364,9 @@
                         </file>
                         <file name="kotlin-inspect-members.instance">
                             <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.navigation.KotlinShowMembersAction"/>
+                        </file>
+                        <file name="kotlin-goto-test.instance">
+                            <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.navigation.KotlinGoToTestAction"/>
                         </file>
                     </folder>
                     <!-- Kotlin keybindings: Ctrl+Shift+P and Ctrl+Alt+B for Navigate menu actions.
