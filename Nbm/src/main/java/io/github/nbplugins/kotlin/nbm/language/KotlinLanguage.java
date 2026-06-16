@@ -26,10 +26,14 @@ import org.jetbrains.kotlin.highlighter.netbeans.KotlinTokenId;
 import io.github.nbplugins.kotlin.nbm.highlighter.semanticanalyzer.KotlinSemanticAnalyzer;
 import io.github.nbplugins.kotlin.nbm.hints.KotlinHintsProvider;
 import org.jetbrains.kotlin.indexer.KotlinIndexerFactory;
+import io.github.nbplugins.kotlin.nbm.navigation.KotlinDeclarationFinder;
+import io.github.nbplugins.kotlin.nbm.navigation.KotlinOverridingMethods;
 import org.netbeans.api.lexer.Language;
 import org.netbeans.modules.csl.api.CodeCompletionHandler;
+import org.netbeans.modules.csl.api.DeclarationFinder;
 import org.netbeans.modules.csl.api.HintsProvider;
 import org.netbeans.modules.csl.api.KeystrokeHandler;
+import org.netbeans.modules.csl.api.OverridingMethods;
 import org.netbeans.modules.csl.api.SemanticAnalyzer;
 import org.netbeans.modules.csl.api.StructureScanner;
 import org.netbeans.modules.csl.spi.DefaultLanguageConfig;
@@ -102,5 +106,17 @@ public class KotlinLanguage extends DefaultLanguageConfig {
     public KeystrokeHandler getKeystrokeHandler() {
         return new KotlinKeystrokeHandler();
     }
-    
+
+    /** Enables Ctrl+B (Go to Declaration) and Ctrl+Shift+B (Go to Source) for Kotlin files. */
+    @Override
+    public DeclarationFinder getDeclarationFinder() {
+        return new KotlinDeclarationFinder();
+    }
+
+    /** Enables gutter annotations (▲/▼) for overriding/overridden Kotlin methods. */
+    @Override
+    public OverridingMethods getOverridingMethods() {
+        return new KotlinOverridingMethods();
+    }
+
 }

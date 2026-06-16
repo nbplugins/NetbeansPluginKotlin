@@ -237,6 +237,40 @@
                     <!-- GlyphGutterActions / KotlinToggleBreakpointAction disabled along with Debugger registration -->
 
                     <folder name="Popup">
+                        <!-- Navigate submenu: mirrors Editors/text/x-java/Popup/goto registration.
+                             Items 1-5 parallel java.editor + junit; items 6-7 parallel java.navigation. -->
+                        <folder name="goto">
+                            <attr name="position" intvalue="500"/>
+                            <attr name="SystemFileSystem.localizingBundle" stringvalue="org.jetbrains.kotlin.Bundle"/>
+                            <file name="goto-source">
+                                <attr name="position" intvalue="100"/>
+                            </file>
+                            <file name="goto-declaration">
+                                <attr name="position" intvalue="200"/>
+                            </file>
+                            <!-- Go to Test / Tested class (Ctrl+Alt+T): custom Kotlin action.
+                                 Not using the gototest TestLocator SPI because that module's
+                                 friend-packages restriction prevents non-friend modules from
+                                 implementing TestLocator at runtime. -->
+                            <file name="kotlin-goto-test">
+                                <attr name="position" intvalue="220"/>
+                            </file>
+                            <file name="goto-super-implementation">
+                                <attr name="position" intvalue="300"/>
+                            </file>
+                            <file name="goto-implementation">
+                                <attr name="position" intvalue="330"/>
+                            </file>
+                            <file name="SeparatorNavigationGoTo.instance">
+                                <attr name="instanceClass" stringvalue="javax.swing.JSeparator"/>
+                                <attr name="position" intvalue="1000"/>
+                            </file>
+                            <!-- Inspect Members (Ctrl+Shift+F12): opens Navigator window with Kotlin structure -->
+                            <file name="kotlin-inspect-members.instance">
+                                <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.navigation.KotlinShowMembersAction"/>
+                                <attr name="position" intvalue="1100"/>
+                            </file>
+                        </folder>
                         <!-- Find Usages directly in editor right-click menu (mirrors Editors/text/x-java/Popup
                              registration added by refactoring-api for Java; that module only registers for x-java) -->
                         <file name="WhereUsedAction.shadow">
@@ -318,6 +352,31 @@
                     <folder name="Preferences">
                         <folder name="Defaults">
                             <file name="org-jetbrains-kotlin-preferences.xml" url="DefaultPreferences.xml"/>
+                        </folder>
+                    </folder>
+                    <!-- Kotlin-specific editor actions for Navigate menu. -->
+                    <folder name="Actions">
+                        <file name="goto-super-implementation.instance">
+                            <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.navigation.KotlinGoToSuperTypeAction"/>
+                        </file>
+                        <file name="goto-implementation.instance">
+                            <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.navigation.KotlinGoToImplementationsAction"/>
+                        </file>
+                        <file name="kotlin-inspect-members.instance">
+                            <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.navigation.KotlinShowMembersAction"/>
+                        </file>
+                        <file name="kotlin-goto-test.instance">
+                            <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.navigation.KotlinGoToTestAction"/>
+                        </file>
+                    </folder>
+                    <!-- Kotlin keybindings: Ctrl+Shift+P and Ctrl+Alt+B for Navigate menu actions.
+                         Mirrors the Java editor's DefaultKeyBindings.xml registration pattern. -->
+                    <folder name="Keybindings">
+                        <folder name="NetBeans">
+                            <folder name="Defaults">
+                                <file name="io-github-nbplugins-kotlin-nbm-navigation-KotlinKeyBindings.xml"
+                                      url="nbres:/io/github/nbplugins/kotlin/nbm/navigation/KotlinKeyBindings.xml"/>
+                            </folder>
                         </folder>
                     </folder>
                 </folder>
