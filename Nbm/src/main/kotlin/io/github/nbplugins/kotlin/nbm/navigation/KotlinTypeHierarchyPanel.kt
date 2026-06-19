@@ -27,17 +27,25 @@ import org.openide.util.RequestProcessor
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
+import java.awt.event.ActionEvent
+import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
-import javax.swing.BorderFactory
+import java.util.Collections
+import javax.swing.AbstractAction
 import javax.swing.ButtonGroup
+import javax.swing.JButton
+import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JScrollPane
 import javax.swing.JToggleButton
 import javax.swing.JToolBar
 import javax.swing.JTree
+import javax.swing.KeyStroke
 import javax.swing.SwingUtilities
+import javax.swing.event.TreeExpansionEvent
+import javax.swing.event.TreeWillExpandListener
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeCellRenderer
 import javax.swing.tree.DefaultTreeModel
@@ -45,86 +53,191 @@ import javax.swing.tree.DefaultTreeModel
 /**
  * Switchable view mode for the type hierarchy panel.
  *
- * - [SUPERTYPES]: shows the classes/interfaces that the focal class extends or implements.
- * - [SUBTYPES]: shows the classes that extend or implement the focal class.
+ * - [SUPERTYPES]: shows classes/interfaces that the focal class extends or implements (upward).
+ * - [SUBTYPES]: shows classes that extend or implement the focal class (downward).
  */
 enum class HierarchyMode { SUPERTYPES, SUBTYPES }
 
 /**
- * A [JPanel] that displays a Kotlin type hierarchy as a [JTree].
+ * An interactive [JPanel] that displays a Kotlin type hierarchy as a lazily-expanded [JTree].
  *
- * The toolbar provides toggle buttons to switch between [HierarchyMode.SUPERTYPES] and
- * [HierarchyMode.SUBTYPES]. Recomputation runs on a background [RequestProcessor] thread
- * so the EDT is not blocked during project-wide scans.
+ * **UI layout:**
+ * ```
+ * [← Back]  |  [Subtypes]  [Supertypes]  |  [→ Focus]
+ * ┌────────────────────────────────────────┐
+ * │ ▼ BaseClass  (navigation)              │  ← focal root
+ * │   ▶ DerivedClass  (navigation)         │  ← expandable (loads lazily)
+ * │   ▼ ConcreteImpl  (navigation)         │  ← expanded
+ * │       ▶ MoreDerived  (navigation)      │
+ * └────────────────────────────────────────┘
+ *  3 direct subtype(s)
+ * ```
  *
- * Double-clicking a tree node with a known [KotlinTypeHierarchyNode.fileObject] opens the
- * corresponding source file in the editor at the class declaration offset.
+ * **Interactions:**
+ * - Expanding a node (▶) loads its children in the background via [KotlinTypeHierarchyComputer].
+ * - Single left-click on a node navigates the editor to that class declaration.
+ * - **Enter** or **→ Focus** makes the selected node the new focal root and pushes the old one
+ *   onto the Back stack.
+ * - **← Back** pops the stack and restores the previous focal root.
+ * - **Subtypes / Supertypes** toggles the view mode and reloads from the current root.
  *
  * This class belongs to the **view** layer.
  */
 class KotlinTypeHierarchyPanel : JPanel(BorderLayout()) {
 
-    private val tree = JTree(DefaultTreeModel(DefaultMutableTreeNode("(no class selected)"))).apply {
+    /**
+     * Singleton sentinel placed as the sole child of a node to make the expand arrow appear
+     * before the real children have been loaded. Replaced on first expansion.
+     * Its [toString] returns the visible placeholder text.
+     */
+    private object LoadingPlaceholder {
+        override fun toString() = "Loading…"
+    }
+
+    private val treeModel = DefaultTreeModel(DefaultMutableTreeNode("(no class selected)"))
+    private val tree = JTree(treeModel).apply {
         isRootVisible = true
         cellRenderer = HierarchyTreeCellRenderer()
     }
     private val statusLabel = JLabel(" ")
+
     private var currentRoot: KotlinTypeHierarchyNode? = null
     private var currentProject: Project? = null
     private var currentMode = HierarchyMode.SUBTYPES
 
+    /** Browser-style navigation stack for the Back button. */
+    private val history = ArrayDeque<KotlinTypeHierarchyNode>()
+
+    /** Guards against starting a second background load for the same tree node. */
+    private val loadingInProgress: MutableSet<DefaultMutableTreeNode> =
+        Collections.synchronizedSet(mutableSetOf())
+
+    private lateinit var backBtn: JButton
+    private lateinit var focusBtn: JButton
+
     init {
-        val toolbar = buildToolbar()
-        add(toolbar, BorderLayout.NORTH)
+        add(buildToolbar(), BorderLayout.NORTH)
         add(JScrollPane(tree), BorderLayout.CENTER)
         add(statusLabel, BorderLayout.SOUTH)
-
-        tree.addMouseListener(object : MouseAdapter() {
-            override fun mouseClicked(e: MouseEvent) {
-                if (e.clickCount == 2) navigateToSelectedNode()
-            }
-        })
+        wireListeners()
     }
 
+    // -------------------------------------------------------------------------
+    // Public API
+    // -------------------------------------------------------------------------
+
     /**
-     * Loads the hierarchy for [rootNode], shows [mode] by default, and triggers background
-     * recomputation using [project]'s source files.
+     * Sets the focal class and reloads the hierarchy tree.
      *
-     * Safe to call from any thread; delegates UI updates to the EDT.
+     * Safe to call from any thread; all UI updates are dispatched to the EDT.
      *
-     * @param rootNode The focal class node to display at the tree root.
-     * @param project The NetBeans project used to scan for subtypes.
-     * @param mode The initial view mode (defaults to [HierarchyMode.SUBTYPES]).
+     * @param rootNode The class or interface to display as the tree root.
+     * @param project The project whose source files are scanned for relatives.
+     * @param mode The view mode (subtypes or supertypes).
+     * @param addToHistory If `true`, pushes the current root onto the Back history stack before
+     *   switching, enabling the **← Back** button.
      */
-    fun setRoot(rootNode: KotlinTypeHierarchyNode, project: Project, mode: HierarchyMode = HierarchyMode.SUBTYPES) {
+    fun setRoot(
+        rootNode: KotlinTypeHierarchyNode,
+        project: Project,
+        mode: HierarchyMode = HierarchyMode.SUBTYPES,
+        addToHistory: Boolean = false
+    ) {
+        if (addToHistory) currentRoot?.let { history.addLast(it) }
         currentRoot = rootNode
         currentProject = project
         currentMode = mode
+        loadingInProgress.clear()
+        SwingUtilities.invokeLater {
+            backBtn.isEnabled = history.isNotEmpty()
+            focusBtn.isEnabled = false
+        }
         recompute()
     }
 
+    // -------------------------------------------------------------------------
+    // Toolbar
+    // -------------------------------------------------------------------------
+
     private fun buildToolbar(): JToolBar {
+        backBtn = JButton("← Back").apply {
+            isEnabled = false
+            toolTipText = "Go back to the previous class in history"
+            addActionListener { navigateBack() }
+        }
+
         val subtypesBtn = JToggleButton("Subtypes", true)
         val supertypesBtn = JToggleButton("Supertypes")
-        val group = ButtonGroup()
-        group.add(subtypesBtn)
-        group.add(supertypesBtn)
+        ButtonGroup().apply { add(subtypesBtn); add(supertypesBtn) }
+        subtypesBtn.addActionListener { currentMode = HierarchyMode.SUBTYPES; recompute() }
+        supertypesBtn.addActionListener { currentMode = HierarchyMode.SUPERTYPES; recompute() }
 
-        subtypesBtn.addActionListener {
-            currentMode = HierarchyMode.SUBTYPES
-            recompute()
-        }
-        supertypesBtn.addActionListener {
-            currentMode = HierarchyMode.SUPERTYPES
-            recompute()
+        focusBtn = JButton("→ Focus").apply {
+            isEnabled = false
+            toolTipText = "Make selected class the hierarchy root (Enter)"
+            addActionListener { focusOnSelected() }
         }
 
         return JToolBar().apply {
             isFloatable = false
+            add(backBtn)
+            addSeparator()
             add(subtypesBtn)
             add(supertypesBtn)
+            addSeparator()
+            add(focusBtn)
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Listeners
+    // -------------------------------------------------------------------------
+
+    private fun wireListeners() {
+        // Single left-click → navigate to source in editor.
+        tree.addMouseListener(object : MouseAdapter() {
+            override fun mouseClicked(e: MouseEvent) {
+                if (e.clickCount == 1 && SwingUtilities.isLeftMouseButton(e)) {
+                    val path = tree.getPathForLocation(e.x, e.y) ?: return
+                    val node = (path.lastPathComponent as? DefaultMutableTreeNode)
+                        ?.userObject as? KotlinTypeHierarchyNode ?: return
+                    navigateToNode(node)
+                }
+            }
+        })
+
+        // Enter key → re-focus hierarchy on the selected node.
+        tree.getInputMap(JComponent.WHEN_FOCUSED)
+            .put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "focusOnSelected")
+        tree.actionMap.put("focusOnSelected", object : AbstractAction() {
+            override fun actionPerformed(e: ActionEvent) { focusOnSelected() }
+        })
+
+        // Enable/disable Focus button based on what is selected.
+        tree.addTreeSelectionListener {
+            val node = selectedHierarchyNode()
+            focusBtn.isEnabled = node != null && node != currentRoot
+        }
+
+        // Lazy expansion: trigger background load when a node with a placeholder is expanded.
+        tree.addTreeWillExpandListener(object : TreeWillExpandListener {
+            override fun treeWillExpand(event: TreeExpansionEvent) {
+                val parent = event.path.lastPathComponent as? DefaultMutableTreeNode ?: return
+                if (parent in loadingInProgress) return
+                if (parent.childCount == 1) {
+                    val child = parent.getChildAt(0) as? DefaultMutableTreeNode ?: return
+                    if (child.userObject === LoadingPlaceholder) {
+                        loadChildrenAsync(parent)
+                    }
+                }
+            }
+            override fun treeWillCollapse(e: TreeExpansionEvent) {}
+        })
+    }
+
+    // -------------------------------------------------------------------------
+    // Root-level recompute
+    // -------------------------------------------------------------------------
 
     private fun recompute() {
         val root = currentRoot ?: return
@@ -134,75 +247,149 @@ class KotlinTypeHierarchyPanel : JPanel(BorderLayout()) {
         RequestProcessor.getDefault().post {
             try {
                 val session = KotlinAnalysisAPISession.getSession(project)
-                val computer = KotlinTypeHierarchyComputer()
                 val psi = root.psi
-
                 val children: List<KotlinTypeHierarchyNode> = if (psi != null) {
+                    val computer = KotlinTypeHierarchyComputer()
                     when (currentMode) {
-                        HierarchyMode.SUPERTYPES -> computer.computeSupertypes(psi, session)
                         HierarchyMode.SUBTYPES -> computer.computeSubtypes(psi, project, session)
+                        HierarchyMode.SUPERTYPES -> computer.computeSupertypes(psi, session)
                     }
                 } else emptyList()
 
                 SwingUtilities.invokeLater {
                     val rootTreeNode = DefaultMutableTreeNode(root)
-                    for (child in children) {
-                        rootTreeNode.add(DefaultMutableTreeNode(child))
-                    }
-                    (tree.model as DefaultTreeModel).setRoot(rootTreeNode)
-                    // Expand the root to show its children immediately.
+                    for (child in children) rootTreeNode.add(makeTreeNode(child))
+                    treeModel.setRoot(rootTreeNode)
                     tree.expandRow(0)
-                    statusLabel.text = " ${children.size} ${if (currentMode == HierarchyMode.SUBTYPES) "subtype(s)" else "supertype(s)"}"
+                    val label = if (currentMode == HierarchyMode.SUBTYPES) "subtype(s)" else "supertype(s)"
+                    statusLabel.text = " ${children.size} direct $label"
                 }
             } catch (e: Exception) {
-                KotlinLogger.INSTANCE.logException("KotlinTypeHierarchyPanel recompute failed", e)
+                KotlinLogger.INSTANCE.logException("KotlinTypeHierarchyPanel.recompute failed", e)
                 SwingUtilities.invokeLater { statusLabel.text = " Error computing hierarchy" }
             }
         }
     }
 
-    private fun navigateToSelectedNode() {
-        val path = tree.selectionPath ?: return
-        val treeNode = path.lastPathComponent as? DefaultMutableTreeNode ?: return
-        val node = treeNode.userObject as? KotlinTypeHierarchyNode ?: return
-        val psi = node.psi as? KtClassOrObject ?: return
-        val fo = node.fileObject ?: return
+    // -------------------------------------------------------------------------
+    // Lazy child loading
+    // -------------------------------------------------------------------------
 
-        runCatching {
-            val doc = ProjectUtils.getDocumentFromFileObject(fo) as? javax.swing.text.StyledDocument ?: return
-            val offset = LineEndUtil.convertCrToDocumentOffset(psi.containingFile.text, psi.textOffset)
-            openFileAtOffset(doc, offset)
-        }.onFailure { e ->
-            KotlinLogger.INSTANCE.logException("KotlinTypeHierarchyPanel navigate failed", e)
+    /**
+     * Computes children for [parent] in the background and replaces the loading placeholder
+     * with the real children once the computation finishes.
+     *
+     * [parent] must contain exactly one child: the [LoadingPlaceholder] sentinel.
+     * On EDT, the placeholder is replaced; if there are no children the node becomes a true leaf.
+     */
+    private fun loadChildrenAsync(parent: DefaultMutableTreeNode) {
+        val node = parent.userObject as? KotlinTypeHierarchyNode ?: return
+        val project = currentProject ?: return
+        loadingInProgress.add(parent)
+
+        RequestProcessor.getDefault().post {
+            val children: List<KotlinTypeHierarchyNode> = try {
+                val psi = node.psi
+                if (psi != null) {
+                    val session = KotlinAnalysisAPISession.getSession(project)
+                    val computer = KotlinTypeHierarchyComputer()
+                    when (currentMode) {
+                        HierarchyMode.SUBTYPES -> computer.computeSubtypes(psi, project, session)
+                        HierarchyMode.SUPERTYPES -> computer.computeSupertypes(psi, session)
+                    }
+                } else emptyList()
+            } catch (e: Exception) {
+                KotlinLogger.INSTANCE.logException("KotlinTypeHierarchyPanel.loadChildrenAsync failed", e)
+                emptyList()
+            }
+
+            SwingUtilities.invokeLater {
+                loadingInProgress.remove(parent)
+                parent.removeAllChildren()
+                for (child in children) parent.add(makeTreeNode(child))
+                treeModel.nodeStructureChanged(parent)
+            }
         }
     }
 
     /**
-     * Custom tree cell renderer that shows the class name and dims nodes that have no
-     * navigable source (i.e. [KotlinTypeHierarchyNode.fileObject] is null).
+     * Creates a [DefaultMutableTreeNode] for [node] with a [LoadingPlaceholder] child so the
+     * expand arrow appears before children are loaded.
+     */
+    private fun makeTreeNode(node: KotlinTypeHierarchyNode): DefaultMutableTreeNode =
+        DefaultMutableTreeNode(node).also { it.add(DefaultMutableTreeNode(LoadingPlaceholder)) }
+
+    // -------------------------------------------------------------------------
+    // Navigation actions
+    // -------------------------------------------------------------------------
+
+    /** Makes the currently selected node the new focal root, pushing the old root to history. */
+    private fun focusOnSelected() {
+        val node = selectedHierarchyNode() ?: return
+        val project = currentProject ?: return
+        setRoot(node, project, currentMode, addToHistory = true)
+    }
+
+    /** Pops the navigation history and restores the previous focal root. */
+    private fun navigateBack() {
+        val prev = history.removeLastOrNull() ?: return
+        val project = currentProject ?: return
+        setRoot(prev, project, currentMode, addToHistory = false)
+    }
+
+    /** Returns the [KotlinTypeHierarchyNode] for the currently selected tree row, or null. */
+    private fun selectedHierarchyNode(): KotlinTypeHierarchyNode? =
+        (tree.lastSelectedPathComponent as? DefaultMutableTreeNode)
+            ?.userObject as? KotlinTypeHierarchyNode
+
+    /**
+     * Opens the source file for [node] in the editor, positioned at the class declaration.
+     *
+     * Does nothing if [node] has no [KotlinTypeHierarchyNode.fileObject].
+     */
+    private fun navigateToNode(node: KotlinTypeHierarchyNode) {
+        val psi = node.psi as? KtClassOrObject ?: return
+        val fo = node.fileObject ?: return
+        runCatching {
+            val doc = ProjectUtils.getDocumentFromFileObject(fo)
+                as? javax.swing.text.StyledDocument ?: return
+            val offset = LineEndUtil.convertCrToDocumentOffset(psi.containingFile.text, psi.textOffset)
+            openFileAtOffset(doc, offset)
+        }.onFailure { e ->
+            KotlinLogger.INSTANCE.logException("KotlinTypeHierarchyPanel.navigateToNode failed", e)
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Cell renderer
+    // -------------------------------------------------------------------------
+
+    /**
+     * Renders [KotlinTypeHierarchyNode] cells with their simple name and (package) suffix.
+     * Nodes with no navigable source ([KotlinTypeHierarchyNode.fileObject] is null) and
+     * loading-placeholder nodes are rendered in grey.
      */
     private class HierarchyTreeCellRenderer : DefaultTreeCellRenderer() {
         override fun getTreeCellRendererComponent(
             tree: JTree, value: Any?, sel: Boolean, expanded: Boolean,
             leaf: Boolean, row: Int, hasFocus: Boolean
         ): Component {
-            val component = super.getTreeCellRendererComponent(tree, value, sel, expanded, leaf, row, hasFocus)
-            val treeNode = value as? DefaultMutableTreeNode
-            val node = treeNode?.userObject as? KotlinTypeHierarchyNode
-            if (node != null) {
+            super.getTreeCellRendererComponent(tree, value, sel, expanded, leaf, row, hasFocus)
+            val obj = (value as? DefaultMutableTreeNode)?.userObject
+            if (obj is KotlinTypeHierarchyNode) {
                 text = buildString {
-                    append(node.name)
-                    if (node.fqName != null && node.fqName != node.name) {
-                        val pkg = node.fqName.substringBeforeLast('.', "")
+                    append(obj.name)
+                    if (obj.fqName != null && obj.fqName != obj.name) {
+                        val pkg = obj.fqName.substringBeforeLast('.', "")
                         if (pkg.isNotEmpty()) append("  ($pkg)")
                     }
                 }
-                if (node.fileObject == null) {
-                    foreground = Color.GRAY
-                    border = BorderFactory.createEmptyBorder()
-                }
+                if (obj.fileObject == null) foreground = Color.GRAY
+            } else {
+                // Loading placeholder — text is already set by super via LoadingPlaceholder.toString()
+                foreground = Color.GRAY
             }
-            return component
+            return this
         }
     }
 }
