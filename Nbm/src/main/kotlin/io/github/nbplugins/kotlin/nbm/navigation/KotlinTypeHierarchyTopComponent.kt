@@ -56,23 +56,32 @@ class KotlinTypeHierarchyTopComponent private constructor() : TopComponent() {
         const val PREFERRED_ID = "KotlinTypeHierarchyTopComponent"
 
         /**
-         * Opens (or re-activates) the hierarchy window and loads the hierarchy for [rootNode].
+         * Opens (or re-activates) the hierarchy window for [rootNode].
          *
-         * If a window with [PREFERRED_ID] already exists it is reused; otherwise a new instance
-         * is created. The [panel] is loaded with [rootNode] and the default [HierarchyMode.SUBTYPES]
-         * view.
+         * - If the window is already open, it is simply focused — the displayed hierarchy is
+         *   preserved so the user can keep navigating the tree they were looking at.
+         * - If the window is closed (or has never been opened), it is opened and loaded with
+         *   [rootNode] as the focal class.
          *
          * Must be called from the EDT.
          *
-         * @param rootNode The focal class to show at the tree root.
-         * @param project The project whose source files are scanned for subtypes.
+         * @param rootNode The focal class to show at the tree root (used only when the window
+         *   is not currently open).
+         * @param project The project whose source files are scanned for subtypes (used only when
+         *   the window is not currently open).
          */
         fun openFor(rootNode: KotlinTypeHierarchyNode, project: Project) {
-            val tc = WindowManager.getDefault().findTopComponent(PREFERRED_ID)
+            val existing = WindowManager.getDefault().findTopComponent(PREFERRED_ID)
                 as? KotlinTypeHierarchyTopComponent
-                ?: KotlinTypeHierarchyTopComponent()
+            if (existing != null && existing.isOpened) {
+                existing.requestActive()
+                return
+            }
+            val tc = existing ?: KotlinTypeHierarchyTopComponent()
             tc.panel.setRoot(rootNode, project)
-            if (!tc.isOpened) tc.open()
+            // Dock into the bottom output strip (alongside Output, Tasks, etc.) before opening.
+            WindowManager.getDefault().findMode("output")?.dockInto(tc)
+            tc.open()
             tc.requestActive()
         }
     }
