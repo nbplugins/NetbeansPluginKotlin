@@ -49,6 +49,7 @@ import javax.swing.event.TreeWillExpandListener
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeCellRenderer
 import javax.swing.tree.DefaultTreeModel
+import javax.swing.tree.TreePath
 
 /**
  * Switchable view mode for the type hierarchy panel.
@@ -169,8 +170,8 @@ class KotlinTypeHierarchyPanel : JPanel(BorderLayout()) {
         val subtypesBtn = JToggleButton("Subtypes", true)
         val supertypesBtn = JToggleButton("Supertypes")
         ButtonGroup().apply { add(subtypesBtn); add(supertypesBtn) }
-        subtypesBtn.addActionListener { currentMode = HierarchyMode.SUBTYPES; recompute() }
-        supertypesBtn.addActionListener { currentMode = HierarchyMode.SUPERTYPES; recompute() }
+        subtypesBtn.addActionListener { switchModeTo(HierarchyMode.SUBTYPES) }
+        supertypesBtn.addActionListener { switchModeTo(HierarchyMode.SUPERTYPES) }
 
         focusBtn = JButton("→ Focus").apply {
             isEnabled = false
@@ -239,7 +240,14 @@ class KotlinTypeHierarchyPanel : JPanel(BorderLayout()) {
     // Root-level recompute
     // -------------------------------------------------------------------------
 
-    private fun recompute() {
+    /**
+     * Recomputes the hierarchy tree for [currentRoot] in [currentMode].
+     *
+     * @param onTreeBuilt Optional EDT callback invoked after the tree model is replaced.
+     *   Receives the newly created root [DefaultMutableTreeNode] so callers can search
+     *   for a node to select or take other post-load actions.
+     */
+    private fun recompute(onTreeBuilt: ((DefaultMutableTreeNode) -> Unit)? = null) {
         val root = currentRoot ?: return
         val project = currentProject ?: return
         SwingUtilities.invokeLater { statusLabel.text = " Computing…" }
@@ -263,6 +271,7 @@ class KotlinTypeHierarchyPanel : JPanel(BorderLayout()) {
                     tree.expandRow(0)
                     val label = if (currentMode == HierarchyMode.SUBTYPES) "subtype(s)" else "supertype(s)"
                     statusLabel.text = " ${children.size} direct $label"
+                    onTreeBuilt?.invoke(rootTreeNode)
                 }
             } catch (e: Exception) {
                 KotlinLogger.INSTANCE.logException("KotlinTypeHierarchyPanel.recompute failed", e)
@@ -328,6 +337,52 @@ class KotlinTypeHierarchyPanel : JPanel(BorderLayout()) {
         val node = selectedHierarchyNode() ?: return
         val project = currentProject ?: return
         setRoot(node, project, currentMode, addToHistory = true)
+    }
+
+    /**
+     * Switches the view mode to [mode] and reloads the tree.
+     *
+     * If a non-root node is currently selected, the tree is loaded for [currentRoot] first.
+     * After loading, we check whether the selected node appears among the direct children:
+     * - If **found**: it is selected and scrolled into view (the user stays in the same root context).
+     * - If **not found**: the selected node becomes the new focal root (pushed to history).
+     *
+     * If nothing is selected (or the root itself is selected), the mode switches and the tree
+     * is reloaded for [currentRoot] without any position adjustment.
+     */
+    private fun switchModeTo(mode: HierarchyMode) {
+        val selected = selectedHierarchyNode()
+        currentMode = mode
+        if (selected != null && selected != currentRoot) {
+            recompute { rootTreeNode ->
+                val match = findDirectChild(rootTreeNode, selected.fqName)
+                if (match != null) {
+                    val path = TreePath(treeModel.getPathToRoot(match))
+                    tree.selectionPath = path
+                    tree.scrollPathToVisible(path)
+                } else {
+                    setRoot(selected, currentProject ?: return@recompute, currentMode, addToHistory = true)
+                }
+            }
+        } else {
+            recompute()
+        }
+    }
+
+    /**
+     * Searches the direct children of [parent] for a [KotlinTypeHierarchyNode] whose
+     * [KotlinTypeHierarchyNode.fqName] equals [fqName].
+     *
+     * Only one level deep — does not recurse into grandchildren.
+     */
+    private fun findDirectChild(parent: DefaultMutableTreeNode, fqName: String?): DefaultMutableTreeNode? {
+        if (fqName == null) return null
+        for (i in 0 until parent.childCount) {
+            val child = parent.getChildAt(i) as? DefaultMutableTreeNode ?: continue
+            val node = child.userObject as? KotlinTypeHierarchyNode ?: continue
+            if (node.fqName == fqName) return child
+        }
+        return null
     }
 
     /** Pops the navigation history and restores the previous focal root. */
