@@ -198,7 +198,7 @@ class KotlinTypeHierarchyPanel : JPanel(BorderLayout()) {
         // Single left-click → navigate to source in editor.
         tree.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
-                if (e.clickCount == 1 && SwingUtilities.isLeftMouseButton(e)) {
+                if (e.clickCount == 2 && SwingUtilities.isLeftMouseButton(e)) {
                     val path = tree.getPathForLocation(e.x, e.y) ?: return
                     val node = (path.lastPathComponent as? DefaultMutableTreeNode)
                         ?.userObject as? KotlinTypeHierarchyNode ?: return
