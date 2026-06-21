@@ -270,6 +270,11 @@
                                 <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.navigation.KotlinShowMembersAction"/>
                                 <attr name="position" intvalue="1100"/>
                             </file>
+                            <!-- Inspect Hierarchy (Alt+Shift+F12): opens Type Hierarchy dockable window -->
+                            <file name="kotlin-inspect-hierarchy.instance">
+                                <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.navigation.KotlinInspectHierarchyAction"/>
+                                <attr name="position" intvalue="1200"/>
+                            </file>
                         </folder>
                         <!-- Find Usages directly in editor right-click menu (mirrors Editors/text/x-java/Popup
                              registration added by refactoring-api for Java; that module only registers for x-java) -->
@@ -367,6 +372,9 @@
                         </file>
                         <file name="kotlin-goto-test.instance">
                             <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.navigation.KotlinGoToTestAction"/>
+                        </file>
+                        <file name="kotlin-inspect-hierarchy.instance">
+                            <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.navigation.KotlinInspectHierarchyAction"/>
                         </file>
                     </folder>
                     <!-- Kotlin keybindings: Ctrl+Shift+P and Ctrl+Alt+B for Navigate menu actions.

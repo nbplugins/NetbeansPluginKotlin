@@ -10,4 +10,6 @@
     <bind actionName="kotlin-inspect-members" key="DS-F12"/>
     <!-- Go to Test / Tested class (Ctrl+Alt+T) — mirrors gototest GotoOppositeAction shortcut -->
     <bind actionName="kotlin-goto-test" key="DA-T"/>
+    <!-- Inspect Hierarchy (Alt+Shift+F12) — mirrors java.navigation TypeHierarchyAction shortcut -->
+    <bind actionName="kotlin-inspect-hierarchy" key="AS-F12"/>
 </bindings>

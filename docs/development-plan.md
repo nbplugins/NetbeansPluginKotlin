@@ -55,7 +55,7 @@ compatible version. Not a separate stage — done along the way.
 - [x] **B6** — Repoint `KotlinConverter` → `submodules/IntellijCommunity@232` (no binary artifact available for j2k); re-enable J2K/diagnostics tests
 - [x] **C** — K2 Analysis API migration (C1–C10 complete). Ships as 0.7.x.
 - [x] **D** — Compiler upgrade to kotlin-compiler-ir-for-ide 2.3.21 + analysis-api 2.3.21, platform 253 (D1–D7 ✅). Ships as 0.8.x.
-- [ ] **E** — Editor UX polish and missing features (E1–E12). Ships as 0.9.x+. (E1–E8 ✅)
+- [ ] **E** — Editor UX polish and missing features (E1–E12). Ships as 0.9.x+. (E1–E8 ✅, E8.5 ✅)
 
 B3–B6 ship as 0.6.x on `feature/kotlin-compiler-only`; single PR after B6 passes all 169 tests.
 Stage C ships as 0.7.x; C1–C10 complete.
@@ -527,7 +527,7 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
   - Editor right-click **Navigate** submenu (`Editors/text/x-kotlin/Popup/goto`) registered to mirror Java's submenu: goto-source, goto-declaration, GotoOppositeAction shadow (Go to Test), goto-super-implementation, goto-implementation, separator, kotlin-inspect-members
   - Inspect Hierarchy (Alt+Shift+F12): **deferred to E8.5** — needs `TypeHierarchyQuery` SPI, separate from CSL `DefaultLanguageConfig`
 
-- **E8.5** — Inspect Hierarchy (Alt+Shift+F12): type hierarchy tree; `TypeHierarchyQuery` SPI investigation required
+- [x] **E8.5** — Inspect Hierarchy (Alt+Shift+F12): type hierarchy tree; `TypeHierarchyQuery` SPI investigation required
 
 - **E9** — Rename refactoring: rewrite using K2 symbol resolution
 
