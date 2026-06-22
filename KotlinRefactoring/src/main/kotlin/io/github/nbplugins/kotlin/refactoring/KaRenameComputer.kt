@@ -17,7 +17,11 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.refactoring
 
+import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiField
+import com.intellij.psi.PsiMethod
+import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
@@ -183,15 +187,27 @@ class KaRenameComputer(
         null
     }
 
-    /** Adds a [TextChange] for the name identifier of [targetDecl] to [into]. */
+    /**
+     * Adds a [TextChange] for the name identifier of [targetDecl] to [into].
+     *
+     * Supports both Kotlin ([KtNamedDeclaration]) and Java ([PsiMethod] / [PsiField] / [PsiClass])
+     * declarations — the latter occurs when a Kotlin override targets a Java base in the same
+     * module. Java call sites are not scanned (this computer's reference search is Kotlin-only),
+     * so renaming reaches Java declarations but not Java call sites.
+     */
     private fun addDeclarationNameChange(
         targetDecl: PsiElement,
         oldName: String,
         into: MutableMap<String, MutableList<TextChange>>,
     ) {
-        val namedDecl = targetDecl as? KtNamedDeclaration ?: return
-        val nameId = namedDecl.nameIdentifier ?: return
-        val path = namedDecl.containingFile?.virtualFile?.path ?: return
+        val nameId: PsiElement = when (targetDecl) {
+            is KtNamedDeclaration -> targetDecl.nameIdentifier ?: return
+            is PsiMethod -> targetDecl.nameIdentifier ?: return
+            is PsiField -> targetDecl.nameIdentifier
+            is PsiClass -> targetDecl.nameIdentifier ?: return
+            else -> return
+        }
+        val path = (targetDecl as? PsiNamedElement)?.containingFile?.virtualFile?.path ?: return
         val range = nameId.textRange
         val actualOldName = nameId.text.takeIf { it.isNotEmpty() } ?: oldName
         into.getOrPut(path) { mutableListOf() }
@@ -222,8 +238,16 @@ class KaRenameComputer(
             }
         }.onFailure { e -> LOG.warning("KaRenameComputer: super-override scan failed: $e") }
 
+        // Scan for sub-overrides of every collected target (the original target plus any
+        // supers added above). This catches sibling overrides that share a common base —
+        // e.g. when the user starts from one Kotlin override of a Java method, the Java
+        // base is added to `targets`, and then every other Kotlin override of that same
+        // Java base is also picked up here.
+        val supersSnapshot = targets.toList()
         for (kaFile in projectKtFiles) {
-            scanForSubOverrides(kaFile, targetPsi, targets)
+            for (anchor in supersSnapshot) {
+                scanForSubOverrides(kaFile, anchor, targets)
+            }
         }
     }
 

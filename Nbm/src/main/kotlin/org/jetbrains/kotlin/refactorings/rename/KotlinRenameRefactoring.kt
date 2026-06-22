@@ -25,8 +25,10 @@ import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.modules.refactoring.api.Problem
 import org.netbeans.modules.refactoring.api.RenameRefactoring
 import org.netbeans.modules.refactoring.spi.ProgressProviderAdapter
+import java.io.File
 import org.netbeans.modules.refactoring.spi.RefactoringElementsBag
 import org.netbeans.modules.refactoring.spi.RefactoringPlugin
+import org.openide.filesystems.FileUtil
 
 /**
  * [RefactoringPlugin] that performs Kotlin rename refactoring using the K2 Analysis API.
@@ -96,7 +98,12 @@ class KotlinRenameRefactoring(val refactoring: RenameRefactoring) :
 
         val foByPath = allFiles.associateBy { it.path }
         for ((path, textChanges) in changes) {
-            val fileObject = foByPath[path] ?: continue
+            // Symbols overridden in another Maven module (or otherwise outside
+            // KotlinPsiManager.getFilesByProject) still need to be renamed — resolve
+            // the FileObject directly from the path when the project map misses it.
+            val fileObject = foByPath[path]
+                ?: FileUtil.toFileObject(FileUtil.normalizeFile(File(path)))
+                ?: continue
             bag.add(refactoring, KotlinFileRenameElement(fileObject, textChanges))
         }
 

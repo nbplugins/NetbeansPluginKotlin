@@ -194,6 +194,40 @@ class KaRenameTest : KotlinTestCase("KaRenameTest", "rename") {
         )
     }
 
+    /**
+     * Cursor on the override → super (base interface method) and sibling overrides
+     * must all be renamed too. Reverse direction of [testRenameWithOverrideCascade].
+     */
+    fun testRenameFromOverrideCursor() {
+        val session = getSessionOrSkip() ?: return
+        val subDir = "overrideCursor"
+        val fixtureDir = dir.getFileObject(subDir) ?: return
+        val sourceFo = fixtureDir.getFileObject("file.kt") ?: return
+        val afterText = fixtureDir.getFileObject("file.after")?.asText() ?: return
+        val caretOffset = readCaretOffset(subDir) ?: return
+
+        val kaFile = session.getKtFileForPath(sourceFo.path) ?: return
+        val allKtFiles = fixtureDir.children
+            .filter { it.isKotlinFile() }
+            .mapNotNull { session.getKtFileForPath(it.path) }
+            .toSet()
+
+        val computer = KaRenameComputer(kaFile, caretOffset, allKtFiles, "surface")
+        val changes = computer.compute()
+
+        assertNotNull("compute() must return non-null for override-cursor rename", changes)
+        changes!!
+
+        val sourceText = sourceFo.asText()
+        val changesForFile = changes[sourceFo.path] ?: emptyList()
+        val actual = applyChanges(sourceText, changesForFile)
+
+        assertEquals(
+            "Renaming from the override must also rename the base + sibling overrides + call",
+            afterText, actual,
+        )
+    }
+
     // -------------------------------------------------------------------------
     // Resolve helpers
     // -------------------------------------------------------------------------
