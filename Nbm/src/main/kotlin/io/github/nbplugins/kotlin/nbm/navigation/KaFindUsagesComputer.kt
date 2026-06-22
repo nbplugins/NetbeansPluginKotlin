@@ -109,6 +109,28 @@ class KaFindUsagesComputer(
         null
     }
 
+    /**
+     * Searches [searchFiles] for all references to a pre-resolved [targetPsi] element.
+     *
+     * Unlike [compute], this method skips cursor-based resolution and operates directly on the
+     * provided PSI element — useful when the caller already holds the declaration PSI (for
+     * example when iterating override targets during rename).
+     *
+     * @param targetPsi the PSI element whose references to collect
+     * @return a map from [FileObject] to the list of [OffsetRange]s referencing [targetPsi]
+     */
+    fun computeForTarget(targetPsi: PsiElement): Map<FileObject, List<OffsetRange>> {
+        val result = mutableMapOf<FileObject, MutableList<OffsetRange>>()
+        for (fo in searchFiles) {
+            val kaFile = session.getKtFileForPath(fo.path) ?: continue
+            val ranges = searchFileForUsages(kaFile, targetPsi)
+            if (ranges.isNotEmpty()) {
+                result.getOrPut(fo) { mutableListOf() }.addAll(ranges)
+            }
+        }
+        return result
+    }
+
     private fun searchFileForUsages(
         kaFile: org.jetbrains.kotlin.psi.KtFile,
         targetPsi: PsiElement

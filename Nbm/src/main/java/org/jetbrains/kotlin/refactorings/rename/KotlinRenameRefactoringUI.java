@@ -71,14 +71,20 @@ public class KotlinRenameRefactoringUI implements RefactoringUI {
     public Problem setParameters() {
         if (panel != null) {
             newName = panel.getNameValue();
-        } else newName = psi.getText();
+            refactoring.setSearchInComments(panel.searchInComments());
+        } else {
+            newName = psi.getText();
+        }
         refactoring.setNewName(newName);
         return null;
     }
 
     @Override
     public Problem checkParameters() {
-        refactoring.fastCheckParameters();
+        String current = (panel != null) ? panel.getNameValue() : psi.getText();
+        if (current == null || current.trim().isEmpty() || current.equals(psi.getText())) {
+            return new Problem(true, "The name has not been modified. No changes will be performed.");
+        }
         return null;
     }
 

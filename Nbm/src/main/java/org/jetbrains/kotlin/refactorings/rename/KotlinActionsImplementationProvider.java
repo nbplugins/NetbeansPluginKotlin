@@ -65,12 +65,17 @@ public class KotlinActionsImplementationProvider extends ActionsImplementationPr
     public void doRename(Lookup lookup) {
         EditorCookie ec = lookup.lookup(EditorCookie.class);
         JEditorPane pane = ec.getOpenedPanes()[0];
-        int caretPosition = pane.getCaretPosition();
+        // Use selection start so that renaming a fully-selected word positions inside the word,
+        // not past it. When no selection, getSelectionStart() == getCaretPosition().
+        int caretPosition = pane.getSelectionStart();
         StyledDocument doc = ec.getDocument();
         FileObject fo = ProjectUtils.getFileObjectForDocument(doc);
         final KtFile ktFile = KotlinPsiManager.INSTANCE.getParsedFile(fo);
         final PsiElement psi = ktFile.findElementAt(caretPosition);
-        UI.openRefactoringUI(new KotlinRenameRefactoringUI(psi, new RenameRefactoring(Lookups.fixed(psi, doc))),
+        // Do NOT include fo (FileObject) in the lookup — a built-in NetBeans rename plugin
+        // would see it and rename the file on disk instead of renaming the code symbol.
+        UI.openRefactoringUI(
+                new KotlinRenameRefactoringUI(psi, new RenameRefactoring(Lookups.fixed(psi, doc, caretPosition))),
                 TopComponent.getRegistry().getActivated());
     }
 

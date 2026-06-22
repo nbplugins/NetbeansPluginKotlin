@@ -1,0 +1,15 @@
+package rename.overrides
+
+interface Shape {
+    fun surface(): Double
+}
+
+class Circle : Shape {
+    override fun surface(): Double = 3.14
+}
+
+class Square : Shape {
+    override fun surface(): Double = 4.0
+}
+
+fun printArea(s: Shape) = println(s.surface())
