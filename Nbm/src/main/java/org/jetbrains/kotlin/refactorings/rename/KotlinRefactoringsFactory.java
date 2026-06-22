@@ -20,10 +20,12 @@
 package org.jetbrains.kotlin.refactorings.rename;
 
 import io.github.nbplugins.kotlin.nbm.navigation.KotlinWhereUsedPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinSafeDeletePlugin;
 import javax.swing.text.StyledDocument;
 import org.jetbrains.kotlin.utils.ProjectUtils;
 import org.netbeans.modules.refactoring.api.AbstractRefactoring;
 import org.netbeans.modules.refactoring.api.RenameRefactoring;
+import org.netbeans.modules.refactoring.api.SafeDeleteRefactoring;
 import org.netbeans.modules.refactoring.api.WhereUsedQuery;
 import org.netbeans.modules.refactoring.spi.RefactoringPlugin;
 import org.netbeans.modules.refactoring.spi.RefactoringPluginFactory;
@@ -42,6 +44,7 @@ import org.openide.util.lookup.ServiceProvider;
  * <ul>
  *   <li>{@link RenameRefactoring} — delegates to {@link KotlinRenameRefactoring}</li>
  *   <li>{@link WhereUsedQuery} — delegates to {@link KotlinWhereUsedPlugin}</li>
+ *   <li>{@link SafeDeleteRefactoring} — delegates to {@link KotlinSafeDeletePlugin}</li>
  * </ul>
  */
 @ServiceProvider(service = RefactoringPluginFactory.class, position = 100)
@@ -59,6 +62,9 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         }
         if (refactoring instanceof WhereUsedQuery) {
             return new KotlinWhereUsedPlugin((WhereUsedQuery) refactoring);
+        }
+        if (refactoring instanceof SafeDeleteRefactoring) {
+            return new KotlinSafeDeletePlugin((SafeDeleteRefactoring) refactoring);
         }
         return null;
     }
