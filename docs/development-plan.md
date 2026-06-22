@@ -529,7 +529,81 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
 
 - [x] **E8.5** — Inspect Hierarchy (Alt+Shift+F12): type hierarchy tree; `TypeHierarchyQuery` SPI investigation required
 
-- **E9** — Rename refactoring: rewrite using K2 symbol resolution
+- **E9** — Refactoring rewrites via K2 Analysis API + IDEA source reuse
+
+  **Strategy:** compile IDEA K2 refactoring sources from
+  `submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/`
+  inside the `KotlinRefactoring` reactor module via `maven-resources-plugin`
+  (same pattern as `KotlinFormatter` / `KotlinHighlighting`), then add thin stubs for
+  IDE-only types absent at runtime (`WriteCommandAction`, `ApplicationManager`,
+  `DataContext`, `OccurrencesChooser`). NetBeans `RefactoringPlugin` / `RefactoringUI`
+  adapters call into the compiled IDEA engine — no manual re-implementation of algorithms.
+  E9.1 and E9.2 (Safe Delete) are the only hand-written exceptions (trivially built on
+  K2 `analyze {}` + Find Usages).
+
+  - [x] **E9.1** — Rename (Alt+Shift+R): K2-based `KaRenameComputer` (hand-written; PR #101)
+
+  - **E9.2** — Safe Delete
+    - Hand-written: K2 `analyze {}` + `KaFindUsagesComputer` → collect all usages →
+      `Problem(false, "Used in N places")` if any; on confirm delete declaration
+    - NetBeans adapter: `KotlinSafeDeletePlugin` / `KotlinSafeDeleteUI` in `Nbm`
+
+  - **E9.3** — Inline variable / property (Ctrl+Alt+N)
+    - IDEA sources: `inline/KotlinInlinePropertyProcessor.kt`,
+      `inline/codeInliner/PropertyUsageReplacementStrategy.kt`,
+      `inline/codeInliner/CodeInliner.kt` (partial — required by property strategy)
+    - NetBeans adapter: `KaInlineVariableComputer` in `KotlinRefactoring`;
+      `KotlinInlineVariablePlugin` / `KotlinInlineVariableUI` in `Nbm`
+
+  - **E9.4** — Inline function (Ctrl+Alt+N)
+    - IDEA sources: `inline/codeInliner/CodeInliner.kt`,
+      `inline/codeInliner/CodeToInlineBuilder.kt`,
+      `inline/codeInliner/CallableUsageReplacementStrategy.kt`,
+      `inline/codeInliner/introduceValue.kt`,
+      `inline/KotlinInlineFunctionProcessor.kt`
+    - Stubs: `WriteCommandAction`, `ApplicationManager`
+    - NetBeans adapter: `KaInlineFunctionComputer`; `KotlinInlineFunctionPlugin` /
+      `KotlinInlineFunctionUI` (option: this occurrence / all) in `Nbm`
+
+  - **E9.5** — Extract function (Ctrl+Alt+M)
+    - IDEA sources: `introduce/extractionEngine/ExtractionDataAnalyzer.kt`,
+      `introduce/extractionEngine/Generator.kt`,
+      `introduce/extractionEngine/KotlinTypeDescriptor.kt`,
+      `introduce/extractionEngine/KotlinNameSuggester.kt`,
+      `extractFunction/ExtractableCodeDescriptor.kt`,
+      `extractFunction/ExtractionData.kt`,
+      `extractFunction/ExtractionResult.kt`,
+      `extractFunction/parametersUtil.kt`, `extractFunction/Parameter.kt`
+    - Stubs: `WriteCommandAction`, `ApplicationManager`, `ProgressManager`
+    - Risk: `computeExitPointSnapshot` — verify availability in `analysis-api:2.3.21`
+      standalone; fallback: manual PSI visitor for return expressions
+    - NetBeans adapter: `KaExtractFunctionComputer`; `KotlinExtractFunctionPlugin` /
+      `KotlinExtractFunctionUI` (name input + param table) in `Nbm`
+
+  - **E9.6** — Introduce variable (Ctrl+Alt+V)
+    - IDEA sources: `introduce/introduceVariable/K2IntroduceVariableHandler.kt`,
+      `introduce/introduceVariable/KotlinIntroduceVariableServiceK2Impl.kt`,
+      `introduce/introduceVariable/introduceVariableUtil.kt`,
+      `introduce/K2SemanticMatcher.kt`,
+      `introduce/K2ExtractableSubstringInfo.kt`
+    - Stubs: `OccurrencesChooser` (→ replace all, or NB dialog); `Editor` not passed —
+      computer operates headlessly
+    - NetBeans adapter: `KaIntroduceVariableComputer`; `KotlinIntroduceVariablePlugin` /
+      `KotlinIntroduceVariableUI` in `Nbm`
+
+  - **E9.7** — Move declaration (F6)
+    - IDEA sources: top-level files from `kotlin.refactorings.move.k2/src/`
+    - NetBeans adapter: `KaMoveDeclarationComputer`; `KotlinMovePlugin` /
+      `KotlinMoveUI` (target package picker) in `Nbm`
+
+  - **E9.8** — Change Signature (Ctrl+F6)
+    - IDEA sources: `changeSignature/KotlinChangeSignatureUsageSearcher.kt`,
+      `changeSignature/KotlinChangeInfo.kt`, `changeSignature/KotlinChangeInfoBase.kt`,
+      `changeSignature/KotlinParameterInfo.kt`, `changeSignature/KotlinMethodDescriptor.kt`,
+      `changeSignature/usages/KotlinFunctionCallUsage.kt`,
+      `changeSignature/usages/KotlinParameterUsage.kt`
+    - NetBeans adapter: `KaChangeSignatureComputer`; `KotlinChangeSignaturePlugin` /
+      `KotlinChangeSignatureUI` (param table: add/remove/move rows) in `Nbm`
 
 - **E10** — J2K (Java→Kotlin): reimplement using `j2k/new` from `submodules/IntellijCommunity`
   or binary artifact once published; wire up stubbed `Java2KotlinConverter` (stubbed since D2)

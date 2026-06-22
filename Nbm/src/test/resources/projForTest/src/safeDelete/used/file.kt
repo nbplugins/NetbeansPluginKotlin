@@ -1,0 +1,1 @@
+fun usedFunction(): String = "hello"

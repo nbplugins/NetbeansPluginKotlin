@@ -1,0 +1,1 @@
+fun unusedFun<caret>ction(): String = "hello"

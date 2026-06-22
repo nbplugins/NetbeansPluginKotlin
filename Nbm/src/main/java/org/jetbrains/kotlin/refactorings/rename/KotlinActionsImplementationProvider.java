@@ -27,6 +27,7 @@ import org.jetbrains.kotlin.builder.KotlinPsiManager;
 import org.jetbrains.kotlin.psi.KtFile;
 import org.jetbrains.kotlin.utils.ProjectUtils;
 import org.netbeans.modules.refactoring.api.RenameRefactoring;
+import org.netbeans.modules.refactoring.api.SafeDeleteRefactoring;
 import org.netbeans.modules.refactoring.api.WhereUsedQuery;
 import org.netbeans.modules.refactoring.spi.ui.ActionsImplementationProvider;
 import org.netbeans.modules.refactoring.spi.ui.UI;
@@ -39,10 +40,10 @@ import org.openide.windows.TopComponent;
 /**
  * {@link ActionsImplementationProvider} for Kotlin source files.
  *
- * Enables the Rename (Alt+Shift+R) and Find Usages (Alt+F7) actions for {@code .kt} files.
- * Registered in {@code layer.xml} under {@code Services/} because annotation processing is
- * disabled by {@code -proc:none} and {@code @ServiceProvider} alone does not generate
- * {@code META-INF/services} entries in this mixed Kotlin+Java build.
+ * Enables the Rename (Alt+Shift+R), Find Usages (Alt+F7), and Safe Delete actions for
+ * {@code .kt} files. Registered in {@code layer.xml} under {@code Services/} because
+ * annotation processing is disabled by {@code -proc:none} and {@code @ServiceProvider} alone
+ * does not generate {@code META-INF/services} entries in this mixed Kotlin+Java build.
  */
 @org.openide.util.lookup.ServiceProvider(service = ActionsImplementationProvider.class, position = 400)
 public class KotlinActionsImplementationProvider extends ActionsImplementationProvider {
@@ -97,6 +98,64 @@ public class KotlinActionsImplementationProvider extends ActionsImplementationPr
         }
         FileObject fo = ProjectUtils.getFileObjectForDocument(doc);
         return fo != null && fo.hasExt("kt");
+    }
+
+    /**
+     * Returns {@code true} when the active editor contains a {@code .kt} file,
+     * enabling the Safe Delete action for Kotlin symbols.
+     *
+     * @param lookup the lookup provided by NetBeans for the current action context
+     * @return {@code true} if Safe Delete can be invoked on the current selection
+     */
+    @Override
+    public boolean canDelete(Lookup lookup) {
+        EditorCookie ec = lookup.lookup(EditorCookie.class);
+        if (ec == null) {
+            return false;
+        }
+        StyledDocument doc = ec.getDocument();
+        if (doc == null) {
+            return false;
+        }
+        FileObject fo = ProjectUtils.getFileObjectForDocument(doc);
+        return fo != null && fo.hasExt("kt");
+    }
+
+    /**
+     * Opens the Safe Delete dialog for the Kotlin symbol at the current caret position.
+     *
+     * Resolves the named declaration under the cursor, creates a {@link SafeDeleteRefactoring}
+     * carrying the caret offset and document, and opens {@link KotlinSafeDeleteUI}.
+     *
+     * @param lookup the lookup provided by NetBeans for the current action context
+     */
+    @Override
+    public void doDelete(Lookup lookup) {
+        EditorCookie ec = lookup.lookup(EditorCookie.class);
+        JEditorPane pane = ec.getOpenedPanes()[0];
+        int caretPosition = pane.getSelectionStart();
+        StyledDocument doc = ec.getDocument();
+        FileObject fo = ProjectUtils.getFileObjectForDocument(doc);
+
+        // Resolve the symbol name for the dialog title.
+        String symbolName = "";
+        KtFile ktFile = KotlinPsiManager.INSTANCE.getParsedFile(fo);
+        if (ktFile != null) {
+            com.intellij.psi.PsiElement element = ktFile.findElementAt(caretPosition);
+            com.intellij.psi.PsiElement decl =
+                com.intellij.psi.util.PsiTreeUtil.getNonStrictParentOfType(
+                    element, org.jetbrains.kotlin.psi.KtNamedDeclaration.class);
+            if (decl instanceof org.jetbrains.kotlin.psi.KtNamedDeclaration) {
+                String name = ((org.jetbrains.kotlin.psi.KtNamedDeclaration) decl).getName();
+                if (name != null) symbolName = name;
+            }
+        }
+
+        SafeDeleteRefactoring refactoring =
+            new SafeDeleteRefactoring(Lookups.fixed(caretPosition, doc));
+        UI.openRefactoringUI(
+            new KotlinSafeDeleteUI(symbolName, refactoring),
+            TopComponent.getRegistry().getActivated());
     }
 
     /**
