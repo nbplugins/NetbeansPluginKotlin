@@ -39,6 +39,38 @@
         </file>
     </folder>
 
+    <!-- Refactor → Undo / Redo menu items: NetBeans 23 ships an UndoManager singleton that
+         tracks every refactoring session, but no menu entry to drive it. We bind the
+         per-path UndoRedo @ServiceProvider (registered by the refactoring API at
+         org/netbeans/modules/refactoring) to two menu items so the user can roll back the
+         most recent refactoring across all files in one click. -->
+    <folder name="Actions">
+        <folder name="Refactoring">
+            <file name="org-jetbrains-kotlin-refactorings-KotlinRefactoringUndoAction.instance">
+                <attr name="instanceClass" stringvalue="org.jetbrains.kotlin.refactorings.KotlinRefactoringUndoAction"/>
+            </file>
+            <file name="org-jetbrains-kotlin-refactorings-KotlinRefactoringRedoAction.instance">
+                <attr name="instanceClass" stringvalue="org.jetbrains.kotlin.refactorings.KotlinRefactoringRedoAction"/>
+            </file>
+        </folder>
+    </folder>
+    <folder name="Menu">
+        <folder name="Refactoring">
+            <file name="org-jetbrains-kotlin-refactorings-KotlinRefactoringUndoAction.shadow">
+                <attr name="originalFile" stringvalue="Actions/Refactoring/org-jetbrains-kotlin-refactorings-KotlinRefactoringUndoAction.instance"/>
+                <attr name="position" intvalue="50"/>
+            </file>
+            <file name="org-jetbrains-kotlin-refactorings-KotlinRefactoringRedoAction.shadow">
+                <attr name="originalFile" stringvalue="Actions/Refactoring/org-jetbrains-kotlin-refactorings-KotlinRefactoringRedoAction.instance"/>
+                <attr name="position" intvalue="60"/>
+            </file>
+            <file name="separator-after-undo-redo.instance">
+                <attr name="instanceClass" stringvalue="javax.swing.JSeparator"/>
+                <attr name="position" intvalue="70"/>
+            </file>
+        </folder>
+    </folder>
+
     <!-- CSL language registration for text/x-kotlin -->
     <folder name="CslPlugins">
         <folder name="text">

@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin</artifactId>
-  <version>0.11.86-SNAPSHOT</version>
+  <version>0.11.99-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin</name>
   <properties>
@@ -35,6 +35,7 @@
     <module>KotlinIntentionUtils</module>
     <module>KotlinFixesImpl</module>
     <module>KotlinIcons</module>
+    <module>KotlinRefactoring</module>
     <module>Nbm</module>
   </modules>
   <repositories>
@@ -213,6 +214,11 @@
       <dependency>
         <groupId>io.github.nbplugins</groupId>
         <artifactId>netbeans-plugin-kotlin-fixes-impl</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.nbplugins</groupId>
+        <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
         <version>${project.version}</version>
       </dependency>
 
