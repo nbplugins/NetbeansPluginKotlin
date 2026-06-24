@@ -21,6 +21,8 @@ import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.KaInlineVariableComputer
 import org.jetbrains.kotlin.psi.KtFile
 import utils.KotlinTestCase
+import java.nio.file.Files
+import java.nio.file.Path
 
 /**
  * Unit tests for [KaInlineVariableComputer].
@@ -134,6 +136,136 @@ class KaInlineVariableTest : KotlinTestCase("KaInlineVariableTest", "inlineVaria
             4,
             totalUsages,
         )
+    }
+
+    /**
+     * Finds `kotlin-stdlib-*.jar` on the test classpath (matches [PreviewHighlightsTestSupport]).
+     * Returns `null` when the stdlib jar is unavailable so callers can decide whether to skip
+     * or to fail — for refactoring integration tests we **fail** because Inline Variable cannot
+     * meaningfully work without a real K2 session.
+     */
+    private fun findKotlinStdlib(): Path? =
+        System.getProperty("java.class.path")
+            .split(System.getProperty("path.separator"))
+            .map { Path.of(it) }
+            .firstOrNull {
+                it.fileName?.toString()?.startsWith("kotlin-stdlib") == true && it.toFile().exists()
+            }
+
+    /**
+     * Builds a full K2 [KotlinAnalysisAPISession] backed by `kotlin-stdlib` and a temp source root
+     * containing a single fixture file copied from `projForTest/src/inlineVariable/<subDir>/file.kt`.
+     *
+     * This bypasses [getSessionOrSkip] (the project-classpath session has no binary deps in tests,
+     * so `hasDependencies = false` and all real K2 queries silently no-op). The standalone session
+     * built here has the stdlib mounted, so [KaInlineVariableComputer.compute] actually drives the
+     * IDEA `createReplacementStrategyForProperty` call chain — which is what triggers the
+     * `NoClassDefFoundError: BaseRefactoringProcessor` we are trying to surface.
+     *
+     * @param subDir fixture sub-directory (e.g. `"simpleVal"`)
+     * @return triple of (computer, the K2 `KtFile`, tmp dir to delete in `finally`), or `null`
+     *         when `kotlin-stdlib` is missing (caller decides)
+     */
+    private fun prepareWithRealSession(
+        subDir: String,
+    ): Triple<KaInlineVariableComputer, KtFile, Path>? {
+        val stdlib = findKotlinStdlib() ?: return null
+        val subFo = dir.getFileObject(subDir) ?: error("Missing fixture dir: $subDir")
+        val fileFo = subFo.getFileObject("file.kt") ?: error("Missing $subDir/file.kt")
+        val caretFo = subFo.getFileObject("file.caret") ?: error("Missing $subDir/file.caret")
+        val source = fileFo.asText()
+        val offset = caretFo.asText().indexOf(CARET_MARKER).also {
+            check(it >= 0) { "Caret marker not found in $subDir/file.caret" }
+        }
+
+        val tmpDir = Files.createTempDirectory("nbkotlin-inline-$subDir")
+        val tmpFile = tmpDir.resolve("file.kt")
+        Files.writeString(tmpFile, source)
+
+        val session = KotlinAnalysisAPISession.createWithJars(
+            moduleName = "inline-variable-$subDir",
+            binaryJars = listOf(stdlib),
+            sourceRoots = listOf(tmpDir),
+        )
+        val ktFile = session.getKtFileForPath(tmpFile.toString())
+            ?: error("Failed to obtain KtFile for ${tmpFile}")
+        val projectKtFiles = session.session.modulesWithFiles.values
+            .flatten()
+            .filterIsInstance<KtFile>()
+
+        val computer = KaInlineVariableComputer(
+            cursorKtFile = ktFile,
+            offset = offset,
+            project = session.session.project,
+            projectKtFiles = projectKtFiles,
+        )
+        return Triple(computer, ktFile, tmpDir)
+    }
+
+    /**
+     * Integration test that exercises [KaInlineVariableComputer.compute] against a **real** K2
+     * session with `kotlin-stdlib` mounted. Unlike [testSimpleVal_oneUsage], this test does not
+     * early-return when project-classpath deps are missing — it builds its own session, so
+     * `compute()` actually runs the IDEA `createReplacementStrategyForProperty` call chain.
+     *
+     * Until a stub for `com.intellij.refactoring.BaseRefactoringProcessor` exists, this test
+     * fails with `NoClassDefFoundError` during JVM linkage of `AbstractKotlinDeclarationInlineProcessor`.
+     *
+     * Verifies for `simpleVal`:
+     *  - outcome is [KaInlineVariableComputer.Outcome.Ready]
+     *  - the declaration name is `"x"`
+     *  - exactly one reference is collected (the read in `println(x)`)
+     */
+    fun testCompute_withRealSession_simpleVal() {
+        val triple = prepareWithRealSession("simpleVal")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping real-session integration test")
+                return
+            }
+        val (computer, _, tmpDir) = triple
+        try {
+            val outcome = computer.compute()
+
+            assertTrue(
+                "Expected Ready outcome from real session, got $outcome",
+                outcome is KaInlineVariableComputer.Outcome.Ready,
+            )
+            val result = (outcome as KaInlineVariableComputer.Outcome.Ready).result
+            assertEquals("x", result.declarationName)
+            val totalUsages = result.usages.values.sumOf { it.size }
+            assertEquals("Expected exactly one usage of simpleVal.x", 1, totalUsages)
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Reproducer for the runtime `NoClassDefFoundError: com/intellij/refactoring/BaseRefactoringProcessor`
+     * that surfaces when the user invokes **Refactor → Inline Variable**. The IDEA call chain
+     * (`createReplacementStrategyForProperty` → `AbstractKotlinInlinePropertyProcessor.extractInitialization`)
+     * forces JVM linkage of [AbstractKotlinDeclarationInlineProcessor], whose superclass
+     * `com.intellij.refactoring.BaseRefactoringProcessor` is **not** packaged into any of the
+     * bundled jars. Until a stub exists in `Nbm/src/main/java/com/intellij/refactoring/`,
+     * loading this class throws `NoClassDefFoundError`.
+     *
+     * Passes when a stub class is on the classpath; fails otherwise — this drives the C2 fix.
+     */
+    fun testAbstractKotlinDeclarationInlineProcessorIsLinkable() {
+        try {
+            // initialize=true forces full linkage (resolves the supertype chain).
+            Class.forName(
+                "org.jetbrains.kotlin.idea.refactoring.inline.AbstractKotlinDeclarationInlineProcessor",
+                /* initialize = */ true,
+                this::class.java.classLoader,
+            )
+        } catch (e: NoClassDefFoundError) {
+            fail(
+                "AbstractKotlinDeclarationInlineProcessor cannot be linked at runtime: ${e.message}. " +
+                "This will surface as a NoClassDefFoundError when the user invokes Inline Variable.",
+            )
+        } catch (e: ClassNotFoundException) {
+            fail("AbstractKotlinDeclarationInlineProcessor missing on classpath: ${e.message}")
+        }
     }
 
     /**

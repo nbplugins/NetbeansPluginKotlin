@@ -181,6 +181,7 @@ class KotlinAnalysisAPISession private constructor(
         )
 
         installPomModel(session)
+        installNoOpPsiSearchHelper(session)
 
         val tProvider = System.nanoTime()
         installLiveDeclarationProvider(session)
@@ -219,6 +220,23 @@ class KotlinAnalysisAPISession private constructor(
         if (project.getService(com.intellij.pom.PomModel::class.java) == null) {
             mock.registerService(com.intellij.pom.PomModel::class.java, NoOpPomModel())
             KotlinLogger.INSTANCE.logInfo("Registered NoOpPomModel for project ${project.name}")
+        }
+    }
+
+    /**
+     * Registers a [NoOpPsiSearchHelper] on the session's project. IDEA refactorings
+     * (e.g. Inline Variable's `AbstractKotlinInlinePropertyProcessor.extractInitialization`)
+     * dispatch to `PsiSearchHelper.getInstance(project).processRequests(...)` even when no
+     * `referencesSearch` extensions are registered. Without a service, the call throws
+     * `@NotNull method ... must not return null`. The stub returns empty results so the
+     * "initializer-in-declaration" branch of `extractInitialization` is taken cleanly.
+     */
+    private fun installNoOpPsiSearchHelper(session: StandaloneAnalysisAPISession) {
+        val project = session.project
+        val mock = project as? com.intellij.mock.MockComponentManager ?: return
+        if (project.getService(com.intellij.psi.search.PsiSearchHelper::class.java) == null) {
+            mock.registerService(com.intellij.psi.search.PsiSearchHelper::class.java, NoOpPsiSearchHelper())
+            KotlinLogger.INSTANCE.logInfo("Registered NoOpPsiSearchHelper for project ${project.name}")
         }
     }
 
@@ -313,6 +331,14 @@ class KotlinAnalysisAPISession private constructor(
                 com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE)
             registerEpIfAbsent(area, "com.intellij.treeGenerator",
                 "com.intellij.psi.impl.source.tree.TreeGenerator",
+                com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE)
+            // `com.intellij.referencesSearch` is consumed by IDEA refactorings (e.g. Inline Variable's
+            // `AbstractKotlinInlinePropertyProcessor.extractInitialization` calls
+            // `ReferencesSearchScopeHelper.search`). Registering the EP without any extensions is
+            // sufficient for `val`-with-initializer cases — the search returns an empty result and
+            // the initializer-in-declaration branch is taken. Declared in `platform/indexing-api/resources/META-INF/Indexing.xml`.
+            registerEpIfAbsent(area, "com.intellij.referencesSearch",
+                "com.intellij.util.QueryExecutor",
                 com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE)
         }
 

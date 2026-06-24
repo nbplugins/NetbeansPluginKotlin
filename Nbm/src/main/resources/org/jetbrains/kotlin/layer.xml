@@ -52,6 +52,12 @@
             <file name="org-jetbrains-kotlin-refactorings-KotlinRefactoringRedoAction.instance">
                 <attr name="instanceClass" stringvalue="org.jetbrains.kotlin.refactorings.KotlinRefactoringRedoAction"/>
             </file>
+            <!-- Global Inline Variable refactoring action — needed so the action appears
+                 in the Refactor submenu (Menu/Refactoring); the editor-scoped registration
+                 at Editors/text/x-kotlin/Actions/ only provides the Ctrl+Alt+N keybinding. -->
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinInlineVariableAction.instance">
+                <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariableAction"/>
+            </file>
         </folder>
     </folder>
     <folder name="Menu">
@@ -67,6 +73,11 @@
             <file name="separator-after-undo-redo.instance">
                 <attr name="instanceClass" stringvalue="javax.swing.JSeparator"/>
                 <attr name="position" intvalue="70"/>
+            </file>
+            <!-- Inline Variable in the Refactor submenu (both main menu and editor right-click). -->
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinInlineVariableAction.shadow">
+                <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinInlineVariableAction.instance"/>
+                <attr name="position" intvalue="1400"/>
             </file>
         </folder>
     </folder>
@@ -313,11 +324,6 @@
                         <file name="WhereUsedAction.shadow">
                             <attr name="originalFile" stringvalue="Actions/Refactoring/org-netbeans-modules-refactoring-api-ui-WhereUsedAction.instance"/>
                             <attr name="position" intvalue="1400"/>
-                        </file>
-                        <!-- Inline Variable (Ctrl+Alt+N): name-reference resolved from Editors/text/x-kotlin/Actions/.
-                             BaseAction subclasses registered in Actions/ appear in Popup/ by their action name. -->
-                        <file name="kotlin-inline-variable">
-                            <attr name="position" intvalue="1401"/>
                         </file>
                         <file name="RunFile.shadow">
                             <attr name="originalFile" stringvalue="Actions/Project/org-netbeans-modules-project-ui-RunSingle.instance"/>
