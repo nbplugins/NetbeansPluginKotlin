@@ -1,0 +1,6 @@
+package inlineVariable
+
+fun bar(): Int {
+    val <caret>y = 10
+    return y + y
+}

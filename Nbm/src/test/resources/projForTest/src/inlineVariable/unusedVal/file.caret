@@ -1,0 +1,6 @@
+package inlineVariable
+
+fun baz(): Int {
+    val <caret>unused = 99
+    return 0
+}

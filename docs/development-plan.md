@@ -543,17 +543,26 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
 
   - [x] **E9.1** — Rename (Alt+Shift+R): K2-based `KaRenameComputer` (hand-written; PR #101)
 
-  - **E9.2** — Safe Delete
+  - [x] **E9.2** — Safe Delete: K2-based `KaSafeDeleteComputer` (hand-written; PR #102)
     - Hand-written: K2 `analyze {}` + `KaFindUsagesComputer` → collect all usages →
       `Problem(false, "Used in N places")` if any; on confirm delete declaration
     - NetBeans adapter: `KotlinSafeDeletePlugin` / `KotlinSafeDeleteUI` in `Nbm`
 
-  - **E9.3** — Inline variable / property (Ctrl+Alt+N)
-    - IDEA sources: `inline/KotlinInlinePropertyProcessor.kt`,
-      `inline/codeInliner/PropertyUsageReplacementStrategy.kt`,
-      `inline/codeInliner/CodeInliner.kt` (partial — required by property strategy)
-    - NetBeans adapter: `KaInlineVariableComputer` in `KotlinRefactoring`;
-      `KotlinInlineVariablePlugin` / `KotlinInlineVariableUI` in `Nbm`
+  - [x] **E9.3** — Inline variable / property (Ctrl+Alt+N): `KaInlineVariableComputer` (hand-written)
+    - **Implementation approach (hand-written, no IDEA sources):**
+      1. `KaInlineVariableComputer` — K2 `analyze {}` finds `KtProperty` at cursor,
+         validates (initializer present, no getter/setter), extracts initializer text,
+         collects read/write references via `KaFindUsagesComputer`; returns `KaInlineVariableResult`
+      2. `KotlinInlineVariablePlugin` — NB `RefactoringPlugin`: one `KotlinInlineUsageReplaceElement`
+         per read usage + one `KotlinInlineDeclarationDeleteElement` for the declaration;
+         each element backed by `PositionBounds`/`PositionRef` so offsets auto-adjust
+         as sibling changes modify the document; checkboxes in the preview panel control
+         individual replacements via `performChange()` / `undoChange()` per element
+      3. `KotlinInlineVariableRefactoring` — custom `AbstractRefactoring` carrying doc + offset
+      4. `KotlinInlineVariableUI` — NB `RefactoringUI` with no extra panel (shows "Inline variable 'name'")
+      5. `KotlinInlineVariableAction` — `BaseAction("kotlin-inline-variable")`, bound to **Ctrl+Alt+N**;
+         registered in `Editors/text/x-kotlin/Actions/` and `Editors/text/x-kotlin/Popup/` in `layer.xml`
+    - Supports `val` properties only; reports `Problem(true, ...)` for write usages
 
   - **E9.4** — Inline function (Ctrl+Alt+N)
     - IDEA sources: `inline/codeInliner/CodeInliner.kt`,

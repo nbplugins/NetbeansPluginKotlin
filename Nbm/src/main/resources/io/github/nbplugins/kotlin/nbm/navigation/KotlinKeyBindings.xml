@@ -12,4 +12,6 @@
     <bind actionName="kotlin-goto-test" key="DA-T"/>
     <!-- Inspect Hierarchy (Alt+Shift+F12) — mirrors java.navigation TypeHierarchyAction shortcut -->
     <bind actionName="kotlin-inspect-hierarchy" key="AS-F12"/>
+    <!-- Inline Variable (Ctrl+Alt+N) — mirrors IntelliJ IDEA inline refactoring shortcut -->
+    <bind actionName="kotlin-inline-variable" key="DA-N"/>
 </bindings>
