@@ -1,0 +1,8 @@
+package inlineVariable.multipleUsages
+
+fun main() {
+    val <caret>n = 10
+    println(n)
+    println(n + 1)
+    println(n * n)
+}

@@ -548,7 +548,7 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
       `Problem(false, "Used in N places")` if any; on confirm delete declaration
     - NetBeans adapter: `KotlinSafeDeletePlugin` / `KotlinSafeDeleteUI` in `Nbm`
 
-  - [ ] **E9.3** — Inline variable / property (Ctrl+Alt+N) — **port IDEA `codeInliner/` engine**
+  - [x] **E9.3** — Inline variable / property (Ctrl+Alt+N) — IDEA `codeInliner/` engine port
     - IDEA sources (compiled into `KotlinRefactoring` via `maven-resources-plugin`):
       `kotlin.refactorings.k2/inline/codeInliner/{CodeInliner, CodeToInlineBuilder,
       CallableUsageReplacementStrategy, PropertyUsageReplacementStrategy,

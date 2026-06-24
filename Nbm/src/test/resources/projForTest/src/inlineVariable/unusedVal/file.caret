@@ -1,0 +1,6 @@
+package inlineVariable.unusedVal
+
+fun main() {
+    val <caret>unused = "never read"
+    println("hello")
+}
