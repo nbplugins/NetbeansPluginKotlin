@@ -314,11 +314,6 @@
                             <attr name="originalFile" stringvalue="Actions/Refactoring/org-netbeans-modules-refactoring-api-ui-WhereUsedAction.instance"/>
                             <attr name="position" intvalue="1400"/>
                         </file>
-                        <!-- Inline Variable (Ctrl+Alt+N): name-reference resolved from Editors/text/x-kotlin/Actions/.
-                             BaseAction subclasses registered in Actions/ appear in Popup/ by their action name. -->
-                        <file name="kotlin-inline-variable">
-                            <attr name="position" intvalue="1401"/>
-                        </file>
                         <file name="RunFile.shadow">
                             <attr name="originalFile" stringvalue="Actions/Project/org-netbeans-modules-project-ui-RunSingle.instance"/>
                             <attr name="position" intvalue="1790"/>
@@ -396,7 +391,7 @@
                             <file name="org-jetbrains-kotlin-preferences.xml" url="DefaultPreferences.xml"/>
                         </folder>
                     </folder>
-                    <!-- Kotlin-specific editor actions for Navigate menu and Refactoring. -->
+                    <!-- Kotlin-specific editor actions for Navigate menu. -->
                     <folder name="Actions">
                         <file name="goto-super-implementation.instance">
                             <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.navigation.KotlinGoToSuperTypeAction"/>
@@ -412,10 +407,6 @@
                         </file>
                         <file name="kotlin-inspect-hierarchy.instance">
                             <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.navigation.KotlinInspectHierarchyAction"/>
-                        </file>
-                        <!-- Inline Variable (Ctrl+Alt+N): custom Kotlin action. -->
-                        <file name="kotlin-inline-variable.instance">
-                            <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariableAction"/>
                         </file>
                     </folder>
                     <!-- Kotlin keybindings: Ctrl+Shift+P and Ctrl+Alt+B for Navigate menu actions.

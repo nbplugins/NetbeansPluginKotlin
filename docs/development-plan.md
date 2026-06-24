@@ -548,21 +548,43 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
       `Problem(false, "Used in N places")` if any; on confirm delete declaration
     - NetBeans adapter: `KotlinSafeDeletePlugin` / `KotlinSafeDeleteUI` in `Nbm`
 
-  - [x] **E9.3** — Inline variable / property (Ctrl+Alt+N): `KaInlineVariableComputer` (hand-written)
-    - **Implementation approach (hand-written, no IDEA sources):**
-      1. `KaInlineVariableComputer` — K2 `analyze {}` finds `KtProperty` at cursor,
-         validates (initializer present, no getter/setter), extracts initializer text,
-         collects read/write references via `KaFindUsagesComputer`; returns `KaInlineVariableResult`
-      2. `KotlinInlineVariablePlugin` — NB `RefactoringPlugin`: one `KotlinInlineUsageReplaceElement`
-         per read usage + one `KotlinInlineDeclarationDeleteElement` for the declaration;
-         each element backed by `PositionBounds`/`PositionRef` so offsets auto-adjust
-         as sibling changes modify the document; checkboxes in the preview panel control
-         individual replacements via `performChange()` / `undoChange()` per element
-      3. `KotlinInlineVariableRefactoring` — custom `AbstractRefactoring` carrying doc + offset
-      4. `KotlinInlineVariableUI` — NB `RefactoringUI` with no extra panel (shows "Inline variable 'name'")
-      5. `KotlinInlineVariableAction` — `BaseAction("kotlin-inline-variable")`, bound to **Ctrl+Alt+N**;
-         registered in `Editors/text/x-kotlin/Actions/` and `Editors/text/x-kotlin/Popup/` in `layer.xml`
-    - Supports `val` properties only; reports `Problem(true, ...)` for write usages
+  - [ ] **E9.3** — Inline variable / property (Ctrl+Alt+N) — **port IDEA `codeInliner/` engine**
+    - IDEA sources (compiled into `KotlinRefactoring` via `maven-resources-plugin`):
+      `kotlin.refactorings.k2/inline/codeInliner/{CodeInliner, CodeToInlineBuilder,
+      CallableUsageReplacementStrategy, PropertyUsageReplacementStrategy,
+      InlinePostProcessor, InlinePreprocessorUtil, introduceValue}.kt`;
+      `kotlin.refactorings.common/inline/codeInliner/{AbstractCodeInliner,
+      AbstractCodeToInlineBuilder, AbstractInlinePostProcessor,
+      AbstractPropertyUsageReplacementStrategy, CodeToInline, CommentHolder,
+      InlineDataKeys, inlineUtils, MutableCodeToInline, ReplacementPerformer,
+      UsageReplacementStrategy}.kt`;
+      `kotlin.refactorings.common/inline/{AbstractKotlinInlinePropertyHandler,
+      AbstractKotlinInlinePropertyProcessor, AbstractKotlinInlinePropertyDialog}.kt`
+      plus their abstract parents
+      (`AbstractKotlinInlineNamedDeclarationProcessor`, `AbstractKotlinDeclarationInlineProcessor`,
+      `AbstractKotlinInlineDialog`, `KotlinInlineActionHandler`).
+    - Stubs/compat (added to `KotlinRefactoring/src/main/{java,kotlin}/`):
+      thin shims for `BaseRefactoringProcessor` constructor-surface (no full runtime —
+      we never call `processor.run()`), `WriteCommandAction`, `ApplicationManager`,
+      `CommonRefactoringUtil`, plus extra `UsageInfo` / `usages.*` pieces beyond those
+      already added for E9.1/E9.2. The 95026387 commit already scaffolded most of these.
+    - NetBeans adapter (in `Nbm`):
+      1. `KotlinInlineVariablePlugin` — NB `RefactoringPlugin` that calls
+         `KotlinInlinePropertyProcessor.createReplacementStrategy()` to obtain a
+         `PropertyUsageReplacementStrategy`, finds usages with `KaFindUsagesComputer`,
+         and applies `strategy.replaceUsage(...)` per usage inside an `NbDocument.runAtomicAsUser`
+         transaction. Flow control stays on NB side — IDEA's `BaseRefactoringProcessor.run()`
+         is intentionally **not** invoked, avoiding its modal-UI / threading runtime.
+      2. `KotlinInlineVariableUI` — NB `RefactoringUI` with no extra panel ("Inline
+         variable 'name'"); preview pane lists usage ranges with checkboxes.
+      3. `KotlinInlineVariableRefactoring` — custom `AbstractRefactoring` carrying doc + offset.
+      4. `KotlinInlineVariableAction` — `BaseAction("kotlin-inline-variable")`, bound to
+         **Ctrl+Alt+N**; registered in `Editors/text/x-kotlin/Actions/` and
+         `Editors/text/x-kotlin/Popup/` in `layer.xml`.
+    - Read/write split: `strategy.replaceUsage` handles both; for plain `val`
+      a write-strategy `null` means "report conflict" — surfaced as
+      `Problem(true, ...)` in NB `prepare()`. Supports `val` first; the same engine
+      generalises to `var` and to E9.4 (Inline function) without re-implementation.
 
   - **E9.4** — Inline function (Ctrl+Alt+N)
     - IDEA sources: `inline/codeInliner/CodeInliner.kt`,

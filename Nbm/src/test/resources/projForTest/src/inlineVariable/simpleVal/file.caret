@@ -1,6 +1,0 @@
-package inlineVariable
-
-fun foo(): Int {
-    val <caret>x = 42
-    return x
-}
