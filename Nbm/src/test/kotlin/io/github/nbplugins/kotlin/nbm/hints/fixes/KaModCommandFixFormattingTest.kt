@@ -187,4 +187,23 @@ class KaModCommandFixFormattingTest : KotlinTestCase("KaModCommandFixFormatting"
                 Regex("fmtTwo\\(\\s*1\\s*,\\s*2\\s*\\)").containsMatchIn(text))
         }
     }
+
+    /**
+     * Regression: applying RemoveArgumentFix must not insert extra blank lines into function
+     * bodies that are not near the fix site. The file contains `demo()` with a single blank
+     * line between statements; after the fix on `demo1()`, that blank line must stay single.
+     */
+    fun testRemoveArgument_doesNotAddExtraBlankLines() {
+        withFixApplied("fmtRemoveArgNoExtraLines.kt", "TOO_MANY_ARGUMENTS",
+            { e, d, k -> KaRemoveArgumentFix(e, d, k) }) { text ->
+            assertFalse(
+                "RemoveArgumentFix inserted consecutive blank lines, got:\n$text",
+                text.contains("\n\n\n")
+            )
+            assertFalse(
+                "RemoveArgumentFix inserted blank line before closing brace, got:\n$text",
+                text.contains("\n\n}")
+            )
+        }
+    }
 }
