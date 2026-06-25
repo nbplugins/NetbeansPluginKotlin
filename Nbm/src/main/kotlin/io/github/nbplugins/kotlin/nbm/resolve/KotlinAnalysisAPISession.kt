@@ -372,6 +372,17 @@ class KotlinAnalysisAPISession private constructor(
                 )
                 KotlinLogger.INSTANCE.logInfo("Registered NoOpIndentHelper stub")
             }
+            // ShortenReferencesFacility — called by InlinePostProcessor.shortenReferences at the
+            // end of an Inline Variable / Inline Function refactoring. The implementation
+            // (SymbolBasedShortenReferencesFacility) lives in the KotlinRefactoring jar and
+            // delegates to the K2-aware shortenReferences[InRange] helpers.
+            if (app.getService(org.jetbrains.kotlin.idea.base.codeInsight.ShortenReferencesFacility::class.java) == null) {
+                app.registerService(
+                    org.jetbrains.kotlin.idea.base.codeInsight.ShortenReferencesFacility::class.java,
+                    io.github.nbplugins.kotlin.refactoring.KotlinSymbolBasedShortenReferencesFacility::class.java,
+                )
+                KotlinLogger.INSTANCE.logInfo("Registered KotlinSymbolBasedShortenReferencesFacility")
+            }
         }
 
         private fun registerEpIfAbsent(

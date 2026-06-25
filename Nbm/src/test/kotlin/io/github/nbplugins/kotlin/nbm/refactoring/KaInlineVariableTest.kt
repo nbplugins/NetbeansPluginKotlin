@@ -19,6 +19,7 @@ package io.github.nbplugins.kotlin.nbm.refactoring
 
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.KaInlineVariableComputer
+import org.jetbrains.kotlin.idea.refactoring.inline.codeInliner.replaceUsages
 import org.jetbrains.kotlin.psi.KtFile
 import utils.KotlinTestCase
 import java.nio.file.Files
@@ -234,6 +235,59 @@ class KaInlineVariableTest : KotlinTestCase("KaInlineVariableTest", "inlineVaria
             assertEquals("x", result.declarationName)
             val totalUsages = result.usages.values.sumOf { it.size }
             assertEquals("Expected exactly one usage of simpleVal.x", 1, totalUsages)
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Integration test that exercises the **apply** step of Inline Variable end-to-end: runs
+     * `compute()` to get the IDEA replacement strategy, then calls
+     * [org.jetbrains.kotlin.idea.refactoring.inline.codeInliner.replaceUsages] + `property.delete()`
+     * exactly like [io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineApplyElement.performChange].
+     *
+     * Reproduces the runtime crash where IDEA's `InlinePostProcessor.shortenReferences` looks up
+     * `ShortenReferencesFacility` via `service()` and throws `RuntimeException: Cannot find service`
+     * when no implementation is registered. Fails until [SymbolBasedShortenReferencesFacility] is
+     * registered as an application service in `KotlinAnalysisAPISession.registerStandaloneServices`.
+     *
+     * After the fix the test verifies that the file text becomes `println(42)` and the
+     * declaration is gone.
+     */
+    fun testApply_withRealSession_simpleVal_inlinesAndShortenedSucceeds() {
+        val triple = prepareWithRealSession("simpleVal")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping apply integration test")
+                return
+            }
+        val (computer, ktFile, tmpDir) = triple
+        try {
+            val outcome = computer.compute()
+            assertTrue(
+                "Expected Ready outcome from real session, got $outcome",
+                outcome is KaInlineVariableComputer.Outcome.Ready,
+            )
+            val result = (outcome as KaInlineVariableComputer.Outcome.Ready).result
+
+            val allRefs = result.usages.values.flatten()
+            // This call is what triggers ShortenReferencesFacility lookup in IDEA's
+            // InlinePostProcessor.postProcessInsertedCode → shortenReferences.
+            result.strategy.replaceUsages(
+                usages = allRefs,
+                unwrapSpecialUsages = false,
+                unwrapSpecialUsageOrNull = { null },
+            )
+            result.property.delete()
+
+            val finalText = ktFile.text
+            assertTrue(
+                "Expected '42' inlined into println(...), got: $finalText",
+                finalText.contains("println(42)"),
+            )
+            assertFalse(
+                "Expected the 'val x = 42' declaration to be removed, got: $finalText",
+                finalText.contains("val x"),
+            )
         } finally {
             tmpDir.toFile().deleteRecursively()
         }

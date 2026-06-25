@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.105-SNAPSHOT</version>
+    <version>0.11.108-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-nbm</artifactId>
@@ -281,6 +281,15 @@
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>concurrency</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <!-- indexing: PsiSearchHelper, SearchRequestCollector, TextOccurenceProcessor — interface bundle
+         consumed by IDEA refactoring code paths (e.g. ReferencesSearch). The implementation jar
+         (indexing-impl) is not needed; we register a Kotlin/KaSession-friendly stub via
+         NoOpPsiSearchHelper. -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>indexing</artifactId>
       <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <!-- util-multiplatform: provides StringUtilKmp referenced by StringUtil from util:253 (CoreImpl repack) -->

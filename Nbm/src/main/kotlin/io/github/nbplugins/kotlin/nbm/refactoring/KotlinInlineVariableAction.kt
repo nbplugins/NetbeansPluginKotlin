@@ -45,6 +45,9 @@ import javax.swing.text.StyledDocument
 class KotlinInlineVariableAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBREV_RESET) {
 
     init {
+        // NAME drives both the Refactor submenu label (Menu/Refactoring shadow) and the
+        // command palette; without it the menu shows the bare action-name "kotlin-inline-variable".
+        putValue(NAME, "Inline Variable")
         putValue(SHORT_DESCRIPTION, "Inline Variable")
         putValue(POPUP_MENU_TEXT, "Inline Variable")
     }

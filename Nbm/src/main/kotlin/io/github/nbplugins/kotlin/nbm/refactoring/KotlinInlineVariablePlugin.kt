@@ -17,11 +17,13 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.refactoring
 
+import com.intellij.psi.PsiElement
 import io.github.nbplugins.kotlin.nbm.navigation.KotlinFindUsagesResultElement
+import io.github.nbplugins.kotlin.nbm.reformatting.format
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.KaInlineVariableComputer
-import org.jetbrains.kotlin.idea.refactoring.inline.codeInliner.replaceUsages
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.psiUtil.startOffset
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.modules.csl.api.OffsetRange
 import org.netbeans.modules.refactoring.api.Problem
@@ -37,6 +39,8 @@ import org.openide.text.CloneableEditorSupport
 import org.openide.text.PositionBounds
 import org.openide.util.Lookup
 import org.openide.util.lookup.Lookups
+import org.openide.windows.TopComponent
+import javax.swing.SwingUtilities
 import javax.swing.text.BadLocationException
 import javax.swing.text.Position.Bias
 import javax.swing.text.StyledDocument
@@ -178,51 +182,103 @@ class KotlinInlineApplyElement(
     } catch (_: Exception) { null }
 
     override fun performChange() {
-        runCatching {
-            val session = KotlinAnalysisAPISession.getSession(nbProject)
-            val cursorKtFile = session.getKtFileForPath(cursorFilePath) ?: return@runCatching
-            val projectKtFiles = session.session.modulesWithFiles.values.flatten().filterIsInstance<KtFile>()
+        // Capture the TopComponent active before document writes — `writeDocumentText` activates
+        // the editor of the modified file, which steals focus from the file the user was working
+        // on (especially noticeable when usages live in a different file). Restored in `finally`.
+        val activeBefore: TopComponent? = runCatching { TopComponent.getRegistry().activated }.getOrNull()
+        try {
+            runCatching {
+                val session = KotlinAnalysisAPISession.getSession(nbProject)
+                val cursorKtFile = session.getKtFileForPath(cursorFilePath) ?: return@runCatching
+                val projectKtFiles = session.session.modulesWithFiles.values.flatten().filterIsInstance<KtFile>()
 
-            val computer = KaInlineVariableComputer(
-                cursorKtFile, cursorOffset, session.session.project, projectKtFiles,
-            )
-            val ready = computer.compute() as? KaInlineVariableComputer.Outcome.Ready ?: return@runCatching
-            val result = ready.result
+                val computer = KaInlineVariableComputer(
+                    cursorKtFile, cursorOffset, session.session.project, projectKtFiles,
+                )
+                val ready = computer.compute() as? KaInlineVariableComputer.Outcome.Ready ?: return@runCatching
+                val result = ready.result
 
-            // Snapshot every file we are about to modify (= every file containing usages + the
-            // declaration's file). Required by undoChange() to restore document content.
-            val affectedFiles = LinkedHashSet<KtFile>().apply {
-                addAll(result.usages.keys)
-                add(result.property.containingKtFile)
+                // Snapshot every file we are about to modify. Required by undoChange().
+                val affectedFiles = LinkedHashSet<KtFile>().apply {
+                    addAll(result.usages.keys)
+                    add(result.property.containingKtFile)
+                }
+                for (ktFile in affectedFiles) {
+                    val path = ktFile.virtualFile?.path ?: continue
+                    val fo = pathToFileObject(path) ?: continue
+                    val text = readDocumentText(fo) ?: continue
+                    snapshots[fo] = text
+                }
+
+                // Replicates IDEA's `processUsages` per-file loop (UsageReplacementStrategy.kt:60-108):
+                // sort usages so nested ones go first; for each, fetch the replacer and run it. We
+                // do NOT use IDEA's `replaceUsages` bulk extension because we need access to the
+                // inserted PSI element per usage to reformat its range afterwards (IDEA's
+                // `reformatted(true)` call is a no-op in our standalone container).
+                val insertedByFile = LinkedHashMap<KtFile, MutableList<PsiElement>>()
+                for ((ktFile, usagesInFile) in result.usages) {
+                    val sortedUsages = usagesInFile.sortedWith { a, b ->
+                        if (a.parent.textRange.intersects(b.parent.textRange)) {
+                            compareValuesBy(b, a) { it.startOffset }
+                        } else {
+                            compareValuesBy(a, b) { it.startOffset }
+                        }
+                    }
+                    for (usage in sortedUsages) {
+                        if (!usage.isValid) continue
+                        val replacer = runCatching { result.strategy.createReplacer(usage) }.getOrNull() ?: continue
+                        val inserted = runCatching { replacer.invoke() }.getOrNull() ?: continue
+                        // Mirror IDEA's reformat target (`inserted.parent.parent.parent` in
+                        // UsageReplacementStrategy.kt:102) — gives the local context around the
+                        // insertion so the formatter has enough scope to reflow the result.
+                        val target: PsiElement = inserted.parent?.parent?.parent ?: inserted
+                        insertedByFile.getOrPut(ktFile) { mutableListOf() }.add(target)
+                    }
+                }
+
+                result.property.delete()
+
+                // Push the post-mutation text of every affected KtFile back to its NB document so
+                // the editor and on-disk state reflect the refactor.
+                for (ktFile in affectedFiles) {
+                    val path = ktFile.virtualFile?.path ?: continue
+                    val fo = pathToFileObject(path) ?: continue
+                    writeDocumentText(fo, ktFile.text)
+                }
+
+                // Reformat each inserted range using our text-based KotlinFormatter. Ranges are
+                // sorted descending by start offset so earlier ranges' offsets remain valid as
+                // later ones are reformatted (a single format() call rewrites the full document,
+                // but only the supplied range is reflowed).
+                for ((ktFile, elements) in insertedByFile) {
+                    val path = ktFile.virtualFile?.path ?: continue
+                    val fo = pathToFileObject(path) ?: continue
+                    val doc = openDocument(fo) ?: continue
+                    val ranges = elements.mapNotNull { runCatching { it.textRange }.getOrNull() }
+                        .sortedByDescending { it.startOffset }
+                    for (range in ranges) {
+                        val end = minOf(range.endOffset, doc.length)
+                        val start = minOf(range.startOffset, end)
+                        if (start >= end) continue
+                        runCatching {
+                            format(
+                                doc = doc,
+                                offset = start,
+                                startOffset = start,
+                                endOffset = end,
+                                proj = nbProject,
+                            )
+                        }
+                    }
+                }
+
+                // Drop the K2 cache so subsequent operations parse the new content from disk.
+                KotlinAnalysisAPISession.invalidate(nbProject)
             }
-            for (ktFile in affectedFiles) {
-                val path = ktFile.virtualFile?.path ?: continue
-                val fo = pathToFileObject(path) ?: continue
-                val text = readDocumentText(fo) ?: continue
-                snapshots[fo] = text
+        } finally {
+            activeBefore?.let { tc ->
+                SwingUtilities.invokeLater { runCatching { tc.requestActive() } }
             }
-
-            // Drive the IDEA engine. The strategy mutates session PSI in place; the K2 session
-            // will then be inconsistent with on-disk content until we either write the new text
-            // back to the document (next step) or invalidate.
-            val allRefs = result.usages.values.flatten()
-            result.strategy.replaceUsages(
-                usages = allRefs,
-                unwrapSpecialUsages = false,
-                unwrapSpecialUsageOrNull = { null },
-            )
-            result.property.delete()
-
-            // Push the post-mutation text of every affected KtFile back to its NB document so the
-            // editor and on-disk state reflect the refactor.
-            for (ktFile in affectedFiles) {
-                val path = ktFile.virtualFile?.path ?: continue
-                val fo = pathToFileObject(path) ?: continue
-                writeDocumentText(fo, ktFile.text)
-            }
-
-            // Drop the K2 cache so subsequent operations parse the new content from disk.
-            KotlinAnalysisAPISession.invalidate(nbProject)
         }
     }
 
@@ -244,11 +300,16 @@ class KotlinInlineApplyElement(
 
     /** Reads the current text of the open document for [fo], or `null` when the document cannot be opened. */
     private fun readDocumentText(fo: FileObject): String? = try {
-        val dob = DataObject.find(fo)
-        val ec = dob.lookup.lookup(EditorCookie::class.java) ?: return null
-        val doc = ec.openDocument() ?: return null
+        val doc = openDocument(fo) ?: return null
         doc.getText(0, doc.length)
     } catch (_: BadLocationException) { null } catch (_: Exception) { null }
+
+    /** Opens (or returns the already-open) [StyledDocument] for [fo], or `null` on error. */
+    private fun openDocument(fo: FileObject): StyledDocument? = try {
+        val dob = DataObject.find(fo)
+        val ec = dob.lookup.lookup(EditorCookie::class.java) ?: return null
+        ec.openDocument()
+    } catch (_: Exception) { null }
 
     /** Replaces the entire text of the open document for [fo] with [newText]. No-op on errors. */
     private fun writeDocumentText(fo: FileObject, newText: String) {
