@@ -155,7 +155,8 @@ class KaModCommandFix<E : PsiElement>(
                         val first = txt[0]
                         when {
                             prevLast == null -> { /* first leaf, no separator needed */ }
-                            startsNewBlockStatement(el) && !sbEndsWithNewline(sb) ->
+                            el !is com.intellij.psi.PsiWhiteSpace
+                                    && startsNewBlockStatement(el) && !sbEndsWithNewline(sb) ->
                                 sb.append('\n')
                             isWordChar(prevLast!!) && isWordChar(first) ->
                                 sb.append(' ')
