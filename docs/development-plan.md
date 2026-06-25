@@ -541,6 +541,36 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
   E9.1 and E9.2 (Safe Delete) are the only hand-written exceptions (trivially built on
   K2 `analyze {}` + Find Usages).
 
+  **`KotlinRefactoring` reactor module** — introduced in E9.3; jar module that compiles
+  IDEA refactoring sources from `submodules/IntellijCommunity` together with local stubs
+  and compatibility shims.  Follows the same `maven-resources-plugin` copy pattern as
+  `KotlinFormatter` / `KotlinHighlighting`.  The `Nbm` module depends on this jar; both
+  are part of the root reactor so `mvn package` from root is the correct build command
+  (the NBM plugin resolves inter-module dependencies via the workspace reader within a
+  single invocation; a separate `mvn install` step is not needed).
+
+  **Runtime service injection pattern** — IDEA's `codeInliner/` engine calls services
+  (`PsiSearchHelper`, `ShortenReferencesFacility`, …) via `service<T>()` / `T.getInstance()`.
+  In standalone mode these are missing.  The pattern used in E9.3 and applicable to all
+  future E9.x refactorings:
+  1. Register a no-op or NB-aware implementation in
+     `KotlinAnalysisAPISession.registerStandaloneServices()` /
+     `installNoOpPsiSearchHelper()` before the refactoring engine is first called.
+  2. Register missing extension points (e.g. `com.intellij.referencesSearch`) in
+     `registerHighlightInfoFilterEP()`.
+  3. Document every added stub/service in [docs/stubs.md](stubs.md).
+
+  **Cursor-on-declaration-or-usage** — every `Ka*Computer` must resolve the target
+  declaration from the caret regardless of whether the caret is on the declaration itself
+  or on a reference to it.  Standard approach (used in E9.3, required for E9.4+):
+  1. Find the leaf element at the caret: `ktFile.findElementAt(offset)`.
+  2. Walk up to a `KtNameReferenceExpression`; if found, call K2
+     `analyze { ref.mainReference.resolveToSymbol()?.psi }` — this gives the declaring
+     element directly.
+  3. Only if step 2 yields nothing, fall back to
+     `PsiTreeUtil.getParentOfType(element, KtXxx::class.java)` to handle the case where
+     the caret is on the declaration keyword or name token.
+
   - [x] **E9.1** — Rename (Alt+Shift+R): K2-based `KaRenameComputer` (hand-written; PR #101)
 
   - [x] **E9.2** — Safe Delete: K2-based `KaSafeDeleteComputer` (hand-written; PR #102)
@@ -563,28 +593,25 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
       plus their abstract parents
       (`AbstractKotlinInlineNamedDeclarationProcessor`, `AbstractKotlinDeclarationInlineProcessor`,
       `AbstractKotlinInlineDialog`, `KotlinInlineActionHandler`).
-    - Stubs/compat (added to `KotlinRefactoring/src/main/{java,kotlin}/`):
-      thin shims for `BaseRefactoringProcessor` constructor-surface (no full runtime —
-      we never call `processor.run()`), `WriteCommandAction`, `ApplicationManager`,
-      `CommonRefactoringUtil`, plus extra `UsageInfo` / `usages.*` pieces beyond those
-      already added for E9.1/E9.2. The 95026387 commit already scaffolded most of these.
+    - Stubs/service registrations (see [docs/stubs.md](stubs.md) for details):
+      `BaseRefactoringProcessor` (JVM linkage stub in `Nbm/src/main/java/`),
+      `UsageViewDescriptor` (compile-only interface),
+      `NoOpPsiSearchHelper` (project service, registered in `KotlinAnalysisAPISession`),
+      `KotlinSymbolBasedShortenReferencesFacility` (application service wrapping IDEA
+      `internal` `SymbolBasedShortenReferencesFacility` via delegation, in `KotlinRefactoring`).
     - NetBeans adapter (in `Nbm`):
-      1. `KotlinInlineVariablePlugin` — NB `RefactoringPlugin` that calls
-         `KotlinInlinePropertyProcessor.createReplacementStrategy()` to obtain a
-         `PropertyUsageReplacementStrategy`, finds usages with `KaFindUsagesComputer`,
-         and applies `strategy.replaceUsage(...)` per usage inside an `NbDocument.runAtomicAsUser`
-         transaction. Flow control stays on NB side — IDEA's `BaseRefactoringProcessor.run()`
-         is intentionally **not** invoked, avoiding its modal-UI / threading runtime.
-      2. `KotlinInlineVariableUI` — NB `RefactoringUI` with no extra panel ("Inline
-         variable 'name'"); preview pane lists usage ranges with checkboxes.
-      3. `KotlinInlineVariableRefactoring` — custom `AbstractRefactoring` carrying doc + offset.
-      4. `KotlinInlineVariableAction` — `BaseAction("kotlin-inline-variable")`, bound to
-         **Ctrl+Alt+N**; registered in `Editors/text/x-kotlin/Actions/` and
-         `Editors/text/x-kotlin/Popup/` in `layer.xml`.
-    - Read/write split: `strategy.replaceUsage` handles both; for plain `val`
-      a write-strategy `null` means "report conflict" — surfaced as
-      `Problem(true, ...)` in NB `prepare()`. Supports `val` first; the same engine
-      generalises to `var` and to E9.4 (Inline function) without re-implementation.
+      1. `KotlinInlineVariablePlugin` — NB `RefactoringPlugin`; `KaInlineVariableComputer`
+         drives `extractInitialization` + `createReplacementStrategyForProperty`; per-usage
+         `strategy.createReplacer(usage).invoke()` loop inside `NbDocument.runAtomicAsUser`;
+         followed by `KotlinFormatterUtils.formatRange` on each inserted range.
+         Flow control stays on NB side — IDEA's `BaseRefactoringProcessor.run()` is
+         intentionally **not** invoked.
+      2. `KotlinInlineVariableUI` — NB `RefactoringUI`; preview pane lists usage ranges.
+      3. `KotlinInlineVariableRefactoring` — `AbstractRefactoring` carrying doc + offset.
+      4. `KotlinInlineVariableAction` — `BaseAction("kotlin-inline-variable")`, **Ctrl+Alt+N**;
+         registered in `Refactor` menu and `Editors/text/x-kotlin/Actions/` in `layer.xml`.
+    - Caret resolution: works on declaration and on any usage — see *Cursor-on-declaration-or-usage* in E9 strategy above.
+    - Supports `val` first; the same engine generalises to `var` and E9.4 (Inline function).
 
   - **E9.4** — Inline function (Ctrl+Alt+N)
     - IDEA sources: `inline/codeInliner/CodeInliner.kt`,

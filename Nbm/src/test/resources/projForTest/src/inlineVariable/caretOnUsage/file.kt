@@ -1,0 +1,6 @@
+package inlineVariable.caretOnUsage
+
+fun main() {
+    val x = 42
+    println(x)
+}

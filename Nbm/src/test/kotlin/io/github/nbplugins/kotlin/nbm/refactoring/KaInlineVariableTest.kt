@@ -294,6 +294,45 @@ class KaInlineVariableTest : KotlinTestCase("KaInlineVariableTest", "inlineVaria
     }
 
     /**
+     * When the cursor is positioned on a **usage** of a `val` (e.g. `println(<caret>x)`) rather than
+     * on its declaration (`val <caret>x = 42`), [KaInlineVariableComputer.compute] must still return
+     * [Outcome.Ready] by resolving the reference back to the declaring [KtProperty].
+     *
+     * Fails until [KaInlineVariableComputer.compute] falls back from "parent is KtProperty" to
+     * "parent is KtReferenceExpression → resolve symbol → find KtProperty".
+     */
+    fun testCompute_withRealSession_caretOnUsage_resolvesToProperty() {
+        val triple = prepareWithRealSession("caretOnUsage")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping caretOnUsage test")
+                return
+            }
+        val (computer, _, tmpDir) = triple
+        try {
+            val outcome = computer.compute()
+
+            assertTrue(
+                "Expected Ready when caret is on a usage, got $outcome",
+                outcome is KaInlineVariableComputer.Outcome.Ready,
+            )
+            val result = (outcome as KaInlineVariableComputer.Outcome.Ready).result
+            assertEquals(
+                "Declaration name must be 'x' even when caret is on usage",
+                "x",
+                result.declarationName,
+            )
+            val totalUsages = result.usages.values.sumOf { it.size }
+            assertEquals(
+                "Expected exactly one usage of caretOnUsage.x, got $totalUsages",
+                1,
+                totalUsages,
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Reproducer for the runtime `NoClassDefFoundError: com/intellij/refactoring/BaseRefactoringProcessor`
      * that surfaces when the user invokes **Refactor → Inline Variable**. The IDEA call chain
      * (`createReplacementStrategyForProperty` → `AbstractKotlinInlinePropertyProcessor.extractInitialization`)

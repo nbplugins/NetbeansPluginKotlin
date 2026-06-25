@@ -28,6 +28,7 @@ import org.jetbrains.kotlin.idea.refactoring.inline.codeInliner.UsageReplacement
 import org.jetbrains.kotlin.idea.refactoring.inline.createReplacementStrategyForProperty
 import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtNameReferenceExpression
 import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtReferenceExpression
 import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
@@ -111,13 +112,21 @@ class KaInlineVariableComputer(
     /**
      * Resolves the property at the cursor and builds the inline plan.
      *
+     * The cursor may be either on the **declaration** (`val <caret>x = 42`) or on any **usage**
+     * (`println(<caret>x)`). Both are handled:
+     *  1. If the leaf element is (or is inside) a [KtNameReferenceExpression], resolve its symbol
+     *     via K2 and obtain the declaring [KtProperty] from the symbol's PSI.
+     *  2. Otherwise fall back to walking up the PSI tree looking for a [KtProperty] ancestor
+     *     (handles the cursor being on the declaration keyword/name itself).
+     *
      * @return [Outcome.NotApplicable] when the cursor is not on a `KtProperty`,
      *         [Outcome.Error] when the property cannot be inlined (missing initializer, etc.),
      *         [Outcome.Ready] with the prepared plan otherwise
      */
     fun compute(): Outcome {
         val element = cursorKtFile.findElementAt(offset) ?: return Outcome.NotApplicable
-        val property = PsiTreeUtil.getParentOfType(element, KtProperty::class.java, false)
+        val property = resolvePropertyFromReference(element)
+            ?: PsiTreeUtil.getParentOfType(element, KtProperty::class.java, false)
             ?: return Outcome.NotApplicable
         val declarationName = property.name ?: return Outcome.NotApplicable
 
@@ -165,6 +174,24 @@ class KaInlineVariableComputer(
                 declarationName = declarationName,
             )
         )
+    }
+
+    /**
+     * If [element] is (or is inside) a [KtNameReferenceExpression], resolves it via K2 and
+     * returns the [KtProperty] that the reference points to. Returns `null` when [element] is
+     * not a reference or the resolved symbol is not a local/member property.
+     *
+     * This enables the refactoring to work when the cursor is on a **usage** of the variable
+     * rather than on its declaration.
+     */
+    private fun resolvePropertyFromReference(element: PsiElement): KtProperty? {
+        val ref = PsiTreeUtil.getParentOfType(element, KtNameReferenceExpression::class.java, false)
+            ?: return null
+        return runCatching {
+            analyze(ref) {
+                ref.mainReference?.resolveToSymbol()?.psi as? KtProperty
+            }
+        }.getOrNull()
     }
 
     /**

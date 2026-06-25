@@ -298,26 +298,11 @@ Other bundled capabilities (not separate reactor modules):
 Formatter infrastructure (A4.9): `openapi-formatter.jar` and `idea-formatter.jar` replaced by
 `com.jetbrains.intellij.platform:code-style:253.33514.17` and `code-style-impl:253.33514.17` (direct Maven
 dependencies). All `com.jetbrains.intellij.platform:*` transitive deps are excluded from `Nbm` to
-avoid conflicts with bundled JARs. The following stubs live in `Nbm/src/main/java/`:
+avoid conflicts with bundled JARs.
 
-| Class | Package | Purpose |
-|-------|---------|---------|
-| `Configurable` | `com.intellij.openapi.options` | Compile-only; return type of `createSettingsPage()` (throws) |
-| `IndentOptionsEditor` | `com.intellij.application.options` | Compile-only; return type of `getIndentOptionsEditor()` (returns null) |
-| `CodeStyleSettingsProvider` | `com.intellij.psi.codeStyle` | Runtime; `EXTENSION_POINT_NAME` field needed for extension registration |
-| `LanguageCodeStyleSettingsProvider` | `com.intellij.psi.codeStyle` | Runtime; `EP_NAME` field needed for extension registration |
-| `CodeStyleSettingsCustomizable` | `com.intellij.psi.codeStyle` | Compile-only interface |
-| `CodeStyleSettingsService` | `com.intellij.psi.codeStyle` | Runtime; `getInstance()` returns no-op (empty factory lists) |
-| `CustomCodeStyleSettingsManager` | `com.intellij.psi.codeStyle` | Runtime; `getCustomSettings()` uses reflection to create settings in standalone mode |
-| `Formatter` | `com.intellij.formatting` | Runtime; `getInstance()` returns `new FormatterImpl()` singleton (253-era `getInstance()` returns null in standalone mode) |
-| `ConcurrentCollectionFactory` | `com.intellij.concurrency` | Runtime; `concurrency:253` module not published — provides `createConcurrentIdentityMap()` etc. needed by code-style-impl |
-| `ConcurrencyUtil` | `com.intellij.util` | Runtime; `computeIfAbsent(UserDataHolder, Key, Supplier)` absent from `util:253` but called by analysis-api:2.3.21 |
-| `Registry` | `com.intellij.openapi.util.registry` | Runtime; stripped from CoreImpl (see CoreImpl/pom.xml); exposes `Companion` inner class so analysis-api:2.3.21 Kotlin code can access `Registry.Companion` |
-| `RegistryValue` | `com.intellij.openapi.util.registry` | Runtime; used by the `Registry` stub above |
-| `Editor` | `com.intellij.openapi.editor` | Compile-only; referenced by `NetBeansFormattingModel` parameter type |
-| `CodeInsightContextManager` | `com.intellij.codeInsight.multiverse` | Runtime; Kotlin interface stub overriding `core:253` version; adds `isSharedSourceSupportEnabled(): Boolean = false` default method absent from 253 interface but called via `invokeinterface` by `kotlin-compiler-ir-for-ide:2.3.21` (compiled against 253) |
-| `KotlinSettingsProvider` | `com.intellij.formatting` | Plugin-specific; extends `CodeStyleSettingsProvider`; provides `KotlinCodeStyleSettings` factory |
-| `KotlinLanguageCodeStyleSettingsProvider` | `com.intellij.formatting` | Plugin-specific; extends `LanguageCodeStyleSettingsProvider`; provides Kotlin code style settings UI |
+See **[docs/stubs.md](docs/stubs.md)** for the full catalogue of IntelliJ platform stubs and
+compatibility shims (formatter stubs, refactoring engine stubs, runtime service registrations,
+resource replacements, and the conflict-resolution rule).
 
 These JARs are built by the reactor modules above and passed to `Nbm` automatically.
 They are installed under `io.github.nbplugins` coordinates
@@ -327,18 +312,11 @@ They are installed under `io.github.nbplugins` coordinates
 
 The bundled JARs were compiled against older library versions and require class replacements to
 work with the current runtime (Kotlin 2.3.21, Java 17+). No ASM patches remain since A4.10.
-
-**Active class replacements** — classes in `Nbm/src/main/java/` win over `ext/*.jar` via classloader order:
-
-| What | Source | Why |
-|------|--------|-----|
-| `messages/JavaCoreBundle.properties`, `messages/JavaErrorMessages.properties` | `Nbm/src/main/resources/messages/` | absent from `core:253` but required by `LanguageLevel.<clinit>` at runtime |
+See [docs/stubs.md](docs/stubs.md) for active resource replacements and the conflict-resolution rule.
 
 **JetBrains Maven repo** (`jetbrains-intellij-releases`) is slow without a proxy. To bootstrap:
 download missing JARs manually via SOCKS5 proxy (`router.oleghome:11337`) using curl and
 place them in `~/.m2/repository/com/jetbrains/intellij/platform/<artifact>/<version>/`.
-
-**Правило разрешения конфликтов версий классов:** При конфликте двух версий одного класса из разных JAR-файлов — всегда стрипить **старую** версию, оставлять **новую**. Если новый код вызывает метод, отсутствующий в старом классе — добавить метод в старый класс (stub в `Nbm/src/main/java/`, главный JAR загружается первым и перекрывает `ext/*.jar`).
 
 **Running tests** (Xvfb is started automatically by Maven on display :99):
 
@@ -440,11 +418,12 @@ As of C10, all K1 fallback code (`KotlinEnvironment`, `BindingContext`, `Analysi
 through the K2 Analysis API (`StandaloneAnalysisAPISession`).
 
 **Known workarounds in place:**
-- `Registry.java` stub in `Nbm/src/main/java/com/intellij/openapi/util/registry/` exposes a `Companion`
-  inner class so that `analysis-api:2.3.21` code accessing `Registry.Companion` at runtime finds the
-  expected field. The stub takes classloader precedence over the Kotlin `Registry` in `KotlinCompilerCliBase`.
+- `Registry.java` stub takes classloader precedence over the Kotlin `Registry` in `KotlinCompilerCliBase`
+  so that `analysis-api:2.3.21` code accessing `Registry.Companion` finds the expected field.
 - `KotlinAnalysisAPISession` adds the JDK home as a `KtSdkModule` dependency so that
   JDK standard library types are visible in the analysis session.
-- `CodeInsightContextManager.kt` stub in `Nbm/src/main/kotlin/` overrides the `core:253` interface to
-  add `isSharedSourceSupportEnabled(): Boolean = false` — called via `invokeinterface` by
+- `CodeInsightContextManager.kt` stub overrides the `core:253` interface to add
+  `isSharedSourceSupportEnabled(): Boolean = false` — called via `invokeinterface` by
   `kotlin-compiler-ir-for-ide:2.3.21` (compiled against 253 where this method existed).
+
+See [docs/stubs.md](docs/stubs.md) for the full catalogue of stubs and service registrations.
