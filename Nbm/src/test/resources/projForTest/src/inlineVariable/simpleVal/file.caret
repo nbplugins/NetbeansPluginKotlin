@@ -1,0 +1,6 @@
+package inlineVariable.simpleVal
+
+fun main() {
+    val <caret>x = 42
+    println(x)
+}

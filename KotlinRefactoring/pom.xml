@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.100-SNAPSHOT</version>
+    <version>0.11.110-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
@@ -68,6 +68,332 @@
               </resources>
             </configuration>
           </execution>
+          <!-- Stubs for IDE platform types not available as 253 artifacts -->
+          <execution>
+            <id>copy-local-stubs</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/src/main/java</directory>
+                  <filtering>false</filtering>
+                </resource>
+                <resource>
+                  <directory>${basedir}/src/main/kotlin</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- platform/refactoring: BaseRefactoringProcessor, InlineHandler, CommonRefactoringUtil, etc. -->
+          <execution>
+            <id>copy-platform-refactoring</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/platform/refactoring/src</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- platform/indexing-api: DescriptiveNameUtil, UsageViewTypeLocation -->
+          <execution>
+            <id>copy-platform-indexing-api</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/platform/indexing-api/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>com/intellij/lang/findUsages/DescriptiveNameUtil.java</include>
+                    <include>com/intellij/usageView/UsageViewTypeLocation.java</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- platform/lvcs-api: LocalHistory, LocalHistoryAction -->
+          <execution>
+            <id>copy-platform-lvcs-api</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/platform/lvcs-api/src</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- java/openapi: JavaRefactoringBundle -->
+          <execution>
+            <id>copy-java-refactoring-bundle</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/java/openapi/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>com/intellij/java/refactoring/JavaRefactoringBundle.java</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- kotlin/base/resources: KotlinBundle -->
+          <execution>
+            <id>copy-kotlin-base-resources</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/resources/src</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- kotlin/base/code-insight: ShortenReferencesFacility, CommentSaver, KotlinDeclarationNameValidator -->
+          <execution>
+            <id>copy-kotlin-base-code-insight</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/code-insight/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/codeInsight/KotlinDeclarationNameValidator.kt</include>
+                    <include>org/jetbrains/kotlin/idea/base/codeInsight/KotlinNameSuggester.kt</include>
+                    <!-- KotlinNameSuggestionProvider.kt excluded: IDE-heavy (JavaStatisticsManager, NameSuggestionProvider, @Nls type arg); local stub in src/main/kotlin -->
+                    <!-- <include>org/jetbrains/kotlin/idea/base/codeInsight/KotlinNameSuggestionProvider.kt</include> -->
+                    <include>org/jetbrains/kotlin/idea/base/codeInsight/ShortenReferencesFacility.kt</include>
+                    <include>org/jetbrains/kotlin/idea/util/CommentSaver.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- kotlin/code-insight/utils: ConvertToBlockBodyUtils, callExpression, InlineUtils, etc. -->
+          <execution>
+            <id>copy-kotlin-code-insight-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/utils/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/AnalysisUtils.kt</include>
+                    <!-- EnumUtils.kt excluded: uses languageVersionSettings + isEnumValuesSoftDeprecateEnabled; local stub in src/main/kotlin -->
+                    <!-- <include>org/jetbrains/kotlin/idea/codeinsight/utils/EnumUtils.kt</include> -->
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/ExpressionSimplificationUtils.kt</include>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/ConvertToBlockBodyUtils.kt</include>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/ConvertToExpressionBodyUtils.kt</include>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/ControlFlowUtils.kt</include>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/InlineUtils.kt</include>
+                    <!-- InsertExplicitTypeArgumentsUtils.kt excluded: local copy in src/main/kotlin adds else branch for exhaustive when -->
+                    <!-- <include>org/jetbrains/kotlin/idea/codeinsight/utils/InsertExplicitTypeArgumentsUtils.kt</include> -->
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/KotlinPsiUtils.kt</include>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/RemoveExplicitTypeArgumentsUtils.kt</include>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/TypeParameterUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- kotlin.refactorings.common/inline: AbstractKotlinDeclarationInlineProcessor, codeInliner base.
+               kotlinCommonRefactoringUtil.kt excluded — too IDE-heavy (ConflictsDialog, RootKindFilter);
+               we provide a local stub with just deleteWithCompanion / getLastLambdaExpression / isComplexCallWithLambdaArgument.
+               OperatorToFunctionConverter.kt excluded — we provide a patched local copy (OperatorRem removed in 2.3.21). -->
+          <execution>
+            <id>copy-kotlin-refactoring-common-inline</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.common/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/refactoring/inline/AbstractKotlinDeclarationInlineProcessor.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/inline/AbstractKotlinInlineNamedDeclarationProcessor.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/inline/AbstractKotlinInlinePropertyProcessor.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/inline/codeInliner/**</include>
+                    <!-- ExplicitLambdaSignatureUtil: getExplicitLambdaSignature, specifyExplicitLambdaSignature -->
+                    <include>org/jetbrains/kotlin/idea/refactoring/util/ExplicitLambdaSignatureUtil.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- kotlin.refactorings.k2/inline + util: KotlinInlinePropertyProcessor, codeInliner K2, util.
+               Dialog and handler classes are excluded — we provide our own NetBeans UI. -->
+          <execution>
+            <id>copy-kotlin-refactoring-k2-inline</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/inline/KotlinInlinePropertyProcessor.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/inline/KotlinInlineFunctionProcessor.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/inline/KotlinInlineAnonymousFunctionProcessor.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/inline/codeInliner/**</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/util/**</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/introduce/K2SemanticMatcher.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/introduce/K2ExtractableSubstringInfo.kt</include>
+                    <!-- utils.kt excluded: local stub in src/main/kotlin (avoids IDE-specific analyzeInModalWindow/Messages deps) -->
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- kotlin/base/psi: replaced, copied, previousStatement, kotlinFqName, safeDeparenthesize -->
+          <execution>
+            <id>copy-kotlin-base-psi</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/psi/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/psi/JavaPsiUtils.kt</include>
+                    <include>org/jetbrains/kotlin/idea/base/psi/KotlinPsiModificationUtils.kt</include>
+                    <include>org/jetbrains/kotlin/idea/base/psi/KotlinPsiUtils.kt</include>
+                    <include>org/jetbrains/kotlin/idea/base/psi/PsiLinesUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- kotlin/base/util: reformatted (GenericPsiUtils) -->
+          <execution>
+            <id>copy-kotlin-base-util-generic-psi</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/util/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/util/GenericPsiUtils.kt</include>
+                    <include>org/jetbrains/kotlin/util/CollectionUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- kotlin/base/analysis-api-utils: addImport (ImportInsertion), shortenReferences, analyzeInModalWindow,
+               CallParameterInfoProvider -->
+          <execution>
+            <id>copy-kotlin-analysis-api-imports</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/analysis-api/analysis-api-utils/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/psi/imports/ImportInsertion.kt</include>
+                    <!-- KotlinImportPathComparator.kt excluded: uses formatter KotlinPackageEntry/Table and kotlinCustomSettings; local stub in src/main/kotlin -->
+                    <!-- <include>org/jetbrains/kotlin/idea/base/psi/imports/KotlinImportPathComparator.kt</include> -->
+                    <include>org/jetbrains/kotlin/idea/base/analysis/api/utils/shortenUtils.kt</include>
+                    <include>org/jetbrains/kotlin/idea/base/analysis/api/utils/CallParameterInfoProvider.kt</include>
+                    <include>org/jetbrains/kotlin/idea/base/analysis/api/utils/symbolUtils.kt</include>
+                    <include>org/jetbrains/kotlin/idea/base/analysis/api/utils/KtValueParameterSymbolDefaultValueProvider.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- kotlin/base/code-insight: CollectingNameValidator, KotlinNameValidatorProvider -->
+          <execution>
+            <id>copy-kotlin-base-code-insight-validators</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/code-insight/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/core/CollectingNameValidator.kt</include>
+                    <include>org/jetbrains/kotlin/idea/base/codeInsight/KotlinNameValidatorProvider.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- kotlin/base/fir/code-insight: SymbolBasedShortenReferencesFacility — implementation
+               of ShortenReferencesFacility used by InlinePostProcessor at the end of an inline
+               refactoring. Registered as an application service in
+               io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession. -->
+          <execution>
+            <id>copy-kotlin-base-fir-code-insight-shorten</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/fir/code-insight/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/fir/codeInsight/SymbolBasedShortenReferencesFacility.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
         </executions>
       </plugin>
 
@@ -81,6 +407,18 @@
           <args>
             <arg>-Xskip-metadata-version-check</arg>
             <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaIdeApi</arg>
+            <arg>-Xcontext-receivers</arg>
+            <!-- safeAs<T>() from addToStdlib is annotated @UnsafeCastFunction in 2.3.21 -->
+            <arg>-opt-in=org.jetbrains.kotlin.utils.addToStdlib.UnsafeCastFunction</arg>
+            <!-- IDEA 242 sources call analyze{} without write-action / EDT opt-in wrappers -->
+            <arg>-opt-in=org.jetbrains.kotlin.analysis.api.permissions.KaAllowAnalysisFromWriteAction</arg>
+            <arg>-opt-in=org.jetbrains.kotlin.analysis.api.permissions.KaAllowAnalysisOnEdt</arg>
+            <arg>-opt-in=org.jetbrains.kotlin.analysis.api.permissions.KaAllowProhibitedAnalyzeFromWriteAction</arg>
+            <!-- Analysis API 2.3.21 uses context parameters in some APIs -->
+            <arg>-opt-in=kotlin.ExperimentalContextParameters</arg>
+            <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaContextParameterApi</arg>
+            <!-- KaExperimentalApi opt-in for experimental analysis API usage -->
+            <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaExperimentalApi</arg>
           </args>
           <sourceDirs>
             <sourceDir>${project.build.directory}/generated-sources/refactoring</sourceDir>
@@ -165,6 +503,24 @@
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>analysis-api-impl-base-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <!-- Statistics API: EventLogGroup, EventFields, CounterUsagesCollector (used by platform/refactoring sources) -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>statistics</artifactId>
+      <version>${intellij.platform.253.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- FIR diagnostics: KaFirDiagnostic.UnresolvedReference (used by K2SemanticMatcher) -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-k2-for-ide</artifactId>
       <scope>provided</scope>
       <exclusions>
         <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>

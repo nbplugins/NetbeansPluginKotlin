@@ -541,19 +541,77 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
   E9.1 and E9.2 (Safe Delete) are the only hand-written exceptions (trivially built on
   K2 `analyze {}` + Find Usages).
 
+  **`KotlinRefactoring` reactor module** — introduced in E9.3; jar module that compiles
+  IDEA refactoring sources from `submodules/IntellijCommunity` together with local stubs
+  and compatibility shims.  Follows the same `maven-resources-plugin` copy pattern as
+  `KotlinFormatter` / `KotlinHighlighting`.  The `Nbm` module depends on this jar; both
+  are part of the root reactor so `mvn package` from root is the correct build command
+  (the NBM plugin resolves inter-module dependencies via the workspace reader within a
+  single invocation; a separate `mvn install` step is not needed).
+
+  **Runtime service injection pattern** — IDEA's `codeInliner/` engine calls services
+  (`PsiSearchHelper`, `ShortenReferencesFacility`, …) via `service<T>()` / `T.getInstance()`.
+  In standalone mode these are missing.  The pattern used in E9.3 and applicable to all
+  future E9.x refactorings:
+  1. Register a no-op or NB-aware implementation in
+     `KotlinAnalysisAPISession.registerStandaloneServices()` /
+     `installNoOpPsiSearchHelper()` before the refactoring engine is first called.
+  2. Register missing extension points (e.g. `com.intellij.referencesSearch`) in
+     `registerHighlightInfoFilterEP()`.
+  3. Document every added stub/service in [docs/stubs.md](stubs.md).
+
+  **Cursor-on-declaration-or-usage** — every `Ka*Computer` must resolve the target
+  declaration from the caret regardless of whether the caret is on the declaration itself
+  or on a reference to it.  Standard approach (used in E9.3, required for E9.4+):
+  1. Find the leaf element at the caret: `ktFile.findElementAt(offset)`.
+  2. Walk up to a `KtNameReferenceExpression`; if found, call K2
+     `analyze { ref.mainReference.resolveToSymbol()?.psi }` — this gives the declaring
+     element directly.
+  3. Only if step 2 yields nothing, fall back to
+     `PsiTreeUtil.getParentOfType(element, KtXxx::class.java)` to handle the case where
+     the caret is on the declaration keyword or name token.
+
   - [x] **E9.1** — Rename (Alt+Shift+R): K2-based `KaRenameComputer` (hand-written; PR #101)
 
-  - **E9.2** — Safe Delete
+  - [x] **E9.2** — Safe Delete: K2-based `KaSafeDeleteComputer` (hand-written; PR #102)
     - Hand-written: K2 `analyze {}` + `KaFindUsagesComputer` → collect all usages →
       `Problem(false, "Used in N places")` if any; on confirm delete declaration
     - NetBeans adapter: `KotlinSafeDeletePlugin` / `KotlinSafeDeleteUI` in `Nbm`
 
-  - **E9.3** — Inline variable / property (Ctrl+Alt+N)
-    - IDEA sources: `inline/KotlinInlinePropertyProcessor.kt`,
-      `inline/codeInliner/PropertyUsageReplacementStrategy.kt`,
-      `inline/codeInliner/CodeInliner.kt` (partial — required by property strategy)
-    - NetBeans adapter: `KaInlineVariableComputer` in `KotlinRefactoring`;
-      `KotlinInlineVariablePlugin` / `KotlinInlineVariableUI` in `Nbm`
+  - [x] **E9.3** — Inline variable / property (Ctrl+Alt+N) — IDEA `codeInliner/` engine port
+    - IDEA sources (compiled into `KotlinRefactoring` via `maven-resources-plugin`):
+      `kotlin.refactorings.k2/inline/codeInliner/{CodeInliner, CodeToInlineBuilder,
+      CallableUsageReplacementStrategy, PropertyUsageReplacementStrategy,
+      InlinePostProcessor, InlinePreprocessorUtil, introduceValue}.kt`;
+      `kotlin.refactorings.common/inline/codeInliner/{AbstractCodeInliner,
+      AbstractCodeToInlineBuilder, AbstractInlinePostProcessor,
+      AbstractPropertyUsageReplacementStrategy, CodeToInline, CommentHolder,
+      InlineDataKeys, inlineUtils, MutableCodeToInline, ReplacementPerformer,
+      UsageReplacementStrategy}.kt`;
+      `kotlin.refactorings.common/inline/{AbstractKotlinInlinePropertyHandler,
+      AbstractKotlinInlinePropertyProcessor, AbstractKotlinInlinePropertyDialog}.kt`
+      plus their abstract parents
+      (`AbstractKotlinInlineNamedDeclarationProcessor`, `AbstractKotlinDeclarationInlineProcessor`,
+      `AbstractKotlinInlineDialog`, `KotlinInlineActionHandler`).
+    - Stubs/service registrations (see [docs/stubs.md](stubs.md) for details):
+      `BaseRefactoringProcessor` (JVM linkage stub in `Nbm/src/main/java/`),
+      `UsageViewDescriptor` (compile-only interface),
+      `NoOpPsiSearchHelper` (project service, registered in `KotlinAnalysisAPISession`),
+      `KotlinSymbolBasedShortenReferencesFacility` (application service wrapping IDEA
+      `internal` `SymbolBasedShortenReferencesFacility` via delegation, in `KotlinRefactoring`).
+    - NetBeans adapter (in `Nbm`):
+      1. `KotlinInlineVariablePlugin` — NB `RefactoringPlugin`; `KaInlineVariableComputer`
+         drives `extractInitialization` + `createReplacementStrategyForProperty`; per-usage
+         `strategy.createReplacer(usage).invoke()` loop inside `NbDocument.runAtomicAsUser`;
+         followed by `KotlinFormatterUtils.formatRange` on each inserted range.
+         Flow control stays on NB side — IDEA's `BaseRefactoringProcessor.run()` is
+         intentionally **not** invoked.
+      2. `KotlinInlineVariableUI` — NB `RefactoringUI`; preview pane lists usage ranges.
+      3. `KotlinInlineVariableRefactoring` — `AbstractRefactoring` carrying doc + offset.
+      4. `KotlinInlineVariableAction` — `BaseAction("kotlin-inline-variable")`, **Ctrl+Alt+N**;
+         registered in `Refactor` menu and `Editors/text/x-kotlin/Actions/` in `layer.xml`.
+    - Caret resolution: works on declaration and on any usage — see *Cursor-on-declaration-or-usage* in E9 strategy above.
+    - Supports `val` first; the same engine generalises to `var` and E9.4 (Inline function).
 
   - **E9.4** — Inline function (Ctrl+Alt+N)
     - IDEA sources: `inline/codeInliner/CodeInliner.kt`,
