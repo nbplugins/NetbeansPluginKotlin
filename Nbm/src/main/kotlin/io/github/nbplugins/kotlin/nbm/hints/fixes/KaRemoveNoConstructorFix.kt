@@ -48,7 +48,7 @@ class KaRemoveNoConstructorFix(
 
     override fun implement() {
         val entry = getEntry() ?: return
-        KaModCommandFix(kaError, RemoveNoConstructorFix(entry), entry, Unit, doc, kaKtFile, getDescription())
+        KaModCommandFix(kaError, RemoveNoConstructorFix(entry), entry, doc, kaKtFile, getDescription())
             .implement()
     }
 }

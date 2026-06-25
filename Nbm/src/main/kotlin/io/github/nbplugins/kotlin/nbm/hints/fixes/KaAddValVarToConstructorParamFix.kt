@@ -4,10 +4,10 @@ package io.github.nbplugins.kotlin.nbm.hints.fixes
 
 import io.github.nbplugins.kotlin.nbm.diagnostics.KaDiagnosticError
 import org.jetbrains.kotlin.hints.KotlinRule
-import org.jetbrains.kotlin.idea.k2.codeinsight.fixes.AddValVarToConstructorParameterFix
 import org.jetbrains.kotlin.language.Priorities
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtParameter
+import org.jetbrains.kotlin.psi.KtPsiFactory
 import org.netbeans.modules.csl.api.Hint
 import org.netbeans.modules.csl.api.HintFix
 import org.netbeans.modules.csl.api.HintSeverity
@@ -49,7 +49,11 @@ class KaAddValVarToConstructorParamFix(
 
     override fun implement() {
         val param = getParam() ?: return
-        KaModCommandFix(kaError, AddValVarToConstructorParameterFix(param), param, Unit, doc, kaKtFile, getDescription())
-            .implement()
+        // AddValVarToConstructorParameterFix is private in era 253. AddValVarToConstructorParameterUtils
+        // is not on the Nbm classpath. Replicate the core logic: insert `val` before the parameter name.
+        // The interactive val/var template (via ModPsiUpdater.templateBuilder) is a no-op in NetBeans.
+        KaModCommandFix.syncMutation(kaKtFile, doc) {
+            param.addBefore(KtPsiFactory(param.project).createValKeyword(), param.nameIdentifier)
+        }
     }
 }

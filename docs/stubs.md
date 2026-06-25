@@ -45,6 +45,14 @@ Required when `code-style:253` / `code-style-impl:253` replaced the old
 | `KotlinSettingsProvider` | `com.intellij.formatting` | Runtime | Plugin-specific; extends `CodeStyleSettingsProvider`; provides `KotlinCodeStyleSettings` factory |
 | `KotlinLanguageCodeStyleSettingsProvider` | `com.intellij.formatting` | Runtime | Plugin-specific; extends `LanguageCodeStyleSettingsProvider`; provides Kotlin code-style settings UI |
 
+### Platform highlight-type stub (era-253 submodule bump)
+
+Required because the real `HighlightInfoType` static initializer cannot run in standalone mode.
+
+| Class | Package | Kind | Purpose |
+|-------|---------|------|---------|
+| `HighlightInfoType` | `com.intellij.codeInsight.daemon.impl` | Runtime | Replaces the platform interface whose `<clinit>` crashes with `AssertionError: Must be precomputed` in standalone mode — in era-242 via `assertBundlePrecomputed()`, in era-253 via `CodeInsightColors.*_ATTRIBUTES` / `HighlightDisplayKey.findOrRegister()` reaching `JBUIScale.computeSystemScaleFactor()`. The stub exposes only `SYMBOL_TYPE_SEVERITY` and `HighlightInfoTypeImpl` (with both 2-arg and 3-arg constructors for binary compatibility with era-242 and era-253 submodule code respectively). |
+
 ### Refactoring engine stubs (added for E9.3 Inline Variable)
 
 Required to run IDEA's K2 `codeInliner/` engine in standalone mode.  The engine's class

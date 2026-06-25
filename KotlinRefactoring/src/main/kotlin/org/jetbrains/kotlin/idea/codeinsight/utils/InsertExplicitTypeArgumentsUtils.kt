@@ -9,6 +9,7 @@ package org.jetbrains.kotlin.idea.codeinsight.utils
 import com.intellij.openapi.project.Project
 import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
 import org.jetbrains.kotlin.analysis.api.KaSession
+import org.jetbrains.kotlin.analysis.api.components.*
 import org.jetbrains.kotlin.analysis.api.resolution.singleFunctionCallOrNull
 import org.jetbrains.kotlin.analysis.api.resolution.symbol
 import org.jetbrains.kotlin.analysis.api.symbols.typeParameters
@@ -19,7 +20,7 @@ import org.jetbrains.kotlin.psi.KtPsiFactory
 import org.jetbrains.kotlin.psi.KtTypeArgumentList
 import org.jetbrains.kotlin.types.Variance
 
-context(KaSession)
+context(_: KaSession)
 @OptIn(KaExperimentalApi::class)
 fun getRenderedTypeArguments(element: KtCallElement): String? {
     val resolvedCall = element.resolveToCall()?.singleFunctionCallOrNull() ?: return null
@@ -47,7 +48,7 @@ fun addTypeArguments(element: KtCallElement, context: String, project: Project) 
     ShortenReferencesFacility.getInstance().shorten(newArgumentList)
 }
 
-context(KaSession)
+context(_: KaSession)
 private fun KaType.containsErrorType(): Boolean = when (this) {
     is KaErrorType -> true
     is KaFunctionType -> {

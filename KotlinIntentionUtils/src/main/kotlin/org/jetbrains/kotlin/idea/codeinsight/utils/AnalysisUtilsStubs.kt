@@ -18,6 +18,7 @@
 package org.jetbrains.kotlin.idea.codeinsight.utils
 
 import org.jetbrains.kotlin.analysis.api.analyze
+import org.jetbrains.kotlin.analysis.api.components.isStringType
 import org.jetbrains.kotlin.analysis.api.symbols.KaNamedFunctionSymbol
 import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.psi.KtCallExpression
@@ -34,7 +35,7 @@ fun KtDotQualifiedExpression.isToString(): Boolean {
     return analyze(callExpression) {
         referenceExpression.mainReference.resolveToSymbols().any { symbol ->
             val functionSymbol = symbol as? KaNamedFunctionSymbol ?: return@any false
-            functionSymbol.valueParameters.isEmpty() && functionSymbol.returnType.isString
+            functionSymbol.valueParameters.isEmpty() && functionSymbol.returnType.isStringType
         }
     }
 }

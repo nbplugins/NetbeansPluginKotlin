@@ -47,7 +47,7 @@ class KaMoveTypeAliasToTopLevelFix(
 
     override fun implement() {
         val alias = getTypeAlias() ?: return
-        KaModCommandFix(kaError, MoveTypeAliasToTopLevelFix(alias), alias, Unit, doc, kaKtFile, getDescription())
+        KaModCommandFix(kaError, MoveTypeAliasToTopLevelFix(alias), alias, doc, kaKtFile, getDescription())
             .implement()
     }
 }

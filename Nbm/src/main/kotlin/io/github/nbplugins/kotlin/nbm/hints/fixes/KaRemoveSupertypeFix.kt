@@ -50,7 +50,7 @@ class KaRemoveSupertypeFix(
 
     override fun implement() {
         val entry = getSuperTypeEntry() ?: return
-        KaModCommandFix(kaError, RemoveSupertypeFix(entry), entry, Unit, doc, kaKtFile, getDescription())
+        KaModCommandFix(kaError, RemoveSupertypeFix(entry), entry, doc, kaKtFile, getDescription())
             .implement()
     }
 }

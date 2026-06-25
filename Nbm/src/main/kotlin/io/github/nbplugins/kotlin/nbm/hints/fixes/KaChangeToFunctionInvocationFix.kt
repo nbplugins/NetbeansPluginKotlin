@@ -57,7 +57,7 @@ class KaChangeToFunctionInvocationFix(
 
     override fun implement() {
         val expr = getExpression() ?: return
-        KaModCommandFix(kaError, ChangeToFunctionInvocationFix(expr), expr, Unit, doc, kaKtFile, getDescription())
+        KaModCommandFix(kaError, ChangeToFunctionInvocationFix(expr), expr, doc, kaKtFile, getDescription())
             .implement()
     }
 }

@@ -10,12 +10,12 @@ import org.jetbrains.kotlin.analysis.api.renderer.types.impl.KaTypeRendererForSo
 import org.jetbrains.kotlin.analysis.api.types.KaClassType
 import org.jetbrains.kotlin.types.Variance
 import org.jetbrains.kotlin.hints.KotlinRule
-import org.jetbrains.kotlin.idea.k2.codeinsight.fixes.AddTypeAnnotationToValueParameterFix
 import org.jetbrains.kotlin.language.Priorities
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtCollectionLiteralExpression
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtParameter
+import org.jetbrains.kotlin.psi.KtPsiFactory
 import org.netbeans.modules.csl.api.Hint
 import org.netbeans.modules.csl.api.HintFix
 import org.netbeans.modules.csl.api.HintSeverity
@@ -79,8 +79,9 @@ class KaAddTypeAnnotationToValueParamFix(
                 type.render(KaTypeRendererForSource.WITH_SHORT_NAMES, Variance.INVARIANT)
             }
         } ?: return
-        KaModCommandFix(
-            kaError, AddTypeAnnotationToValueParameterFix(param, typeName), param, Unit, doc, kaKtFile, getDescription()
-        ).implement()
+        // AddTypeAnnotationToValueParameterFix is private in era 253 — apply the equivalent PSI mutation directly.
+        KaModCommandFix.syncMutation(kaKtFile, doc) {
+            param.typeReference = KtPsiFactory(param.project).createType(typeName)
+        }
     }
 }

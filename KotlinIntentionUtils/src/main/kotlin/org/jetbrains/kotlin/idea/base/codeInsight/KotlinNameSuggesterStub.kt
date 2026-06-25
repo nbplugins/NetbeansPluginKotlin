@@ -38,7 +38,7 @@ class KotlinNameSuggester {
      * @param type the type for which to suggest names
      * @return a lazy sequence of candidate names, starting with the best suggestion
      */
-    context(KaSession)
+    context(_: KaSession)
     fun suggestTypeNames(type: KaType): Sequence<String> = sequence {
         val className = when (type) {
             is KaUsualClassType -> type.classId.shortClassName.asString()

@@ -52,7 +52,7 @@ class KaChangeObjectToClassFix(
 
     override fun implement() {
         val obj = getObject() ?: return
-        KaModCommandFix(kaError, ChangeObjectToClassFix(obj), obj, Unit, doc, kaKtFile, getDescription())
+        KaModCommandFix(kaError, ChangeObjectToClassFix(obj), obj, doc, kaKtFile, getDescription())
             .implement()
     }
 }

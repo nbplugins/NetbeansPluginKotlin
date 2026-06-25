@@ -48,7 +48,7 @@ class KaAddJvmInlineFix(
 
     override fun implement() {
         val klass = getClass() ?: return
-        KaModCommandFix(kaError, AddJvmInlineAnnotationFix(klass), klass, Unit, doc, kaKtFile, getDescription())
+        KaModCommandFix(kaError, AddJvmInlineAnnotationFix(klass), klass, doc, kaKtFile, getDescription())
             .implement()
     }
 }

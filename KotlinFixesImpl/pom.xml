@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.110-SNAPSHOT</version>
+    <version>0.11.111-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-fixes-impl</artifactId>
@@ -152,8 +152,9 @@ def patches = [
    new_: 'public abstract fun invoke('],
 ]
 
-// Remove ClassBased inner class from KotlinPsiUpdateModCommandAction — we only use ElementBased,
-// and ClassBased imports ContextProvider/getElementContext/KtElement which are not in our classpath.
+// Remove ClassBased and Contextless inner classes from KotlinPsiUpdateModCommandAction —
+// we only use ElementBased. ClassBased imports ContextProvider/getElementContext/KtElement
+// which are not in our classpath; Contextless also uses KtElement.
 def modCommandFile = new File(srcDir,
   'org/jetbrains/kotlin/idea/codeinsight/api/applicable/intentions/KotlinPsiUpdateModCommandAction.kt')
 if (modCommandFile.exists()) {
@@ -165,23 +166,24 @@ if (modCommandFile.exists()) {
     'import org.jetbrains.kotlin.psi.KtElement',
     // Note: kotlin.reflect.KClass is kept — used in the sealed class constructor signature
   ]
-  def inClassBased = false
+  def skipClassMarkers = ['abstract class ClassBased', 'abstract class Contextless']
+  def inSkippedClass = false
   def braceDepth = 0
   lines.each { line ->
     if (skipImports.any { line.startsWith(it) }) return
-    if (!inClassBased && line.contains('abstract class ClassBased')) {
-      inClassBased = true
+    if (!inSkippedClass && skipClassMarkers.any { line.contains(it) }) {
+      inSkippedClass = true
       braceDepth = 0
     }
-    if (inClassBased) {
+    if (inSkippedClass) {
       braceDepth += line.count('{') - line.count('}')
-      if (braceDepth <= 0 && line.contains('}')) { inClassBased = false }
+      if (braceDepth <= 0 && line.contains('}')) { inSkippedClass = false }
       return
     }
     out << line
   }
   modCommandFile.text = out.join('\n')
-  log.info("Removed ClassBased from KotlinPsiUpdateModCommandAction.kt")
+  log.info("Removed ClassBased and Contextless from KotlinPsiUpdateModCommandAction.kt")
 }
 
 patches.each { p ->
@@ -205,16 +207,24 @@ if (addAccessorUtilsFile.exists()) {
 }
 
 // AddJvmInlineAnnotationFix: replace 'addAnnotation(ClassId)' (from base/code-insight, not on classpath)
-// with direct KtPsiFactory annotation entry creation.
+// with direct KtPsiFactory annotation entry creation. Era 253 uses StandardKotlinNames.Jvm.JvmInline.
 def addJvmInlineFile = new File(srcDir, 'org/jetbrains/kotlin/idea/quickfix/AddJvmInlineAnnotationFix.kt')
 if (addJvmInlineFile.exists()) {
   def text = addJvmInlineFile.text
   text = text.replace('import org.jetbrains.kotlin.idea.util.addAnnotation\n', '')
   text = text.replace('import org.jetbrains.kotlin.name.ClassId\n', '')
+  text = text.replace('import org.jetbrains.kotlin.idea.codeinsight.utils.StandardKotlinNames\n', '')
+  // Era 222 body (kept for safety — no-op on era 253)
   text = text.replace('import org.jetbrains.kotlin.name.FqName\n', '')
   text = text.replace(
     '''        val jvmInlineFqName = FqName("kotlin.jvm.JvmInline")
         val jvmInlineClassId = ClassId.topLevel(jvmInlineFqName)
+        element.addAnnotation(jvmInlineClassId)''',
+    '''        element.addAnnotationEntry(KtPsiFactory(actionContext.project).createAnnotationEntry("@kotlin.jvm.JvmInline"))'''
+  )
+  // Era 253 body
+  text = text.replace(
+    '''        val jvmInlineClassId = ClassId.topLevel(StandardKotlinNames.Jvm.JvmInline)
         element.addAnnotation(jvmInlineClassId)''',
     '''        element.addAnnotationEntry(KtPsiFactory(actionContext.project).createAnnotationEntry("@kotlin.jvm.JvmInline"))'''
   )
@@ -262,11 +272,13 @@ if (addReturnExprFile.exists()) {
           <jvmTarget>17</jvmTarget>
           <args>
             <arg>-Xskip-metadata-version-check</arg>
-            <!-- context() receivers used by some fix utilities -->
-            <arg>-Xcontext-receivers</arg>
+            <!-- context parameters (era 253 syntax): context(_: KaSession) -->
+            <arg>-Xcontext-parameters</arg>
+            <arg>-opt-in=kotlin.ExperimentalContextParameters</arg>
             <arg>-opt-in=kotlin.RequiresOptIn</arg>
             <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaExperimentalApi</arg>
             <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaIdeApi</arg>
+            <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaContextParameterApi</arg>
           </args>
           <sourceDirs>
             <sourceDir>${project.build.directory}/generated-sources/fixes</sourceDir>

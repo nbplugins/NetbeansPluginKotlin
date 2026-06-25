@@ -8,7 +8,6 @@ import org.jetbrains.kotlin.analysis.api.fir.diagnostics.KaFirDiagnostic
 import org.jetbrains.kotlin.diagnostics.WhenMissingCase
 import org.jetbrains.kotlin.hints.KotlinRule
 import org.jetbrains.kotlin.idea.codeinsights.impl.base.intentions.AddRemainingWhenBranchesUtils
-import org.jetbrains.kotlin.idea.k2.codeinsight.fixes.AddRemainingWhenBranchesQuickFix
 import org.jetbrains.kotlin.language.Priorities
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtWhenExpression
@@ -66,19 +65,14 @@ class KaAddWhenRemainingBranchFix(
     override fun implement() {
         val whenExpr = getWhenExpr() ?: return
         val missingCases = getMissingCases() ?: return
-        val context = AddRemainingWhenBranchesUtils.Context(missingCases, null)
+        val context = AddRemainingWhenBranchesUtils.ElementContext(missingCases, null)
         val rangeStart = whenExpr.textRange.startOffset
         val originalEnd = whenExpr.textRange.endOffset
         val lenBefore = doc.length
-        KaModCommandFix(
-            kaError,
-            AddRemainingWhenBranchesQuickFix(whenExpr, context),
-            whenExpr,
-            Unit,
-            doc,
-            kaKtFile,
-            getDescription()
-        ).implement()
+        // AddRemainingWhenBranchesQuickFix is private in era 253 — call the public utility directly.
+        KaModCommandFix.syncMutation(kaKtFile, doc) {
+            AddRemainingWhenBranchesUtils.addRemainingWhenBranches(whenExpr, context)
+        }
         val newEnd = originalEnd + (doc.length - lenBefore)
         val docText = doc.getText(0, doc.length)
         var lineStart = rangeStart

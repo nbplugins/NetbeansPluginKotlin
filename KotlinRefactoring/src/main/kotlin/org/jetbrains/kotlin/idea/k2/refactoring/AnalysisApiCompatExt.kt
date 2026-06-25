@@ -6,10 +6,11 @@
 package org.jetbrains.kotlin.idea.k2.refactoring
 
 import org.jetbrains.kotlin.analysis.api.KaSession
+import org.jetbrains.kotlin.analysis.api.components.*
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaNamedClassSymbol
 
 /** Backward-compat: the class containing the original overridden declaration. */
-context(KaSession)
+context(_: KaSession)
 val KaCallableSymbol.originalContainingClassForOverride: KaNamedClassSymbol?
     get() = fakeOverrideOriginal.containingSymbol as? KaNamedClassSymbol

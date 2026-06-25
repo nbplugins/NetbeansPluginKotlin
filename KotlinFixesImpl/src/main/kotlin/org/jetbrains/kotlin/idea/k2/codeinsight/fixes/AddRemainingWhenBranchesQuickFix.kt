@@ -18,7 +18,7 @@ import org.jetbrains.kotlin.psi.KtWhenExpression
  */
 class AddRemainingWhenBranchesQuickFix(
     target: KtWhenExpression,
-    private val context: AddRemainingWhenBranchesUtils.Context,
+    private val context: AddRemainingWhenBranchesUtils.ElementContext,
 ) : KotlinPsiUpdateModCommandAction.ElementBased<KtWhenExpression, Unit>(target, Unit) {
 
     override fun invoke(
