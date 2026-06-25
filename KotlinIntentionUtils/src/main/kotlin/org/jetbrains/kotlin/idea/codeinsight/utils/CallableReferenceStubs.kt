@@ -18,6 +18,7 @@
 package org.jetbrains.kotlin.idea.codeinsight.utils
 
 import org.jetbrains.kotlin.analysis.api.KaSession
+import org.jetbrains.kotlin.analysis.api.components.expressionType
 import org.jetbrains.kotlin.analysis.api.types.KaType
 import org.jetbrains.kotlin.psi.KtCallableReferenceExpression
 
@@ -30,7 +31,7 @@ import org.jetbrains.kotlin.psi.KtCallableReferenceExpression
  * @receiver the callable reference expression to inspect
  * @return the type of the receiver expression, or null if there is no explicit receiver
  */
-context(KaSession)
+context(_: KaSession)
 fun KtCallableReferenceExpression.getReceiverKtType(): KaType? =
     receiverExpression?.expressionType
 

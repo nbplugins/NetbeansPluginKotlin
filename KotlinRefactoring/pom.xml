@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.110-SNAPSHOT</version>
+    <version>0.11.111-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
@@ -394,6 +394,285 @@
               </resources>
             </configuration>
           </execution>
+
+          <!-- kotlin/base/psi: TextRangeUtils (textRangeIn) — needed by code-insight/utils/KotlinPsiUtils.kt -->
+          <execution>
+            <id>copy-text-range-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/psi/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/psi/TextRangeUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- kotlin/code-insight/utils: StandardKotlinNames, TypeUtils — needed by era 253 KotlinPsiUtils/AnalysisUtils -->
+          <execution>
+            <id>copy-code-insight-type-utils</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/utils/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/StandardKotlinNames.kt</include>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/TypeUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
+        Patch era 253 API incompatibilities in copied submodule sources:
+        1. shortenUtils.kt: replace allowAnalysisFromWriteActionInEdt (removed) with analyze {}
+        2. base/psi/KotlinPsiUtils.kt: remove ImplementationDetailClassNameCheckerProvider (IDE extension, not on classpath)
+        3. ConvertToBlockBodyUtils.kt: wrap String in KtPsiFactory.createType() for setTypeReference(KtTypeReference?)
+        4. CodeInliner.kt: remove ExpectActualUtils (not on classpath); simplify getDefaultValue
+        5. ClassUsageReplacementStrategy.kt: replace j2k.resolve extension with mainReference.resolve()
+      -->
+      <plugin>
+        <groupId>org.codehaus.gmavenplus</groupId>
+        <artifactId>gmavenplus-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>patch-refactoring-sources</id>
+            <phase>generate-sources</phase>
+            <goals><goal>execute</goal></goals>
+            <configuration>
+              <scripts>
+                <script><![CDATA[
+import java.nio.file.*
+
+def srcDir = new File(project.build.directory, 'generated-sources/refactoring')
+
+// 1. shortenUtils.kt: allowAnalysisFromWriteActionInEdt is removed in analysis-api 2.3.21;
+//    replace with plain analyze {} which works in write actions under our session model.
+def shortenFile = new File(srcDir, 'org/jetbrains/kotlin/idea/base/analysis/api/utils/shortenUtils.kt')
+if (shortenFile.exists()) {
+  def text = shortenFile.text
+  if (text.contains('allowAnalysisFromWriteActionInEdt(file) {')) {
+    text = text.replace(
+      'allowAnalysisFromWriteActionInEdt(file) {\n    collectPossibleReferenceShortenings(file, selection, shortenOptions, classShortenStrategy, callableShortenStrategy)\n}.invokeShortening()',
+      'analyze(file) {\n    collectPossibleReferenceShortenings(file, selection, shortenOptions, classShortenStrategy, callableShortenStrategy)\n}.invokeShortening()'
+    )
+    if (!text.contains('import org.jetbrains.kotlin.analysis.api.analyze')) {
+      text = text.replace('import com.intellij.psi.createSmartPointer\n',
+                          'import com.intellij.psi.createSmartPointer\nimport org.jetbrains.kotlin.analysis.api.analyze\n')
+    }
+    shortenFile.text = text
+    log.info("Patched shortenUtils.kt: replaced allowAnalysisFromWriteActionInEdt with analyze")
+  }
+}
+
+// 2. base/psi/KotlinPsiUtils.kt: remove ImplementationDetailClassNameCheckerProvider
+//    (IDE extension point from base/psi/extensions, not available standalone).
+//    Replace presentableClassId with a simple delegation to classIdIfNonLocal.
+def basePsiUtils = new File(srcDir, 'org/jetbrains/kotlin/idea/base/psi/KotlinPsiUtils.kt')
+if (basePsiUtils.exists()) {
+  def text = basePsiUtils.text
+  text = text.replace('import org.jetbrains.kotlin.idea.base.psi.extensions.ImplementationDetailClassNameCheckerProvider\n', '')
+  text = text.replace(
+    '''val KtClassOrObject.presentableClassId: ClassId?
+    get() {
+        if (KtPsiUtil.isLocal(this)) return null
+        val packageName = containingKtFile.packageFqName
+        val checker = ImplementationDetailClassNameCheckerProvider.get(this)
+        val classNames = buildList {
+            for (clazz in parentsOfType<KtDeclaration>()) {
+                val className = clazz.name
+                when {
+                    className == null -> return null
+                    checker.isImplementationDetail(className) -> continue
+                    else -> add(className)
+                }
+            }
+        }
+        return ClassId(
+            packageFqName = packageName,
+            relativeClassName = FqName(classNames.asReversed().joinToString(separator = ".")),
+            isLocal = false
+        )
+    }''',
+    'val KtClassOrObject.presentableClassId: ClassId?\n    get() = classIdIfNonLocal'
+  )
+  basePsiUtils.text = text
+  log.info("Patched base/psi/KotlinPsiUtils.kt: simplified presentableClassId")
+}
+
+// 3. ConvertToBlockBodyUtils.kt: setTypeReference() now takes KtTypeReference?, not String.
+def convertUtils = new File(srcDir, 'org/jetbrains/kotlin/idea/codeinsight/utils/ConvertToBlockBodyUtils.kt')
+if (convertUtils.exists()) {
+  def text = convertUtils.text
+  // In the KtNamedFunction branch, this.project is in scope via smart-cast.
+  text = text.replace(
+    '                    setTypeReference(context.returnTypeString)',
+    '                    setTypeReference(KtPsiFactory(project).createType(context.returnTypeString))'
+  )
+  // In the KtPropertyAccessor branch, parent is KtProperty.
+  text = text.replace(
+    '                    parent.setTypeReference(context.returnTypeString)',
+    '                    parent.setTypeReference(KtPsiFactory(parent.project).createType(context.returnTypeString))'
+  )
+  convertUtils.text = text
+  log.info("Patched ConvertToBlockBodyUtils.kt: wrapped String in KtPsiFactory.createType() for setTypeReference")
+}
+
+// 4. CodeInliner.kt: ExpectActualUtils (IDE-level, not on classpath) used only in getDefaultValue.
+//    Remove the imports and simplify getDefaultValue to return parameter.defaultValue directly.
+def codeInliner = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/inline/codeInliner/CodeInliner.kt')
+if (codeInliner.exists()) {
+  def text = codeInliner.text
+  text = text.replace('import org.jetbrains.kotlin.idea.search.ExpectActualUtils.actualsForExpect\n', '')
+  text = text.replace('import org.jetbrains.kotlin.idea.search.ExpectActualUtils.expectDeclarationIfAny\n', '')
+  text = text.replace(
+    '''    private fun getDefaultValue(parameter: KtParameter): KtExpression? {
+        val ownerFunction = parameter.ownerFunction
+        val defaultValueFromExpect = ownerFunction
+            ?.expectDeclarationIfAny()
+            ?.takeIf { it != ownerFunction }
+            ?.valueParameters()
+            ?.get(parameter.parameterIndex())
+            ?.defaultValue
+        return defaultValueFromExpect ?: parameter.defaultValue
+    }''',
+    '''    private fun getDefaultValue(parameter: KtParameter): KtExpression? = parameter.defaultValue'''
+  )
+  codeInliner.text = text
+  log.info("Patched CodeInliner.kt: removed ExpectActualUtils, simplified getDefaultValue")
+}
+
+// 5. ClassUsageReplacementStrategy.kt: j2k.resolve extension (K1-only, not on classpath).
+//    Replace with standard PSI mainReference.resolve().
+def classUsage = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/inline/codeInliner/ClassUsageReplacementStrategy.kt')
+if (classUsage.exists()) {
+  def text = classUsage.text
+  text = text.replace('import org.jetbrains.kotlin.j2k.resolve\n', '')
+  // referenceExpression?.resolve() → referenceExpression?.mainReference?.resolve()
+  text = text.replace('referenceExpression?.resolve()?.kotlinFqName', 'referenceExpression?.mainReference?.resolve()?.kotlinFqName')
+  // referenceExpression.resolve() as? KtClassOrObject
+  text = text.replace('referenceExpression.resolve() as? KtClassOrObject', 'referenceExpression.mainReference?.resolve() as? KtClassOrObject')
+  classUsage.text = text
+  log.info("Patched ClassUsageReplacementStrategy.kt: replaced j2k.resolve with mainReference.resolve()")
+}
+
+// 6. UsageReplacementStrategy.kt: replaceUsagesInWholeProject uses IDE-only APIs
+//    (runWithModalProgressBlocking, KotlinSourceFilterScope, executeWriteCommand).
+//    Remove the function entirely — only replaceUsages() is needed at runtime.
+def usageReplacementStrategy = new File(srcDir, 'org/jetbrains/kotlin/idea/refactoring/inline/codeInliner/UsageReplacementStrategy.kt')
+if (usageReplacementStrategy.exists()) {
+  def text = usageReplacementStrategy.text
+  text = text.replace('import com.intellij.platform.ide.progress.runWithModalProgressBlocking\n', '')
+  text = text.replace('import org.jetbrains.kotlin.idea.base.projectStructure.scope.KotlinSourceFilterScope\n', '')
+  text = text.replace('import org.jetbrains.kotlin.idea.util.application.executeWriteCommand\n', '')
+  def startMarker = '\nfun UsageReplacementStrategy.replaceUsagesInWholeProject('
+  def endMarker   = '\nfun UsageReplacementStrategy.replaceUsages('
+  def startIdx = text.indexOf(startMarker)
+  def endIdx   = text.indexOf(endMarker)
+  if (startIdx >= 0 && endIdx >= 0) {
+    text = text.substring(0, startIdx) + '\n' + text.substring(endIdx)
+  }
+  usageReplacementStrategy.text = text
+  log.info("Patched UsageReplacementStrategy.kt: removed replaceUsagesInWholeProject and IDE imports")
+}
+
+// 7. InlinePostProcessor.kt: canMoveLambdaOutsideParentheses is in the k2 package (not common refactoring).
+def inlinePostProcessor = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/inline/codeInliner/InlinePostProcessor.kt')
+if (inlinePostProcessor.exists()) {
+  def text = inlinePostProcessor.text
+  text = text.replace(
+    'import org.jetbrains.kotlin.idea.refactoring.canMoveLambdaOutsideParentheses',
+    'import org.jetbrains.kotlin.idea.k2.refactoring.canMoveLambdaOutsideParentheses'
+  )
+  inlinePostProcessor.text = text
+  log.info("Patched InlinePostProcessor.kt: fixed canMoveLambdaOutsideParentheses import to k2 package")
+}
+
+// 8. InlinePreprocessorUtil.kt: getKaModule is IDE-only project-structure API.
+//    Replace isImportable() with a lightweight PSI-only check (avoids analyze(KaModule)).
+def inlinePreprocessorUtil = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/inline/codeInliner/InlinePreprocessorUtil.kt')
+if (inlinePreprocessorUtil.exists()) {
+  def text = inlinePreprocessorUtil.text
+  text = text.replace('import org.jetbrains.kotlin.idea.base.projectStructure.getKaModule\n', '')
+  def oldIsImportable = '''        fun isImportable(t: PsiElement): Boolean {
+            val module = t.getKaModule(t.project, useSiteModule = null)
+            return analyze(module) {
+                val resolvedSymbol = when (t) {
+                    is KtNamedDeclaration -> t.symbol
+                    is PsiMember -> {
+                        if ((t.containingFile as? PsiJavaFile)?.packageName == CommonClassNames.DEFAULT_PACKAGE) {
+                            return@analyze false
+                        }
+                        if (t is PsiClass) {
+                            return@analyze t.qualifiedName != null
+                        }
+                        t.callableSymbol
+                    }
+                    else -> null
+                } ?: return@analyze false
+                if (resolvedSymbol is KaEnumEntrySymbol || resolvedSymbol is KaClassSymbol && resolvedSymbol.containingSymbol is KaClassSymbol) {
+                    return@analyze false
+                }
+                val containingSymbol = resolvedSymbol.containingDeclaration ?: return@analyze true
+                if (containingSymbol is KaDeclarationContainerSymbol) {
+                    val staticScope = containingSymbol.staticMemberScope
+                    return@analyze resolvedSymbol in staticScope.declarations
+                }
+                return@analyze false
+            }
+        }'''
+  def newIsImportable = '''        fun isImportable(t: PsiElement): Boolean {
+            return when (t) {
+                is KtNamedDeclaration -> {
+                    if (KtPsiUtil.isLocal(t)) return false
+                    t.fqName != null
+                }
+                is PsiMember -> {
+                    if ((t.containingFile as? PsiJavaFile)?.packageName == CommonClassNames.DEFAULT_PACKAGE) return false
+                    if (t is PsiClass) return t.qualifiedName != null
+                    t.containingClass?.qualifiedName != null
+                }
+                else -> false
+            }
+        }'''
+  text = text.replace(oldIsImportable, newIsImportable)
+  inlinePreprocessorUtil.text = text
+  log.info("Patched InlinePreprocessorUtil.kt: removed getKaModule, simplified isImportable")
+}
+
+// 9. ContextReceiversUtil.kt: KotlinParameterInfo is from the changeSignature subpackage (not compiled).
+//    Remove createReplacementReceiverArgumentExpression and its import.
+def contextReceiversUtil = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/util/ContextReceiversUtil.kt')
+if (contextReceiversUtil.exists()) {
+  def text = contextReceiversUtil.text
+  text = text.replace('import org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.KotlinParameterInfo\n', '')
+  def funcMarker = '\ninternal fun createReplacementReceiverArgumentExpression('
+  def funcIdx = text.indexOf(funcMarker)
+  if (funcIdx >= 0) {
+    text = text.substring(0, funcIdx) + '\n'
+  }
+  contextReceiversUtil.text = text
+  log.info("Patched ContextReceiversUtil.kt: removed KotlinParameterInfo import and createReplacementReceiverArgumentExpression")
+}
+                ]]></script>
+              </scripts>
+            </configuration>
+          </execution>
         </executions>
       </plugin>
 
@@ -407,7 +686,7 @@
           <args>
             <arg>-Xskip-metadata-version-check</arg>
             <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaIdeApi</arg>
-            <arg>-Xcontext-receivers</arg>
+            <arg>-Xcontext-parameters</arg>
             <!-- safeAs<T>() from addToStdlib is annotated @UnsafeCastFunction in 2.3.21 -->
             <arg>-opt-in=org.jetbrains.kotlin.utils.addToStdlib.UnsafeCastFunction</arg>
             <!-- IDEA 242 sources call analyze{} without write-action / EDT opt-in wrappers -->

@@ -25,10 +25,14 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Stub replacing the platform {@code HighlightInfoType} interface.
  *
- * The platform version calls {@code assertBundlePrecomputed()} in its static initializer,
- * which throws {@code AssertionError: Must be precomputed} in standalone NetBeans mode where
- * the IntelliJ bundle infrastructure is not available. This stub provides the minimal surface
- * used by {@code KotlinHighlightInfoTypeSemanticNames} and the K2 semantic highlighters:
+ * The real platform {@code HighlightInfoType} static initializer triggers
+ * {@code AssertionError: Must be precomputed} in standalone NetBeans mode.
+ * In era-242 the crash came directly from {@code assertBundlePrecomputed()}.
+ * In era-253 the same crash arrives via {@code CodeInsightColors.*_ATTRIBUTES} or
+ * {@code HighlightDisplayKey.findOrRegister()} reaching {@code JBUIScale.computeSystemScaleFactor()},
+ * which also requires precomputed UI scale infrastructure not available outside a full IntelliJ IDE.
+ * This stub bypasses the entire static-initializer chain and provides only the surface used by
+ * {@code KotlinHighlightInfoTypeSemanticNames} and the K2 semantic highlighters:
  * the {@link #SYMBOL_TYPE_SEVERITY} constant and the {@link HighlightInfoTypeImpl} inner class.
  *
  * Loaded in preference to the JAR class because Nbm sources take classloader priority
@@ -74,8 +78,18 @@ public interface HighlightInfoType {
         private final TextAttributesKey attributesKey;
 
         /**
-         * @param severity           the severity level
-         * @param attributesKey      the text attributes key (may be {@code null})
+         * @param severity      the severity level
+         * @param attributesKey the text attributes key (may be {@code null})
+         */
+        public HighlightInfoTypeImpl(
+                @NotNull HighlightSeverity severity,
+                @Nullable TextAttributesKey attributesKey) {
+            this(severity, attributesKey, false);
+        }
+
+        /**
+         * @param severity            the severity level
+         * @param attributesKey       the text attributes key (may be {@code null})
          * @param needsUpdateOnTyping unused in this stub; kept for binary compatibility
          */
         public HighlightInfoTypeImpl(

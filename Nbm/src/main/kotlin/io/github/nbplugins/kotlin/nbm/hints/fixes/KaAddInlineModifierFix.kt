@@ -4,7 +4,6 @@ package io.github.nbplugins.kotlin.nbm.hints.fixes
 
 import io.github.nbplugins.kotlin.nbm.diagnostics.KaDiagnosticError
 import org.jetbrains.kotlin.hints.KotlinRule
-import org.jetbrains.kotlin.idea.k2.codeinsight.fixes.AddInlineModifierFix
 import org.jetbrains.kotlin.language.Priorities
 import org.jetbrains.kotlin.lexer.KtModifierKeywordToken
 import org.jetbrains.kotlin.lexer.KtTokens
@@ -63,8 +62,11 @@ class KaAddInlineModifierFix(
 
     override fun implement() {
         val param = getParam() ?: return
-        KaModCommandFix(kaError, AddInlineModifierFix(param, modifier), param, Unit, doc, kaKtFile, getDescription())
-            .implement()
+        // AddInlineModifierFix is private in era 253 — apply the equivalent PSI mutation directly.
+        KaModCommandFix.syncMutation(kaKtFile, doc) {
+            param.addModifier(modifier)
+            if (modifier === KtTokens.NOINLINE_KEYWORD) param.removeModifier(KtTokens.CROSSINLINE_KEYWORD)
+        }
     }
 
     companion object {

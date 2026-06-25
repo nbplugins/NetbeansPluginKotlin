@@ -37,7 +37,7 @@ private val ARRAY_OF_NAMES: Set<Name> = setOf(
     StandardNames.FqNames.array.shortName(),
 )
 
-context(KaSession)
+context(_: KaSession)
 fun isArrayOfCall(callElement: KtCallElement): Boolean {
     val calleeName = callElement.calleeExpression?.text ?: return false
     return Name.isValidIdentifier(calleeName) && Name.identifier(calleeName) in ARRAY_OF_NAMES

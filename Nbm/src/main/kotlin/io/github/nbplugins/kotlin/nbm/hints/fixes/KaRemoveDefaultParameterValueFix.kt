@@ -49,7 +49,7 @@ class KaRemoveDefaultParameterValueFix(
 
     override fun implement() {
         val param = getParam() ?: return
-        KaModCommandFix(kaError, RemoveDefaultParameterValueFix(param), param, Unit, doc, kaKtFile, getDescription())
+        KaModCommandFix(kaError, RemoveDefaultParameterValueFix(param), param, doc, kaKtFile, getDescription())
             .implement()
     }
 }

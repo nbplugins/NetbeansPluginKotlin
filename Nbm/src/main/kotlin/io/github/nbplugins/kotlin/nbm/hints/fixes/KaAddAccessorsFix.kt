@@ -5,7 +5,7 @@ package io.github.nbplugins.kotlin.nbm.hints.fixes
 import io.github.nbplugins.kotlin.nbm.diagnostics.KaDiagnosticError
 import io.github.nbplugins.kotlin.nbm.reformatting.format
 import org.jetbrains.kotlin.hints.KotlinRule
-import org.jetbrains.kotlin.idea.k2.codeinsight.fixes.AddAccessorsQuickFix
+import org.jetbrains.kotlin.idea.codeinsights.impl.base.intentions.AddAccessorUtils
 import org.jetbrains.kotlin.language.Priorities
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtProperty
@@ -73,9 +73,10 @@ class KaAddAccessorsFix(
         val rangeStart = property.textRange.startOffset
         val originalEnd = property.textRange.endOffset
         val lenBefore = doc.length
-        KaModCommandFix(
-            kaError, AddAccessorsQuickFix(property, addGetter, addSetter), property, Unit, doc, kaKtFile, getDescription()
-        ).implement()
+        // AddAccessorsQuickFix is private in era 253 — call the public utility directly.
+        KaModCommandFix.syncMutation(kaKtFile, doc) {
+            AddAccessorUtils.addAccessors(property, addGetter, addSetter, null)
+        }
         val newEnd = originalEnd + (doc.length - lenBefore)
         val docText = doc.getText(0, doc.length)
         var lineStart = rangeStart

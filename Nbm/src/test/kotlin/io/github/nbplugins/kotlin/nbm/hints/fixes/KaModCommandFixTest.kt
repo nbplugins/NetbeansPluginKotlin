@@ -54,7 +54,7 @@ class KaModCommandFixTest : KotlinTestCase("KaModCommandFix", "quickfixes") {
         val error = getError(kaKtFile, "TOO_MANY_ARGUMENTS") ?: return
         val arg = error.kaDiagnostic.psi.parent as? KtValueArgument ?: return
         val doc = getDocumentForFileObject(file) ?: return
-        val fix = KaModCommandFix(error, RemoveArgumentFix(arg), arg, Unit, doc, kaKtFile, "Remove argument")
+        val fix = KaModCommandFix(error, RemoveArgumentFix(arg), arg, doc, kaKtFile,"Remove argument")
         assertTrue(fix.isApplicable())
     }
 
@@ -65,7 +65,7 @@ class KaModCommandFixTest : KotlinTestCase("KaModCommandFix", "quickfixes") {
         val error = getError(kaKtFile, "TOO_MANY_ARGUMENTS") ?: return
         val arg = error.kaDiagnostic.psi.parent as? KtValueArgument ?: return
         val doc = getDocumentForFileObject(file) ?: return
-        val fix = KaModCommandFix(error, RemoveArgumentFix(arg), arg, Unit, doc, kaKtFile, "Test description")
+        val fix = KaModCommandFix(error, RemoveArgumentFix(arg), arg, doc, kaKtFile,"Test description")
         assertEquals("Test description", fix.getDescription())
     }
 
@@ -76,7 +76,7 @@ class KaModCommandFixTest : KotlinTestCase("KaModCommandFix", "quickfixes") {
         val error = getError(kaKtFile, "TOO_MANY_ARGUMENTS") ?: return
         val arg = error.kaDiagnostic.psi.parent as? KtValueArgument ?: return
         val doc = getDocumentForFileObject(file) ?: return
-        val fix = KaModCommandFix(error, RemoveArgumentFix(arg), arg, Unit, doc, kaKtFile, "Remove argument")
+        val fix = KaModCommandFix(error, RemoveArgumentFix(arg), arg, doc, kaKtFile,"Remove argument")
         assertTrue(fix.isSafe())
     }
 
@@ -87,7 +87,7 @@ class KaModCommandFixTest : KotlinTestCase("KaModCommandFix", "quickfixes") {
         val error = getError(kaKtFile, "TOO_MANY_ARGUMENTS") ?: return
         val arg = error.kaDiagnostic.psi.parent as? KtValueArgument ?: return
         val doc = getDocumentForFileObject(file) ?: return
-        val fix = KaModCommandFix(error, RemoveArgumentFix(arg), arg, Unit, doc, kaKtFile, "Remove argument")
+        val fix = KaModCommandFix(error, RemoveArgumentFix(arg), arg, doc, kaKtFile,"Remove argument")
         assertFalse(fix.isInteractive())
     }
 }

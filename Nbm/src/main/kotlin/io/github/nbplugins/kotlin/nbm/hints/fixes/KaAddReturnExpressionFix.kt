@@ -51,7 +51,7 @@ class KaAddReturnExpressionFix(
 
     override fun implement() {
         val function = getFunction() ?: return
-        KaModCommandFix(kaError, AddReturnExpressionFix(function), function, Unit, doc, kaKtFile, getDescription())
+        KaModCommandFix(kaError, AddReturnExpressionFix(function), function, doc, kaKtFile, getDescription())
             .implement()
     }
 }

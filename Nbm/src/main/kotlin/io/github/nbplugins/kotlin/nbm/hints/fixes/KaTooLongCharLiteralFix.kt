@@ -53,6 +53,6 @@ class KaTooLongCharLiteralFix(
     override fun implement() {
         val element = kaError.kaDiagnostic.psi as? KtConstantExpression ?: return
         val ideaFix = TooLongCharLiteralToStringFix.createIfApplicable(element) as? TooLongCharLiteralToStringFix ?: return
-        KaModCommandFix(kaError, ideaFix, element, Unit, doc, kaKtFile, getDescription()).implement()
+        KaModCommandFix(kaError, ideaFix, element, doc, kaKtFile, getDescription()).implement()
     }
 }

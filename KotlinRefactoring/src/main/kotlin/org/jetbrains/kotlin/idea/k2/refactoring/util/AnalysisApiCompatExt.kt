@@ -3,6 +3,7 @@
 package org.jetbrains.kotlin.idea.k2.refactoring.util
 
 import org.jetbrains.kotlin.analysis.api.KaSession
+import org.jetbrains.kotlin.analysis.api.components.*
 import org.jetbrains.kotlin.analysis.api.symbols.*
 import org.jetbrains.kotlin.analysis.api.types.KaType
 import org.jetbrains.kotlin.psi.KtCallableReferenceExpression
@@ -14,22 +15,22 @@ val KaReceiverParameterSymbol.type: KaType get() = returnType
 typealias KaNamedClassOrObjectSymbol = KaNamedClassSymbol
 
 // ── KaType primitive predicates (isXxx → isXxxType in 2.3.x) ─────────────────
-context(KaSession) val KaType.isNothing: Boolean get() = isNothingType
-context(KaSession) val KaType.isUnit: Boolean get() = isUnitType
-context(KaSession) val KaType.isString: Boolean get() = isStringType
+context(_: KaSession) val KaType.isNothing: Boolean get() = isNothingType
+context(_: KaSession) val KaType.isUnit: Boolean get() = isUnitType
+context(_: KaSession) val KaType.isString: Boolean get() = isStringType
 
 /** Backward-compat: was [KaType.isEqualTo] in 2.0.x, now [semanticallyEquals]. */
-context(KaSession)
+context(_: KaSession)
 fun KaType.isEqualTo(other: KaType): Boolean = semanticallyEquals(other)
 
 /** Backward-compat: was [KaType.isSubTypeOf] in 2.0.x, now [isSubtypeOf]. */
-context(KaSession)
+context(_: KaSession)
 fun KaType.isSubTypeOf(supertype: KaType): Boolean = isSubtypeOf(supertype)
 
 /** Backward-compat: was [KtCallableReferenceExpression.getReceiverKtType], now [receiverType]. */
-context(KaSession)
+context(_: KaSession)
 fun KtCallableReferenceExpression.getReceiverKtType(): KaType? = receiverType
 
 /** Backward-compat: was [KaNamedClassSymbol.isInner], now [isInner] (same name). */
-context(KaSession)
+context(_: KaSession)
 val KaNamedClassSymbol.isInnerCompat: Boolean get() = isInner

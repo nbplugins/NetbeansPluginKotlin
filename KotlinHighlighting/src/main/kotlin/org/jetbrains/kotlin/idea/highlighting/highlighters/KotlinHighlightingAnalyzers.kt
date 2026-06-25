@@ -5,6 +5,9 @@ import com.intellij.codeInsight.daemon.impl.analysis.HighlightInfoHolder
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.idea.base.highlighting.beforeResolve.AnnotationEntryHighlightingVisitor
 import org.jetbrains.kotlin.idea.base.highlighting.beforeResolve.DeclarationHighlightingVisitor
+import org.jetbrains.kotlin.idea.highlighting.analyzers.KotlinFunctionCallSemanticAnalyzer
+import org.jetbrains.kotlin.idea.highlighting.analyzers.KotlinTypeSemanticAnalyzer
+import org.jetbrains.kotlin.idea.highlighting.analyzers.KotlinVariableReferenceSemanticAnalyzer
 import org.jetbrains.kotlin.psi.KtVisitorVoid
 
 /**
@@ -33,24 +36,23 @@ fun createBeforeResolveHighlightingAnalyzers(holder: HighlightInfoHolder): Array
 /**
  * Creates the K2-resolve-based semantic highlighter visitors.
  *
- * These visitors require an active [KaSession] (must be called inside an
- * [org.jetbrains.kotlin.analysis.api.analyze] block) and cover:
+ * These visitors require an active [KaSession] and cover:
  * - **Function calls**: regular, extension, suspend, package-level, and operator calls
- *   ([FunctionCallHighlighter])
+ *   ([KotlinFunctionCallSemanticAnalyzer])
  * - **Type references**: class, interface, enum, annotation, type-alias, type-parameter references
- *   ([TypeHighlighter])
+ *   ([KotlinTypeSemanticAnalyzer])
  * - **Variable references**: property, local variable, parameter, enum-entry references
- *   ([VariableReferenceHighlighter])
+ *   ([KotlinVariableReferenceSemanticAnalyzer])
  *
  * The returned visitors capture the [KaSession] and must only be used synchronously within
  * the enclosing [org.jetbrains.kotlin.analysis.api.analyze] block.
  *
  * @param holder the [HighlightInfoHolder] that receives produced [com.intellij.codeInsight.daemon.impl.HighlightInfo] objects
+ * @param session the active [KaSession] used for symbol resolution
  * @return array of visitors, each handling the element types relevant to its highlighting concern
  */
-context(KaSession)
-fun createKotlinHighlightingAnalyzers(holder: HighlightInfoHolder): Array<KtVisitorVoid> = arrayOf(
-    FunctionCallHighlighter(holder),
-    TypeHighlighter(holder),
-    VariableReferenceHighlighter(holder),
+fun createKotlinHighlightingAnalyzers(holder: HighlightInfoHolder, session: KaSession): Array<KtVisitorVoid> = arrayOf(
+    KotlinFunctionCallSemanticAnalyzer(holder, session),
+    KotlinTypeSemanticAnalyzer(holder, session),
+    KotlinVariableReferenceSemanticAnalyzer(holder, session),
 )

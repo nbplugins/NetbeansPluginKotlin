@@ -4,8 +4,8 @@ package io.github.nbplugins.kotlin.nbm.hints.fixes
 
 import io.github.nbplugins.kotlin.nbm.diagnostics.KaDiagnosticError
 import org.jetbrains.kotlin.hints.KotlinRule
-import org.jetbrains.kotlin.idea.k2.codeinsight.fixes.AddSuspendModifierFix
 import org.jetbrains.kotlin.language.Priorities
+import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtModifierListOwner
@@ -58,15 +58,9 @@ class KaAddSuspendModifierFix(
 
     override fun implement() {
         val function = getFunction() ?: return
-        val functionName = function.name ?: return
-        KaModCommandFix(
-            kaError,
-            AddSuspendModifierFix(function as KtModifierListOwner, functionName),
-            function as KtModifierListOwner,
-            Unit,
-            doc,
-            kaKtFile,
-            getDescription()
-        ).implement()
+        // AddSuspendModifierFix is private in era 253 — apply the equivalent PSI mutation directly.
+        KaModCommandFix.syncMutation(kaKtFile, doc) {
+            (function as KtModifierListOwner).addModifier(KtTokens.SUSPEND_KEYWORD)
+        }
     }
 }

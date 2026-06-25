@@ -48,7 +48,7 @@ class KaRemoveArgumentFix(
 
     override fun implement() {
         val arg = getArg() ?: return
-        KaModCommandFix(kaError, RemoveArgumentFix(arg), arg, Unit, doc, kaKtFile, getDescription())
+        KaModCommandFix(kaError, RemoveArgumentFix(arg), arg, doc, kaKtFile, getDescription())
             .implement()
     }
 }

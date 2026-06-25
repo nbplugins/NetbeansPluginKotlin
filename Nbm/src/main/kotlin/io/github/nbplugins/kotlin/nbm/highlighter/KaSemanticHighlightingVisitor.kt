@@ -116,7 +116,7 @@ class KaSemanticHighlightingVisitor(private val kaKtFile: KtFile) {
      */
     context(KaSession)
     private fun runKaHighlighters(holder: KaHighlightCapturingHolder) {
-        val analyzers = createKotlinHighlightingAnalyzers(holder)
+        val analyzers = createKotlinHighlightingAnalyzers(holder, this@KaSession)
         kaKtFile.accept(object : KtVisitorVoid() {
             override fun visitElement(element: PsiElement) {
                 analyzers.forEach { runCatching { element.accept(it) } }
