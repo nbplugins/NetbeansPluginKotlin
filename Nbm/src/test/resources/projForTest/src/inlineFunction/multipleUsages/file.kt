@@ -1,0 +1,7 @@
+fun double(x: Int) = x * 2
+
+fun main() {
+    println(double(1))
+    println(double(2))
+    println(double(3))
+}

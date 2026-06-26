@@ -20,6 +20,8 @@
 package org.jetbrains.kotlin.refactorings.rename;
 
 import io.github.nbplugins.kotlin.nbm.navigation.KotlinWhereUsedPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineFunctionPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineFunctionRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariablePlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariableRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinSafeDeletePlugin;
@@ -48,6 +50,7 @@ import org.openide.util.lookup.ServiceProvider;
  *   <li>{@link WhereUsedQuery} — delegates to {@link KotlinWhereUsedPlugin}</li>
  *   <li>{@link SafeDeleteRefactoring} — delegates to {@link KotlinSafeDeletePlugin}</li>
  *   <li>{@link KotlinInlineVariableRefactoring} — delegates to {@link KotlinInlineVariablePlugin}</li>
+ *   <li>{@link KotlinInlineFunctionRefactoring} — delegates to {@link KotlinInlineFunctionPlugin}</li>
  * </ul>
  */
 @ServiceProvider(service = RefactoringPluginFactory.class, position = 100)
@@ -71,6 +74,9 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         }
         if (refactoring instanceof KotlinInlineVariableRefactoring) {
             return new KotlinInlineVariablePlugin((KotlinInlineVariableRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinInlineFunctionRefactoring) {
+            return new KotlinInlineFunctionPlugin((KotlinInlineFunctionRefactoring) refactoring);
         }
         return null;
     }
