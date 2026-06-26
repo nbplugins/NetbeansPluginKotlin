@@ -17,6 +17,11 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.refactoring;
 
+import java.awt.BorderLayout;
+import java.awt.Component;
+import javax.swing.BorderFactory;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
 import javax.swing.event.ChangeListener;
 import org.netbeans.modules.refactoring.api.AbstractRefactoring;
 import org.netbeans.modules.refactoring.api.Problem;
@@ -68,10 +73,13 @@ public class KotlinInlineFunctionUI implements RefactoringUI {
         return false;
     }
 
-    /** No custom options panel — preview panel shows every call site that will be inlined. */
+    /**
+     * Returns a minimal description panel so the framework waits for the user to click
+     * Preview or Refactor rather than auto-advancing to the preview window.
+     */
     @Override
     public CustomRefactoringPanel getPanel(ChangeListener parent) {
-        return null;
+        return new InlineDescriptionPanel(getDescription());
     }
 
     @Override
@@ -86,7 +94,7 @@ public class KotlinInlineFunctionUI implements RefactoringUI {
 
     @Override
     public boolean hasParameters() {
-        return false;
+        return true;
     }
 
     @Override
@@ -97,5 +105,20 @@ public class KotlinInlineFunctionUI implements RefactoringUI {
     @Override
     public HelpCtx getHelpCtx() {
         return null;
+    }
+
+    /** Minimal panel that keeps the refactoring dialog open until the user acts. */
+    private static final class InlineDescriptionPanel implements CustomRefactoringPanel {
+        private final JPanel component;
+
+        InlineDescriptionPanel(String description) {
+            JLabel label = new JLabel(description);
+            label.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+            component = new JPanel(new BorderLayout());
+            component.add(label, BorderLayout.CENTER);
+        }
+
+        @Override public void initialize() {}
+        @Override public Component getComponent() { return component; }
     }
 }
