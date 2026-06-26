@@ -1,0 +1,5 @@
+package introduceVariable.notApplicable
+
+fun <caret>main() {
+    println("hello")
+}

@@ -14,4 +14,6 @@
     <bind actionName="kotlin-inspect-hierarchy" key="AS-F12"/>
     <!-- Inline Variable (Ctrl+Alt+N) — mirrors IntelliJ IDEA inline refactoring shortcut -->
     <bind actionName="kotlin-inline-variable" key="DA-N"/>
+    <!-- Introduce Variable (Ctrl+Alt+V) — mirrors IntelliJ IDEA introduce variable shortcut -->
+    <bind actionName="kotlin-introduce-variable" key="DA-V"/>
 </bindings>

@@ -24,6 +24,8 @@ import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineFunctionPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineFunctionRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariablePlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariableRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceVariablePlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceVariableRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinSafeDeletePlugin;
 import javax.swing.text.StyledDocument;
 import org.jetbrains.kotlin.utils.ProjectUtils;
@@ -51,6 +53,7 @@ import org.openide.util.lookup.ServiceProvider;
  *   <li>{@link SafeDeleteRefactoring} — delegates to {@link KotlinSafeDeletePlugin}</li>
  *   <li>{@link KotlinInlineVariableRefactoring} — delegates to {@link KotlinInlineVariablePlugin}</li>
  *   <li>{@link KotlinInlineFunctionRefactoring} — delegates to {@link KotlinInlineFunctionPlugin}</li>
+ *   <li>{@link KotlinIntroduceVariableRefactoring} — delegates to {@link KotlinIntroduceVariablePlugin}</li>
  * </ul>
  */
 @ServiceProvider(service = RefactoringPluginFactory.class, position = 100)
@@ -77,6 +80,9 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         }
         if (refactoring instanceof KotlinInlineFunctionRefactoring) {
             return new KotlinInlineFunctionPlugin((KotlinInlineFunctionRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinIntroduceVariableRefactoring) {
+            return new KotlinIntroduceVariablePlugin((KotlinIntroduceVariableRefactoring) refactoring);
         }
         return null;
     }

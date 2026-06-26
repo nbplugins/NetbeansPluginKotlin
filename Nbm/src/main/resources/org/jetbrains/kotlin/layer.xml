@@ -52,32 +52,52 @@
             <file name="org-jetbrains-kotlin-refactorings-KotlinRefactoringRedoAction.instance">
                 <attr name="instanceClass" stringvalue="org.jetbrains.kotlin.refactorings.KotlinRefactoringRedoAction"/>
             </file>
-            <!-- Global Inline Variable refactoring action — needed so the action appears
-                 in the Refactor submenu (Menu/Refactoring); the editor-scoped registration
+            <!-- Global Inline Variable / Inline Function refactoring action — needed so the action
+                 appears in the Refactor submenu (Menu/Refactoring); the editor-scoped registration
                  at Editors/text/x-kotlin/Actions/ only provides the Ctrl+Alt+N keybinding. -->
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinInlineVariableAction.instance">
                 <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariableAction"/>
+            </file>
+            <!-- Global Introduce Variable refactoring action (Ctrl+Alt+V). -->
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceVariableAction.instance">
+                <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceVariableAction"/>
             </file>
         </folder>
     </folder>
     <folder name="Menu">
         <folder name="Refactoring">
-            <file name="org-jetbrains-kotlin-refactorings-KotlinRefactoringUndoAction.shadow">
-                <attr name="originalFile" stringvalue="Actions/Refactoring/org-jetbrains-kotlin-refactorings-KotlinRefactoringUndoAction.instance"/>
-                <attr name="position" intvalue="50"/>
-            </file>
-            <file name="org-jetbrains-kotlin-refactorings-KotlinRefactoringRedoAction.shadow">
-                <attr name="originalFile" stringvalue="Actions/Refactoring/org-jetbrains-kotlin-refactorings-KotlinRefactoringRedoAction.instance"/>
-                <attr name="position" intvalue="60"/>
-            </file>
-            <file name="separator-after-undo-redo.instance">
+            <!-- Introduce Variable at position 1000, between Safe Delete (~500) and Inline (1400).
+                 Separator at 900 opens the Extract/Introduce group; separator at 1300 closes it. -->
+            <file name="separator-before-introduce.instance">
                 <attr name="instanceClass" stringvalue="javax.swing.JSeparator"/>
-                <attr name="position" intvalue="70"/>
+                <attr name="position" intvalue="900"/>
+            </file>
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceVariableAction.shadow">
+                <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceVariableAction.instance"/>
+                <attr name="position" intvalue="1000"/>
+            </file>
+            <file name="separator-after-introduce.instance">
+                <attr name="instanceClass" stringvalue="javax.swing.JSeparator"/>
+                <attr name="position" intvalue="1300"/>
             </file>
             <!-- Inline Variable in the Refactor submenu (both main menu and editor right-click). -->
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinInlineVariableAction.shadow">
                 <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinInlineVariableAction.instance"/>
                 <attr name="position" intvalue="1400"/>
+            </file>
+            <!-- Undo/Redo moved to bottom of menu (IDEA order: below Inline).
+                 Separator at 1550 separates Inline from Undo/Redo. -->
+            <file name="separator-before-undo-redo.instance">
+                <attr name="instanceClass" stringvalue="javax.swing.JSeparator"/>
+                <attr name="position" intvalue="1550"/>
+            </file>
+            <file name="org-jetbrains-kotlin-refactorings-KotlinRefactoringUndoAction.shadow">
+                <attr name="originalFile" stringvalue="Actions/Refactoring/org-jetbrains-kotlin-refactorings-KotlinRefactoringUndoAction.instance"/>
+                <attr name="position" intvalue="1600"/>
+            </file>
+            <file name="org-jetbrains-kotlin-refactorings-KotlinRefactoringRedoAction.shadow">
+                <attr name="originalFile" stringvalue="Actions/Refactoring/org-jetbrains-kotlin-refactorings-KotlinRefactoringRedoAction.instance"/>
+                <attr name="position" intvalue="1700"/>
             </file>
         </folder>
     </folder>
@@ -422,6 +442,10 @@
                         <!-- Inline Variable (Ctrl+Alt+N): custom Kotlin action. -->
                         <file name="kotlin-inline-variable.instance">
                             <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariableAction"/>
+                        </file>
+                        <!-- Introduce Variable (Ctrl+Alt+V): custom Kotlin action. -->
+                        <file name="kotlin-introduce-variable.instance">
+                            <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceVariableAction"/>
                         </file>
                     </folder>
                     <!-- Kotlin keybindings: Ctrl+Shift+P and Ctrl+Alt+B for Navigate menu actions.
