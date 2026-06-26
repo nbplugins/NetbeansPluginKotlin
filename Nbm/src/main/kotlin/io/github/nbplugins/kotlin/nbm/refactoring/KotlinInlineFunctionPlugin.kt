@@ -21,7 +21,8 @@ import com.intellij.psi.PsiElement
 import io.github.nbplugins.kotlin.nbm.navigation.KotlinFindUsagesResultElement
 import io.github.nbplugins.kotlin.nbm.reformatting.format
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
-import io.github.nbplugins.kotlin.refactoring.KaInlineVariableComputer
+import io.github.nbplugins.kotlin.refactoring.KaInlineFunctionComputer
+import io.github.nbplugins.kotlin.refactoring.KaInlineFunctionComputer.Companion.simplifyStringTemplateCaptures
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.psiUtil.startOffset
 import org.jetbrains.kotlin.utils.ProjectUtils
@@ -47,29 +48,22 @@ import javax.swing.text.Position.Bias
 import javax.swing.text.StyledDocument
 
 /**
- * [RefactoringPlugin] that handles the Kotlin **Inline Variable** refactoring.
+ * [RefactoringPlugin] that handles the Kotlin **Inline Function** refactoring.
  *
- * Bridges the NetBeans refactoring framework to the IDEA `codeInliner/` engine ported into
- * [io.github.nbplugins.kotlin.refactoring.KaInlineVariableComputer]:
- *  1. `prepare()` runs the IDEA validation and reference-search via the computer.
- *  2. If the property cannot be inlined the user sees a fatal [Problem] with IDEA's message.
+ * Bridges the NetBeans refactoring framework to the IDEA `codeInliner/` engine via
+ * [KaInlineFunctionComputer]:
+ *  1. `prepare()` runs IDEA's validation and builds the `CallableUsageReplacementStrategy`.
+ *  2. If the function cannot be inlined, the user sees a fatal [Problem] with IDEA's message.
  *  3. Otherwise the preview pane shows one [KotlinFindUsagesResultElement] per reference and
- *     a single [KotlinInlineApplyElement] performs the work on confirm.
- *
- * The actual code transformation is delegated to the IDEA strategy
- * (`PropertyUsageReplacementStrategy` + `CodeInliner`), which handles parenthesisation,
- * qualified-call rewriting, imports and other edge cases the previous hand-written stub did not.
+ *     a single [KotlinInlineFunctionApplyElement] performs the work on confirm.
  *
  * The plugin **does not** instantiate IDEA's `BaseRefactoringProcessor`. Flow control stays in
- * NetBeans so we avoid dragging in IDEA's modal-UI / threading runtime. The price is that
- * fine-grained per-usage Undo is not currently wired — undo is a single all-or-nothing step
- * (see [KotlinInlineApplyElement]).
+ * NetBeans to avoid dragging in IDEA's modal-UI / threading runtime.
  *
- * @param refactoring the [KotlinInlineVariableRefactoring] carrier whose Lookup contains
- *                    the target [StyledDocument] and the caret offset as [Int]
+ * @param refactoring the [KotlinInlineFunctionRefactoring] carrier
  */
-class KotlinInlineVariablePlugin(
-    private val refactoring: KotlinInlineVariableRefactoring,
+class KotlinInlineFunctionPlugin(
+    private val refactoring: KotlinInlineFunctionRefactoring,
 ) : ProgressProviderAdapter(), RefactoringPlugin {
 
     override fun preCheck(): Problem? = null
@@ -78,12 +72,12 @@ class KotlinInlineVariablePlugin(
     override fun cancelRequest() {}
 
     /**
-     * Resolves the symbol at the cursor, validates it via IDEA's `extractInitialization`,
-     * builds the IDEA replacement strategy, finds usages, and populates [bag] with:
+     * Resolves the function at the cursor, validates it, builds the IDEA replacement strategy,
+     * finds usages, and populates [bag] with:
      *  - one [KotlinFindUsagesResultElement] per reference (read-only preview),
-     *  - one [KotlinInlineApplyElement] that performs the actual transformation.
+     *  - one [KotlinInlineFunctionApplyElement] that performs the actual transformation.
      *
-     * @return a fatal [Problem] if the cursor is not on an inlineable `val`/`var`,
+     * @return a fatal [Problem] if the cursor is not on an inlineable function,
      *         `null` otherwise (the framework then shows the preview dialog)
      */
     override fun prepare(bag: RefactoringElementsBag): Problem? {
@@ -96,15 +90,14 @@ class KotlinInlineVariablePlugin(
         val ktFile = session.getKtFileForPath(fo.path) ?: return null
         val projectKtFiles = session.session.modulesWithFiles.values.flatten().filterIsInstance<KtFile>()
 
-        val computer = KaInlineVariableComputer(ktFile, offset, session.session.project, projectKtFiles)
+        val computer = KaInlineFunctionComputer(ktFile, offset, session.session.project, projectKtFiles)
         when (val outcome = computer.compute()) {
-            is KaInlineVariableComputer.Outcome.NotApplicable -> return null
-            is KaInlineVariableComputer.Outcome.Error ->
+            is KaInlineFunctionComputer.Outcome.NotApplicable -> return null
+            is KaInlineFunctionComputer.Outcome.Error ->
                 return Problem(true, outcome.error.message)
-            is KaInlineVariableComputer.Outcome.Ready -> {
+            is KaInlineFunctionComputer.Outcome.Ready -> {
                 val result = outcome.result
 
-                // Preview items: one read-only entry per usage range, grouped by file.
                 for ((usageKtFile, refs) in result.usages) {
                     val usageFo = FileUtil.toFileObject(
                         FileUtil.normalizeFile(java.io.File(usageKtFile.virtualFile?.path ?: continue))
@@ -122,13 +115,12 @@ class KotlinInlineVariablePlugin(
                     }
                 }
 
-                // The element that actually mutates documents on confirm.
                 val declFo = FileUtil.toFileObject(
-                    FileUtil.normalizeFile(java.io.File(result.property.containingKtFile.virtualFile?.path ?: ""))
+                    FileUtil.normalizeFile(java.io.File(result.function.containingKtFile.virtualFile?.path ?: ""))
                 ) ?: fo
                 bag.add(
                     refactoring,
-                    KotlinInlineApplyElement(declFo, nbProject, fo.path, offset),
+                    KotlinInlineFunctionApplyElement(declFo, nbProject, fo.path, offset),
                 )
                 return null
             }
@@ -137,39 +129,31 @@ class KotlinInlineVariablePlugin(
 }
 
 /**
- * The single all-or-nothing refactoring element that performs the inline transformation.
+ * The single all-or-nothing refactoring element that performs the inline-function transformation.
  *
  * Strategy:
- *  1. On apply, the element re-runs the [KaInlineVariableComputer] (so the strategy is fresh
- *     against the current K2 session PSI), then drives the IDEA `PropertyUsageReplacementStrategy`
- *     to inline each usage in place, and finally deletes the property declaration.
- *  2. **Per-file snapshots** of the document text are captured before mutating PSI so [undoChange]
- *     can roll back every affected file in one shot.
- *  3. After mutating the session PSI, each affected `KtFile`'s new text is written back to its
- *     corresponding NetBeans document. The K2 session is invalidated so the next analysis cycle
- *     rebuilds the PSI from the now-current document content.
+ *  1. Re-runs [KaInlineFunctionComputer] to get a fresh strategy against the current K2 session PSI.
+ *  2. Drives IDEA's `CallableUsageReplacementStrategy` to inline each call site.
+ *  3. Deletes the function declaration.
+ *  4. Writes updated PSI text back to NetBeans documents and reformats each insertion range.
  *
- * Per-usage Undo is not wired in this iteration (a future enhancement may split the apply step
- * into one element per usage, similar to Rename). For E9.3 MVP a coarse all-or-nothing undo is
- * acceptable and matches NB Safe Delete semantics.
+ * Undo is an all-or-nothing snapshot restore (same approach as [KotlinInlineApplyElement] for variables).
  *
- * @param declarationFile  the file containing the property declaration (parent file for
- *                         RefactoringElementsBag grouping in the preview)
+ * @param declarationFile  the file containing the function declaration
  * @param nbProject        the NetBeans project (needed to invalidate the K2 session post-apply)
- * @param cursorFilePath   virtual-file path of the file under the caret when the action was invoked
- * @param cursorOffset     caret offset within the file at [cursorFilePath]
+ * @param cursorFilePath   virtual-file path of the file under the caret
+ * @param cursorOffset     caret offset within [cursorFilePath]
  */
-class KotlinInlineApplyElement(
+class KotlinInlineFunctionApplyElement(
     private val declarationFile: FileObject,
     private val nbProject: org.netbeans.api.project.Project,
     private val cursorFilePath: String,
     private val cursorOffset: Int,
 ) : SimpleRefactoringElementImplementation() {
 
-    /** Saved per-file document text captured in [performChange] for [undoChange] to restore. */
     private val snapshots: MutableMap<FileObject, String> = mutableMapOf()
 
-    override fun getText(): String = "Inline variable"
+    override fun getText(): String = "Inline function"
     override fun getDisplayText(): String = getText()
     override fun getLookup(): Lookup = Lookups.fixed(declarationFile)
     override fun getParentFile(): FileObject = declarationFile
@@ -183,9 +167,6 @@ class KotlinInlineApplyElement(
     } catch (_: Exception) { null }
 
     override fun performChange() {
-        // Capture the TopComponent active before document writes — `writeDocumentText` activates
-        // the editor of the modified file, which steals focus from the file the user was working
-        // on (especially noticeable when usages live in a different file). Restored in `finally`.
         val activeBefore: TopComponent? = runCatching { TopComponent.getRegistry().activated }.getOrNull()
         try {
             runCatching {
@@ -193,16 +174,15 @@ class KotlinInlineApplyElement(
                 val cursorKtFile = session.getKtFileForPath(cursorFilePath) ?: return@runCatching
                 val projectKtFiles = session.session.modulesWithFiles.values.flatten().filterIsInstance<KtFile>()
 
-                val computer = KaInlineVariableComputer(
+                val computer = KaInlineFunctionComputer(
                     cursorKtFile, cursorOffset, session.session.project, projectKtFiles,
                 )
-                val ready = computer.compute() as? KaInlineVariableComputer.Outcome.Ready ?: return@runCatching
+                val ready = computer.compute() as? KaInlineFunctionComputer.Outcome.Ready ?: return@runCatching
                 val result = ready.result
 
-                // Snapshot every file we are about to modify. Required by undoChange().
                 val affectedFiles = LinkedHashSet<KtFile>().apply {
                     addAll(result.usages.keys)
-                    add(result.property.containingKtFile)
+                    add(result.function.containingKtFile)
                 }
                 for (ktFile in affectedFiles) {
                     val path = ktFile.virtualFile?.path ?: continue
@@ -211,11 +191,6 @@ class KotlinInlineApplyElement(
                     snapshots[fo] = text
                 }
 
-                // Replicates IDEA's `processUsages` per-file loop (UsageReplacementStrategy.kt:60-108):
-                // sort usages so nested ones go first; for each, fetch the replacer and run it. We
-                // do NOT use IDEA's `replaceUsages` bulk extension because we need access to the
-                // inserted PSI element per usage to reformat its range afterwards (IDEA's
-                // `reformatted(true)` call is a no-op in our standalone container).
                 val insertedByFile = LinkedHashMap<KtFile, MutableList<PsiElement>>()
                 for ((ktFile, usagesInFile) in result.usages) {
                     val sortedUsages = usagesInFile.sortedWith { a, b ->
@@ -229,51 +204,25 @@ class KotlinInlineApplyElement(
                         if (!usage.isValid) continue
                         val replacer = runCatching { result.strategy.createReplacer(usage) }.getOrNull() ?: continue
                         val inserted = runCatching { replacer.invoke() }.getOrNull() ?: continue
-                        // Mirror IDEA's reformat target (`inserted.parent.parent.parent` in
-                        // UsageReplacementStrategy.kt:102) — gives the local context around the
-                        // insertion so the formatter has enough scope to reflow the result.
                         val target: PsiElement = inserted.parent?.parent?.parent ?: inserted
                         insertedByFile.getOrPut(ktFile) { mutableListOf() }.add(target)
                     }
                 }
 
-                result.property.delete()
+                result.function.delete()
 
-                // Push the post-mutation text of every affected KtFile back to its NB document so
-                // the editor and on-disk state reflect the refactor.
+                // Write content + format insertions per file inside ONE atomic edit so
+                // a single Ctrl+Z restores the pre-refactor state completely.
                 for (ktFile in affectedFiles) {
                     val path = ktFile.virtualFile?.path ?: continue
                     val fo = pathToFileObject(path) ?: continue
-                    writeDocumentText(fo, ktFile.text)
+                    val formattingRanges = insertedByFile[ktFile]
+                        ?.mapNotNull { runCatching { it.textRange }.getOrNull() }
+                        ?.sortedByDescending { it.startOffset }
+                        ?: emptyList()
+                    replaceDocumentAtomically(fo, simplifyStringTemplateCaptures(ktFile.text), formattingRanges)
                 }
 
-                // Reformat each inserted range using our text-based KotlinFormatter. Ranges are
-                // sorted descending by start offset so earlier ranges' offsets remain valid as
-                // later ones are reformatted (a single format() call rewrites the full document,
-                // but only the supplied range is reflowed).
-                for ((ktFile, elements) in insertedByFile) {
-                    val path = ktFile.virtualFile?.path ?: continue
-                    val fo = pathToFileObject(path) ?: continue
-                    val doc = openDocument(fo) ?: continue
-                    val ranges = elements.mapNotNull { runCatching { it.textRange }.getOrNull() }
-                        .sortedByDescending { it.startOffset }
-                    for (range in ranges) {
-                        val end = minOf(range.endOffset, doc.length)
-                        val start = minOf(range.startOffset, end)
-                        if (start >= end) continue
-                        runCatching {
-                            format(
-                                doc = doc,
-                                offset = start,
-                                startOffset = start,
-                                endOffset = end,
-                                proj = nbProject,
-                            )
-                        }
-                    }
-                }
-
-                // Drop the K2 cache so subsequent operations parse the new content from disk.
                 KotlinAnalysisAPISession.invalidate(nbProject)
             }
         } finally {
@@ -286,46 +235,62 @@ class KotlinInlineApplyElement(
     override fun undoChange() {
         runCatching {
             for ((fo, original) in snapshots) {
-                writeDocumentText(fo, original)
+                replaceDocumentAtomically(fo, original)
             }
             KotlinAnalysisAPISession.invalidate(nbProject)
         }
     }
 
-    /**
-     * Resolves a K2 virtual-file path to its NetBeans [FileObject], returning `null` when the
-     * path refers to a transient or in-memory file (e.g. test fixtures created via `LightVirtualFile`).
-     */
     private fun pathToFileObject(path: String): FileObject? =
         FileUtil.toFileObject(FileUtil.normalizeFile(java.io.File(path)))
 
-    /** Reads the current text of the open document for [fo], or `null` when the document cannot be opened. */
     private fun readDocumentText(fo: FileObject): String? = try {
         val doc = openDocument(fo) ?: return null
         doc.getText(0, doc.length)
     } catch (_: BadLocationException) { null } catch (_: Exception) { null }
 
-    /** Opens (or returns the already-open) [StyledDocument] for [fo], or `null` on error. */
     private fun openDocument(fo: FileObject): StyledDocument? = try {
         val dob = DataObject.find(fo)
         val ec = dob.lookup.lookup(EditorCookie::class.java) ?: return null
         ec.openDocument()
     } catch (_: Exception) { null }
 
-    /** Replaces the entire text of the open document for [fo] with [newText]. No-op on errors. */
-    private fun writeDocumentText(fo: FileObject, newText: String) {
+    /**
+     * Replaces the entire document content with [newText] and reformats [formattingRanges],
+     * all inside a single [org.netbeans.editor.AtomicLockDocument] block so one Ctrl+Z
+     * restores the pre-refactor state atomically.
+     *
+     * Falls back to [NbDocument.runAtomicAsUser] when the document does not implement
+     * [org.netbeans.editor.AtomicLockDocument] (uncommon in production, but safe).
+     */
+    private fun replaceDocumentAtomically(
+        fo: FileObject,
+        newText: String,
+        formattingRanges: List<com.intellij.openapi.util.TextRange> = emptyList(),
+    ) {
         try {
             val dob = DataObject.find(fo)
             val ec = dob.lookup.lookup(EditorCookie::class.java) ?: return
             val doc = ec.openDocument() ?: return
-            // Wrap remove+insert in one atomic edit so Ctrl+Z restores the original
-            // in a single step rather than leaving an empty document on the first undo.
-            NbDocument.runAtomicAsUser(doc) {
+            val atomicDoc = doc as? org.netbeans.editor.AtomicLockDocument
+            val body: () -> Unit = {
                 if (doc.length > 0) doc.remove(0, doc.length)
                 doc.insertString(0, newText, null)
+                for (range in formattingRanges) {
+                    val end = minOf(range.endOffset, doc.length)
+                    val start = minOf(range.startOffset, end)
+                    if (start < end) runCatching {
+                        format(doc = doc, offset = start, startOffset = start, endOffset = end, proj = nbProject)
+                    }
+                }
+            }
+            if (atomicDoc != null) {
+                atomicDoc.atomicLock()
+                try { body() } finally { atomicDoc.atomicUnlock() }
+            } else {
+                NbDocument.runAtomicAsUser(doc) { body() }
             }
         } catch (_: BadLocationException) {
         } catch (_: Exception) {}
     }
 }
-

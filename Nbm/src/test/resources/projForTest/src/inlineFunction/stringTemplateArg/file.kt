@@ -1,0 +1,6 @@
+fun greet1(name: String) = "Hello, $name!"
+
+fun demo1() {
+    println(greet1("World"))
+    println(greet1("Kotlin"))
+}

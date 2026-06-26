@@ -20,6 +20,7 @@ package io.github.nbplugins.kotlin.nbm.refactoring
 import com.intellij.psi.util.PsiTreeUtil
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.log.KotlinLogger
+import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.editor.BaseAction
@@ -30,15 +31,16 @@ import javax.swing.text.JTextComponent
 import javax.swing.text.StyledDocument
 
 /**
- * Editor action for **Ctrl+Alt+N** — "Inline Variable" for Kotlin `val`/`var` declarations.
+ * Editor action for **Ctrl+Alt+N** — "Inline" for Kotlin `fun` declarations and `val`/`var` properties.
  *
  * Registered under action name [ACTION_NAME] in `layer.xml` for `text/x-kotlin`.
- * When triggered, builds a [KotlinInlineVariableRefactoring] carrying the document and caret
- * offset, and opens the NetBeans refactoring UI which dispatches to [KotlinInlineVariablePlugin].
+ * Dispatches to the function or variable inline UI based on what is under the cursor:
+ *  - [KtNamedFunction] → [KotlinInlineFunctionUI] + [KotlinInlineFunctionRefactoring]
+ *  - [KtProperty]      → [KotlinInlineVariableUI] + [KotlinInlineVariableRefactoring]
  *
  * The action does **no validation** on its own — the plugin's `prepare()` validates and surfaces
- * a fatal `Problem` if the cursor is not on an inlineable property. This keeps the action thin and
- * lets the framework display IDEA's error messages verbatim.
+ * a fatal `Problem` if the symbol cannot be inlined. This keeps the action thin and lets the
+ * framework display IDEA's error messages verbatim.
  *
  * This class belongs to the **controller** layer.
  */
@@ -47,9 +49,9 @@ class KotlinInlineVariableAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBR
     init {
         // NAME drives both the Refactor submenu label (Menu/Refactoring shadow) and the
         // command palette; without it the menu shows the bare action-name "kotlin-inline-variable".
-        putValue(NAME, "Inline Variable")
-        putValue(SHORT_DESCRIPTION, "Inline Variable")
-        putValue(POPUP_MENU_TEXT, "Inline Variable")
+        putValue(NAME, "Inline...")
+        putValue(SHORT_DESCRIPTION, "Inline")
+        putValue(POPUP_MENU_TEXT, "Inline...")
     }
 
     override fun actionPerformed(evt: ActionEvent, target: JTextComponent) {
@@ -57,17 +59,46 @@ class KotlinInlineVariableAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBR
         val caretOffset = target.caretPosition
 
         runCatching {
-            // Resolve the property name for the dialog title. Don't fail the action when the
-            // cursor isn't on a property — the plugin returns a clear Problem in that case.
-            val name = resolvePropertyNameAt(doc, caretOffset) ?: ""
-            val refactoring = KotlinInlineVariableRefactoring(doc, caretOffset)
+            // Dispatch: function first, then property. The plugin's prepare() returns a fatal
+            // Problem when the symbol is not inlineable, so the action is always safe to open.
+            val functionName = resolveFunctionNameAt(doc, caretOffset)
+            if (functionName != null) {
+                UI.openRefactoringUI(
+                    KotlinInlineFunctionUI(functionName, KotlinInlineFunctionRefactoring(doc, caretOffset)),
+                    TopComponent.getRegistry().activated,
+                )
+                return@runCatching
+            }
+
+            val propertyName = resolvePropertyNameAt(doc, caretOffset) ?: ""
             UI.openRefactoringUI(
-                KotlinInlineVariableUI(name, refactoring),
+                KotlinInlineVariableUI(propertyName, KotlinInlineVariableRefactoring(doc, caretOffset)),
                 TopComponent.getRegistry().activated,
             )
         }.onFailure { e ->
             KotlinLogger.INSTANCE.logException("KotlinInlineVariableAction failed", e)
         }
+    }
+
+    /**
+     * Looks up the [KtNamedFunction] at [offset] in [doc] and returns its short name, or `null`
+     * when the caret is not on a function declaration or a call to a named function.
+     *
+     * @param doc    the document under the caret
+     * @param offset caret offset within [doc]
+     * @return       the function's simple name, or `null`
+     */
+    private fun resolveFunctionNameAt(doc: StyledDocument, offset: Int): String? {
+        val fo = ProjectUtils.getFileObjectForDocument(doc) ?: return null
+        val project = ProjectUtils.getKotlinProjectForFileObject(fo)
+            ?: ProjectUtils.getValidProject()
+            ?: return null
+        return runCatching {
+            val session = KotlinAnalysisAPISession.getSession(project)
+            val ktFile = session.getKtFileForPath(fo.path) ?: return@runCatching null
+            val element = ktFile.findElementAt(offset) ?: return@runCatching null
+            PsiTreeUtil.getParentOfType(element, KtNamedFunction::class.java, false)?.name
+        }.getOrNull()
     }
 
     /**
