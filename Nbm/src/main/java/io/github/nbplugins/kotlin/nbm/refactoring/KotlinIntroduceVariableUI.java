@@ -19,11 +19,16 @@ package io.github.nbplugins.kotlin.nbm.refactoring;
 
 import java.awt.BorderLayout;
 import java.awt.Component;
-import java.awt.FlowLayout;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
 import java.util.List;
 import javax.swing.BorderFactory;
+import javax.swing.ButtonGroup;
+import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JRadioButton;
 import javax.swing.JTextField;
 import javax.swing.event.ChangeListener;
 import javax.swing.event.DocumentEvent;
@@ -87,7 +92,7 @@ public class KotlinIntroduceVariableUI implements RefactoringUI {
     }
 
     /**
-     * Copies the current name-field value into the refactoring carrier.
+     * Copies the name-field value and all option flags into the refactoring carrier.
      *
      * @return {@code null} — no problems to report; validation is deferred to the plugin's
      *         {@code checkParameters()}
@@ -96,6 +101,9 @@ public class KotlinIntroduceVariableUI implements RefactoringUI {
     public Problem setParameters() {
         if (panel != null) {
             refactoring.setChosenName(panel.getNameValue());
+            refactoring.setReplaceAll(panel.isReplaceAll());
+            refactoring.setUseVar(panel.isUseVar());
+            refactoring.setExplicitType(panel.isExplicitType());
         }
         return null;
     }
@@ -126,26 +134,74 @@ public class KotlinIntroduceVariableUI implements RefactoringUI {
         return null;
     }
 
-    /** Panel with a name label and editable text field. */
+    /**
+     * Panel with a name field and three option controls matching IDEA's Introduce Variable dialog:
+     * "Replace all occurrences" checkbox, val/var radio buttons, and "Specify type explicitly" checkbox.
+     */
     private static final class NamePanel implements CustomRefactoringPanel {
 
         private final JPanel component;
         private final JTextField nameField;
+        private final JCheckBox replaceAllCheck;
+        private final JRadioButton valRadio;
+        private final JRadioButton varRadio;
+        private final JCheckBox explicitTypeCheck;
 
         NamePanel(String defaultName, ChangeListener changeListener) {
             nameField = new JTextField(defaultName, 30);
             nameField.selectAll();
 
-            JLabel label = new JLabel("Name:");
-            label.setLabelFor(nameField);
+            replaceAllCheck = new JCheckBox("Replace all occurrences", true);
+            valRadio = new JRadioButton("val", true);
+            varRadio = new JRadioButton("var", false);
+            explicitTypeCheck = new JCheckBox("Specify type explicitly", false);
 
-            JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
-            row.add(label);
-            row.add(nameField);
+            ButtonGroup varValGroup = new ButtonGroup();
+            varValGroup.add(valRadio);
+            varValGroup.add(varRadio);
+
+            JPanel form = new JPanel(new GridBagLayout());
+            form.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+
+            GridBagConstraints lc = new GridBagConstraints();
+            lc.anchor = GridBagConstraints.WEST;
+            lc.insets = new Insets(2, 0, 2, 6);
+
+            GridBagConstraints fc = new GridBagConstraints();
+            fc.fill = GridBagConstraints.HORIZONTAL;
+            fc.weightx = 1.0;
+            fc.gridwidth = GridBagConstraints.REMAINDER;
+            fc.insets = new Insets(2, 0, 2, 0);
+
+            GridBagConstraints span = new GridBagConstraints();
+            span.gridwidth = GridBagConstraints.REMAINDER;
+            span.anchor = GridBagConstraints.WEST;
+            span.insets = new Insets(2, 0, 2, 0);
+
+            JLabel nameLabel = new JLabel("Name:");
+            nameLabel.setLabelFor(nameField);
+            form.add(nameLabel, lc);
+            form.add(nameField, fc);
+
+            form.add(replaceAllCheck, span);
+
+            JPanel varValPanel = new JPanel(new GridBagLayout());
+            GridBagConstraints rbc = new GridBagConstraints();
+            rbc.anchor = GridBagConstraints.WEST;
+            rbc.insets = new Insets(0, 0, 0, 8);
+            varValPanel.add(valRadio, rbc);
+            rbc.insets = new Insets(0, 0, 0, 0);
+            varValPanel.add(varRadio, rbc);
+            GridBagConstraints varValSpan = new GridBagConstraints();
+            varValSpan.gridwidth = GridBagConstraints.REMAINDER;
+            varValSpan.anchor = GridBagConstraints.WEST;
+            varValSpan.insets = new Insets(0, 20, 2, 0);
+            form.add(varValPanel, varValSpan);
+
+            form.add(explicitTypeCheck, span);
 
             component = new JPanel(new BorderLayout());
-            component.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
-            component.add(row, BorderLayout.NORTH);
+            component.add(form, BorderLayout.NORTH);
 
             // Notify the framework when the name changes so Preview/Refactor buttons update.
             nameField.getDocument().addDocumentListener(new DocumentListener() {
@@ -156,9 +212,16 @@ public class KotlinIntroduceVariableUI implements RefactoringUI {
         }
 
         /** Returns the current text in the name field. */
-        String getNameValue() {
-            return nameField.getText();
-        }
+        String getNameValue() { return nameField.getText(); }
+
+        /** Returns true if all occurrences should be replaced. */
+        boolean isReplaceAll() { return replaceAllCheck.isSelected(); }
+
+        /** Returns true if a {@code var} declaration should be generated (false → {@code val}). */
+        boolean isUseVar() { return varRadio.isSelected(); }
+
+        /** Returns true if the type annotation should be written explicitly. */
+        boolean isExplicitType() { return explicitTypeCheck.isSelected(); }
 
         @Override public void initialize() { nameField.requestFocusInWindow(); }
         @Override public Component getComponent() { return component; }

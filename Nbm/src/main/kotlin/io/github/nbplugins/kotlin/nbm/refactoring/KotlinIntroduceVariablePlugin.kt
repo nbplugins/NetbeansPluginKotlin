@@ -170,19 +170,32 @@ class KotlinIntroduceVariableApplyElement(
 
                 val chosenName = refactoring.chosenName.ifBlank { result.suggestedNames.firstOrNull() ?: "value" }
 
-                // Replace all occurrences back-to-front so earlier offsets stay valid.
+                // When "Replace all occurrences" is off, replace only the primary expression.
+                val rangesToReplace = if (refactoring.replaceAll) {
+                    result.occurrenceRanges.sortedByDescending { it.startOffset }
+                } else {
+                    listOf(result.expressionRange).sortedByDescending { it.startOffset }
+                }
+
+                // Replace occurrences back-to-front so earlier offsets stay valid.
                 var newText = originalText
-                for (range in result.occurrenceRanges.sortedByDescending { it.startOffset }) {
+                for (range in rangesToReplace) {
                     newText = newText.substring(0, range.startOffset) +
                             chosenName +
                             newText.substring(range.endOffset)
                 }
 
-                // Insert `val name = expr` before the anchor's line, preserving indentation.
+                // Build declaration keyword and optional type annotation.
+                val keyword = if (refactoring.useVar) "var" else "val"
+                val typeAnnotation = if (refactoring.explicitType && result.typeText != null) {
+                    ": ${result.typeText}"
+                } else ""
+
+                // Insert `val/var name[: Type] = expr` before the anchor's line, preserving indentation.
                 val lineStart = newText.lastIndexOf('\n', result.anchorOffset - 1) + 1
                 val indentation = newText.substring(lineStart, minOf(result.anchorOffset, newText.length))
                     .takeWhile { it == ' ' || it == '\t' }
-                val declaration = "${indentation}val $chosenName = ${result.expressionText}\n"
+                val declaration = "$indentation$keyword $chosenName$typeAnnotation = ${result.expressionText}\n"
                 newText = newText.substring(0, lineStart) + declaration + newText.substring(lineStart)
 
                 // Write the new text atomically and reformat the inserted declaration range.

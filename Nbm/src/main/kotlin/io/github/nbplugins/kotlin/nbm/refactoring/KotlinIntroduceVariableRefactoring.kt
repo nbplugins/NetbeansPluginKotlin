@@ -43,4 +43,13 @@ class KotlinIntroduceVariableRefactoring(
 
     /** Variable name chosen by the user in the dialog; set by [KotlinIntroduceVariableUI.setParameters]. */
     var chosenName: String = ""
+
+    /** When true, all semantically equivalent occurrences are replaced; when false, only the selected expression. */
+    var replaceAll: Boolean = true
+
+    /** When true, a `var` declaration is generated; when false (default), a `val` is generated. */
+    var useVar: Boolean = false
+
+    /** When true, the declared type is written explicitly (`val name: Type = expr`). */
+    var explicitType: Boolean = false
 }

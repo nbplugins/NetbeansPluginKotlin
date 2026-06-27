@@ -26,6 +26,9 @@ import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.components.expressionType
+import org.jetbrains.kotlin.analysis.api.components.render
+import org.jetbrains.kotlin.analysis.api.renderer.types.impl.KaTypeRendererForSource
+import org.jetbrains.kotlin.types.Variance
 import org.jetbrains.kotlin.idea.base.codeInsight.KotlinNameSuggester
 import org.jetbrains.kotlin.idea.k2.refactoring.introduce.K2SemanticMatcher
 import org.jetbrains.kotlin.psi.KtBlockExpression
@@ -111,6 +114,10 @@ class KaIntroduceVariableComputer(
             KotlinNameSuggester().suggestExpressionNames(expression).take(5).toList()
         }.getOrElse { listOf("value") }.ifEmpty { listOf("value") }
 
+        val typeText: String? = runCatching {
+            expression.expressionType?.render(KaTypeRendererForSource.WITH_SHORT_NAMES, Variance.INVARIANT)
+        }.getOrNull()
+
         val container = expression.findContainer() ?: return Outcome.NotApplicable
 
         val occurrences: List<KtExpression> = runCatching {
@@ -126,6 +133,7 @@ class KaIntroduceVariableComputer(
                 suggestedNames = suggestedNames,
                 occurrenceRanges = occurrences.map { it.textRange },
                 anchorOffset = anchor.startOffset,
+                typeText = typeText,
             )
         )
     }
@@ -176,6 +184,7 @@ class KaIntroduceVariableComputer(
  * @param suggestedNames    candidate variable names in preference order
  * @param occurrenceRanges  text ranges of all semantically equivalent occurrences (unsorted)
  * @param anchorOffset      start offset of the anchor element (where to insert `val name = expr`)
+ * @param typeText          rendered short-name type string for "specify type explicitly" option; null if unavailable
  */
 data class KaIntroduceVariableResult(
     val expressionRange: TextRange,
@@ -183,4 +192,5 @@ data class KaIntroduceVariableResult(
     val suggestedNames: List<String>,
     val occurrenceRanges: List<TextRange>,
     val anchorOffset: Int,
+    val typeText: String? = null,
 )
