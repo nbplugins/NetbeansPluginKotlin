@@ -62,6 +62,10 @@
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceVariableAction.instance">
                 <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceVariableAction"/>
             </file>
+            <!-- Global Introduce Constant refactoring action (Ctrl+Alt+C). -->
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceConstantAction.instance">
+                <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceConstantAction"/>
+            </file>
             <!-- Global Extract Function refactoring action (Ctrl+Alt+M). -->
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinExtractFunctionAction.instance">
                 <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinExtractFunctionAction"/>
@@ -70,7 +74,7 @@
     </folder>
     <folder name="Menu">
         <folder name="Refactoring">
-            <!-- Extract Function at position 700, Introduce Variable at 1000.
+            <!-- Extract Function at position 700, Introduce Variable at 1000, Introduce Constant at 1050.
                  Separator at 600 opens the Extract/Introduce group; separator at 900 separates
                  Extract from Introduce; separator at 1300 closes the group before Inline (1400). -->
             <file name="separator-before-extract.instance">
@@ -88,6 +92,10 @@
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceVariableAction.shadow">
                 <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceVariableAction.instance"/>
                 <attr name="position" intvalue="1000"/>
+            </file>
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceConstantAction.shadow">
+                <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceConstantAction.instance"/>
+                <attr name="position" intvalue="1050"/>
             </file>
             <file name="separator-after-introduce.instance">
                 <attr name="instanceClass" stringvalue="javax.swing.JSeparator"/>
@@ -459,6 +467,10 @@
                         <!-- Introduce Variable (Ctrl+Alt+V): custom Kotlin action. -->
                         <file name="kotlin-introduce-variable.instance">
                             <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceVariableAction"/>
+                        </file>
+                        <!-- Introduce Constant (Ctrl+Alt+C): custom Kotlin action. -->
+                        <file name="kotlin-introduce-constant.instance">
+                            <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceConstantAction"/>
                         </file>
                         <!-- Extract Function (Ctrl+Alt+M): custom Kotlin action. -->
                         <file name="kotlin-extract-function.instance">

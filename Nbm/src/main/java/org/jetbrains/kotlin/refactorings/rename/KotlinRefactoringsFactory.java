@@ -26,6 +26,8 @@ import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineFunctionPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineFunctionRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariablePlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariableRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceConstantPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceConstantRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceVariablePlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceVariableRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinSafeDeletePlugin;
@@ -57,6 +59,7 @@ import org.openide.util.lookup.ServiceProvider;
  *   <li>{@link KotlinInlineFunctionRefactoring} — delegates to {@link KotlinInlineFunctionPlugin}</li>
  *   <li>{@link KotlinIntroduceVariableRefactoring} — delegates to {@link KotlinIntroduceVariablePlugin}</li>
  *   <li>{@link KotlinExtractFunctionRefactoring} — delegates to {@link KotlinExtractFunctionPlugin}</li>
+ *   <li>{@link KotlinIntroduceConstantRefactoring} — delegates to {@link KotlinIntroduceConstantPlugin}</li>
  * </ul>
  */
 @ServiceProvider(service = RefactoringPluginFactory.class, position = 100)
@@ -89,6 +92,9 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         }
         if (refactoring instanceof KotlinExtractFunctionRefactoring) {
             return new KotlinExtractFunctionPlugin((KotlinExtractFunctionRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinIntroduceConstantRefactoring) {
+            return new KotlinIntroduceConstantPlugin((KotlinIntroduceConstantRefactoring) refactoring);
         }
         return null;
     }
