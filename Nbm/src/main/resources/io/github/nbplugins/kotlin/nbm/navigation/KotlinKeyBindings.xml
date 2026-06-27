@@ -16,4 +16,6 @@
     <bind actionName="kotlin-inline-variable" key="DA-N"/>
     <!-- Introduce Variable (Ctrl+Alt+V) — mirrors IntelliJ IDEA introduce variable shortcut -->
     <bind actionName="kotlin-introduce-variable" key="DA-V"/>
+    <!-- Extract Function (Ctrl+Alt+M) — mirrors IntelliJ IDEA extract method shortcut -->
+    <bind actionName="kotlin-extract-function" key="DA-M"/>
 </bindings>

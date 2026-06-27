@@ -20,6 +20,8 @@
 package org.jetbrains.kotlin.refactorings.rename;
 
 import io.github.nbplugins.kotlin.nbm.navigation.KotlinWhereUsedPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinExtractFunctionPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinExtractFunctionRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineFunctionPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineFunctionRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariablePlugin;
@@ -54,6 +56,7 @@ import org.openide.util.lookup.ServiceProvider;
  *   <li>{@link KotlinInlineVariableRefactoring} — delegates to {@link KotlinInlineVariablePlugin}</li>
  *   <li>{@link KotlinInlineFunctionRefactoring} — delegates to {@link KotlinInlineFunctionPlugin}</li>
  *   <li>{@link KotlinIntroduceVariableRefactoring} — delegates to {@link KotlinIntroduceVariablePlugin}</li>
+ *   <li>{@link KotlinExtractFunctionRefactoring} — delegates to {@link KotlinExtractFunctionPlugin}</li>
  * </ul>
  */
 @ServiceProvider(service = RefactoringPluginFactory.class, position = 100)
@@ -83,6 +86,9 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         }
         if (refactoring instanceof KotlinIntroduceVariableRefactoring) {
             return new KotlinIntroduceVariablePlugin((KotlinIntroduceVariableRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinExtractFunctionRefactoring) {
+            return new KotlinExtractFunctionPlugin((KotlinExtractFunctionRefactoring) refactoring);
         }
         return null;
     }
