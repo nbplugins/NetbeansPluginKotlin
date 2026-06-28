@@ -260,6 +260,73 @@ class KaIntroduceVariableTest : KotlinTestCase("KaIntroduceVariableTest", "intro
     }
 
     /**
+     * Integration test: verifies that the caret name-offset formula used by
+     * [KotlinIntroduceVariableApplyElement.performChange] points to the first character of the
+     * chosen variable name **at the usage site** (the original trigger location), not in the
+     * inserted declaration line.
+     *
+     * The formula is:
+     * ```
+     * lowerShift = sum of (chosenName.length - range.length) for ranges with endOffset <= exprStart
+     * nameOffset = exprStart + lowerShift + declaration.length
+     * ```
+     *
+     * This keeps the caret at the expression that was replaced rather than jumping to the
+     * newly inserted `val` line above it.
+     */
+    fun testApply_withRealSession_caretOnVariableName() {
+        val triple = prepareWithRealSession("simpleExpr")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping caret test")
+                return
+            }
+        val (computer, ktFile, tmpDir) = triple
+        try {
+            val outcome = computer.compute()
+            assertTrue("Expected Ready", outcome is KaIntroduceVariableComputer.Outcome.Ready)
+            val result = (outcome as KaIntroduceVariableComputer.Outcome.Ready).result
+
+            val chosenName = "myVar"
+            val keyword = "val"
+            val originalText = ktFile.text
+            val rangesToReplace = result.occurrenceRanges.sortedByDescending { it.startOffset }
+            var newText = originalText
+            for (range in rangesToReplace) {
+                newText = newText.substring(0, range.startOffset) +
+                        chosenName +
+                        newText.substring(range.endOffset)
+            }
+            val lineStart = newText.lastIndexOf('\n', result.anchorOffset - 1) + 1
+            val indentation = newText.substring(lineStart, minOf(result.anchorOffset, newText.length))
+                .takeWhile { it == ' ' || it == '\t' }
+            val declaration = "$indentation$keyword $chosenName = ${result.expressionText}\n"
+            newText = newText.substring(0, lineStart) + declaration + newText.substring(lineStart)
+
+            // Replicate the nameOffset formula from performChange(): caret at usage site.
+            val exprStart = result.expressionRange.startOffset
+            val lowerShift = rangesToReplace
+                .filter { it.endOffset <= exprStart }
+                .sumOf { chosenName.length - (it.endOffset - it.startOffset) }
+            val nameOffset = exprStart + lowerShift + declaration.length
+
+            assertTrue("nameOffset $nameOffset must be within newText (len ${newText.length})",
+                nameOffset < newText.length)
+            assertEquals(
+                "Character at nameOffset must be first char of '$chosenName'",
+                chosenName[0],
+                newText[nameOffset],
+            )
+            assertEquals(
+                "Text at nameOffset must start with '$chosenName'",
+                chosenName,
+                newText.substring(nameOffset, nameOffset + chosenName.length),
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Integration test: exercises the text-transformation logic of
      * [KotlinIntroduceVariableApplyElement] in a standalone session.
      *

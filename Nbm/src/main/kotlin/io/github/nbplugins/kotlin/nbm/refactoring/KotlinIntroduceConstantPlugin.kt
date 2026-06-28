@@ -18,6 +18,7 @@
 package io.github.nbplugins.kotlin.nbm.refactoring
 
 import io.github.nbplugins.kotlin.nbm.navigation.KotlinFindUsagesResultElement
+import io.github.nbplugins.kotlin.nbm.navigation.moveCaretToOffset
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.ConstantDestination
 import io.github.nbplugins.kotlin.refactoring.KaIntroduceConstantComputer
@@ -219,13 +220,26 @@ class KotlinIntroduceConstantApplyElement(
                     return rawOffset + shift
                 }
 
+                // Adjusted expression start after replacements — this is where chosenName appears in the body.
+                val exprStart = result.expressionRange.startOffset
+                val lowerShift = rangesToReplace
+                    .filter { it.endOffset <= exprStart }
+                    .sumOf { chosenName.length - (it.endOffset - it.startOffset) }
+                val adjustedExprStart = exprStart + lowerShift
+
+                // nameOffset: position of chosenName at the trigger (usage) location after insertion.
+                var nameOffset: Int? = null
+
                 when (refactoring.destination) {
                     ConstantDestination.TOP_LEVEL -> {
                         val insertPos = adjustedOffset(result.topLevelInsertOffset)
                         val lineStart = newText.lastIndexOf('\n', insertPos - 1) + 1
+                        val insertedText = "$constDeclaration\n\n"
                         newText = newText.substring(0, lineStart) +
-                                "$constDeclaration\n\n" +
+                                insertedText +
                                 newText.substring(lineStart)
+                        // Insertion is before the expression (top-level is before any class body).
+                        nameOffset = adjustedExprStart + insertedText.length
                     }
 
                     ConstantDestination.COMPANION_OBJECT -> {
@@ -234,11 +248,14 @@ class KotlinIntroduceConstantApplyElement(
                         if (companionBodyOff != null) {
                             // Insert as first member of existing companion object.
                             val insertPos = adjustedOffset(companionBodyOff)
-                            // Find indentation: look at what follows the companion object's '{'.
                             val companionIndent = computeCompanionMemberIndent(newText, insertPos)
+                            val insertedText = "\n$companionIndent$constDeclaration"
                             newText = newText.substring(0, insertPos) +
-                                    "\n$companionIndent$constDeclaration" +
+                                    insertedText +
                                     newText.substring(insertPos)
+                            nameOffset = if (insertPos <= adjustedExprStart) {
+                                adjustedExprStart + insertedText.length
+                            } else adjustedExprStart
                         } else if (companionCreateOff != null) {
                             // Create companion object as first member of the enclosing class.
                             val insertPos = adjustedOffset(companionCreateOff)
@@ -247,6 +264,9 @@ class KotlinIntroduceConstantApplyElement(
                             newText = newText.substring(0, insertPos) +
                                     companion +
                                     newText.substring(insertPos)
+                            nameOffset = if (insertPos <= adjustedExprStart) {
+                                adjustedExprStart + companion.length
+                            } else adjustedExprStart
                         }
                     }
                 }
@@ -261,6 +281,13 @@ class KotlinIntroduceConstantApplyElement(
                     try { body() } finally { atomicDoc.atomicUnlock() }
                 } else {
                     NbDocument.runAtomicAsUser(doc) { body() }
+                }
+
+                // Move caret to the constant name (mirrors IDEA's in-place rename start position).
+                nameOffset?.let { off ->
+                    SwingUtilities.invokeLater {
+                        runCatching { moveCaretToOffset(doc, minOf(off, doc.length)) }
+                    }
                 }
 
                 KotlinAnalysisAPISession.invalidate(nbProject)

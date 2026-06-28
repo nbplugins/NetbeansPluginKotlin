@@ -18,6 +18,7 @@
 package io.github.nbplugins.kotlin.nbm.refactoring
 
 import io.github.nbplugins.kotlin.nbm.navigation.KotlinFindUsagesResultElement
+import io.github.nbplugins.kotlin.nbm.navigation.moveCaretToOffset
 import io.github.nbplugins.kotlin.nbm.reformatting.format
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.KaIntroduceVariableComputer
@@ -200,6 +201,14 @@ class KotlinIntroduceVariableApplyElement(
 
                 // Write the new text atomically and reformat the inserted declaration range.
                 val declEnd = lineStart + declaration.length
+                // Caret target: chosenName at the original expression site (trigger location).
+                // Shift caused by replacements at offsets lower than the expression range.
+                val exprStart = result.expressionRange.startOffset
+                val lowerShift = rangesToReplace
+                    .filter { it.endOffset <= exprStart }
+                    .sumOf { chosenName.length - (it.endOffset - it.startOffset) }
+                // Declaration is inserted at lineStart which is before the expression; shift by its length.
+                val nameOffset = exprStart + lowerShift + declaration.length
                 val atomicDoc = doc as? org.netbeans.editor.AtomicLockDocument
                 val body: () -> Unit = {
                     if (doc.length > 0) doc.remove(0, doc.length)
@@ -214,6 +223,11 @@ class KotlinIntroduceVariableApplyElement(
                     try { body() } finally { atomicDoc.atomicUnlock() }
                 } else {
                     NbDocument.runAtomicAsUser(doc) { body() }
+                }
+
+                // Move caret to the variable name (mirrors IDEA's in-place rename start position).
+                SwingUtilities.invokeLater {
+                    runCatching { moveCaretToOffset(doc, minOf(nameOffset, doc.length)) }
                 }
 
                 KotlinAnalysisAPISession.invalidate(nbProject)

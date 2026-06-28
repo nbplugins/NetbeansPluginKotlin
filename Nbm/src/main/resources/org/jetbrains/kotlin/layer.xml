@@ -66,6 +66,10 @@
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceConstantAction.instance">
                 <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceConstantAction"/>
             </file>
+            <!-- Global Introduce Import Alias refactoring action (Refactor menu only, no keybinding). -->
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceImportAliasAction.instance">
+                <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceImportAliasAction"/>
+            </file>
             <!-- Global Extract Function refactoring action (Ctrl+Alt+M). -->
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinExtractFunctionAction.instance">
                 <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinExtractFunctionAction"/>
@@ -96,6 +100,10 @@
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceConstantAction.shadow">
                 <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceConstantAction.instance"/>
                 <attr name="position" intvalue="1050"/>
+            </file>
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceImportAliasAction.shadow">
+                <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceImportAliasAction.instance"/>
+                <attr name="position" intvalue="1075"/>
             </file>
             <file name="separator-after-introduce.instance">
                 <attr name="instanceClass" stringvalue="javax.swing.JSeparator"/>
@@ -471,6 +479,10 @@
                         <!-- Introduce Constant (Ctrl+Alt+C): custom Kotlin action. -->
                         <file name="kotlin-introduce-constant.instance">
                             <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceConstantAction"/>
+                        </file>
+                        <!-- Introduce Import Alias: custom Kotlin action (no keybinding, Refactor menu only). -->
+                        <file name="kotlin-introduce-import-alias.instance">
+                            <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceImportAliasAction"/>
                         </file>
                         <!-- Extract Function (Ctrl+Alt+M): custom Kotlin action. -->
                         <file name="kotlin-extract-function.instance">

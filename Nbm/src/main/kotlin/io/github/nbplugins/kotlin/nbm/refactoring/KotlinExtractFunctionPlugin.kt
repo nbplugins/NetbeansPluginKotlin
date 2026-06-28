@@ -17,6 +17,7 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.refactoring
 
+import io.github.nbplugins.kotlin.nbm.navigation.moveCaretToOffset
 import io.github.nbplugins.kotlin.nbm.reformatting.format
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.KaExtractFunctionComputer
@@ -201,6 +202,13 @@ class KotlinExtractFunctionApplyElement(
                 newText = newText.substring(0, insertLineStartInNew) + functionText + newText.substring(insertLineStartInNew)
 
                 val insertedEnd = insertLineStartInNew + functionText.length
+                // Caret target: function name at the call site (trigger location), not in the declaration.
+                // If function was inserted before the call site, it shifts selStart.
+                val funNameOffset = if (insertLineStartInNew <= selStart) {
+                    selStart + functionText.length
+                } else {
+                    selStart
+                }
 
                 val atomicDoc = doc as? org.netbeans.editor.AtomicLockDocument
                 val body: () -> Unit = {
@@ -217,6 +225,11 @@ class KotlinExtractFunctionApplyElement(
                     try { body() } finally { atomicDoc.atomicUnlock() }
                 } else {
                     NbDocument.runAtomicAsUser(doc) { body() }
+                }
+
+                // Move caret to the function name (mirrors IDEA's in-place rename start position).
+                SwingUtilities.invokeLater {
+                    runCatching { moveCaretToOffset(doc, minOf(funNameOffset, doc.length)) }
                 }
 
                 KotlinAnalysisAPISession.invalidate(nbProject)
