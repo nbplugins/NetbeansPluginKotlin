@@ -383,6 +383,15 @@ class KotlinAnalysisAPISession private constructor(
                 )
                 KotlinLogger.INSTANCE.logInfo("Registered KotlinSymbolBasedShortenReferencesFacility")
             }
+            // KotlinNameValidatorProvider — used by KotlinNameSuggestionProvider during Extract
+            // Function parameter-name suggestion (via parametersUtil.kt → KotlinDeclarationNameValidator).
+            if (app.getService(org.jetbrains.kotlin.idea.base.codeInsight.KotlinNameValidatorProvider::class.java) == null) {
+                app.registerService(
+                    org.jetbrains.kotlin.idea.base.codeInsight.KotlinNameValidatorProvider::class.java,
+                    io.github.nbplugins.kotlin.refactoring.KotlinNameValidatorProviderImpl::class.java,
+                )
+                KotlinLogger.INSTANCE.logInfo("Registered KotlinNameValidatorProviderImpl")
+            }
         }
 
         private fun registerEpIfAbsent(

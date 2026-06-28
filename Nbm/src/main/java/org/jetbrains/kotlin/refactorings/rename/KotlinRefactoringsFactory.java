@@ -20,10 +20,18 @@
 package org.jetbrains.kotlin.refactorings.rename;
 
 import io.github.nbplugins.kotlin.nbm.navigation.KotlinWhereUsedPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinExtractFunctionPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinExtractFunctionRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineFunctionPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineFunctionRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariablePlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariableRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceConstantPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceConstantRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceImportAliasPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceImportAliasRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceVariablePlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceVariableRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinSafeDeletePlugin;
 import javax.swing.text.StyledDocument;
 import org.jetbrains.kotlin.utils.ProjectUtils;
@@ -51,6 +59,10 @@ import org.openide.util.lookup.ServiceProvider;
  *   <li>{@link SafeDeleteRefactoring} — delegates to {@link KotlinSafeDeletePlugin}</li>
  *   <li>{@link KotlinInlineVariableRefactoring} — delegates to {@link KotlinInlineVariablePlugin}</li>
  *   <li>{@link KotlinInlineFunctionRefactoring} — delegates to {@link KotlinInlineFunctionPlugin}</li>
+ *   <li>{@link KotlinIntroduceVariableRefactoring} — delegates to {@link KotlinIntroduceVariablePlugin}</li>
+ *   <li>{@link KotlinExtractFunctionRefactoring} — delegates to {@link KotlinExtractFunctionPlugin}</li>
+ *   <li>{@link KotlinIntroduceConstantRefactoring} — delegates to {@link KotlinIntroduceConstantPlugin}</li>
+ *   <li>{@link KotlinIntroduceImportAliasRefactoring} — delegates to {@link KotlinIntroduceImportAliasPlugin}</li>
  * </ul>
  */
 @ServiceProvider(service = RefactoringPluginFactory.class, position = 100)
@@ -77,6 +89,18 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         }
         if (refactoring instanceof KotlinInlineFunctionRefactoring) {
             return new KotlinInlineFunctionPlugin((KotlinInlineFunctionRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinIntroduceVariableRefactoring) {
+            return new KotlinIntroduceVariablePlugin((KotlinIntroduceVariableRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinExtractFunctionRefactoring) {
+            return new KotlinExtractFunctionPlugin((KotlinExtractFunctionRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinIntroduceConstantRefactoring) {
+            return new KotlinIntroduceConstantPlugin((KotlinIntroduceConstantRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinIntroduceImportAliasRefactoring) {
+            return new KotlinIntroduceImportAliasPlugin((KotlinIntroduceImportAliasRefactoring) refactoring);
         }
         return null;
     }

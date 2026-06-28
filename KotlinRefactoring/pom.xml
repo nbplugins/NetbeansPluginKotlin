@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.120-SNAPSHOT</version>
+    <version>0.11.135-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
@@ -189,7 +189,8 @@
                   <filtering>false</filtering>
                   <includes>
                     <include>org/jetbrains/kotlin/idea/base/codeInsight/KotlinDeclarationNameValidator.kt</include>
-                    <include>org/jetbrains/kotlin/idea/base/codeInsight/KotlinNameSuggester.kt</include>
+                    <!-- KotlinNameSuggester.kt excluded: KotlinIntentionUtils provides a binary stub (KotlinNameSuggesterStub.kt);
+                         including the full era-253 version here causes NoSuchMethodError at runtime when the stub is loaded first. -->
                     <!-- KotlinNameSuggestionProvider.kt excluded: IDE-heavy (JavaStatisticsManager, NameSuggestionProvider, @Nls type arg); local stub in src/main/kotlin -->
                     <!-- <include>org/jetbrains/kotlin/idea/base/codeInsight/KotlinNameSuggestionProvider.kt</include> -->
                     <include>org/jetbrains/kotlin/idea/base/codeInsight/ShortenReferencesFacility.kt</include>
@@ -279,6 +280,104 @@
                     <include>org/jetbrains/kotlin/idea/k2/refactoring/introduce/K2SemanticMatcher.kt</include>
                     <include>org/jetbrains/kotlin/idea/k2/refactoring/introduce/K2ExtractableSubstringInfo.kt</include>
                     <!-- utils.kt excluded: local stub in src/main/kotlin (avoids IDE-specific analyzeInModalWindow/Messages deps) -->
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- kotlin.refactorings.common/extractionEngine: analysis-engine data classes (E9.5).
+               Excluded: ExtractFunctionGenerator.kt (PSI mutation, not needed for text-based apply),
+               duplicateUtil.kt (IDE-heavy: Editor/Messages), IExtractionEngine.kt (IDE: Editor),
+               PostInsertDeclarationCallback.kt (extension point for generator). -->
+          <execution>
+            <id>copy-kotlin-refactoring-common-extraction</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.common/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/AbstractExtractionDataAnalyzer.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/AnalysisResult.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/ControlFlow.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/ControlFlowBuilder.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/DuplicateInfo.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/encodeDecodeUtil.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/ExtractableCodeDescriptorWithConflictsResult.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/ExtractionGeneratorOptions.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/ExtractionOptions.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/ExtractionTarget.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/extractUtil.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/IExtractableCodeDescriptor.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/IExtractionData.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/IExtractionGeneratorConfiguration.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/IExtractionNameSuggester.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/IExtractionResult.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/IParameter.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/IReplacement.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/OutputDescriptor.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/OutputValue.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/OutputValueBoxer.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/ParametersInfo.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/TypeDescriptor.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/TypeParameter.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- kotlin.refactorings.k2/extractFunction: K2 extraction data classes (E9.5).
+               Excluded: KotlinFirExtractFunctionHandler.kt, ExtractK2Function*Action.kt (IDE-coupled),
+               ui/ (IDE dialog), package-info.java.
+               ExtractionDataAnalyzer.kt is NOT included here — our modified version lives in
+               src/main/kotlin/ (LocalSearchScope fix, no Generator dependency). -->
+          <execution>
+            <id>copy-kotlin-refactoring-k2-extract</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/extractFunction/ExtractableCodeDescriptor.kt</include>
+                    <!-- extractDuplicatesUtil.kt excluded: imports getControlFlowIfMatched from IDE-heavy duplicateUtil.kt;
+                         ExtractableCodeDescriptor.duplicates is patched below to return emptyList() -->
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/extractFunction/ExtractFunctionDescriptorModifier.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/extractFunction/ExtractionData.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/extractFunction/ExtractionGeneratorConfiguration.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/extractFunction/ExtractionResult.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/extractFunction/Parameter.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/extractFunction/parametersUtil.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/introduce/extractionEngine/KotlinNameSuggester.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/introduce/extractionEngine/KotlinTypeDescriptor.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- kotlin/base/util/names: FqNames (OptInFqNames, OPT_IN_FQ_NAMES) — used by
+               ExtractionDataAnalyzer for experimental-marker propagation detection. -->
+          <execution>
+            <id>copy-kotlin-base-util-names</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/util/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/util/names/FqNames.kt</include>
                   </includes>
                 </resource>
               </resources>
@@ -669,6 +768,52 @@ if (contextReceiversUtil.exists()) {
   contextReceiversUtil.text = text
   log.info("Patched ContextReceiversUtil.kt: removed KotlinParameterInfo import and createReplacementReceiverArgumentExpression")
 }
+
+// 10. ExtractionData.kt: substringContextOrThis, ExtractableSubstringInfo, extractableSubstringInfo
+//     are in base/analysis which is K1-only. In NB we never extract string-template substrings,
+//     so stub physicalElements to use identity and substringInfo to return null.
+def extractionData = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/extractFunction/ExtractionData.kt')
+if (extractionData.exists()) {
+  def text = extractionData.text
+  text = text.replace('import org.jetbrains.kotlin.idea.refactoring.introduce.ExtractableSubstringInfo\n', '')
+  text = text.replace('import org.jetbrains.kotlin.idea.refactoring.introduce.extractableSubstringInfo\n', '')
+  text = text.replace('import org.jetbrains.kotlin.idea.refactoring.introduce.substringContextOrThis\n', '')
+  text = text.replace(
+    'override val physicalElements: List<PsiElement> = originalElements.map { it.substringContextOrThis }',
+    'override val physicalElements: List<PsiElement> = originalElements'
+  )
+  text = text.replace(
+    '''override val substringInfo: ExtractableSubstringInfo?
+        get() = (originalElements.singleOrNull() as? KtExpression)?.extractableSubstringInfo''',
+    'override val substringInfo: Nothing? get() = null'
+  )
+  extractionData.text = text
+  log.info("Patched ExtractionData.kt: stubbed substringContextOrThis and extractableSubstringInfo")
+}
+
+// 11. parametersUtil.kt: BuiltinTypes from org.jetbrains.kotlin.fir is not on the classpath.
+//     The import is unused — remove it.
+def parametersUtil = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/extractFunction/parametersUtil.kt')
+if (parametersUtil.exists()) {
+  def text = parametersUtil.text
+  text = text.replace('import org.jetbrains.kotlin.fir.BuiltinTypes\n', '')
+  parametersUtil.text = text
+  log.info("Patched parametersUtil.kt: removed unused BuiltinTypes import")
+}
+
+// 13. ExtractableCodeDescriptor.kt: duplicates property calls findDuplicates() from
+//     extractDuplicatesUtil.kt which imports IDE-heavy duplicateUtil.kt (Editor, Messages, etc.).
+//     Stub duplicates to emptyList() — NB does not use the duplicate-replacement UI.
+def extractableDescriptor = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/extractFunction/ExtractableCodeDescriptor.kt')
+if (extractableDescriptor.exists()) {
+  def text = extractableDescriptor.text
+  text = text.replace(
+    'override val duplicates: List<DuplicateInfo<KaType>> by lazy { findDuplicates() }',
+    'override val duplicates: List<DuplicateInfo<KaType>> by lazy { emptyList() }'
+  )
+  extractableDescriptor.text = text
+  log.info("Patched ExtractableCodeDescriptor.kt: stubbed duplicates to emptyList()")
+}
                 ]]></script>
               </scripts>
             </configuration>
@@ -809,6 +954,16 @@ if (contextReceiversUtil.exists()) {
     <dependency>
       <groupId>org.jetbrains</groupId>
       <artifactId>annotations</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- KotlinNameSuggesterStub: provides org.jetbrains.kotlin.idea.base.codeInsight.KotlinNameSuggester
+         as a binary-compatible stub so the full era-253 version is NOT compiled in;
+         this avoids a NoSuchMethodError at test runtime when the stub JAR is loaded first. -->
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-intention-utils</artifactId>
+      <version>${project.version}</version>
       <scope>provided</scope>
     </dependency>
   </dependencies>

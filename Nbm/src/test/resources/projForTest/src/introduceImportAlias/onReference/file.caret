@@ -1,0 +1,8 @@
+package introduceImportAlias.onReference
+
+import java.util.ArrayList
+
+fun main() {
+    val list = Array<caret>List<String>()
+    val list2 = ArrayList<Int>()
+}

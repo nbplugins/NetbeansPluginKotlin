@@ -1,0 +1,4 @@
+fun main() {
+    val x = 10
+    println(<start>x * 2<end>)
+}

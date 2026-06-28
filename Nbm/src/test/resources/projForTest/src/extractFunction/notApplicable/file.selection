@@ -1,0 +1,3 @@
+<start>fun<end> main() {
+    println("hello")
+}

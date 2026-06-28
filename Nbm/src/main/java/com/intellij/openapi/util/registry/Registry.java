@@ -32,6 +32,8 @@ public final class Registry {
         public boolean is(String key, boolean defaultValue) { return Registry.is(key, defaultValue); }
         public int intValue(String key) throws MissingResourceException { return Registry.intValue(key); }
         public int intValue(String key, int defaultValue) { return Registry.intValue(key, defaultValue); }
+        public String stringValue(String key) { return Registry.stringValue(key); }
+        public String stringValue(String key, String defaultValue) { return Registry.stringValue(key, defaultValue); }
         public Registry getInstance() { return Registry.getInstance(); }
     }
 
@@ -65,6 +67,14 @@ public final class Registry {
 
     public String getBundleValue(String key) throws MissingResourceException {
         return PROPS.getProperty(key, "false");
+    }
+
+    public static String stringValue(String key) {
+        return PROPS.getProperty(key, "");
+    }
+
+    public static String stringValue(String key, String defaultValue) {
+        return PROPS.getProperty(key, defaultValue);
     }
 
     public static Registry getInstance() { return INSTANCE; }

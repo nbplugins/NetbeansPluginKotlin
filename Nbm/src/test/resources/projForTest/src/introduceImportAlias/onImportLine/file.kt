@@ -1,0 +1,8 @@
+package introduceImportAlias.onImportLine
+
+import java.util.ArrayList
+
+fun main() {
+    val list = ArrayList<String>()
+    println(list)
+}
