@@ -1,0 +1,5 @@
+package introduceProperty.notApplicable
+
+<caret>fun main() {
+    println("hello")
+}

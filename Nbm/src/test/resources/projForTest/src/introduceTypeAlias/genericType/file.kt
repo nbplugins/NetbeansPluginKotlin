@@ -1,0 +1,5 @@
+package introduceTypeAlias.genericType
+
+fun process(items: List<String>): List<String> = items
+
+fun filter(data: List<String>): List<String> = data.filter { it.isNotEmpty() }

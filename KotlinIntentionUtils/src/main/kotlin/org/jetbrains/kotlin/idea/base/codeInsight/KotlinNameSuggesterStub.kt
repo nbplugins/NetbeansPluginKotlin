@@ -23,7 +23,11 @@ import org.jetbrains.kotlin.analysis.api.types.KaType
 import org.jetbrains.kotlin.analysis.api.types.KaUsualClassType
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtExpression
+import org.jetbrains.kotlin.psi.KtFunctionType
+import org.jetbrains.kotlin.psi.KtNullableType
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
+import org.jetbrains.kotlin.psi.KtTypeElement
+import org.jetbrains.kotlin.psi.KtUserType
 
 /**
  * Binary-compatible stub for the full era-253 [KotlinNameSuggester].
@@ -159,6 +163,37 @@ class KotlinNameSuggester(
     }
 
     companion object {
+        /**
+         * Suggests a type alias name derived from the PSI structure of [typeElement].
+         *
+         * Ported verbatim from `KotlinNameSuggester.suggestTypeAliasNameByPsi` in
+         * `base/code-insight/src` (era-253).  The stub provides this method so that
+         * call sites compiled against the full version can use it in standalone (NetBeans) mode
+         * without [NoSuchMethodError].
+         *
+         * @param typeElement the PSI type element whose shape drives the name
+         * @param validator   returns `true` when the candidate name is acceptable (no conflicts)
+         * @return a name derived from the type shape, with a numeric suffix when [validator] rejects the base
+         */
+        fun suggestTypeAliasNameByPsi(typeElement: KtTypeElement, validator: (String) -> Boolean): String {
+            fun KtTypeElement.render(): String = when (this) {
+                is KtNullableType -> "Nullable${innerType?.render() ?: ""}"
+                is KtFunctionType -> {
+                    val arguments = listOfNotNull(receiverTypeReference) +
+                            parameters.mapNotNull { it.typeReference }
+                    val argText = arguments.joinToString("") { it.typeElement?.render() ?: "" }
+                    val returnText = returnTypeReference?.typeElement?.render() ?: "Unit"
+                    "${argText}To$returnText"
+                }
+                is KtUserType -> {
+                    val argText = typeArguments.joinToString("") { it.typeReference?.typeElement?.render() ?: "" }
+                    "$argText${referenceExpression?.text ?: ""}"
+                }
+                else -> text.replaceFirstChar { it.uppercaseChar() }
+            }
+            return suggestNameByName(typeElement.render(), validator)
+        }
+
         /**
          * Suggests a name based on [name], ensuring it passes [validator].
          * If [name] is rejected, appends incrementing numeric suffixes until accepted.

@@ -20,4 +20,8 @@
     <bind actionName="kotlin-extract-function" key="DA-M"/>
     <!-- Introduce Constant (Ctrl+Alt+C) — mirrors IntelliJ IDEA introduce constant shortcut -->
     <bind actionName="kotlin-introduce-constant" key="DA-C"/>
+    <!-- Introduce Property (Ctrl+Alt+F) — mirrors IntelliJ IDEA introduce property shortcut -->
+    <bind actionName="kotlin-introduce-property" key="DA-F"/>
+    <!-- Introduce Type Alias (Ctrl+Alt+Shift+A) — mirrors IntelliJ IDEA introduce type alias shortcut -->
+    <bind actionName="kotlin-introduce-type-alias" key="DAS-A"/>
 </bindings>

@@ -28,8 +28,14 @@ import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariablePlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariableRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceConstantPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceConstantRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinCopyDeclarationPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinCopyDeclarationRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceImportAliasPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceImportAliasRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroducePropertyPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroducePropertyRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceTypeAliasPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceTypeAliasRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceVariablePlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceVariableRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinSafeDeletePlugin;
@@ -63,6 +69,9 @@ import org.openide.util.lookup.ServiceProvider;
  *   <li>{@link KotlinExtractFunctionRefactoring} — delegates to {@link KotlinExtractFunctionPlugin}</li>
  *   <li>{@link KotlinIntroduceConstantRefactoring} — delegates to {@link KotlinIntroduceConstantPlugin}</li>
  *   <li>{@link KotlinIntroduceImportAliasRefactoring} — delegates to {@link KotlinIntroduceImportAliasPlugin}</li>
+ *   <li>{@link KotlinIntroducePropertyRefactoring} — delegates to {@link KotlinIntroducePropertyPlugin}</li>
+ *   <li>{@link KotlinIntroduceTypeAliasRefactoring} — delegates to {@link KotlinIntroduceTypeAliasPlugin}</li>
+ *   <li>{@link KotlinCopyDeclarationRefactoring} — delegates to {@link KotlinCopyDeclarationPlugin}</li>
  * </ul>
  */
 @ServiceProvider(service = RefactoringPluginFactory.class, position = 100)
@@ -101,6 +110,15 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         }
         if (refactoring instanceof KotlinIntroduceImportAliasRefactoring) {
             return new KotlinIntroduceImportAliasPlugin((KotlinIntroduceImportAliasRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinIntroducePropertyRefactoring) {
+            return new KotlinIntroducePropertyPlugin((KotlinIntroducePropertyRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinIntroduceTypeAliasRefactoring) {
+            return new KotlinIntroduceTypeAliasPlugin((KotlinIntroduceTypeAliasRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinCopyDeclarationRefactoring) {
+            return new KotlinCopyDeclarationPlugin((KotlinCopyDeclarationRefactoring) refactoring);
         }
         return null;
     }
