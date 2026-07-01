@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.7.55-SNAPSHOT</version>
+    <version>0.11.138-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
@@ -534,6 +534,90 @@
               </resources>
             </configuration>
           </execution>
+          <!-- kotlin.refactorings.move.k2: K2MoveRenameUsageInfo — the real IDEA Copy Declaration
+               retargeting engine (markInternalUsages + retargetUsages). Drives the multi-declaration
+               Copy Declaration path (E9.19). Patched below to drop the Java-reference Light path and
+               null-safe the standalone ProgressManager. -->
+          <execution>
+            <id>copy-kotlin-refactoring-move-k2-usages</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.move.k2/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/move/processor/usages/K2MoveRenameUsageInfo.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- kotlin/base/analysis: RootPrefixUtils (canAddRootPrefix) — used by K2MoveRenameUsageInfo
+               to add/remove the IDE root-resolution prefix during reference requalification. -->
+          <execution>
+            <id>copy-kotlin-base-analysis-rootprefix</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/analysis/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/analysis/RootPrefixUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- KtReferenceMutateService: the K2 implementation of reference rebinding (bindToElement),
+               required by K2MoveRenameUsageInfo.Source.retarget. Registered as an application service
+               in KotlinAnalysisAPISession so the standalone session can requalify references. -->
+          <execution>
+            <id>copy-kotlin-reference-mutate-service</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/K2ReferenceMutateService.kt</include>
+                  </includes>
+                </resource>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.common/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/refactoring/rename/KtReferenceMutateServiceBase.kt</include>
+                  </includes>
+                </resource>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/kdoc/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/kdoc/KDocElementFactory.kt</include>
+                  </includes>
+                </resource>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/util/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/util/FqNameUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
         </executions>
       </plugin>
 
@@ -814,6 +898,89 @@ if (extractableDescriptor.exists()) {
   extractableDescriptor.text = text
   log.info("Patched ExtractableCodeDescriptor.kt: stubbed duplicates to emptyList()")
 }
+
+// 14. K2MoveRenameUsageInfo.kt: the IDEA Copy Declaration retargeting engine (E9.19).
+//     Three adaptations for standalone use:
+//       a. Drop the Java-reference `Light` path and the external-usage helpers
+//          (find/findExternalUsages/preProcessUsages). They pull in platform move handlers
+//          (MoveClassHandler/MoveMemberHandler/MoveMembersProcessor) and asJava light classes
+//          that are not on the standalone classpath. Copy Declaration only uses markInternalUsages
+//          + retargetUsages (internal, from-copy), so these paths are never invoked.
+//       b. allowAnalysisFromWriteActionInEdt was removed in analysis-api 2.3.21 — swap for analyze {}
+//          (same as patch #1 for shortenUtils.kt).
+//       c. ProgressManager.getInstance().progressIndicator is null in the standalone container —
+//          fall back to an EmptyProgressIndicator so pushState()/text/fraction are no-ops.
+def k2MoveUsage = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/move/processor/usages/K2MoveRenameUsageInfo.kt')
+if (k2MoveUsage.exists()) {
+  def text = k2MoveUsage.text
+
+  // a. Remove imports that only the dropped paths use and that do not resolve standalone.
+  ['import com.intellij.psi.search.searches.ReferencesSearch\n',
+   'import com.intellij.refactoring.move.moveClassesOrPackages.MoveClassHandler\n',
+   'import com.intellij.refactoring.move.moveMembers.MoveMemberHandler\n',
+   'import com.intellij.refactoring.move.moveMembers.MoveMembersOptions\n',
+   'import com.intellij.refactoring.move.moveMembers.MoveMembersProcessor\n',
+   'import org.jetbrains.kotlin.asJava.toLightElements\n',
+   'import org.jetbrains.kotlin.idea.base.util.projectScope\n',
+   'import org.jetbrains.kotlin.idea.base.analysis.api.utils.allowAnalysisFromWriteActionInEdt\n'
+  ].each { imp -> text = text.replace(imp, '') }
+
+  // Remove the `Light` nested class (its foreign-language reference handling).
+  def lightStart = text.indexOf('    /**\n     * A usage described in a foreign language like Java or Groovy.\n     */\n    class Light(')
+  def lightEnd   = text.indexOf('    /**\n     * A Kotlin usage, Kotlin usages can either be internal and external.')
+  if (lightStart >= 0 && lightEnd > lightStart) {
+    text = text.substring(0, lightStart) + text.substring(lightEnd)
+  }
+
+  // Remove find() + preProcessUsages() (external-usage entry points, unused by Copy Declaration).
+  def findStart = text.indexOf('        fun find(declaration: KtNamedDeclaration): List<UsageInfo> {')
+  def findEnd   = text.indexOf('        /**\n         * Used to store usage info for an internal reference so that after the move')
+  if (findStart >= 0 && findEnd > findStart) {
+    text = text.substring(0, findStart) + text.substring(findEnd)
+  }
+
+  // Remove findExternalUsages() (constructs Light, uses ReferencesSearch/projectScope/toLightElements).
+  def extStart = text.indexOf('        /**\n         * Finds usages to [declaration] excluding the usages inside [declaration].')
+  def extEnd   = text.indexOf('        private fun Map<PsiFile, Map<PsiElement, PsiNamedElement>>.mergedWith(')
+  if (extStart >= 0 && extEnd > extStart) {
+    text = text.substring(0, extStart) + text.substring(extEnd)
+  }
+
+  // b. allowAnalysisFromWriteActionInEdt(x) { } → analyze(x) { }
+  text = text.replace('allowAnalysisFromWriteActionInEdt(', 'analyze(')
+  if (!text.contains('import org.jetbrains.kotlin.analysis.api.analyze\n')) {
+    text = text.replace('import org.jetbrains.kotlin.analysis.api.KaSession\n',
+                        'import org.jetbrains.kotlin.analysis.api.KaSession\nimport org.jetbrains.kotlin.analysis.api.analyze\n')
+  }
+
+  // c. Null-safe the standalone progress indicator.
+  text = text.replace('ProgressManager.getInstance().progressIndicator',
+                      '(ProgressManager.getInstance().progressIndicator ?: com.intellij.openapi.progress.EmptyProgressIndicator())')
+
+  // d. markInternalUsageInfo calls expr.mainReference on every KtReferenceExpression. The local
+  //    mainReference stub (KotlinRefactoring) types KtReferenceExpression.mainReference as a
+  //    non-null KtSimpleNameReference via .first(); for a KtCallExpression the reference list has
+  //    no simple-name reference in standalone (no invoke-reference contributor), so .first() throws.
+  //    Make this one call site null-safe: a call expression with no reference is skipped, exactly
+  //    like IDEA's net effect (its callee simple name is processed separately and carries the import).
+  text = text.replace('            val mainReference = expr.mainReference\n',
+                      '            val mainReference = expr.references.filterIsInstance<KtReference>().firstOrNull() ?: return\n')
+
+  k2MoveUsage.text = text
+  log.info("Patched K2MoveRenameUsageInfo.kt: dropped Light/external paths, analyze swap, null-safe progress")
+}
+
+// 15. K2ReferenceMutateService is `internal`; make it public so the Nbm session can register it
+//     as the application-level KtReferenceMutateService implementation.
+def k2RefMutate = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/K2ReferenceMutateService.kt')
+if (k2RefMutate.exists()) {
+  def text = k2RefMutate.text
+  text = text.replace('internal class K2ReferenceMutateService', 'class K2ReferenceMutateService')
+  k2RefMutate.text = text
+  log.info("Patched K2ReferenceMutateService.kt: made class public for service registration")
+}
+
+
                 ]]></script>
               </scripts>
             </configuration>
@@ -937,6 +1104,17 @@ if (extractableDescriptor.exists()) {
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>statistics</artifactId>
+      <version>${intellij.platform.253.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Platform analysis: MoveRenameUsageInfo (base class of K2MoveRenameUsageInfo, the Copy
+         Declaration retargeting engine). Same 253 era as core's UsageInfo, so no era mismatch.
+         Provided here for compile only; at runtime the Nbm plugin supplies it via its own
+         `analysis` dependency. -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>analysis</artifactId>
       <version>${intellij.platform.253.version}</version>
       <scope>provided</scope>
     </dependency>

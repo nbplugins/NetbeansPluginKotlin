@@ -392,6 +392,17 @@ class KotlinAnalysisAPISession private constructor(
                 )
                 KotlinLogger.INSTANCE.logInfo("Registered KotlinNameValidatorProviderImpl")
             }
+            // KtReferenceMutateService — performs reference rebinding (KtSimpleNameReference.bindToElement).
+            // Required by the Copy Declaration engine (K2MoveRenameUsageInfo.Source.retarget) to
+            // requalify references in a copied declaration before shortening re-adds the needed imports.
+            // The K2 implementation is compiled into KotlinRefactoring (patched to be public).
+            if (app.getService(org.jetbrains.kotlin.idea.references.KtReferenceMutateService::class.java) == null) {
+                app.registerService(
+                    org.jetbrains.kotlin.idea.references.KtReferenceMutateService::class.java,
+                    org.jetbrains.kotlin.idea.k2.refactoring.K2ReferenceMutateService::class.java,
+                )
+                KotlinLogger.INSTANCE.logInfo("Registered K2ReferenceMutateService")
+            }
         }
 
         private fun registerEpIfAbsent(

@@ -209,50 +209,96 @@ class KaCopyDeclarationTest : KotlinTestCase("KaCopyDeclarationTest", "copyDecla
     }
 
     /**
-     * Verifies that [KaCopyDeclarationResult.neededImports] is non-empty for a fixture that
-     * explicitly imports `java.io.File` and uses `File` inside the copied declaration.
-     *
-     * The computer must collect `import java.io.File` (or detect via K2 that `java.io.File` is
-     * needed) into [KaCopyDeclarationResult.neededImports].  When K2 is not available (no deps)
-     * the test is skipped, but the structural check still passes.
+     * `processFile` is the only declaration in the `withImports` fixture, so the computer must flag
+     * [KaCopyDeclarationResult.isSoleDeclarationInFile] and expose the full source text (with its
+     * imports) via [KaCopyDeclarationResult.sourceFileText].  This is the data the apply element
+     * uses to copy the whole file verbatim — mirroring IDEA's `doRefactoringOnFile` path, which
+     * preserves every import.
      */
-    fun testNeededImports_includesExplicitImport() {
+    fun testSoleDeclaration_wholeFileCopyPreservesImports() {
         val session = getSessionOrSkip() ?: return
         val (computer, _) = prepareComputer("withImports", session) ?: return
 
         val outcome = computer.compute()
         if (outcome !is KaCopyDeclarationComputer.Outcome.Ready) {
-            println("KaCopyDeclarationTest: withImports compute returned $outcome, skipping import check")
+            println("KaCopyDeclarationTest: withImports compute returned $outcome, skipping")
             return
         }
         val result = outcome.result
 
-        // Structural check: result.neededImports is a List<String> (can be empty without K2 deps).
-        assertNotNull("neededImports must not be null", result.neededImports)
+        assertTrue("Expected isSoleDeclarationInFile for the only declaration in the file", result.isSoleDeclarationInFile)
+        assertTrue(
+            "Expected sourceFileText to preserve 'import java.io.File', got: ${result.sourceFileText}",
+            result.sourceFileText.contains("import java.io.File"),
+        )
     }
 
     /**
-     * Integration test (real K2): verifies that `import java.io.File` appears in [KaCopyDeclarationResult.neededImports]
-     * for a declaration that references `File` from `java.io`.
+     * Integration test (real K2) for the multi-declaration **engine** path
+     * ([KaCopyDeclarationComputer.copyDeclarationInto], a port of IDEA's `doRefactoringOnElement`).
+     *
+     * The `multiDecl` fixture has two top-level functions, so copying `processFile` goes through the
+     * `K2MoveRenameUsageInfo` retargeting engine rather than a whole-file copy.  The test builds a
+     * source file and an (initially package-only) target file in the same temp source root, runs the
+     * engine, and verifies the copied declaration lands in the target file.  Faithful to IDEA, the
+     * element path does **not** synthesise imports, so we assert on the declaration, not the import.
      */
-    fun testNeededImports_withRealSession_includesJavaIoFile() {
-        val triple = prepareWithRealSession("withImports")
+    fun testMultiDeclaration_engineCopiesDeclaration() {
+        val stdlib = System.getProperty("java.class.path")
+            .split(System.getProperty("path.separator"))
+            .map { Path.of(it) }
+            .firstOrNull { it.fileName?.toString()?.startsWith("kotlin-stdlib") == true && it.toFile().exists() }
             ?: run {
-                println("kotlin-stdlib not on test classpath — skipping import-retargeting test")
+                println("kotlin-stdlib not on test classpath — skipping engine-path test")
                 return
             }
-        val (computer, _, tmpDir) = triple
-        try {
-            val outcome = computer.compute()
-            if (outcome !is KaCopyDeclarationComputer.Outcome.Ready) {
-                println("KaCopyDeclarationTest: withImports compute returned $outcome, skipping import check")
-                return
-            }
-            val result = outcome.result
 
+        val subFo = dir.getFileObject("multiDecl") ?: error("Missing fixture dir: multiDecl")
+        val source = subFo.getFileObject("file.kt")?.asText() ?: error("Missing multiDecl/file.kt")
+        val offset = subFo.getFileObject("file.caret")?.asText()?.indexOf(CARET_MARKER)
+            ?.also { check(it >= 0) { "Caret marker not found in multiDecl/file.caret" } }
+            ?: error("Missing multiDecl/file.caret")
+
+        val tmpDir = Files.createTempDirectory("nbkotlin-copy-decl-multi")
+        try {
+            val sourceFile = tmpDir.resolve("file.kt")
+            Files.writeString(sourceFile, source)
+            // Target seeded with only the package directive, exactly like the apply element does.
+            val targetFile = tmpDir.resolve("ProcessFile.kt")
+            Files.writeString(targetFile, "package copyDeclaration.multiDecl\n\n")
+
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "copy-declaration-multi",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(tmpDir),
+            )
+            val sourceKtFile = session.getKtFileForPath(sourceFile.toString())
+                ?: error("Failed to obtain source KtFile")
+            val targetKtFile = session.getKtFileForPath(targetFile.toString())
+                ?: error("Failed to obtain target KtFile")
+
+            val computer = KaCopyDeclarationComputer(sourceKtFile, offset)
+            val copied = computer.copyDeclarationInto(targetKtFile)
+
+            val resultText = targetKtFile.text
+            assertNotNull("Expected engine to return the copied declaration", copied)
             assertTrue(
-                "Expected neededImports to contain 'import java.io.File', got: ${result.neededImports}",
-                result.neededImports.any { it.contains("java.io.File") },
+                "Expected target file text to contain the copied function, got: $resultText",
+                resultText.contains("fun processFile"),
+            )
+            assertTrue(
+                "Expected target file to keep its package directive, got: $resultText",
+                resultText.contains("package copyDeclaration.multiDecl"),
+            )
+            // The IDEA engine requalifies the `File` reference (bindToElement) so it still resolves
+            // in the new file — either as a fully-qualified `java.io.File` reference or, once
+            // shortenReferences collapses it, as `File` plus an `import java.io.File`. Asserting the
+            // FQN appears proves the retargeting pipeline actually ran end-to-end rather than
+            // silently no-opping. (In the standalone container shortenReferences is best-effort, so
+            // the fully-qualified form is the expected, compilable result here.)
+            assertTrue(
+                "Expected the engine to retarget the File reference to its FQN, got: $resultText",
+                resultText.contains("java.io.File"),
             )
         } finally {
             tmpDir.toFile().deleteRecursively()
@@ -313,11 +359,13 @@ class KaCopyDeclarationTest : KotlinTestCase("KaCopyDeclarationTest", "copyDecla
             }
             val result = outcome.result
 
-            val packagePrefix = if (result.packageName.isNotEmpty()) "package ${result.packageName}\n\n" else ""
-            val importsBlock = if (result.neededImports.isNotEmpty())
-                result.neededImports.joinToString("\n") + "\n\n"
-            else ""
-            val fileContent = packagePrefix + importsBlock + result.declarationText
+            // topLevel fixture is a sole declaration → whole-file copy (imports preserved).
+            val fileContent = if (result.isSoleDeclarationInFile) {
+                result.sourceFileText
+            } else {
+                val packagePrefix = if (result.packageName.isNotEmpty()) "package ${result.packageName}\n\n" else ""
+                packagePrefix + result.declarationText
+            }
 
             val targetFile = tmpDir.resolve(result.suggestedFileName)
             Files.writeString(targetFile, fileContent)

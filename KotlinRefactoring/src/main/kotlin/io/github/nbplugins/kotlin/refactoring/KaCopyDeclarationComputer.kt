@@ -18,42 +18,30 @@
 package io.github.nbplugins.kotlin.refactoring
 
 import com.intellij.openapi.util.TextRange
-import com.intellij.psi.util.PsiTreeUtil
-import org.jetbrains.kotlin.analysis.api.analyze
-import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
-import org.jetbrains.kotlin.analysis.api.symbols.KaClassLikeSymbol
-import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
-import org.jetbrains.kotlin.idea.references.mainReference
-import org.jetbrains.kotlin.name.FqName
+import com.intellij.psi.PsiElement
+import org.jetbrains.kotlin.idea.k2.refactoring.move.processor.usages.K2MoveRenameUsageInfo
 import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
-import org.jetbrains.kotlin.psi.KtPackageDirective
-import org.jetbrains.kotlin.psi.KtReferenceExpression
 import org.jetbrains.kotlin.psi.psiUtil.collectDescendantsOfType
 import org.jetbrains.kotlin.psi.psiUtil.parentsWithSelf
 
 /**
- * Headless analysis engine for the **Copy Declaration** refactoring.
+ * Headless analysis engine for the **Copy Declaration** refactoring (E9.19).
  *
- * Ported from IDEA's `CopyKotlinDeclarationsHandler` (K2 variant) and
- * `K2MoveRenameUsageInfo.markInternalUsages` / `retargetInternalUsagesForCopyFile`.
+ * This is a faithful adapter over IDEA's K2 `CopyKotlinDeclarationsHandler`
+ * (`kotlin.refactorings.k2`), reusing its real retargeting engine
+ * [K2MoveRenameUsageInfo] rather than re-implementing import handling.  IDEA's handler has two
+ * code paths, both replicated here:
  *
- * The engine finds the top-level named declaration under the caret, then uses K2 to resolve
- * every reference inside that declaration and determine which import statements the new file
- * will need.  This mirrors the "retargeting" step from IDEA's copy handler:
+ *  1. **Sole declaration in file** (`doRefactoringOnFile`): the whole source file is copied,
+ *     preserving every import verbatim.  This is handled by the NetBeans apply element using
+ *     [KaCopyDeclarationResult.sourceFileText] — no PSI engine call needed.
+ *  2. **One of several declarations** (`doRefactoringOnElement`): the declaration is added to the
+ *     target file and `retargetUsages(emptyList(), nestedDeclMap, fromCopy = true)` rebinds
+ *     internal usages.  This is [copyDeclarationInto].
  *
- *  - In IDEA: `markInternalUsages` annotates PSI references with K2 data, then
- *    `retargetInternalUsagesForCopyFile` calls `reference.bindToElement()` / `shortenReferences`
- *    after the PSI copy.
- *  - Here (NetBeans): we collect the required import FQNs upfront (no PSI mutation) and
- *    write them verbatim into the new file's import block.
- *
- * **What is retargeted**: every reference expression in the declaration whose resolved FQN
- * is neither a Kotlin/Java default import, nor a local declaration, nor a parameter — and
- * which is explicitly imported in the source file or lives in a different package.  The
- * resulting [KaCopyDeclarationResult.neededImports] list is passed to the apply step so it
- * can prepend the correct imports to the new file content.
+ * The engine performs no extra import synthesis beyond what IDEA's element path does, so the
+ * result is byte-for-byte the behaviour of the IDEA refactoring.
  *
  * @param ktFile       the source file
  * @param caretOffset  caret position within the file
@@ -86,21 +74,23 @@ class KaCopyDeclarationComputer(
         Outcome.Error(e)
     }
 
-    private fun computeInternal(): Outcome {
-        val leaf = ktFile.findElementAt(caretOffset) ?: return Outcome.NotApplicable
-
-        // Walk up to the nearest KtNamedDeclaration that is a direct child of KtFile.
-        val declaration = leaf.parentsWithSelf
+    /**
+     * Finds the top-level [KtNamedDeclaration] under the caret (a direct child of the [KtFile]).
+     */
+    private fun findDeclaration(): KtNamedDeclaration? {
+        val leaf = ktFile.findElementAt(caretOffset) ?: return null
+        return leaf.parentsWithSelf
             .filterIsInstance<KtNamedDeclaration>()
             .firstOrNull { it.parent is KtFile }
-            ?: return Outcome.NotApplicable
+    }
 
+    private fun computeInternal(): Outcome {
+        val declaration = findDeclaration() ?: return Outcome.NotApplicable
         val name = declaration.name ?: return Outcome.NotApplicable
         val packageName = ktFile.packageFqName.asString()
         val suggestedFileName = "$name.kt"
-
-        // Collect imports needed in the new file via K2 retargeting analysis.
-        val neededImports = collectNeededImports(declaration, packageName)
+        // Sole-declaration-in-file → IDEA copies the whole file (preserving imports).
+        val isSole = ktFile.declarations.singleOrNull() === declaration
 
         return Outcome.Ready(
             KaCopyDeclarationResult(
@@ -109,123 +99,66 @@ class KaCopyDeclarationComputer(
                 declarationName = name,
                 packageName = packageName,
                 suggestedFileName = suggestedFileName,
-                neededImports = neededImports,
+                isSoleDeclarationInFile = isSole,
+                sourceFileText = ktFile.text,
             )
         )
     }
 
     /**
-     * Collects the set of import FQN strings that the copied declaration will need in its new file.
+     * Multi-declaration engine path — faithful port of IDEA
+     * `CopyKotlinDeclarationsHandler.doRefactoringOnElement`.
      *
-     * Mirrors the retargeting logic from IDEA's `K2MoveRenameUsageInfo.markInternalUsages` +
-     * `retargetInternalUsagesForCopyFile`:
+     * Marks the source declaration's internal usages, adds a copy of the declaration to
+     * [targetFile], then calls [K2MoveRenameUsageInfo.retargetUsages] with the old→new mapping of
+     * nested declarations to rebind internal references (exactly as IDEA does for a from-copy
+     * refactoring).
      *
-     *  1. Walk all [KtReferenceExpression]s inside [declaration] (same as `internalUsageElements()`).
-     *  2. For each reference, resolve it via K2 to get an [FqName].
-     *  3. Skip references that are:
-     *     - Already in scope via the source package (same-package symbols)
-     *     - Covered by Kotlin or Java default imports
-     *     - Imported via a star-import that is preserved
-     *  4. Include any explicit import from the source file that the reference needs.
+     * **Requirements:** [targetFile] must already belong to the analysis session's source module
+     * so that reference resolution and shortening succeed.  Must be called while PSI mutation is
+     * permitted (the NetBeans apply element drives this directly, mirroring the Inline refactoring
+     * flow).
      *
-     * The result is a sorted, deduplicated list of `"import pkg.Class"` strings.
-     *
-     * @param declaration the top-level declaration being copied
-     * @param sourcePackage the package of the source file (e.g. `"com.example"`)
+     * @param targetFile the destination file (already created with the correct package directive)
+     * @return the copied [KtNamedDeclaration] inside [targetFile], or `null` if the source
+     *         declaration can no longer be resolved
      */
-    private fun collectNeededImports(declaration: KtNamedDeclaration, sourcePackage: String): List<String> {
-        // Build a map of FQN -> import text from the source file's import block.
-        val sourceImportsByFqn: Map<String, String> = ktFile.importDirectives
-            .filter { !it.isAllUnder && it.aliasName == null }
-            .mapNotNull { directive ->
-                val fqn = directive.importedFqName?.asString() ?: return@mapNotNull null
-                fqn to "import $fqn"
-            }.toMap()
+    fun copyDeclarationInto(targetFile: KtFile): KtNamedDeclaration? {
+        val declaration = findDeclaration() ?: return null
 
-        // Star-imports: preserve them as-is (e.g. "import com.example.util.*").
-        val starImports: List<String> = ktFile.importDirectives
-            .filter { it.isAllUnder }
-            .mapNotNull { it.importedFqName?.asString()?.let { fqn -> "import $fqn.*" } }
+        // IDEA marks internal usages before the copy so the copyable user-data survives `.copy()`.
+        // No document handling is needed here: the `MoveRenameUsageInfo` linkage stub (in Nbm)
+        // deliberately performs no document access, so the engine runs over the standalone session's
+        // event-free PSI without a live document.
+        K2MoveRenameUsageInfo.markInternalUsages(declaration, declaration)
 
-        // Collect all reference expressions in the declaration body.
-        val refs = declaration.collectDescendantsOfType<KtReferenceExpression> { refExpr ->
-            // Skip references inside the package directive (shouldn't occur inside a declaration, but be safe).
-            PsiTreeUtil.getParentOfType(refExpr, KtPackageDirective::class.java) == null &&
-                    PsiTreeUtil.getParentOfType(refExpr, KtImportDirective::class.java) == null
-        }
+        val copied = targetFile.add(declaration.copy()) as? KtNamedDeclaration ?: return null
 
-        val needed = linkedSetOf<String>()
+        // Map nested declarations (params, locals, …) old→new, mirroring IDEA's mapping built in
+        // doRefactoringOnElement. The top-level declaration itself is not included (collectDescendants
+        // excludes self) — matching IDEA exactly.
+        val oldToNew = HashMap<PsiElement, PsiElement>()
+        declaration.collectDescendantsOfType<KtNamedDeclaration>()
+            .zip(copied.collectDescendantsOfType<KtNamedDeclaration>())
+            .toMap(oldToNew)
 
-        // Add all star-imports from the source file — they may be needed.
-        needed.addAll(starImports)
-
-        // Resolve each reference and determine if an import is needed.
-        runCatching {
-            analyze(ktFile) {
-                for (ref in refs) {
-                    val fqName: FqName = runCatching {
-                        val sym = ref.mainReference?.resolveToSymbol() ?: return@runCatching null
-                        when (sym) {
-                            is KaConstructorSymbol -> sym.containingClassId?.asSingleFqName()
-                            is KaClassLikeSymbol -> sym.classId?.asSingleFqName()
-                            is KaCallableSymbol -> sym.callableId?.asSingleFqName()
-                            else -> null
-                        }
-                    }.getOrNull() ?: continue
-
-                    val fqnStr = fqName.asString()
-                    val pkg = fqName.parent().asString()
-
-                    // Skip symbols in same package — they'll be in scope without imports.
-                    if (pkg == sourcePackage) continue
-
-                    // Skip Kotlin / Java default imports.
-                    if (isDefaultImport(pkg)) continue
-
-                    // Look up an explicit source-file import for this FQN.
-                    val importText = sourceImportsByFqn[fqnStr] ?: "import $fqnStr"
-                    needed.add(importText)
-                }
-            }
-        }
-
-        return needed.sorted()
-    }
-
-    /**
-     * Returns `true` when [packageName] is covered by Kotlin's or Java's default import rules.
-     *
-     * Mirrors the logic used in `KotlinImportInsertHelper.isImportNeeded` / `isAlreadyImported`.
-     * The listed packages are the standard auto-imports applied to every Kotlin file on JVM.
-     */
-    private fun isDefaultImport(packageName: String): Boolean = packageName in DEFAULT_IMPORT_PACKAGES
-
-    companion object {
-        /** Packages available in every Kotlin file without an explicit import. */
-        private val DEFAULT_IMPORT_PACKAGES = setOf(
-            "kotlin",
-            "kotlin.annotation",
-            "kotlin.collections",
-            "kotlin.comparisons",
-            "kotlin.io",
-            "kotlin.ranges",
-            "kotlin.sequences",
-            "kotlin.text",
-            "java.lang",
-        )
+        K2MoveRenameUsageInfo.retargetUsages(emptyList(), oldToNew, fromCopy = true)
+        return copied
     }
 }
 
 /**
- * All data needed by the NetBeans apply element to perform the copy-declaration transformation.
+ * All data the NetBeans apply element needs to perform Copy Declaration.
  *
- * @param declarationRange   range of the declaration in the source file
- * @param declarationText    full text of the declaration (copied verbatim to the target file)
- * @param declarationName    simple name of the declaration (e.g. `"Foo"`, `"greet"`)
- * @param packageName        fully-qualified package name of the source file (e.g. `"com.example"`)
- * @param suggestedFileName  default file name for the copy (e.g. `"Foo.kt"`)
- * @param neededImports      sorted list of `"import pkg.Class"` (and star imports) that the
- *                           copied declaration needs in its new file; determined by K2 retargeting
+ * @param declarationRange         range of the declaration in the source file (preview pane)
+ * @param declarationText          full text of the declaration
+ * @param declarationName          simple name of the declaration (e.g. `"Foo"`, `"greet"`)
+ * @param packageName              fully-qualified package of the source file (e.g. `"com.example"`)
+ * @param suggestedFileName        default file name for the copy (e.g. `"Foo.kt"`)
+ * @param isSoleDeclarationInFile  `true` when the declaration is the only one in its file; in that
+ *                                 case IDEA copies the whole file (imports preserved) and the apply
+ *                                 element uses [sourceFileText] directly instead of the engine path
+ * @param sourceFileText           the full text of the source file (used by the sole-declaration path)
  */
 data class KaCopyDeclarationResult(
     val declarationRange: TextRange,
@@ -233,5 +166,6 @@ data class KaCopyDeclarationResult(
     val declarationName: String,
     val packageName: String,
     val suggestedFileName: String,
-    val neededImports: List<String> = emptyList(),
+    val isSoleDeclarationInFile: Boolean,
+    val sourceFileText: String,
 )

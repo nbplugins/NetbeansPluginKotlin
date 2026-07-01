@@ -108,10 +108,13 @@ class KotlinCopyDeclarationPlugin(
 /**
  * The single all-or-nothing refactoring element that performs the copy-declaration transformation.
  *
- * Strategy:
- *  1. Re-runs [KaCopyDeclarationComputer] to get a fresh result.
- *  2. Creates a new `.kt` file in the same directory as the source file.
- *  3. Writes the package declaration and the copied declaration text to the new file.
+ * Mirrors IDEA's K2 `CopyKotlinDeclarationsHandler.doRefactor`, which has two paths:
+ *  1. **Sole declaration in file** → the whole source file is copied verbatim (all imports
+ *     preserved); the new file is written from [KaCopyDeclarationResult.sourceFileText].
+ *  2. **One of several declarations** → the target file is seeded with the package directive, the
+ *     K2 session is refreshed so the file joins the source module, and the real IDEA retargeting
+ *     engine ([io.github.nbplugins.kotlin.refactoring.KaCopyDeclarationComputer.copyDeclarationInto]
+ *     → `K2MoveRenameUsageInfo`) copies the declaration and rebinds its internal usages on PSI.
  *
  * Undo deletes the created file.
  *
@@ -157,27 +160,45 @@ class KotlinCopyDeclarationApplyElement(
             val targetSimple = if (targetName.endsWith(".kt")) targetName else "$targetName.kt"
 
             val parentDir = fo.parent ?: return@runCatching
-
-            // Build the content of the new file.
-            // neededImports comes from K2 retargeting: all FQNs referenced inside the declaration
-            // that are not in the default Kotlin/Java imports and not in the same package.
-            val packageLine = if (result.packageName.isNotEmpty()) "package ${result.packageName}\n\n" else ""
-            val importsBlock = if (result.neededImports.isNotEmpty())
-                result.neededImports.joinToString("\n") + "\n\n"
-            else ""
-            val newFileContent = packageLine + importsBlock + result.declarationText + "\n"
-
-            // Create (or overwrite) the target file.
             val existingFo = parentDir.getFileObject(targetSimple)
             val targetFo = existingFo ?: parentDir.createData(targetSimple)
-            targetFo.getOutputStream().use { out ->
-                out.write(newFileContent.toByteArray(Charsets.UTF_8))
-            }
             createdFile = if (existingFo == null) targetFo else null
+
+            if (result.isSoleDeclarationInFile) {
+                // IDEA's doRefactoringOnFile path: the declaration is the only one in its file, so
+                // the whole file is copied verbatim — every import is preserved.
+                writeFile(targetFo, result.sourceFileText)
+            } else {
+                // IDEA's doRefactoringOnElement path: seed the target with the package directive,
+                // refresh the session so the new file joins the source module, then run the real
+                // K2 retargeting engine (markInternalUsages + retargetUsages) on PSI and persist
+                // the resulting file text.
+                val packageLine = if (result.packageName.isNotEmpty()) "package ${result.packageName}\n\n" else ""
+                writeFile(targetFo, packageLine)
+
+                KotlinAnalysisAPISession.invalidate(nbProject2)
+                val session2 = KotlinAnalysisAPISession.getSession(nbProject2)
+                val sourceKtFile = session2.getKtFileForPath(fo.path)
+                val targetKtFile = session2.getKtFileForPath(targetFo.path)
+                if (sourceKtFile != null && targetKtFile != null) {
+                    val computer2 = KaCopyDeclarationComputer(sourceKtFile, refactoring.caretOffset)
+                    val copied = computer2.copyDeclarationInto(targetKtFile)
+                    if (copied != null) {
+                        writeFile(targetFo, targetKtFile.text)
+                    }
+                }
+            }
 
             KotlinAnalysisAPISession.invalidate(nbProject)
         }.onFailure { e ->
             KotlinLogger.INSTANCE.logException("KotlinCopyDeclarationApplyElement.performChange failed", e)
+        }
+    }
+
+    /** Overwrites [fo] with [content] (UTF-8). */
+    private fun writeFile(fo: FileObject, content: String) {
+        fo.getOutputStream().use { out ->
+            out.write(content.toByteArray(Charsets.UTF_8))
         }
     }
 

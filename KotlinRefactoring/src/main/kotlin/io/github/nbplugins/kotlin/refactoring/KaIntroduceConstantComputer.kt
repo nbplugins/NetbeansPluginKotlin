@@ -128,9 +128,19 @@ class KaIntroduceConstantComputer(
         }.getOrElse { listOf("MY_CONST") }.ifEmpty { listOf("MY_CONST") }
 
         // Find all semantically equivalent occurrences in the file.
-        val occurrences: List<KtExpression> = runCatching {
+        val semanticMatches = runCatching {
             K2SemanticMatcher.findMatches(expression, ktFile).filterIsInstance<KtExpression>()
-        }.getOrElse { listOf(expression) }.ifEmpty { listOf(expression) }
+        }.getOrElse { listOf() }
+
+        // K2SemanticMatcher cannot traverse KtBinaryExpression nodes that represent string
+        // concatenation: KtVisitor.visitBinaryExpression flattens them to string-template
+        // parts and never calls visitKtElement on the binary node itself, so findMatches
+        // returns an empty list. Fall back to a structural text search in that case.
+        val occurrences: List<KtExpression> = semanticMatches.ifEmpty {
+            PsiTreeUtil.collectElementsOfType(ktFile, KtExpression::class.java)
+                .filter { it.text == expression.text }
+                .ifEmpty { listOf(expression) }
+        }
 
         // Determine the enclosing class (skip companion object itself if expression is inside one).
         val enclosingClass = expression.parentsWithSelf

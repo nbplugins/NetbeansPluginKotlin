@@ -249,6 +249,24 @@ class KotlinIntroduceVariableApplyElement(
                 doc.insertString(0, original, null)
             }
             KotlinAnalysisAPISession.invalidate(nbProject)
+            // Restore caret to the position where the user triggered the refactoring.
+            // The full-text remove+insert above leaves the caret at document end, so set it
+            // directly on the opened editor pane (line.show does not reliably move the caret
+            // in an unfocused pane). Double-deferred so it runs after any caret repositioning
+            // the undo framework performs when it reverses its own edits.
+            val target = minOf(refactoring.startOffset, doc.length)
+            SwingUtilities.invokeLater {
+                SwingUtilities.invokeLater { restoreCaret(fo, target) }
+            }
+        }
+    }
+
+    /** Sets the caret of the file's opened editor pane to [offset], clamped to the document. */
+    private fun restoreCaret(fo: FileObject, offset: Int) {
+        runCatching {
+            val ec = DataObject.find(fo).lookup.lookup(EditorCookie::class.java) ?: return
+            val pane = ec.openedPanes?.firstOrNull() ?: return
+            pane.caretPosition = offset.coerceIn(0, pane.document.length)
         }
     }
 

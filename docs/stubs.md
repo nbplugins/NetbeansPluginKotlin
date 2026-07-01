@@ -65,6 +65,29 @@ JVM linkage without pulling in the rest of the IDEA refactoring runtime.
 |-------|----------|------|---------|
 | `BaseRefactoringProcessor` | `Nbm/src/main/java/com/intellij/refactoring/` | Runtime | Abstract superclass of `AbstractKotlinDeclarationInlineProcessor`; three constructors `(Project)`, `(Project, Runnable)`, `(Project, SearchScope, Runnable)`; abstract methods declared; `run()` throws `UnsupportedOperationException` (never called) |
 | `UsageViewDescriptor` | `Nbm/src/main/java/com/intellij/usageView/` | Compile-only | Interface required by `BaseRefactoringProcessor.createUsageViewDescriptor()` abstract method signature |
+| `MoveRenameUsageInfo` | `Nbm/src/main/java/com/intellij/refactoring/util/` | Runtime (shadows `analysis:253`) | Superclass of the Copy Declaration engine's `K2MoveRenameUsageInfo` (E9.19). The real platform ctor calls `PsiDocumentManager.getDocument` and asserts `refEnd <= document.getTextLength()`; the standalone MockProject keeps no live document for mutated PSI, so this stub provides the same ABI (3-arg + 6-arg ctors, `getReferencedElement()`) with **no document access**. `KotlinRefactoring` still compiles against the real `analysis:253` class; this shadows it at runtime because `Nbm` classes load first. |
+
+### Copy Declaration engine port (added for E9.19)
+
+The Copy Declaration multi-declaration path reuses IDEA's real retargeting engine
+`K2MoveRenameUsageInfo` (from `kotlin.refactorings.move.k2`), compiled into `KotlinRefactoring`
+via `maven-resources-plugin` (same pattern as the E9.3 inline sources).  Its base class
+`com.intellij.refactoring.util.MoveRenameUsageInfo` lives in the platform `analysis:253` jar (same
+era as core's `UsageInfo`, so no era mismatch); it is a `provided` compile dep of `KotlinRefactoring`
+and supplied at runtime by `Nbm`'s existing `analysis` dependency — **no stub needed**.
+
+Groovy patches applied in `KotlinRefactoring/pom.xml` (patch #14) to run it standalone:
+
+| Patch | Why |
+|-------|-----|
+| Drop the `Light` nested class + `find`/`findExternalUsages`/`preProcessUsages` (and their imports for `MoveClassHandler`/`MoveMemberHandler`/`MoveMembersProcessor`, `asJava.toLightElements`, `projectScope`, `ReferencesSearch`) | Java-reference + external-usage paths are unused for Kotlin declaration copy and reference platform move handlers not on the standalone classpath |
+| `allowAnalysisFromWriteActionInEdt(x) { }` → `analyze(x) { }` | The wrapper was removed in analysis-api 2.3.21 (same as patch #1 for `shortenUtils.kt`) |
+| `ProgressManager.getInstance().progressIndicator` → `… ?: EmptyProgressIndicator()` | The standalone container has no progress indicator |
+| `markInternalUsageInfo`: `expr.mainReference` → `expr.references.filterIsInstance<KtReference>().firstOrNull() ?: return` | The local `mainReference` stub throws on a `KtCallExpression` (no invoke-reference contributor standalone); skipping it matches IDEA's net effect since the callee simple-name reference is processed separately |
+
+The two trivial `groupByFile`/`sortedByOffset` helpers from `moveUsageUtil.kt` are copied verbatim
+into `KotlinRefactoring/src/main/kotlin/.../move/processor/MoveUsageUtil.kt` (the full file drags in
+the unrelated move-descriptor machinery).
 
 ### Service stubs registered at session startup
 

@@ -1,0 +1,6 @@
+package introduceVariable.stringConcat
+
+fun main() {
+    println(<caret>"Hello" + " " + "World")
+    println("Hello" + " " + "World")
+}

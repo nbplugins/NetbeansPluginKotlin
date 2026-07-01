@@ -193,6 +193,32 @@ class KaIntroducePropertyTest : KotlinTestCase("KaIntroducePropertyTest", "intro
     }
 
     /**
+     * Regression: an expression that depends on a function parameter (e.g. `x * x` inside
+     * `fun compute(x: Int)`) **cannot** be extracted as a class property because it captures a
+     * local variable.  The engine rejects it by returning [KaIntroducePropertyComputer.Outcome.NotApplicable]
+     * via `descriptor.parameters.isNotEmpty()` check.
+     *
+     * The `paramDependent` fixture has a `Calculator.compute(x: Int)` method with `x * x` in the
+     * body.  Selecting `x * x` must produce [KaIntroducePropertyComputer.Outcome.NotApplicable].
+     */
+    fun testParamDependentExpr_returnsNotApplicable() {
+        val session = getSessionOrSkip() ?: return
+        val fileFo = dir.getFileObject("paramDependent")?.getFileObject("file.kt") ?: return
+        val source = fileFo.asText()
+        val selectionText = "x * x"
+        val start = source.indexOf(selectionText).also { if (it < 0) return }
+        val end = start + selectionText.length
+        val (computer, _) = prepareComputer("paramDependent", session, start, end) ?: return
+
+        val outcome = computer.compute()
+
+        assertTrue(
+            "Expected NotApplicable for parameter-dependent expression 'x * x', got $outcome",
+            outcome is KaIntroducePropertyComputer.Outcome.NotApplicable,
+        )
+    }
+
+    /**
      * [KaIntroducePropertyComputer.collectScopeCandidates] for a selection inside a class body
      * should return at least one candidate (the class body scope).
      */
