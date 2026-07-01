@@ -23,6 +23,7 @@ import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.ConstantDestination
 import io.github.nbplugins.kotlin.refactoring.KaIntroduceConstantComputer
 import org.jetbrains.kotlin.log.KotlinLogger
+import org.netbeans.api.editor.document.CustomUndoDocument
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.modules.csl.api.OffsetRange
 import org.netbeans.modules.refactoring.api.Problem
@@ -275,6 +276,10 @@ class KotlinIntroduceConstantApplyElement(
                 val body: () -> Unit = {
                     if (doc.length > 0) doc.remove(0, doc.length)
                     doc.insertString(0, newText, null)
+                    // Join a custom edit to this atomic compound so a *native* editor Undo (Ctrl+Z) —
+                    // which does not call undoChange() — restores the caret to the pre-refactoring
+                    // position instead of leaving it at the end of the reverted document.
+                    (doc as? CustomUndoDocument)?.addUndoableEdit(CaretRestoreEdit(fo, refactoring.startOffset))
                 }
                 if (atomicDoc != null) {
                     atomicDoc.atomicLock()
@@ -319,6 +324,26 @@ class KotlinIntroduceConstantApplyElement(
             val target = minOf(refactoring.startOffset, doc.length)
             SwingUtilities.invokeLater {
                 SwingUtilities.invokeLater { restoreCaret(fo, target) }
+            }
+        }
+    }
+
+    /**
+     * A zero-width undoable edit that carries no document change; its sole purpose is to reposition
+     * the caret when the enclosing atomic compound is undone via the editor's native Ctrl+Z.
+     *
+     * The caret set is deferred twice so it runs *after* the editor's own post-undo caret handling
+     * (which would otherwise leave the caret at the end of the reverted document).
+     */
+    private inner class CaretRestoreEdit(
+        private val fo: FileObject,
+        private val caretOffset: Int,
+    ) : javax.swing.undo.AbstractUndoableEdit() {
+        override fun undo() {
+            super.undo()
+            KotlinLogger.INSTANCE.logWarning("[E9-UNDO-DBG] CaretRestoreEdit.undo firing, target=$caretOffset")
+            SwingUtilities.invokeLater {
+                SwingUtilities.invokeLater { restoreCaret(fo, caretOffset) }
             }
         }
     }

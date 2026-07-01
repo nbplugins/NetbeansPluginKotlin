@@ -22,7 +22,9 @@ import io.github.nbplugins.kotlin.nbm.navigation.moveCaretToOffset
 import io.github.nbplugins.kotlin.nbm.reformatting.format
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.KaIntroduceVariableComputer
+import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.psi.KtFile
+import org.netbeans.api.editor.document.CustomUndoDocument
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.modules.csl.api.OffsetRange
 import org.netbeans.modules.refactoring.api.Problem
@@ -217,6 +219,10 @@ class KotlinIntroduceVariableApplyElement(
                     if (lineStart < end) runCatching {
                         format(doc = doc, offset = lineStart, startOffset = lineStart, endOffset = end, proj = nbProject)
                     }
+                    // Join a custom edit to this atomic compound so a *native* editor Undo (Ctrl+Z) —
+                    // which does not call undoChange() — restores the caret to the pre-refactoring
+                    // position instead of leaving it at the end of the reverted document.
+                    (doc as? CustomUndoDocument)?.addUndoableEdit(CaretRestoreEdit(fo, refactoring.startOffset))
                 }
                 if (atomicDoc != null) {
                     atomicDoc.atomicLock()
@@ -230,6 +236,10 @@ class KotlinIntroduceVariableApplyElement(
                     runCatching { moveCaretToOffset(doc, minOf(nameOffset, doc.length)) }
                 }
 
+                KotlinLogger.INSTANCE.logWarning("[E9-UNDO-DBG] performChange DONE, snapshot.len=${snapshot?.length}, nameOffset=$nameOffset, startOffset=${refactoring.startOffset}")
+                // DIAGNOSTIC: install a caret spy now (30s) so the caret move during the user's
+                // subsequent Ctrl+Z is captured even if undoChange() is never invoked.
+                SwingUtilities.invokeLater { installCaretSpy(fo, 30000) }
                 KotlinAnalysisAPISession.invalidate(nbProject)
             }
         } finally {
@@ -240,23 +250,75 @@ class KotlinIntroduceVariableApplyElement(
     }
 
     override fun undoChange() {
+        KotlinLogger.INSTANCE.logWarning("[E9-UNDO-DBG] undoChange ENTER, thread=${Thread.currentThread().name}")
         runCatching {
-            val fo = ProjectUtils.getFileObjectForDocument(refactoring.doc) ?: return@runCatching
-            val doc = openDocument(fo) ?: return@runCatching
-            val original = snapshot ?: return@runCatching
+            val fo = ProjectUtils.getFileObjectForDocument(refactoring.doc)
+            if (fo == null) { KotlinLogger.INSTANCE.logWarning("[E9-UNDO-DBG] fo == null"); return@runCatching }
+            val doc = openDocument(fo)
+            if (doc == null) { KotlinLogger.INSTANCE.logWarning("[E9-UNDO-DBG] doc == null"); return@runCatching }
+            val original = snapshot
+            if (original == null) { KotlinLogger.INSTANCE.logWarning("[E9-UNDO-DBG] snapshot == null"); return@runCatching }
+
+            val pane0 = paneFor(fo)
+            KotlinLogger.INSTANCE.logWarning("[E9-UNDO-DBG] before restore: docLen=${doc.length}, caret=${pane0?.caretPosition}, startOffset=${refactoring.startOffset}")
+
             NbDocument.runAtomicAsUser(doc) {
                 if (doc.length > 0) doc.remove(0, doc.length)
                 doc.insertString(0, original, null)
             }
             KotlinAnalysisAPISession.invalidate(nbProject)
-            // Restore caret to the position where the user triggered the refactoring.
-            // The full-text remove+insert above leaves the caret at document end, so set it
-            // directly on the opened editor pane (line.show does not reliably move the caret
-            // in an unfocused pane). Double-deferred so it runs after any caret repositioning
-            // the undo framework performs when it reverses its own edits.
             val target = minOf(refactoring.startOffset, doc.length)
+            KotlinLogger.INSTANCE.logWarning("[E9-UNDO-DBG] after restore: docLen=${doc.length}, caret=${paneFor(fo)?.caretPosition}, target=$target")
+
             SwingUtilities.invokeLater {
-                SwingUtilities.invokeLater { restoreCaret(fo, target) }
+                KotlinLogger.INSTANCE.logWarning("[E9-UNDO-DBG] deferred-1: caret=${paneFor(fo)?.caretPosition}")
+                SwingUtilities.invokeLater {
+                    restoreCaret(fo, target)
+                    KotlinLogger.INSTANCE.logWarning("[E9-UNDO-DBG] deferred-2 after restoreCaret: caret=${paneFor(fo)?.caretPosition}")
+                }
+            }
+        }.onFailure { KotlinLogger.INSTANCE.logWarning("[E9-UNDO-DBG] undoChange FAILED: ${it}") }
+    }
+
+    /** Returns the first opened editor pane for [fo], or null. */
+    private fun paneFor(fo: FileObject) = runCatching {
+        DataObject.find(fo).lookup.lookup(EditorCookie::class.java)?.openedPanes?.firstOrNull()
+    }.getOrNull()
+
+    /**
+     * DIAGNOSTIC ONLY: attaches a [javax.swing.event.CaretListener] that logs every caret move
+     * together with a short stack trace, so we can see which code repositions the caret to the
+     * end of the document after undo. Auto-removes after [durationMs].
+     */
+    private fun installCaretSpy(fo: FileObject, durationMs: Int) {
+        val pane = paneFor(fo) ?: return
+        val listener = object : javax.swing.event.CaretListener {
+            override fun caretUpdate(e: javax.swing.event.CaretEvent) {
+                val frames = Thread.currentThread().stackTrace
+                    .drop(2).take(16).joinToString("\n    ") { "${it.className}.${it.methodName}(${it.fileName}:${it.lineNumber})" }
+                KotlinLogger.INSTANCE.logWarning("[E9-UNDO-DBG] CARET MOVED to ${e.dot}\n    $frames")
+            }
+        }
+        pane.addCaretListener(listener)
+        javax.swing.Timer(durationMs) { pane.removeCaretListener(listener) }.apply { isRepeats = false; start() }
+    }
+
+    /**
+     * A zero-width undoable edit that carries no document change; its sole purpose is to reposition
+     * the caret when the enclosing atomic compound is undone via the editor's native Ctrl+Z.
+     *
+     * The caret set is deferred twice so it runs *after* the editor's own post-undo caret handling
+     * (which would otherwise leave the caret at the end of the reverted document).
+     */
+    private inner class CaretRestoreEdit(
+        private val fo: FileObject,
+        private val caretOffset: Int,
+    ) : javax.swing.undo.AbstractUndoableEdit() {
+        override fun undo() {
+            super.undo()
+            KotlinLogger.INSTANCE.logWarning("[E9-UNDO-DBG] CaretRestoreEdit.undo firing, target=$caretOffset")
+            SwingUtilities.invokeLater {
+                SwingUtilities.invokeLater { restoreCaret(fo, caretOffset) }
             }
         }
     }
