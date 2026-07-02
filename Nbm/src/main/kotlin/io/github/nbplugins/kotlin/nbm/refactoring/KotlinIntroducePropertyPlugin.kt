@@ -119,9 +119,11 @@ class KotlinIntroducePropertyPlugin(
  *  1. Re-runs [KaIntroducePropertyComputer] to get a fresh result.
  *  2. Replaces the selected expression with [KotlinIntroducePropertyRefactoring.chosenName].
  *  3. Inserts `val/var NAME: Type = expr` before the target sibling at [insertOffset].
- *  4. Writes the result back to the document and invalidates the K2 session.
+ *  4. Invalidates the K2 session.
  *
- * Undo restores the pre-refactor snapshot in a single step.
+ * The change is applied as **minimal, targeted document edits** (never a whole-document replace),
+ * and a caret-restore edit is joined to the atomic undo group so a native Ctrl+Z keeps the caret at
+ * the trigger site. [undoChange] is a snapshot-based fallback for non-editor undo paths.
  *
  * @param declarationFile  the file containing the expression
  * @param nbProject        the NetBeans project
@@ -177,7 +179,8 @@ class KotlinIntroducePropertyApplyElement(
 
                 // Replace the selected expression with the property name.
                 val range = result.selectionRange
-                var newText = originalText.substring(0, range.startOffset) +
+                // Post-replacement view of the text, used only to compute the insertion offset/indent.
+                val replacedText = originalText.substring(0, range.startOffset) +
                         chosenName +
                         originalText.substring(range.endOffset)
 
@@ -186,16 +189,18 @@ class KotlinIntroducePropertyApplyElement(
                 val adjustedInsert = result.insertOffset + if (result.insertOffset > range.startOffset) shift else 0
 
                 // Insert the property declaration before the target sibling.
-                val lineStart = newText.lastIndexOf('\n', adjustedInsert - 1) + 1
-                val indentation = newText.substring(lineStart, minOf(adjustedInsert, newText.length))
+                val lineStart = replacedText.lastIndexOf('\n', adjustedInsert - 1) + 1
+                val indentation = replacedText.substring(lineStart, minOf(adjustedInsert, replacedText.length))
                     .takeWhile { it == ' ' || it == '\t' }
                 val insertedText = "$indentation$propertyDeclaration\n"
-                newText = newText.substring(0, lineStart) + insertedText + newText.substring(lineStart)
 
+                // Apply as minimal, targeted edits and join a caret-restore edit so a native Ctrl+Z
+                // keeps the caret at the trigger site instead of at EOF (see joinCaretRestoreOnUndo).
                 val atomicDoc = doc as? org.netbeans.editor.AtomicLockDocument
+                val caretTargetOnUndo = minOf(refactoring.startOffset, originalText.length)
                 val body: () -> Unit = {
-                    if (doc.length > 0) doc.remove(0, doc.length)
-                    doc.insertString(0, newText, null)
+                    joinCaretRestoreOnUndo(doc, fo, caretTargetOnUndo)
+                    MinimalDocumentEdits.apply(doc, listOf(range), chosenName, lineStart, insertedText)
                 }
                 if (atomicDoc != null) {
                     atomicDoc.atomicLock()

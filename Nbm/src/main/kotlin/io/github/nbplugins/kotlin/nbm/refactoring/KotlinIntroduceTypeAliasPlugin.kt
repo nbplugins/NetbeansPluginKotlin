@@ -117,9 +117,11 @@ class KotlinIntroduceTypeAliasPlugin(
  *  1. Re-runs [KaIntroduceTypeAliasComputer] to get a fresh result.
  *  2. Replaces occurrences back-to-front with [KotlinIntroduceTypeAliasRefactoring.chosenName].
  *  3. Inserts `[visibility] typealias NAME = TYPE` before the target insertion point.
- *  4. Writes the result back to the document and invalidates the K2 session.
+ *  4. Invalidates the K2 session.
  *
- * Undo restores the pre-refactor snapshot in a single step.
+ * The change is applied as **minimal, targeted document edits** (never a whole-document replace),
+ * and a caret-restore edit is joined to the atomic undo group so a native Ctrl+Z keeps the caret at
+ * the trigger site. [undoChange] is a snapshot-based fallback for non-editor undo paths.
  *
  * @param declarationFile  the file containing the type reference
  * @param nbProject        the NetBeans project
@@ -178,12 +180,12 @@ class KotlinIntroduceTypeAliasApplyElement(
                     listOf(result.typeRefRange).sortedByDescending { it.startOffset }
                 }
 
-                // Replace occurrences back-to-front.
-                var newText = originalText
+                // Post-replacement view of the text, used only to compute the insertion offset.
+                var replacedText = originalText
                 for (range in rangesToReplace) {
-                    newText = newText.substring(0, range.startOffset) +
+                    replacedText = replacedText.substring(0, range.startOffset) +
                             chosenName +
-                            newText.substring(range.endOffset)
+                            replacedText.substring(range.endOffset)
                 }
 
                 // Compute the adjusted insertion offset after all replacements.
@@ -198,14 +200,16 @@ class KotlinIntroduceTypeAliasApplyElement(
                 }
 
                 val insertPos = adjustedOffset(result.insertOffset)
-                val lineStart = newText.lastIndexOf('\n', insertPos - 1) + 1
+                val lineStart = replacedText.lastIndexOf('\n', insertPos - 1) + 1
                 val insertedText = "$aliasDeclaration\n\n"
-                newText = newText.substring(0, lineStart) + insertedText + newText.substring(lineStart)
 
+                // Apply as minimal, targeted edits and join a caret-restore edit so a native Ctrl+Z
+                // keeps the caret at the trigger site instead of at EOF (see joinCaretRestoreOnUndo).
                 val atomicDoc = doc as? org.netbeans.editor.AtomicLockDocument
+                val caretTargetOnUndo = minOf(refactoring.caretOffset, originalText.length)
                 val body: () -> Unit = {
-                    if (doc.length > 0) doc.remove(0, doc.length)
-                    doc.insertString(0, newText, null)
+                    joinCaretRestoreOnUndo(doc, fo, caretTargetOnUndo)
+                    MinimalDocumentEdits.apply(doc, rangesToReplace, chosenName, lineStart, insertedText)
                 }
                 if (atomicDoc != null) {
                     atomicDoc.atomicLock()
@@ -214,8 +218,16 @@ class KotlinIntroduceTypeAliasApplyElement(
                     NbDocument.runAtomicAsUser(doc) { body() }
                 }
 
-                // Move caret to the alias name (mirrors IDEA's in-place rename position).
-                val nameOffset = lineStart + insertedText.indexOf(chosenName)
+                // Move caret to the alias name **at the trigger usage site** (where the type
+                // reference was), not into the inserted declaration. Account for replacements at
+                // lower offsets and for the declaration inserted before it.
+                val primaryStart = result.typeRefRange.startOffset
+                val lowerShift = rangesToReplace
+                    .filter { it.endOffset <= primaryStart }
+                    .sumOf { chosenName.length - (it.endOffset - it.startOffset) }
+                val adjustedPrimaryStart = primaryStart + lowerShift
+                val nameOffset = adjustedPrimaryStart +
+                        if (lineStart <= adjustedPrimaryStart) insertedText.length else 0
                 SwingUtilities.invokeLater {
                     runCatching { moveCaretToOffset(doc, minOf(nameOffset, doc.length)) }
                 }

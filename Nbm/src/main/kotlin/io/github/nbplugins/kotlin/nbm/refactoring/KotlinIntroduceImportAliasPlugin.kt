@@ -118,6 +118,10 @@ class KotlinIntroduceImportAliasPlugin(
  *  2. Replaces all usage occurrences of the short name with the chosen alias (back-to-front).
  *  3. Replaces the import directive with `import FQN as chosenAlias`.
  *
+ * The change is applied as **minimal, targeted document edits** (never a whole-document replace),
+ * and a caret-restore edit is joined to the atomic undo group so a native Ctrl+Z keeps the caret at
+ * the trigger site. [undoChange] is a snapshot-based fallback for non-editor undo paths.
+ *
  * @param declarationFile  the file being refactored
  * @param nbProject        the NetBeans project (for K2 session access and invalidation)
  * @param refactoring      the carrier holding [KotlinIntroduceImportAliasRefactoring.chosenAlias]
@@ -176,22 +180,10 @@ class KotlinIntroduceImportAliasApplyElement(
                 val alias = refactoring.chosenAlias.ifBlank { result.shortName }
                 val importRange = result.importDirectiveRange
 
-                // 1. Replace usages back-to-front (usages come after the import, so offsets are stable).
-                var newText = originalText
+                // Usages come after the import, so their edits do not shift the import offset.
                 val sortedUsages = result.usageRanges.sortedByDescending { it.startOffset }
-                for (range in sortedUsages) {
-                    newText = newText.substring(0, range.startOffset) +
-                            alias +
-                            newText.substring(range.endOffset)
-                }
-
-                // 2. Replace the import directive. Usages are after the import, so the import
-                //    offset is unaffected by the usage replacements above.
                 val newImport = "import ${result.importedFqn} as $alias"
                 val importLengthDelta = newImport.length - (importRange.endOffset - importRange.startOffset)
-                newText = newText.substring(0, importRange.startOffset) +
-                        newImport +
-                        newText.substring(importRange.endOffset)
 
                 // Compute caret target: stay at the trigger location, showing the alias there.
                 val caretOffset = refactoring.caretOffset
@@ -219,10 +211,17 @@ class KotlinIntroduceImportAliasApplyElement(
                     }
                 }
 
+                // Apply as minimal, targeted edits and join a caret-restore edit so a native Ctrl+Z
+                // keeps the caret at the trigger site instead of at EOF (see joinCaretRestoreOnUndo).
                 val atomicDoc = doc as? org.netbeans.editor.AtomicLockDocument
+                val caretTargetOnUndo = minOf(refactoring.caretOffset, originalText.length)
                 val body: () -> Unit = {
-                    if (doc.length > 0) doc.remove(0, doc.length)
-                    doc.insertString(0, newText, null)
+                    joinCaretRestoreOnUndo(doc, fo, caretTargetOnUndo)
+                    // 1. Replace usages with the alias (back-to-front).
+                    MinimalDocumentEdits.apply(doc, sortedUsages, alias, insertOffset = null, insertText = null)
+                    // 2. Replace the import directive (offset unaffected by the usage edits above).
+                    doc.remove(importRange.startOffset, importRange.endOffset - importRange.startOffset)
+                    doc.insertString(importRange.startOffset, newImport, null)
                 }
                 if (atomicDoc != null) {
                     atomicDoc.atomicLock()
