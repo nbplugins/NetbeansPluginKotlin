@@ -120,9 +120,19 @@ class KaIntroduceVariableComputer(
 
         val container = expression.findContainer() ?: return Outcome.NotApplicable
 
-        val occurrences: List<KtExpression> = runCatching {
+        val semanticMatches = runCatching {
             K2SemanticMatcher.findMatches(expression, container).filterIsInstance<KtExpression>()
-        }.getOrElse { listOf(expression) }.ifEmpty { listOf(expression) }
+        }.getOrElse { listOf() }
+
+        // K2SemanticMatcher cannot traverse KtBinaryExpression nodes that represent string
+        // concatenation: KtVisitor.visitBinaryExpression flattens them to string-template
+        // parts and never calls visitKtElement on the binary node itself, so findMatches
+        // returns an empty list. Fall back to a structural text search in that case.
+        val occurrences: List<KtExpression> = semanticMatches.ifEmpty {
+            PsiTreeUtil.collectElementsOfType(container, KtExpression::class.java)
+                .filter { it.text == expression.text }
+                .ifEmpty { listOf(expression) }
+        }
 
         val anchor = computeAnchor(occurrences, container) ?: return Outcome.NotApplicable
 

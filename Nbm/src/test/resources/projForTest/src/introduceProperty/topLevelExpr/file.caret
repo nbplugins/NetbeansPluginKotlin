@@ -1,0 +1,3 @@
+package introduceProperty.topLevelExpr
+
+fun compute(): Int = 40 + <caret>2

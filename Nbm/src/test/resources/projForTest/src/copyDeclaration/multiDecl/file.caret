@@ -1,0 +1,10 @@
+package copyDeclaration.multiDecl
+
+import java.io.File
+
+fun helper(): String = "helper"
+
+fun process<caret>File(path: String): String {
+    val f = File(path)
+    return f.absolutePath
+}

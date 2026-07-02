@@ -104,10 +104,11 @@ class KotlinExtractFunctionPlugin(
  *     the original selection text (used as the function body).
  *  3. Inserts the new function definition before the anchor offset (before the containing decl).
  *  4. Replaces the original selection with a call expression.
- *  5. Writes back atomically via [NbDocument.runAtomicAsUser] and reformats the inserted range.
- *  6. Invalidates the K2 session so subsequent analyses see the updated source.
+ *  5. Applies both as **minimal, targeted document edits** (never a whole-document replace),
+ *     reformats the inserted range, and invalidates the K2 session.
  *
- * Undo restores the pre-refactor snapshot in a single step.
+ * A caret-restore edit is joined to the atomic undo group so a native Ctrl+Z keeps the caret at the
+ * trigger site instead of at EOF. [undoChange] is a snapshot-based fallback for non-editor undo paths.
  *
  * @param declarationFile the file containing the selection
  * @param nbProject       the NetBeans project (for K2 session access and invalidation)
@@ -180,40 +181,36 @@ class KotlinExtractFunctionApplyElement(
                 // Build the call expression that replaces the selection
                 val callExpression = "$chosenName($callArgs)"
 
-                // Apply: first replace selection (higher offset) then insert (lower offset) so
-                // insert offset stays valid after the selection replacement.
-                var newText = originalText
+                // Compute offsets against a post-replacement view of the text (selection → call).
                 val selStart = result.selectionRange.startOffset
                 val selEnd = result.selectionRange.endOffset
+                val replacedText = originalText.substring(0, selStart) + callExpression + originalText.substring(selEnd)
 
-                // 1. Replace selection with call expression
-                newText = newText.substring(0, selStart) + callExpression + newText.substring(selEnd)
-
-                // 2. Insert new function before the anchor (insertOffset is now correct because
-                //    function insertion happens at a lower offset than the selection replacement
-                //    only when the selection is INSIDE the declaration — which is always the case).
-                //    If insertOffset > selStart (unusual), adjust for the replacement delta.
+                // Insert the new function before the anchor. If insertOffset > selStart (unusual),
+                // adjust for the selection→call replacement delta.
                 val adjustedInsert = if (result.insertOffset > selStart) {
                     result.insertOffset - (selEnd - selStart) + callExpression.length
                 } else {
                     result.insertOffset
                 }
-                val insertLineStartInNew = newText.lastIndexOf('\n', adjustedInsert - 1) + 1
-                newText = newText.substring(0, insertLineStartInNew) + functionText + newText.substring(insertLineStartInNew)
-
+                val insertLineStartInNew = replacedText.lastIndexOf('\n', adjustedInsert - 1) + 1
                 val insertedEnd = insertLineStartInNew + functionText.length
                 // Caret target: function name at the call site (trigger location), not in the declaration.
-                // If function was inserted before the call site, it shifts selStart.
+                // If the function was inserted before the call site, it shifts selStart.
                 val funNameOffset = if (insertLineStartInNew <= selStart) {
                     selStart + functionText.length
                 } else {
                     selStart
                 }
 
+                // Apply as minimal, targeted edits and join a caret-restore edit so a native Ctrl+Z
+                // keeps the caret at the trigger site instead of at EOF (see joinCaretRestoreOnUndo).
                 val atomicDoc = doc as? org.netbeans.editor.AtomicLockDocument
+                val caretTargetOnUndo = minOf(refactoring.startOffset, originalText.length)
                 val body: () -> Unit = {
-                    if (doc.length > 0) doc.remove(0, doc.length)
-                    doc.insertString(0, newText, null)
+                    joinCaretRestoreOnUndo(doc, fo, caretTargetOnUndo)
+                    // Replace the selection with the call, then insert the extracted function.
+                    MinimalDocumentEdits.apply(doc, listOf(result.selectionRange), callExpression, insertLineStartInNew, functionText)
                     val end = minOf(insertedEnd, doc.length)
                     if (insertLineStartInNew < end) runCatching {
                         format(doc = doc, offset = insertLineStartInNew,

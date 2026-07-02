@@ -19,6 +19,7 @@ package io.github.nbplugins.kotlin.nbm.refactoring
 
 import io.github.nbplugins.kotlin.nbm.navigation.KotlinFindUsagesResultElement
 import io.github.nbplugins.kotlin.nbm.navigation.moveCaretToOffset
+import io.github.nbplugins.kotlin.nbm.reformatting.format
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.ConstantDestination
 import io.github.nbplugins.kotlin.refactoring.KaIntroduceConstantComputer
@@ -126,9 +127,12 @@ class KotlinIntroduceConstantPlugin(
  *     - [ConstantDestination.TOP_LEVEL]: inserted as a top-level declaration before the enclosing class.
  *     - [ConstantDestination.COMPANION_OBJECT]: inserted inside the companion object body (creating
  *       one if needed).
- *  4. Writes the result back to the NetBeans document and invalidates the K2 session.
+ *  4. Invalidates the K2 session.
  *
- * Undo restores the pre-refactor snapshot in a single step.
+ * The change is applied as **minimal, targeted document edits** (never a whole-document replace), so a
+ * native editor Undo (Ctrl+Z) reverses the small local edits and leaves the caret at the edit site —
+ * no manual caret restoration is needed. [undoChange] is a snapshot-based fallback kept only for
+ * non-editor undo paths (the editor Ctrl+Z never routes through it).
  *
  * @param declarationFile  the file containing the expression
  * @param nbProject        the NetBeans project (for K2 session access and invalidation)
@@ -159,14 +163,8 @@ class KotlinIntroduceConstantApplyElement(
         val activeBefore: TopComponent? = runCatching { TopComponent.getRegistry().activated }.getOrNull()
         try {
             runCatching {
-                val fo = ProjectUtils.getFileObjectForDocument(refactoring.doc) ?: run {
-                    KotlinLogger.INSTANCE.logWarning("KotlinIntroduceConstantApplyElement: no FileObject for doc")
-                    return@runCatching
-                }
-                val nbProject2 = ProjectUtils.getKotlinProjectForFileObject(fo) ?: run {
-                    KotlinLogger.INSTANCE.logWarning("KotlinIntroduceConstantApplyElement: no project for ${fo.path}")
-                    return@runCatching
-                }
+                val fo = ProjectUtils.getFileObjectForDocument(refactoring.doc) ?: return@runCatching
+                val nbProject2 = ProjectUtils.getKotlinProjectForFileObject(fo) ?: return@runCatching
 
                 val session = KotlinAnalysisAPISession.getSession(nbProject2)
                 val ktFile = session.getKtFileForPath(fo.path) ?: return@runCatching
@@ -174,13 +172,8 @@ class KotlinIntroduceConstantApplyElement(
                 val computer = KaIntroduceConstantComputer(
                     ktFile, refactoring.startOffset, refactoring.endOffset, session.session.project,
                 )
-                val outcome2 = computer.compute()
-                val ready = outcome2 as? KaIntroduceConstantComputer.Outcome.Ready ?: run {
-                    KotlinLogger.INSTANCE.logWarning(
-                        "KotlinIntroduceConstantApplyElement.performChange: compute() returned $outcome2"
-                    )
-                    return@runCatching
-                }
+                val ready = computer.compute() as? KaIntroduceConstantComputer.Outcome.Ready
+                    ?: return@runCatching
                 val result = ready.result
 
                 val doc = openDocument(fo) ?: return@runCatching
@@ -192,24 +185,29 @@ class KotlinIntroduceConstantApplyElement(
                 }
                 val typeAnnotation = result.typeText?.let { ": $it" } ?: ""
 
-                // Replace occurrences back-to-front so earlier offsets stay valid.
+                // When "Replace all occurrences" is off, replace only the primary expression.
+                // Sorted back-to-front so each edit leaves the offsets of the not-yet-edited
+                // (earlier) occurrences valid while we mutate the live document.
                 val rangesToReplace = if (refactoring.replaceAll) {
                     result.occurrenceRanges.sortedByDescending { it.startOffset }
                 } else {
                     listOf(result.expressionRange).sortedByDescending { it.startOffset }
                 }
 
-                var newText = originalText
+                // Post-replacement view of the text, used only to compute insertion offsets and
+                // indentation; the live document itself is edited minimally further below.
+                var replacedText = originalText
                 for (range in rangesToReplace) {
-                    newText = newText.substring(0, range.startOffset) +
+                    replacedText = replacedText.substring(0, range.startOffset) +
                             chosenName +
-                            newText.substring(range.endOffset)
+                            replacedText.substring(range.endOffset)
                 }
 
                 // Build the constant declaration text.
                 val constDeclaration = "const val $chosenName$typeAnnotation = ${result.expressionText}"
 
-                // Compute the net offset shift from replacements that precede the insertion point.
+                // Net offset shift from replacements that precede a given original offset — maps an
+                // original-text offset into post-replacement (replacedText / live-document) space.
                 fun adjustedOffset(rawOffset: Int): Int {
                     var shift = 0
                     for (range in rangesToReplace) {
@@ -220,24 +218,26 @@ class KotlinIntroduceConstantApplyElement(
                     return rawOffset + shift
                 }
 
-                // Adjusted expression start after replacements — this is where chosenName appears in the body.
+                // Adjusted expression start after replacements — where chosenName appears in the body.
                 val exprStart = result.expressionRange.startOffset
                 val lowerShift = rangesToReplace
                     .filter { it.endOffset <= exprStart }
                     .sumOf { chosenName.length - (it.endOffset - it.startOffset) }
                 val adjustedExprStart = exprStart + lowerShift
 
-                // nameOffset: position of chosenName at the trigger (usage) location after insertion.
+                // Declaration insertion in post-replacement coordinates: where and what to insert,
+                // plus nameOffset (position of chosenName at the trigger site afterwards).
+                var declInsertOffset: Int? = null
+                var declInsertText: String? = null
                 var nameOffset: Int? = null
 
                 when (refactoring.destination) {
                     ConstantDestination.TOP_LEVEL -> {
                         val insertPos = adjustedOffset(result.topLevelInsertOffset)
-                        val lineStart = newText.lastIndexOf('\n', insertPos - 1) + 1
+                        val lineStart = replacedText.lastIndexOf('\n', insertPos - 1) + 1
                         val insertedText = "$constDeclaration\n\n"
-                        newText = newText.substring(0, lineStart) +
-                                insertedText +
-                                newText.substring(lineStart)
+                        declInsertOffset = lineStart
+                        declInsertText = insertedText
                         // Insertion is before the expression (top-level is before any class body).
                         nameOffset = adjustedExprStart + insertedText.length
                     }
@@ -248,22 +248,20 @@ class KotlinIntroduceConstantApplyElement(
                         if (companionBodyOff != null) {
                             // Insert as first member of existing companion object.
                             val insertPos = adjustedOffset(companionBodyOff)
-                            val companionIndent = computeCompanionMemberIndent(newText, insertPos)
+                            val companionIndent = computeCompanionMemberIndent(replacedText, insertPos)
                             val insertedText = "\n$companionIndent$constDeclaration"
-                            newText = newText.substring(0, insertPos) +
-                                    insertedText +
-                                    newText.substring(insertPos)
+                            declInsertOffset = insertPos
+                            declInsertText = insertedText
                             nameOffset = if (insertPos <= adjustedExprStart) {
                                 adjustedExprStart + insertedText.length
                             } else adjustedExprStart
                         } else if (companionCreateOff != null) {
                             // Create companion object as first member of the enclosing class.
                             val insertPos = adjustedOffset(companionCreateOff)
-                            val classIndent = computeClassMemberIndent(newText, insertPos)
+                            val classIndent = computeClassMemberIndent(replacedText, insertPos)
                             val companion = "\n${classIndent}companion object {\n$classIndent    $constDeclaration\n$classIndent}"
-                            newText = newText.substring(0, insertPos) +
-                                    companion +
-                                    newText.substring(insertPos)
+                            declInsertOffset = insertPos
+                            declInsertText = companion
                             nameOffset = if (insertPos <= adjustedExprStart) {
                                 adjustedExprStart + companion.length
                             } else adjustedExprStart
@@ -271,10 +269,27 @@ class KotlinIntroduceConstantApplyElement(
                     }
                 }
 
+                // Apply the transformation as minimal, targeted edits (never a whole-document
+                // replace). A native editor Undo then reverses these small local edits; the joined
+                // caret-restore edit keeps the caret at the trigger site instead of at EOF.
                 val atomicDoc = doc as? org.netbeans.editor.AtomicLockDocument
+                val caretTargetOnUndo = minOf(refactoring.startOffset, originalText.length)
                 val body: () -> Unit = {
-                    if (doc.length > 0) doc.remove(0, doc.length)
-                    doc.insertString(0, newText, null)
+                    // Join the caret-restore edit to this atomic compound (see joinCaretRestoreOnUndo).
+                    joinCaretRestoreOnUndo(doc, fo, caretTargetOnUndo)
+                    // Replace occurrences and insert the constant declaration as minimal, targeted
+                    // edits (declInsertOffset is in post-replacement coordinates).
+                    MinimalDocumentEdits.apply(doc, rangesToReplace, chosenName, declInsertOffset, declInsertText)
+                    // Reformat the inserted region so a newly created companion object (and the
+                    // declaration) get correct indentation from the real formatter.
+                    val off = declInsertOffset
+                    val text = declInsertText
+                    if (off != null && text != null) {
+                        val end = minOf(off + text.length, doc.length)
+                        if (off < end) runCatching {
+                            format(doc = doc, offset = off, startOffset = off, endOffset = end, proj = nbProject)
+                        }
+                    }
                 }
                 if (atomicDoc != null) {
                     atomicDoc.atomicLock()
@@ -302,6 +317,9 @@ class KotlinIntroduceConstantApplyElement(
     }
 
     override fun undoChange() {
+        // Fallback only: a native editor Ctrl+Z reverses the individual document edits made in
+        // performChange() directly and never routes through this SPI hook. It is kept functional
+        // for any non-editor undo path that does invoke it, restoring the pre-refactor snapshot.
         runCatching {
             val fo = ProjectUtils.getFileObjectForDocument(refactoring.doc) ?: return@runCatching
             val doc = openDocument(fo) ?: return@runCatching
@@ -311,6 +329,8 @@ class KotlinIntroduceConstantApplyElement(
                 doc.insertString(0, original, null)
             }
             KotlinAnalysisAPISession.invalidate(nbProject)
+            val target = minOf(refactoring.startOffset, doc.length)
+            SwingUtilities.invokeLater { restoreCaret(fo, target) }
         }
     }
 

@@ -116,12 +116,14 @@ class KotlinIntroduceVariablePlugin(
  *
  * Strategy:
  *  1. Re-runs [KaIntroduceVariableComputer] to get a fresh result against the current K2 session.
- *  2. Replaces all occurrences with [KotlinIntroduceVariableRefactoring.chosenName] (back-to-front
- *     so earlier offsets remain valid).
- *  3. Inserts `val chosenName = expressionText\n` at the anchor's line start.
- *  4. Writes the result back to the NetBeans document and invalidates the K2 session.
+ *  2. Applies the change as **minimal, targeted document edits** (never a whole-document replace):
+ *     each occurrence is replaced with [KotlinIntroduceVariableRefactoring.chosenName] back-to-front,
+ *     then `val/var chosenName = expressionText\n` is inserted at the anchor's line start.
+ *  3. Invalidates the K2 session.
  *
- * Undo restores the pre-refactor snapshot in a single step.
+ * Because the edits are small and local, a native editor Undo (Ctrl+Z) reverses them and leaves the
+ * caret at the edit site — no manual caret restoration is needed. [undoChange] is a snapshot-based
+ * fallback kept only for non-editor undo paths (the editor Ctrl+Z never routes through it).
  *
  * @param declarationFile  the file containing the expression (used for preview grouping)
  * @param nbProject        the NetBeans project (for K2 session access and invalidation)
@@ -172,18 +174,12 @@ class KotlinIntroduceVariableApplyElement(
                 val chosenName = refactoring.chosenName.ifBlank { result.suggestedNames.firstOrNull() ?: "value" }
 
                 // When "Replace all occurrences" is off, replace only the primary expression.
+                // Sorted back-to-front so each edit leaves the offsets of the not-yet-edited
+                // (earlier) occurrences valid while we mutate the live document.
                 val rangesToReplace = if (refactoring.replaceAll) {
                     result.occurrenceRanges.sortedByDescending { it.startOffset }
                 } else {
                     listOf(result.expressionRange).sortedByDescending { it.startOffset }
-                }
-
-                // Replace occurrences back-to-front so earlier offsets stay valid.
-                var newText = originalText
-                for (range in rangesToReplace) {
-                    newText = newText.substring(0, range.startOffset) +
-                            chosenName +
-                            newText.substring(range.endOffset)
                 }
 
                 // Build declaration keyword and optional type annotation.
@@ -192,27 +188,41 @@ class KotlinIntroduceVariableApplyElement(
                     ": ${result.typeText}"
                 } else ""
 
-                // Insert `val/var name[: Type] = expr` before the anchor's line, preserving indentation.
-                val lineStart = newText.lastIndexOf('\n', result.anchorOffset - 1) + 1
-                val indentation = newText.substring(lineStart, minOf(result.anchorOffset, newText.length))
+                // Declaration `val/var name[: Type] = expr` is inserted at the start of the anchor's
+                // line. The anchor precedes every occurrence, so the region [0, lineStart) is never
+                // touched by the replacements — lineStart is valid against both the original text
+                // and the live document after the replacements are applied.
+                val lineStart = originalText.lastIndexOf('\n', result.anchorOffset - 1) + 1
+                val indentation = originalText.substring(lineStart, minOf(result.anchorOffset, originalText.length))
                     .takeWhile { it == ' ' || it == '\t' }
                 val declaration = "$indentation$keyword $chosenName$typeAnnotation = ${result.expressionText}\n"
-                newText = newText.substring(0, lineStart) + declaration + newText.substring(lineStart)
-
-                // Write the new text atomically and reformat the inserted declaration range.
                 val declEnd = lineStart + declaration.length
-                // Caret target: chosenName at the original expression site (trigger location).
-                // Shift caused by replacements at offsets lower than the expression range.
+
+                // Caret target after the refactoring: the variable name at the original expression
+                // site. Account for replacements at offsets below the expression (lowerShift) and
+                // for the declaration line inserted before it.
                 val exprStart = result.expressionRange.startOffset
                 val lowerShift = rangesToReplace
                     .filter { it.endOffset <= exprStart }
                     .sumOf { chosenName.length - (it.endOffset - it.startOffset) }
-                // Declaration is inserted at lineStart which is before the expression; shift by its length.
                 val nameOffset = exprStart + lowerShift + declaration.length
+
+                // Apply the transformation as minimal, targeted edits (never a whole-document
+                // replace). A native editor Undo then reverses these small local edits and leaves
+                // the caret at the edit site instead of at the end of the reverted document.
                 val atomicDoc = doc as? org.netbeans.editor.AtomicLockDocument
+                val caretTargetOnUndo = minOf(refactoring.startOffset, originalText.length)
                 val body: () -> Unit = {
-                    if (doc.length > 0) doc.remove(0, doc.length)
-                    doc.insertString(0, newText, null)
+                    // Hook the native editor Undo (Ctrl+Z does not call undoChange()): join a
+                    // caret-restoring edit to this atomic compound so it is reversed together with
+                    // the text edits. Its undo() double-defers the caret set so it runs after the
+                    // editor's own post-undo caret handling (EditorCaret$6.run) that snaps to EOF.
+                    joinCaretRestoreOnUndo(doc, fo, caretTargetOnUndo)
+                    // Replace occurrences and insert the declaration as minimal, targeted edits.
+                    // lineStart precedes every occurrence, so it is a valid insertion point both
+                    // before and after the replacements.
+                    MinimalDocumentEdits.apply(doc, rangesToReplace, chosenName, lineStart, declaration)
+                    // Reformat only the inserted declaration line.
                     val end = minOf(declEnd, doc.length)
                     if (lineStart < end) runCatching {
                         format(doc = doc, offset = lineStart, startOffset = lineStart, endOffset = end, proj = nbProject)
@@ -240,6 +250,9 @@ class KotlinIntroduceVariableApplyElement(
     }
 
     override fun undoChange() {
+        // Fallback only: a native editor Ctrl+Z reverses the individual document edits made in
+        // performChange() directly and never routes through this SPI hook. It is kept functional
+        // for any non-editor undo path that does invoke it, restoring the pre-refactor snapshot.
         runCatching {
             val fo = ProjectUtils.getFileObjectForDocument(refactoring.doc) ?: return@runCatching
             val doc = openDocument(fo) ?: return@runCatching
@@ -249,6 +262,8 @@ class KotlinIntroduceVariableApplyElement(
                 doc.insertString(0, original, null)
             }
             KotlinAnalysisAPISession.invalidate(nbProject)
+            val target = minOf(refactoring.startOffset, doc.length)
+            SwingUtilities.invokeLater { restoreCaret(fo, target) }
         }
     }
 
