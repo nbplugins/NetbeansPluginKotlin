@@ -130,7 +130,19 @@ class KaExtractFunctionComputer(
         val endEl = ktFile.findElementAt(endOffset - 1) ?: return null
         val commonParent = PsiTreeUtil.findCommonParent(startEl, endEl) ?: return null
 
-        // Collect children of commonParent that overlap the selection
+        // If the selection covers commonParent's own range exactly (or within), that single node
+        // *is* the selected element (e.g. a whole call expression like `println(a + b)`) — return
+        // it as-is rather than decomposing into its direct children (callee + argument list),
+        // which would silently drop non-KtExpression children (e.g. KtValueArgumentList) from
+        // downstream analysis and lose references inside them (see E9 Phase 0 diagnostic).
+        if (commonParent.textRange.startOffset >= startOffset &&
+            commonParent.textRange.endOffset <= endOffset
+        ) {
+            return listOf(commonParent)
+        }
+
+        // Otherwise, collect children of commonParent that overlap the selection (multi-statement
+        // selections spanning several siblings inside a block).
         val result = mutableListOf<PsiElement>()
         for (child in commonParent.children) {
             val childStart = child.textRange.startOffset
@@ -140,12 +152,6 @@ class KaExtractFunctionComputer(
             }
         }
         if (result.isEmpty()) {
-            // commonParent itself is the selected element (e.g., single expression)
-            if (commonParent.textRange.startOffset >= startOffset &&
-                commonParent.textRange.endOffset <= endOffset
-            ) {
-                return listOf(commonParent)
-            }
             // Try to find the tightest element that fits entirely within the range
             val tight = PsiTreeUtil.findElementOfClassAtRange(
                 ktFile, startOffset, endOffset, PsiElement::class.java
@@ -207,12 +213,24 @@ class KaExtractFunctionComputer(
         return result
     }
 
-    /** Finds the PSI element whose [PsiElement.startOffset] equals [offset]. */
+    /**
+     * Finds the PSI element whose [PsiElement.startOffset] equals [offset] — the same "place"
+     * node [collectScopeCandidates] reported for that offset.
+     *
+     * Climbs from the leaf at [offset] while the parent's start offset still matches, but never
+     * climbs into a scope-boundary container ([KtBlockExpression], [KtFile], [KtClassBody]):
+     * those containers can start at the same offset as their first child (e.g. the first
+     * top-level declaration in a file), which would otherwise make this return the container
+     * itself instead of the declaration — an invalid extraction-insertion anchor.
+     */
     private fun findElementAtStartOffset(offset: Int): PsiElement? {
         val leaf = ktFile.findElementAt(offset) ?: return null
         var el: PsiElement = leaf
-        while (el.parent != null && el.parent.textRange.startOffset == offset) {
-            el = el.parent
+        while (true) {
+            val parent = el.parent ?: break
+            if (parent is KtBlockExpression || parent is KtFile || parent is KtClassBody) break
+            if (parent.textRange.startOffset != offset) break
+            el = parent
         }
         return el
     }
