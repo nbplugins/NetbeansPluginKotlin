@@ -163,6 +163,30 @@ class KaExtractFunctionTest : KotlinTestCase("KaExtractFunctionTest", "extractFu
         )
     }
 
+    /**
+     * Selection spanning `println(a + b)` where both `a` and `b` are locals declared in the
+     * enclosing scope: the computer must detect **both** as captured parameters, in declaration
+     * order. This is the E9 Phase 0 diagnostic case (see docs/plans/e9-idea-port.md) — it
+     * confirms whether the analysis half already reports multi-parameter captures correctly.
+     */
+    fun testMultiParam_detectsBothCapturedLocals() {
+        val session = getSessionOrSkip() ?: return
+        val computer = prepareComputer("multiParam", session) ?: return
+
+        val outcome = computer.compute()
+
+        assertTrue(
+            "Expected Ready outcome for multi-local capture, got $outcome",
+            outcome is KaExtractFunctionComputer.Outcome.Ready,
+        )
+        val result = (outcome as KaExtractFunctionComputer.Outcome.Ready).result
+        assertEquals(
+            "Expected parameters [a, b], got ${result.parameters.map { it.name }}",
+            listOf("a", "b"),
+            result.parameters.map { it.name },
+        )
+    }
+
     // ------------------------------------------------------------------
     // Integration tests with a real K2 session (kotlin-stdlib on classpath)
     // ------------------------------------------------------------------
@@ -242,6 +266,72 @@ class KaExtractFunctionTest : KotlinTestCase("KaExtractFunctionTest", "extractFu
             assertTrue("Expected name suggestions from real session", result.suggestedNames.isNotEmpty())
             assertTrue("insertOffset must be >= 0", result.insertOffset >= 0)
             assertFalse("Expected non-Unit return type for Int expression", result.isUnit)
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Integration test: exercises [KaExtractFunctionComputer.compute] against a real K2 session
+     * for the E9 Phase 0 diagnostic case — `println(a + b)` where `a` and `b` are locals declared
+     * in the enclosing scope, using the **default (innermost)** destination scope.
+     *
+     * Extracting to the innermost enclosing block produces a *local* function nested right where
+     * the selection was, which in Kotlin can access `a`/`b` directly as closures — so no
+     * parameters are expected here. See [testCompute_withRealSession_multiParam_topLevelScope]
+     * for the case that does require `a`/`b` as parameters.
+     */
+    fun testCompute_withRealSession_multiParam() {
+        val triple = prepareWithRealSession("multiParam")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping real-session test")
+                return
+            }
+        val (computer, _, tmpDir) = triple
+        try {
+            val outcome = computer.compute()
+
+            assertTrue(
+                "Expected Ready from real session, got $outcome",
+                outcome is KaExtractFunctionComputer.Outcome.Ready,
+            )
+            val result = (outcome as KaExtractFunctionComputer.Outcome.Ready).result
+            assertEquals(
+                "Expected no parameters for a local function (closures over a/b), got ${result.parameters.map { it.name }}",
+                emptyList<String>(),
+                result.parameters.map { it.name },
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Same fixture as [testCompute_withRealSession_multiParam], but forces extraction to the
+     * **top-level** scope (outside `outer()`) via `targetSiblingOffset = 0`. Outside the
+     * enclosing function, `a`/`b` are no longer visible as closures, so they must become explicit
+     * parameters — this is the `outer()` example from docs/plans/e9-idea-port.md.
+     */
+    fun testCompute_withRealSession_multiParam_topLevelScope() {
+        val triple = prepareWithRealSession("multiParam")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping real-session test")
+                return
+            }
+        val (computer, _, tmpDir) = triple
+        try {
+            val outcome = computer.compute(targetSiblingOffset = 0)
+
+            assertTrue(
+                "Expected Ready from real session, got $outcome",
+                outcome is KaExtractFunctionComputer.Outcome.Ready,
+            )
+            val result = (outcome as KaExtractFunctionComputer.Outcome.Ready).result
+            assertEquals(
+                "Expected parameters [a, b] when extracting to top-level scope, got ${result.parameters.map { it.name }}",
+                listOf("a", "b"),
+                result.parameters.map { it.name },
+            )
         } finally {
             tmpDir.toFile().deleteRecursively()
         }
