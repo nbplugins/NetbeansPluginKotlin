@@ -1,0 +1,6 @@
+fun compute(): Int {
+    val a = 1
+    val b = 2
+    val r = <start>a + b<end>
+    return r
+}

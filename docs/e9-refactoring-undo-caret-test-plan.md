@@ -139,6 +139,10 @@ fun b(): Date = Date()
 
 ## 6. Extract Function
 
+As of E9 Phase 1–3, Extract Function is driven by IDEA's real K2 generation engine
+(`Generator.generateDeclaration`) instead of hand-rolled text templates — parameters, return
+types, reference shortening, and formatting all come from the same engine IDEA itself uses.
+
 **Setup:**
 
 ```kotlin
@@ -149,14 +153,26 @@ fun outer() {
 }
 ```
 
-**Steps:**
-- Select `println(a + b)` (or a larger statement range) → **Extract Function**.
+**Steps — default (innermost) scope:**
+- Select `println(a + b)` → **Extract Function**, keep the default destination (innermost scope).
 - Refactor, then **Ctrl+Z**.
 
 **Expected:**
-- Result: a new `fun extracted(...) { ... }` inserted before the enclosing function; the selection
-  replaced with a call.
+- Result: a new **local** `fun extracted() { println(a + b) }` inserted right where the selection
+  was, **with no parameters** — `a`/`b` are captured as closures, which is correct Kotlin semantics
+  for a function nested in the same scope (not a regression).
 - After Ctrl+Z: original restored; caret back at the extracted selection / call site, **not** at EOF.
+
+**Steps — top-level scope:**
+- Select `println(a + b)` → **Extract Function**, choose the **top-level** (file) destination in
+  the scope dropdown.
+- Refactor, then **Ctrl+Z**.
+
+**Expected:**
+- Result: `println(a + b)` becomes `extracted(a, b)`, and a new top-level
+  `private fun extracted(a: Int, b: Int) { println(a + b) }` is inserted before `outer()` —
+  `a`/`b` are no longer visible as closures outside `outer()`, so they **must become parameters**.
+- After Ctrl+Z: original restored; caret back at the call site, **not** at EOF.
 
 ---
 

@@ -18,6 +18,7 @@
 package io.github.nbplugins.kotlin.nbm.refactoring
 
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
+import io.github.nbplugins.kotlin.refactoring.GenerateOutcome
 import io.github.nbplugins.kotlin.refactoring.KaExtractFunctionComputer
 import org.jetbrains.kotlin.psi.KtFile
 import utils.KotlinTestCase
@@ -338,15 +339,63 @@ class KaExtractFunctionTest : KotlinTestCase("KaExtractFunctionTest", "extractFu
     }
 
     /**
-     * Integration test: exercises the text-transformation logic of the apply element in a
-     * standalone session.
-     *
-     * Given `simpleExpr/file.kt` with `println(40 + 2)`, extracts `40 + 2` into a function
-     * named `"extracted"` and verifies that the result text:
-     *  - contains `fun extracted(): Int` (or similar) at the top level
-     *  - contains `println(extracted())` replacing the original call
+     * Integration test (E9 Phase 2): exercises [KaExtractFunctionComputer.generate] — the real
+     * IDEA K2 generation engine (`Generator.generateDeclaration`) — against the `outer()` example
+     * from `docs/plans/e9-idea-port.md`, extracting to the top-level scope so `a`/`b` must become
+     * parameters. Verifies the mutated file text contains the expected call site and function
+     * signature, i.e. that the ported generator (not hand-rolled string templates) produces
+     * IDEA-equivalent output.
      */
-    fun testApply_withRealSession_simpleExpr() {
+    fun testGenerate_withRealSession_multiParam_topLevelScope() {
+        val triple = prepareWithRealSession("multiParam")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping real-session test")
+                return
+            }
+        val (computer, ktFile, tmpDir) = triple
+        try {
+            val originalText = ktFile.text
+            val outcome = computer.generate(chosenName = "extracted", targetSiblingOffset = 0)
+
+            assertTrue(
+                "Expected Ready from real session, got $outcome",
+                outcome is GenerateOutcome.Ready,
+            )
+            val edit = (outcome as GenerateOutcome.Ready).edit
+
+            // Reconstruct the post-edit text the way the NetBeans Document apply step would.
+            val newText = originalText.substring(0, edit.changedRange.startOffset) +
+                edit.replacementText +
+                originalText.substring(edit.changedRange.endOffset)
+
+            assertEquals("Reconstructed edit should exactly match the mutated KtFile text", ktFile.text, newText)
+            assertTrue(
+                "Expected call site 'extracted(a, b)' in generated text, got:\n$newText",
+                newText.contains("extracted(a, b)"),
+            )
+            assertTrue(
+                "Expected signature 'fun extracted(a: Int, b: Int)' in generated text, got:\n$newText",
+                newText.contains("fun extracted(a: Int, b: Int)"),
+            )
+            assertTrue(
+                "Caret offset ${edit.caretOffset} should point at the call site within the new text",
+                newText.startsWith("extracted", edit.caretOffset),
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Integration test (E9 Phase 2/3): exercises [KaExtractFunctionComputer.generate] — the real
+     * IDEA K2 generation engine, not hand-rolled text templates — against `simpleExpr/file.kt`
+     * (`println(40 + 2)`), extracting `40 + 2` into a function named `"extracted"`.
+     *
+     * Verifies that the mutated text:
+     *  - contains `fun extracted(): Int` at the top level
+     *  - contains `println(extracted())` replacing the original expression
+     */
+    fun testGenerate_withRealSession_simpleExpr() {
         val triple = prepareWithRealSession("simpleExpr")
             ?: run {
                 println("kotlin-stdlib not on test classpath — skipping apply integration test")
@@ -354,33 +403,181 @@ class KaExtractFunctionTest : KotlinTestCase("KaExtractFunctionTest", "extractFu
             }
         val (computer, ktFile, tmpDir) = triple
         try {
-            val outcome = computer.compute()
-            assertTrue("Expected Ready", outcome is KaExtractFunctionComputer.Outcome.Ready)
-            val result = (outcome as KaExtractFunctionComputer.Outcome.Ready).result
+            val outcome = computer.generate(chosenName = "extracted")
 
-            val chosenName = "extracted"
-            val paramList = result.parameters.joinToString(", ") { "${it.name}: ${it.typeText}" }
-            val returnPart = if (result.isUnit) "" else ": ${result.returnTypeText}"
-            val funcDecl = "fun $chosenName($paramList)$returnPart {\n    ${result.selectionText}\n}"
-            val callArgs = result.parameters.joinToString(", ") { it.name }
-            val callExpr = "$chosenName($callArgs)"
-
-            var newText = ktFile.text
-            // replace selection with call expression (back-to-front single replacement)
-            newText = newText.substring(0, result.selectionRange.startOffset) +
-                    callExpr +
-                    newText.substring(result.selectionRange.endOffset)
-            // insert function before the insert offset line
-            val insertLine = newText.lastIndexOf('\n', result.insertOffset - 1) + 1
-            newText = newText.substring(0, insertLine) + funcDecl + "\n" + newText.substring(insertLine)
+            assertTrue("Expected Ready, got $outcome", outcome is GenerateOutcome.Ready)
+            val newText = ktFile.text
 
             assertTrue(
-                "Expected 'fun $chosenName(' in output:\n$newText",
-                newText.contains("fun $chosenName("),
+                "Expected 'fun extracted(): Int' in output:\n$newText",
+                newText.contains("fun extracted(): Int"),
             )
             assertTrue(
-                "Expected '$chosenName()' call in output:\n$newText",
-                newText.contains("$chosenName("),
+                "Expected 'println(extracted())' call in output:\n$newText",
+                newText.contains("println(extracted())"),
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Integration test (E9 Phase 4): a return-value case — `val r = a + b` where the selection
+     * is `a + b`, extracted to **top-level** scope (so `a`/`b` must be parameters) via
+     * `returnValue/file.kt`. Verifies the real generator produces a non-Unit return: the
+     * signature includes `: Int` and the body returns the expression.
+     */
+    fun testGenerate_withRealSession_returnValue_topLevelScope() {
+        val triple = prepareWithRealSession("returnValue")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping real-session test")
+                return
+            }
+        val (computer, ktFile, tmpDir) = triple
+        try {
+            val outcome = computer.generate(chosenName = "extracted", targetSiblingOffset = 0)
+
+            assertTrue("Expected Ready, got $outcome", outcome is GenerateOutcome.Ready)
+            val newText = ktFile.text
+
+            assertTrue(
+                "Expected 'fun extracted(a: Int, b: Int): Int' in output:\n$newText",
+                newText.contains("fun extracted(a: Int, b: Int): Int"),
+            )
+            assertTrue(
+                "Expected 'val r = extracted(a, b)' call site in output:\n$newText",
+                newText.contains("val r = extracted(a, b)"),
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Integration test (E9 Phase 4): a multi-statement selection (`println(a)` + `println(b)`)
+     * via `multiStatement/file.kt`, extracted to the default (innermost) scope. Verifies both
+     * statements land in the extracted body and a single call replaces the whole selection.
+     */
+    fun testGenerate_withRealSession_multiStatement() {
+        val triple = prepareWithRealSession("multiStatement")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping real-session test")
+                return
+            }
+        val (computer, ktFile, tmpDir) = triple
+        try {
+            val outcome = computer.generate(chosenName = "extracted")
+
+            assertTrue("Expected Ready, got $outcome", outcome is GenerateOutcome.Ready)
+            val newText = ktFile.text
+
+            assertTrue(
+                "Expected both statements in the extracted body:\n$newText",
+                newText.contains("println(a)") && newText.contains("println(b)"),
+            )
+            assertTrue(
+                "Expected a single 'extracted()' call replacing the selection:\n$newText",
+                newText.contains("extracted()"),
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Integration test (E9 Phase 4): extraction to the **class member** scope via
+     * `classMember/file.kt` — `Calculator.compute()` selects `println(a + b)` and extracts to a
+     * sibling member of `Calculator`, not a local function. Verifies the new function is inserted
+     * inside the class body (not at top level) and the call site is updated.
+     */
+    fun testGenerate_withRealSession_classMemberScope() {
+        val triple = prepareWithRealSession("classMember")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping real-session test")
+                return
+            }
+        val (computer, ktFile, tmpDir) = triple
+        try {
+            val classBodyScope = computer.collectScopeCandidates()
+                .firstOrNull { it.label.contains("Calculator") }
+                ?: error("Expected a 'class Calculator' scope candidate")
+
+            val outcome = computer.generate(chosenName = "extracted", targetSiblingOffset = classBodyScope.targetSiblingOffset)
+
+            assertTrue("Expected Ready, got $outcome", outcome is GenerateOutcome.Ready)
+            val newText = ktFile.text
+
+            assertTrue(
+                "Expected 'extracted(a: Int, b: Int)' as a member of Calculator, got:\n$newText",
+                newText.contains("class Calculator {") &&
+                    newText.substringAfter("class Calculator {").contains("fun extracted(a: Int, b: Int)"),
+            )
+            assertTrue(
+                "Expected 'extracted(a, b)' call site in output:\n$newText",
+                newText.contains("extracted(a, b)"),
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies that Extract Function generation succeeds for class-member scope, and that
+     * [KaExtractFunctionEdit.formatEndOffset] covers the entire inserted declaration including its
+     * closing brace.
+     *
+     * Regression test: a naive diff between old/new file text (longest-common-prefix/suffix trim)
+     * can under-count the changed region when the tail of the inserted declaration coincidentally
+     * matches the tail of the original text (e.g. both end in `"}\n}\n"` — the new function's
+     * closing brace plus the class's closing brace vs. the old `compute()`'s closing brace plus
+     * the class's closing brace). That caused the NetBeans plugin's reformat range to stop short of
+     * the new function's own closing brace, leaving it unindented after Extract Function. Fixed by
+     * widening the formatted range to `formatEndOffset`, which is always at least as large as the
+     * inserted declaration's real PSI end offset.
+     */
+    fun testGenerate_withRealSession_classMemberScope_isProperlyFormatted() {
+        val triple = prepareWithRealSession("classMember")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping real-session test")
+                return
+            }
+        val (computer, ktFile, tmpDir) = triple
+        try {
+            val classBodyScope = computer.collectScopeCandidates()
+                .firstOrNull { it.label.contains("Calculator") }
+                ?: error("Expected a 'class Calculator' scope candidate")
+
+            val outcome = computer.generate(chosenName = "extracted", targetSiblingOffset = classBodyScope.targetSiblingOffset)
+
+            assertTrue("Expected Ready, got $outcome", outcome is GenerateOutcome.Ready)
+            val edit = (outcome as GenerateOutcome.Ready).edit
+            val actual = ktFile.text
+
+            // Basic smoke test: the function exists in the output (formatting/positioning verified separately)
+            assertTrue(
+                "Expected extracted function in output, got:\n$actual",
+                actual.contains("fun extracted(") && actual.contains("extracted(a, b)")
+            )
+
+            // The formatted region must extend at least to the end of the extracted function's
+            // own closing brace, not stop short of it (regression: diff under-counted this range).
+            val declarationEnd = actual.indexOf("fun extracted(").let { start ->
+                var depth = 0
+                var i = actual.indexOf('{', start)
+                depth = 1
+                i++
+                while (i < actual.length && depth > 0) {
+                    when (actual[i]) {
+                        '{' -> depth++
+                        '}' -> depth--
+                    }
+                    i++
+                }
+                i
+            }
+            assertTrue(
+                "Expected formatEndOffset (${edit.formatEndOffset}) to cover the extracted function's closing brace (ends at $declarationEnd), got:\n$actual",
+                edit.formatEndOffset >= declarationEnd,
             )
         } finally {
             tmpDir.toFile().deleteRecursively()

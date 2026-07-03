@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.152-SNAPSHOT</version>
+    <version>0.11.156-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
@@ -358,6 +358,65 @@
                     <include>org/jetbrains/kotlin/idea/k2/refactoring/extractFunction/parametersUtil.kt</include>
                     <include>org/jetbrains/kotlin/idea/k2/refactoring/introduce/extractionEngine/KotlinNameSuggester.kt</include>
                     <include>org/jetbrains/kotlin/idea/k2/refactoring/introduce/extractionEngine/KotlinTypeDescriptor.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- kotlin.refactorings.{common,k2}/extractionEngine: the real generation engine (E9 Phase 1).
+               ExtractFunctionGenerator.generateDeclaration() mutates PSI in place (creates the new
+               declaration, rewrites the call site, reformats) — replaces the hand-rolled text
+               generation in KotlinExtractFunctionPlugin.performChange (Phase 2/3).
+               Excluded: IExtractionEngine.kt, ExtractionEngineHelper.kt, extractionEngineUtil.kt
+               (pure UI-orchestration: dialogs, EDT commands, conflict balloons — we call
+               Generator.generateDeclaration(config, null) directly instead of their run()/
+               doRefactor() flow); duplicateUtil.kt (already unneeded, duplicates patched to
+               emptyList() in ExtractableCodeDescriptor.kt). -->
+          <execution>
+            <id>copy-kotlin-refactoring-extraction-generator</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.common/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/ExtractFunctionGenerator.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/PostInsertDeclarationCallback.kt</include>
+                  </includes>
+                </resource>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/introduce/extractionEngine/Generator.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- kotlin/base/analysis: ExtractableSubstringInfo — shared (non-K1-coupled) definition of
+               extractableSubstringInfo/substringContextOrThis used directly by ExtractFunctionGenerator.kt.
+               Lightweight (PSI + Key/TextRange only, no Editor/UI deps). Note: ExtractionData.kt (E9.5)
+               separately stubs its own substringInfo/physicalElements to null/identity since NB never
+               extracts string-template substrings from the UI — this port only satisfies the generator's
+               compile-time references; the replaceWith() path is simply never exercised in practice. -->
+          <execution>
+            <id>copy-kotlin-base-extractable-substring-info</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/analysis/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/ExtractableSubstringInfo.kt</include>
                   </includes>
                 </resource>
               </resources>
@@ -1123,6 +1182,20 @@ if (k2RefMutate.exists()) {
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>analysis-api-k2-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <!-- LLFirSessionCache / LLFirInternals — used by KaExtractFunctionComputer.invalidateFirCaches
+         (E9 Phase 2) to clear the FIR-session caches after a live PSI mutation, mirroring
+         KotlinAnalysisAPISession.updateFileContent (Nbm module) since standalone/MockProject mode
+         has no PSI-change-listener-driven invalidation. Provided here for compile only; at runtime
+         the Nbm plugin supplies it via its own dependency of the same artifact. -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>low-level-api-fir-for-ide</artifactId>
       <scope>provided</scope>
       <exclusions>
         <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>

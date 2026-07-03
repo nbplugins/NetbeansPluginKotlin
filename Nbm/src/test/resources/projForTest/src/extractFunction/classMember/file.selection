@@ -1,0 +1,7 @@
+class Calculator {
+    fun compute() {
+        val a = 1
+        val b = 2
+        <start>println(a + b)<end>
+    }
+}

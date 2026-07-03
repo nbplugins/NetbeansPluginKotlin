@@ -20,6 +20,7 @@ package io.github.nbplugins.kotlin.nbm.refactoring
 import io.github.nbplugins.kotlin.nbm.navigation.moveCaretToOffset
 import io.github.nbplugins.kotlin.nbm.reformatting.format
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
+import io.github.nbplugins.kotlin.refactoring.GenerateOutcome
 import io.github.nbplugins.kotlin.refactoring.KaExtractFunctionComputer
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.modules.refactoring.api.Problem
@@ -99,13 +100,15 @@ class KotlinExtractFunctionPlugin(
  * The single all-or-nothing element that performs the extract-function text transformation.
  *
  * Strategy:
- *  1. Re-runs [KaExtractFunctionComputer] to get a fresh result against the current K2 session.
- *  2. Builds the extracted function text from the descriptor's parameter list, return type, and
- *     the original selection text (used as the function body).
- *  3. Inserts the new function definition before the anchor offset (before the containing decl).
- *  4. Replaces the original selection with a call expression.
- *  5. Applies both as **minimal, targeted document edits** (never a whole-document replace),
- *     reformats the inserted range, and invalidates the K2 session.
+ *  1. Re-runs [KaExtractFunctionComputer.generate] to get a fresh result against the current K2
+ *     session — this drives IDEA's real K2 generation engine
+ *     (`Generator.generateDeclaration`), which mutates the session's live `KtFile` PSI directly
+ *     (inserts the new declaration, rewrites the call site, shortens references, reformats via
+ *     `CodeStyleManager`) rather than building text by hand.
+ *  2. Reduces that PSI mutation to a single [com.intellij.openapi.util.TextRange] + replacement
+ *     text (see [io.github.nbplugins.kotlin.refactoring.KaExtractFunctionEdit]) and applies it as
+ *     a **minimal, targeted document edit** (never a whole-document replace), reformats the
+ *     affected range, and invalidates the K2 session so the next analysis reflects the change.
  *
  * A caret-restore edit is joined to the atomic undo group so a native Ctrl+Z keeps the caret at the
  * trigger site instead of at EOF. [undoChange] is a snapshot-based fallback for non-editor undo paths.
@@ -150,71 +153,30 @@ class KotlinExtractFunctionApplyElement(
                 val computer = KaExtractFunctionComputer(
                     ktFile, refactoring.startOffset, refactoring.endOffset, session.session.project,
                 )
-                val ready = computer.compute(targetSiblingOffset) as? KaExtractFunctionComputer.Outcome.Ready
+                val chosenName = refactoring.chosenName.ifBlank { "extractedFunction" }
+                val ready = computer.generate(chosenName, targetSiblingOffset) as? GenerateOutcome.Ready
                     ?: return@runCatching
-                val result = ready.result
+                val edit = ready.edit
 
                 val doc = openDocument(fo) ?: return@runCatching
                 val originalText = doc.getText(0, doc.length)
                 snapshot = originalText
 
-                val chosenName = refactoring.chosenName.ifBlank {
-                    result.suggestedNames.firstOrNull() ?: "extractedFunction"
-                }
-
-                // Build the function signature: "fun name(p1: T1, p2: T2): ReturnType"
-                val paramList = result.parameters.joinToString(", ") { "${it.name}: ${it.typeText}" }
-                val returnClause = if (result.returnTypeText != null) ": ${result.returnTypeText}" else ""
-                val callArgs = result.parameters.joinToString(", ") { it.name }
-
-                // Indentation of the anchor line (where the new function is inserted)
-                val insertLineStart = originalText.lastIndexOf('\n', result.insertOffset - 1) + 1
-                val indent = originalText.substring(insertLineStart, minOf(result.insertOffset, originalText.length))
-                    .takeWhile { it == ' ' || it == '\t' }
-
-                // Build the function body using the original selection text
-                val bodyIndent = "$indent    "
-                val bodyLines = result.selectionText.trimEnd().lines()
-                    .joinToString("\n") { "$bodyIndent$it" }
-                val functionText = "${indent}fun $chosenName($paramList)$returnClause {\n$bodyLines\n$indent}\n\n"
-
-                // Build the call expression that replaces the selection
-                val callExpression = "$chosenName($callArgs)"
-
-                // Compute offsets against a post-replacement view of the text (selection → call).
-                val selStart = result.selectionRange.startOffset
-                val selEnd = result.selectionRange.endOffset
-                val replacedText = originalText.substring(0, selStart) + callExpression + originalText.substring(selEnd)
-
-                // Insert the new function before the anchor. If insertOffset > selStart (unusual),
-                // adjust for the selection→call replacement delta.
-                val adjustedInsert = if (result.insertOffset > selStart) {
-                    result.insertOffset - (selEnd - selStart) + callExpression.length
-                } else {
-                    result.insertOffset
-                }
-                val insertLineStartInNew = replacedText.lastIndexOf('\n', adjustedInsert - 1) + 1
-                val insertedEnd = insertLineStartInNew + functionText.length
-                // Caret target: function name at the call site (trigger location), not in the declaration.
-                // If the function was inserted before the call site, it shifts selStart.
-                val funNameOffset = if (insertLineStartInNew <= selStart) {
-                    selStart + functionText.length
-                } else {
-                    selStart
-                }
-
-                // Apply as minimal, targeted edits and join a caret-restore edit so a native Ctrl+Z
-                // keeps the caret at the trigger site instead of at EOF (see joinCaretRestoreOnUndo).
+                // Apply the engine's mutation as a single minimal, targeted document edit and join
+                // a caret-restore edit so a native Ctrl+Z keeps the caret at the trigger site
+                // instead of at EOF (see joinCaretRestoreOnUndo).
                 val atomicDoc = doc as? org.netbeans.editor.AtomicLockDocument
                 val caretTargetOnUndo = minOf(refactoring.startOffset, originalText.length)
                 val body: () -> Unit = {
                     joinCaretRestoreOnUndo(doc, fo, caretTargetOnUndo)
-                    // Replace the selection with the call, then insert the extracted function.
-                    MinimalDocumentEdits.apply(doc, listOf(result.selectionRange), callExpression, insertLineStartInNew, functionText)
-                    val end = minOf(insertedEnd, doc.length)
-                    if (insertLineStartInNew < end) runCatching {
-                        format(doc = doc, offset = insertLineStartInNew,
-                               startOffset = insertLineStartInNew, endOffset = end, proj = nbProject)
+                    MinimalDocumentEdits.apply(doc, listOf(edit.changedRange), edit.replacementText, null, null)
+                    val start = edit.changedRange.startOffset
+                    // formatEndOffset (not just start + replacementText.length) guarantees the
+                    // inserted declaration's own closing brace is included even when the cheap
+                    // diff under-counted the changed region — see KaExtractFunctionEdit's KDoc.
+                    val end = minOf(edit.formatEndOffset, doc.length)
+                    if (start < end) runCatching {
+                        format(doc = doc, offset = start, startOffset = start, endOffset = end, proj = nbProject)
                     }
                 }
                 if (atomicDoc != null) {
@@ -224,9 +186,11 @@ class KotlinExtractFunctionApplyElement(
                     NbDocument.runAtomicAsUser(doc) { body() }
                 }
 
-                // Move caret to the function name (mirrors IDEA's in-place rename start position).
+                // Move caret to the call site (mirrors IDEA's in-place rename start position).
+                // edit.caretOffset is already in post-edit document coordinates, since the single
+                // MinimalDocumentEdits.apply above reproduces the engine's post-mutation text exactly.
                 SwingUtilities.invokeLater {
-                    runCatching { moveCaretToOffset(doc, minOf(funNameOffset, doc.length)) }
+                    runCatching { moveCaretToOffset(doc, minOf(edit.caretOffset, doc.length)) }
                 }
 
                 KotlinAnalysisAPISession.invalidate(nbProject)
