@@ -129,4 +129,19 @@ public abstract class BaseRefactoringProcessor implements Runnable {
             + "processors directly. Inline Variable / Safe Delete drive the CodeInliner engine "
             + "through KaInlineVariableComputer instead.");
     }
+
+    /**
+     * Thrown by IDEA's ported {@code ExtractFunctionGenerator.buildSignature}/{@code
+     * getDeclarationPattern} when the chosen {@code ExtractionTarget} is not available for the
+     * descriptor (E9 Phase 2). The real class lives alongside {@link BaseRefactoringProcessor} in
+     * {@code platform/refactoring/src}; declared here (constructor signature only, matching
+     * upstream) purely so the JVM can resolve the exception-table entry the first time
+     * {@code buildSignature}/{@code getDeclarationPattern} is invoked — the branch that actually
+     * throws it is never expected to run for a plain function extraction with a valid descriptor.
+     */
+    public static final class ConflictsInTestsException extends RuntimeException {
+        public ConflictsInTestsException(Collection<String> messages) {
+            super(String.join("\n", messages));
+        }
+    }
 }

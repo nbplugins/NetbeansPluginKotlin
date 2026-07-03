@@ -332,6 +332,16 @@ class KotlinAnalysisAPISession private constructor(
             registerEpIfAbsent(area, "com.intellij.treeGenerator",
                 "com.intellij.psi.impl.source.tree.TreeGenerator",
                 com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE)
+            // `org.jetbrains.kotlin.postInsertDeclarationCallback` is queried (via
+            // `forEachExtensionSafe`, which requires the EP to exist even with zero registered
+            // extensions) by the real IDEA Extract Function generator
+            // (`ExtractFunctionGenerator.insertDeclaration`, E9 Phase 2) after inserting the
+            // extracted declaration. No NetBeans implementation is needed — registering the EP
+            // empty makes the callback loop a no-op, matching upstream behaviour when no plugin
+            // contributes one.
+            registerEpIfAbsent(area, "org.jetbrains.kotlin.postInsertDeclarationCallback",
+                "org.jetbrains.kotlin.idea.refactoring.introduce.extractionEngine.PostInsertDeclarationCallback",
+                com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE)
             // `com.intellij.referencesSearch` is consumed by IDEA refactorings (e.g. Inline Variable's
             // `AbstractKotlinInlinePropertyProcessor.extractInitialization` calls
             // `ReferencesSearchScopeHelper.search`). Registering the EP without any extensions is

@@ -18,6 +18,8 @@
 @file:OptIn(
     org.jetbrains.kotlin.analysis.api.KaExperimentalApi::class,
     org.jetbrains.kotlin.analysis.api.KaImplementationDetail::class,
+    org.jetbrains.kotlin.analysis.api.permissions.KaAllowAnalysisOnEdt::class,
+    org.jetbrains.kotlin.analysis.api.permissions.KaAllowAnalysisFromWriteAction::class,
 )
 
 package io.github.nbplugins.kotlin.refactoring
@@ -29,14 +31,20 @@ import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.components.render
+import org.jetbrains.kotlin.analysis.api.permissions.allowAnalysisFromWriteAction
+import org.jetbrains.kotlin.analysis.api.permissions.allowAnalysisOnEdt
 import org.jetbrains.kotlin.analysis.api.renderer.types.impl.KaTypeRendererForSource
 import org.jetbrains.kotlin.analysis.api.types.KaType
 import org.jetbrains.kotlin.idea.base.psi.unifier.toRange
 import org.jetbrains.kotlin.idea.k2.refactoring.extractFunction.ExtractableCodeDescriptor
 import org.jetbrains.kotlin.idea.k2.refactoring.extractFunction.ExtractionData
+import org.jetbrains.kotlin.idea.k2.refactoring.extractFunction.ExtractionGeneratorConfiguration
 import org.jetbrains.kotlin.idea.k2.refactoring.introduce.extractionEngine.ExtractionDataAnalyzer
+import org.jetbrains.kotlin.idea.k2.refactoring.introduce.extractionEngine.Generator
 import org.jetbrains.kotlin.idea.refactoring.introduce.extractionEngine.AnalysisResult
+import org.jetbrains.kotlin.idea.refactoring.introduce.extractionEngine.ExtractionGeneratorOptions
 import org.jetbrains.kotlin.psi.KtBlockExpression
+import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtClass
 import org.jetbrains.kotlin.psi.KtClassBody
 import org.jetbrains.kotlin.psi.KtDeclaration
@@ -46,6 +54,7 @@ import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtObjectDeclaration
 import org.jetbrains.kotlin.psi.psiUtil.parentsWithSelf
+import org.jetbrains.kotlin.psi.psiUtil.endOffset
 import org.jetbrains.kotlin.psi.psiUtil.startOffset
 import org.jetbrains.kotlin.types.Variance
 
@@ -90,33 +99,124 @@ class KaExtractFunctionComputer(
      * May be called off the EDT from NetBeans' refactoring thread.
      */
     fun compute(targetSiblingOffset: Int? = null): Outcome {
-        val elements = findElements() ?: return Outcome.NotApplicable
-        if (elements.isEmpty()) return Outcome.NotApplicable
-        val targetSibling = if (targetSiblingOffset != null) {
-            findElementAtStartOffset(targetSiblingOffset) ?: return Outcome.NotApplicable
-        } else {
-            findTargetSibling(elements.first()) ?: return Outcome.NotApplicable
-        }
-
         return try {
-            val extractionData = ExtractionData(
-                originalFile = ktFile,
-                originalRange = elements.toRange(false),
-                targetSibling = targetSibling,
-            )
-            val analysisResult = ExtractionDataAnalyzer(extractionData).performAnalysis()
-
-            if (analysisResult.status == AnalysisResult.Status.CRITICAL_ERROR) {
-                return Outcome.NotApplicable
-            }
-
-            val descriptor = analysisResult.descriptor as? ExtractableCodeDescriptor
-                ?: return Outcome.NotApplicable
-
+            val (descriptor, elements) = analyzeSelection(targetSiblingOffset) ?: return Outcome.NotApplicable
             analyze(ktFile) { buildResult(descriptor, elements) }
         } catch (e: Exception) {
             Outcome.Error(e)
         }
+    }
+
+    /**
+     * Runs the IDEA K2 analysis (element resolution + [ExtractionDataAnalyzer]) shared by
+     * [compute] (read-only preview) and [generate] (real mutation). Returns `null` when the
+     * selection is not extractable or analysis hits a critical error.
+     */
+    private fun analyzeSelection(targetSiblingOffset: Int?): Pair<ExtractableCodeDescriptor, List<PsiElement>>? {
+        val elements = findElements() ?: return null
+        if (elements.isEmpty()) return null
+        val targetSibling = if (targetSiblingOffset != null) {
+            findElementAtStartOffset(targetSiblingOffset) ?: return null
+        } else {
+            findTargetSibling(elements.first()) ?: return null
+        }
+
+        val extractionData = ExtractionData(
+            originalFile = ktFile,
+            originalRange = elements.toRange(false),
+            targetSibling = targetSibling,
+        )
+        val analysisResult = ExtractionDataAnalyzer(extractionData).performAnalysis()
+        if (analysisResult.status == AnalysisResult.Status.CRITICAL_ERROR) return null
+
+        val descriptor = analysisResult.descriptor as? ExtractableCodeDescriptor ?: return null
+        return descriptor to elements
+    }
+
+    /**
+     * Performs the real extraction by running IDEA's K2 generation engine
+     * ([Generator.generateDeclaration]) against [chosenName].
+     *
+     * **Mutates [ktFile]'s live PSI tree in place** (inserts the new function declaration,
+     * rewrites the call site, reformats) — unlike [compute], which only reads. Must be called
+     * exactly once, at apply time, never during preview/dialog population. The caller is
+     * responsible for applying [KaExtractFunctionEdit.changedRange] /
+     * [KaExtractFunctionEdit.replacementText] to the corresponding NetBeans `Document` afterward
+     * (this class has no NetBeans `Document` dependency) and for invalidating the K2 session so
+     * later analyses re-parse from the now-current document text.
+     *
+     * @param chosenName the function name the user entered in the dialog
+     * @param targetSiblingOffset same meaning as in [compute]
+     */
+    fun generate(chosenName: String, targetSiblingOffset: Int? = null): GenerateOutcome {
+        return try {
+            val (descriptor, elements) = analyzeSelection(targetSiblingOffset) ?: return GenerateOutcome.NotApplicable
+            val originalSelectionStart = elements.first().startOffset
+            val finalName = chosenName.ifBlank { descriptor.name }
+            val namedDescriptor = descriptor.copy(suggestedNames = listOf(finalName))
+            val config = ExtractionGeneratorConfiguration(
+                descriptor = namedDescriptor,
+                generatorOptions = ExtractionGeneratorOptions.DEFAULT,
+            )
+
+            val originalText = ktFile.text
+            // Generator.generateDeclaration inserts the new declaration into ktFile's PSI, then
+            // immediately calls ShortenReferencesFacility.shorten() on it. Our registered facility
+            // (KotlinSymbolBasedShortenReferencesFacility) clears the FIR-session caches right
+            // before shortening for exactly this reason — see its KDoc.
+            val extractionResult = allowAnalysisOnEdt {
+                allowAnalysisFromWriteAction {
+                    Generator.generateDeclaration(config, null)
+                }
+            }
+            val newText = ktFile.text
+
+            // Locate the call site syntactically rather than via ReferencesSearch: duplicates are
+            // never searched for (ExtractableCodeDescriptor.duplicates is stubbed to emptyList(),
+            // see KotlinRefactoring/pom.xml), so exactly one call to the new name is expected in the
+            // common case, and a plain callee-text match avoids relying on PSI/FIR identity of
+            // elements that were just mutated. Mirrors IDEA's "start in-place rename at the call
+            // site" caret target; falls back to the declaration name if no call is found.
+            val declaration = extractionResult.declaration
+            val callSiteOffset = PsiTreeUtil.findChildrenOfType(ktFile, KtCallExpression::class.java)
+                .filter { it.calleeExpression?.text == finalName }
+                .minByOrNull { kotlin.math.abs(it.startOffset - originalSelectionStart) }
+                ?.startOffset
+            val caretOffset = callSiteOffset ?: declaration.nameIdentifier?.startOffset ?: declaration.startOffset
+
+            val (changedRange, replacementText) = computeMinimalDiff(originalText, newText)
+            // changedRange.startOffset + replacementText.length is the diff-derived end, in
+            // post-edit text coordinates; declaration.endOffset is the true end of the inserted
+            // declaration in the same coordinates (ktFile already reflects newText). Take the
+            // larger of the two so a coincidental common-suffix match never excludes the
+            // declaration's own closing brace(s) from the reformat range.
+            val diffEnd = changedRange.startOffset + replacementText.length
+            val formatEndOffset = maxOf(diffEnd, declaration.endOffset)
+            GenerateOutcome.Ready(KaExtractFunctionEdit(changedRange, replacementText, caretOffset, formatEndOffset))
+        } catch (e: Exception) {
+            GenerateOutcome.Error(e)
+        }
+    }
+
+    /**
+     * Reduces the change between [oldText] and [newText] to a single replaced range by trimming
+     * their common prefix and suffix. Cheap, generic alternative to a full LCS diff: since
+     * [Generator.generateDeclaration] only ever touches two spots (the call site and the new
+     * declaration's insertion point), the region between the first and last differing character
+     * is small in practice, and a single [TextRange] keeps the resulting document edit — and the
+     * caret-preserving undo behaviour it enables via `MinimalDocumentEdits` /
+     * `joinCaretRestoreOnUndo` — intact.
+     */
+    private fun computeMinimalDiff(oldText: String, newText: String): Pair<TextRange, String> {
+        val maxCommon = minOf(oldText.length, newText.length)
+        var prefix = 0
+        while (prefix < maxCommon && oldText[prefix] == newText[prefix]) prefix++
+        var suffix = 0
+        val maxSuffix = maxCommon - prefix
+        while (suffix < maxSuffix && oldText[oldText.length - 1 - suffix] == newText[newText.length - 1 - suffix]) suffix++
+        val changedRange = TextRange(prefix, oldText.length - suffix)
+        val replacementText = newText.substring(prefix, newText.length - suffix)
+        return changedRange to replacementText
     }
 
     /**
@@ -306,6 +406,41 @@ data class KaExtractFunctionResult(
     val isUnit: Boolean,
 )
 
+/** Result of [KaExtractFunctionComputer.generate]. */
+sealed class GenerateOutcome {
+    /** The selection is not on extractable code. */
+    object NotApplicable : GenerateOutcome()
+
+    /** Generation failed with [error]. */
+    data class Error(val error: Throwable) : GenerateOutcome()
+
+    /** Generation succeeded; [edit] holds the document edit + caret target to apply. */
+    data class Ready(val edit: KaExtractFunctionEdit) : GenerateOutcome()
+}
+
+/**
+ * The document edit produced by [KaExtractFunctionComputer.generate]: replacing [changedRange]
+ * (offsets in the **pre-mutation** file text) with [replacementText] reproduces the real IDEA
+ * generation engine's output exactly, and [caretOffset] (in **post-mutation** / post-edit text
+ * coordinates) is where the caret should land afterward — the call site name, mirroring IDEA's
+ * "start in-place rename at the call site" behaviour.
+ *
+ * @param formatEndOffset the end (in **post-edit** text coordinates) of the region the caller
+ *   should reformat, guaranteed to cover the entire inserted declaration including its closing
+ *   brace. [changedRange]/[replacementText] alone are not sufficient for this: their bounds come
+ *   from a cheap longest-common-prefix/suffix diff (see [computeMinimalDiff]) which can
+ *   under-count the changed region when the tail of the inserted declaration happens to look like
+ *   the tail of the original text (e.g. both end in `"}\n}\n"` for a class-member extraction) —
+ *   the coincidental match gets trimmed as "common suffix" even though it is inside the newly
+ *   inserted text, leaving the declaration's own closing brace(s) outside the reformatted range.
+ */
+data class KaExtractFunctionEdit(
+    val changedRange: TextRange,
+    val replacementText: String,
+    val caretOffset: Int,
+    val formatEndOffset: Int,
+)
+
 /**
  * A single parameter of the extracted function.
  *
@@ -330,3 +465,4 @@ data class ScopeCandidate(
     val label: String,
     val targetSiblingOffset: Int,
 )
+

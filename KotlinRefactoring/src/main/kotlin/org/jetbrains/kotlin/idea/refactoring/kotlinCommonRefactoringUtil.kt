@@ -8,8 +8,10 @@ import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.PsiWhiteSpace
 import com.intellij.psi.util.elementType
 import org.jetbrains.kotlin.lexer.KtTokens
+import org.jetbrains.kotlin.psi.KtBlockExpression
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtConstructor
+import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtLambdaExpression
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
@@ -36,6 +38,27 @@ fun KtFile.createTempCopy(text: String? = null): KtFile {
     val tmpFile = KtPsiFactory.contextual(this).createFile(name, text ?: this.text ?: "")
     tmpFile.originalFile = this
     return tmpFile
+}
+
+/**
+ * Adds [element] as the last statement of this block, before the closing brace. Copied verbatim
+ * from IDEA's `kotlinCommonRefactoringUtil.kt`; used by `ExtractFunctionGenerator` to append the
+ * default-value return expression for lazy-property/fake-lambda extraction targets.
+ */
+fun KtBlockExpression.addElement(element: KtElement, addNewLine: Boolean = false): KtElement {
+    val rBrace = rBrace
+    val newLine = KtPsiFactory(project).createNewLine()
+    val anchor = if (rBrace == null) {
+        val lastChild = lastChild
+        lastChild as? PsiWhiteSpace ?: addAfter(newLine, lastChild)!!
+    } else {
+        rBrace.prevSibling!!
+    }
+    val addedElement = addAfter(element, anchor)!! as KtElement
+    if (addNewLine) {
+        addAfter(newLine, addedElement)
+    }
+    return addedElement
 }
 
 /** Returns the last trailing-lambda argument, or null if the call has lambda arguments already. */
