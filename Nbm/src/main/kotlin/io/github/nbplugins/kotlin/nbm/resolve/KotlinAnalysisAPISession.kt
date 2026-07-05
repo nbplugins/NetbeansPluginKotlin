@@ -193,6 +193,13 @@ class KotlinAnalysisAPISession private constructor(
             "[PERF] KotlinAnalysisAPISession '$moduleName': TOTAL=${(System.nanoTime() - startTime) / 1_000_000}ms " +
             "(${binaryJars.size} binary jars, ${sourceRoots.size} source roots, ${lvfs.size} source files)"
         )
+
+        // Registered by IntelliJ Project instance (not just NBProject) so that code operating on a
+        // bare PsiElement/Project — e.g. KotlinMoveUsageSearchServiceImpl, which only receives a
+        // KtNamedDeclaration, not an NBProject — can find the session that owns it. Needed for
+        // both the normal getSession(nbProject) path and standalone sessions built via
+        // createWithJars() (used by tests), which aren't NBProject-keyed at all.
+        byProject[session.project] = this
     }
 
     /**
@@ -256,6 +263,19 @@ class KotlinAnalysisAPISession private constructor(
     companion object {
         private val cache = hashMapOf<NBProject, KotlinAnalysisAPISession>()
 
+        /** Secondary index by the underlying IntelliJ [com.intellij.openapi.project.Project] — see [forProject]. */
+        private val byProject = hashMapOf<com.intellij.openapi.project.Project, KotlinAnalysisAPISession>()
+
+        /**
+         * Returns the [KotlinAnalysisAPISession] that owns [project], if any.
+         *
+         * Unlike [getSession] (keyed by NetBeans' own project type), this works for standalone
+         * sessions built via [createWithJars] too (used by tests), and for callers that only have
+         * a bare PSI element/`Project` in hand rather than an [NBProject] — e.g.
+         * `KotlinMoveUsageSearchServiceImpl`, which is only given a `KtNamedDeclaration`.
+         */
+        fun forProject(project: com.intellij.openapi.project.Project): KotlinAnalysisAPISession? = byProject[project]
+
         @Volatile private var appEnvInitialized = false
 
         /**
@@ -280,6 +300,7 @@ class KotlinAnalysisAPISession private constructor(
         @Synchronized
         fun initApplicationEnvironment() {
             if (appEnvInitialized) return
+            LenientLoggerFactory.install()
             initSession = buildStandaloneAnalysisAPISession {
                     buildKtModuleProvider {
                     platform = JvmPlatforms.unspecifiedJvmPlatform
@@ -412,6 +433,16 @@ class KotlinAnalysisAPISession private constructor(
                     org.jetbrains.kotlin.idea.k2.refactoring.K2ReferenceMutateService::class.java,
                 )
                 KotlinLogger.INSTANCE.logInfo("Registered K2ReferenceMutateService")
+            }
+            // KotlinMoveUsageSearchService — real project-wide reference search backing Move
+            // Declaration's (E9.7) external-usage retargeting (K2MoveRenameUsageInfo needs
+            // ReferencesSearch, a no-op standalone via NoOpPsiSearchHelper).
+            if (app.getService(org.jetbrains.kotlin.idea.k2.refactoring.move.KotlinMoveUsageSearchService::class.java) == null) {
+                app.registerService(
+                    org.jetbrains.kotlin.idea.k2.refactoring.move.KotlinMoveUsageSearchService::class.java,
+                    io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveUsageSearchServiceImpl::class.java,
+                )
+                KotlinLogger.INSTANCE.logInfo("Registered KotlinMoveUsageSearchServiceImpl")
             }
         }
 

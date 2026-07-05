@@ -30,6 +30,8 @@ import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceConstantPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceConstantRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinCopyDeclarationPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinCopyDeclarationRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveDeclarationPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveDeclarationRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceImportAliasPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceImportAliasRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroducePropertyPlugin;
@@ -119,6 +121,9 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         }
         if (refactoring instanceof KotlinCopyDeclarationRefactoring) {
             return new KotlinCopyDeclarationPlugin((KotlinCopyDeclarationRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinMoveDeclarationRefactoring) {
+            return new KotlinMoveDeclarationPlugin((KotlinMoveDeclarationRefactoring) refactoring);
         }
         return null;
     }

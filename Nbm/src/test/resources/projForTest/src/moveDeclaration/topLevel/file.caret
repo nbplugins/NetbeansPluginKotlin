@@ -1,0 +1,7 @@
+package moveDeclaration.topLevel
+
+fun greet(name: <caret>String): String = "Hello, $name"
+
+class Greeter {
+    fun hello() = "Hello"
+}

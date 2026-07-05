@@ -86,11 +86,15 @@
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinCopyDeclarationAction.instance">
                 <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinCopyDeclarationAction"/>
             </file>
+            <!-- Global Move Declaration refactoring action (Refactor menu only; E9.7). -->
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveDeclarationAction.instance">
+                <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveDeclarationAction"/>
+            </file>
         </folder>
     </folder>
     <folder name="Menu">
         <folder name="Refactoring">
-            <!-- Copy Declaration at position 250, before Safely Delete.
+            <!-- Copy Declaration at position 250, Move Declaration at 260, before Safely Delete.
                  Extract Function at 700, Introduce Variable at 1000, Introduce Constant at 1050.
                  Introduce Property at 1100, Introduce Type Alias at 1125.
                  Separator at 600 opens the Extract/Introduce group; separator at 900 separates
@@ -98,6 +102,10 @@
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinCopyDeclarationAction.shadow">
                 <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinCopyDeclarationAction.instance"/>
                 <attr name="position" intvalue="250"/>
+            </file>
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveDeclarationAction.shadow">
+                <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveDeclarationAction.instance"/>
+                <attr name="position" intvalue="260"/>
             </file>
             <file name="separator-before-extract.instance">
                 <attr name="instanceClass" stringvalue="javax.swing.JSeparator"/>
@@ -525,6 +533,10 @@
                         <!-- Copy Declaration: custom Kotlin action (Refactor menu only, no keybinding). -->
                         <file name="kotlin-copy-declaration.instance">
                             <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinCopyDeclarationAction"/>
+                        </file>
+                        <!-- Move Declaration (E9.7): custom Kotlin action (Refactor menu only, no keybinding). -->
+                        <file name="kotlin-move-declaration.instance">
+                            <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveDeclarationAction"/>
                         </file>
                     </folder>
                     <!-- Kotlin keybindings: Ctrl+Shift+P and Ctrl+Alt+B for Navigate menu actions.

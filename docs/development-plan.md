@@ -649,10 +649,93 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
     - NetBeans adapter: `KaIntroduceVariableComputer`; `KotlinIntroduceVariablePlugin` /
       `KotlinIntroduceVariableUI` in `Nbm`
 
-  - **E9.7** — Move declaration (F6)
-    - IDEA sources: top-level files from `kotlin.refactorings.move.k2/src/`
-    - NetBeans adapter: `KaMoveDeclarationComputer`; `KotlinMovePlugin` /
-      `KotlinMoveUI` (target package picker) in `Nbm`
+  - [x] **E9.7** — Move Declaration (Refactor menu; no F6 keybinding to avoid a NetBeans conflict)
+    - IDEA sources ported (`kotlin.refactorings.move.k2/src/`): `descriptor/{K2MoveDescriptor,
+      K2MoveSourceDescriptor, K2MoveTargetDescriptor, K2MoveOperationDescriptor}.kt`,
+      `processor/{K2MoveDeclarationsRefactoringProcessor, moveUtil, moveUsageUtil,
+      moveConflictUtil}.kt`, `processor/conflict/**` (all 10 conflict checkers — visibility,
+      name-clash, overridden-in-subclass, sealed-class-hierarchy, type-parameter-usage,
+      implicit-package-prefix, module-dependency, internal-member-usage, actual/expect, plus
+      helpers). Excluded (out of scope): `K2MoveHandler.kt` (IDE action dispatch), `ui/**` (Swing —
+      NB has its own text-field UI), `K2MoveFilesOrDirectoriesRefactoringProcessor.kt` (file/dir
+      moves), `K2ChangePackageDescriptor.kt`/processor (separate feature).
+    - Single-module architecture: this plugin has no multi-module/multiplatform project model
+      anywhere (confirmed via dedicated research — every NetBeans project gets one isolated K2
+      analysis session). `SingletonModule`/`ModuleUtilCore`/`ModuleType` stubs
+      (`KotlinRefactoring/src/main/kotlin/com/intellij/openapi/module/`) model this correctly
+      rather than faking multi-module support; cross-module conflict checks
+      (module-dependency/internal-member/actual-expect) always correctly report no conflict.
+    - Real (non-stub) `KaModule` bridge: `org.jetbrains.kotlin.idea.base.projectStructure.kaModuleBridge.kt`
+      resolves `Module.toKaSourceModuleContainingElement`/`getKaModuleOfTypeSafe` via
+      `analyze(element) { useSiteModule }` instead of an IDE project-structure index lookup.
+    - Hierarchy/inheritor search (`functionOverriddenInSubclassConflict`, `sealedClassesConflict`)
+      has no whole-project index standalone; consistent with the existing
+      `OverridingDeclarations.forEachOverridingElement` precedent (E8/E9 navigation), these checks
+      return no results rather than falsely flagging conflicts.
+    - `KotlinMoveUsageSearchService` (new interface in `KotlinRefactoring`, real impl
+      `KotlinMoveUsageSearchServiceImpl` registered from `Nbm`'s `KotlinAnalysisAPISession`):
+      whole-project external-usage search reusing the same file-iteration strategy as Find Usages
+      (E7)'s `KaFindUsagesComputer`, since `ReferencesSearch`/`PsiSearchHelper` is a no-op
+      standalone. Backs `findMoveDeclarationUsages.kt`, which reimplements the essential subset of
+      the removed (patch #14, Copy Declaration/E9.19) `K2MoveRenameUsageInfo.find()`.
+    - `KaMoveDeclarationComputer.move()` calls the real, unmodified
+      `K2MoveDeclarationsRefactoringProcessor.performRefactoring()` — not a hand-rolled
+      reimplementation. Getting there required identifying and fixing several genuine
+      standalone-environment bugs (each a real fix, not a workaround, applied via the same
+      `KotlinRefactoring/pom.xml` groovy-patch mechanism used for every other era-compatibility
+      issue in this module):
+      1. **Read-only target directory**: this environment's analysis-session `KtFile`s are
+         in-memory `LightVirtualFile`-backed; any `PsiDirectory`/`VirtualFile` reached via disk
+         (`VirtualFileManager`/`KotlinLocalFileSystem`) is read-only for PSI mutation, so
+         `K2MoveTargetDescriptor.File`'s directory-based target resolution
+         (`getOrCreateTarget`/`getTarget`, both routed through `PsiDirectory.findFile()`) can never
+         reach a writable file. Fixed with `SessionAwareTargetDirectory` (in
+         `KaMoveDeclarationComputer.kt`) — a `PsiDirectory` delegate that forwards every member
+         IDEA's conflict-detection code reads (module, FqName, project, ...) to the real disk
+         directory, but overrides `findFile()` to return the already-writable target `KtFile`
+         directly (obtained the same way Copy Declaration/E9.19 does: write the file via NetBeans
+         `FileObject`, refresh `KotlinAnalysisAPISession`, then `getKtFileForPath`).
+      2. **`LightVirtualFile` doesn't support file deletion**: when the source file becomes
+         effectively empty, `performRefactoring()` deletes it outright; `LightVirtualFileBase`'s
+         VFS doesn't implement `deleteFile()`. Patched to `runCatching { it.delete() }` — the move
+         itself already succeeded by this point, so the emptied (package-directive-only) file is
+         left on disk instead of losing that result.
+      3. **`com.intellij.refactoring.rename.RenameUtil` not on the standalone classpath**: called by
+         `retargetUsagesAfterMove` for non-code usages, which are always empty here (`findNonCodeUsages`
+         is patched to `emptyList()`, no `TextOccurrencesUtil` standalone) — the call was real
+         dead code at runtime; patched away along with its import.
+      4. **`addElementsToTarget()`'s `oldToNewMap` only mapped *nested* declarations**, never the
+         moved top-level element itself (`withChildDeclarations()` excludes the receiver). Real
+         IDEA gets away with this because its `MoveRenameUsageInfo.referencedElement` re-resolves
+         through a document-synced smart pointer that keeps following the element across the move;
+         this plugin's simplified `MoveRenameUsageInfo` stub (`Nbm`, no PSI-document sync) resolves
+         it via a plain `SmartPsiElementPointer`, which doesn't. Patched `addElementsToTarget()` to
+         also map the moved element itself — a real, general correctness fix for external-usage
+         retargeting of any top-level declaration, not standalone-specific.
+      5. **Retarget-before-delete reordering**: for the same smart-pointer reason as #4, retargeting
+         usages after `deleteMovedElement()` (IDEA's real order) finds `referencedElement == null`
+         once the original is deleted. Patched `performRefactoring()` to call
+         `retargetUsagesAfterMove()` before deleting the source elements/files.
+      6. **Import-directive references excluded from `KotlinMoveUsageSearchServiceImpl`'s search**:
+         retargeting a reference that's literally part of an existing `import` statement (as opposed
+         to a code usage) left the `KtImportDirective` invalidated mid-`bindToElement()`, standalone
+         — no live-document sync to keep the import list consistent across a `K2ReferenceMutateService`
+         restructure. Not needed anyway: retargeting the *code* usage (call site, etc.) to a
+         fully-qualified reference and then shortening it already adds/removes the right import via
+         Kotlin's own shorten-references pass, exactly as it does for Copy Declaration.
+    - Retargeting an *external* (cross-file) usage is exercised for the first time by this
+      refactoring (Copy Declaration only ever retargets same-file/internal usages), and initially
+      hit a "requested stubbed spine during PSI operations" `LOG.error()` call deep in
+      `K2ReferenceMutateService`/`PsiFileImpl` — IntelliJ's `DefaultLogger.error()` throws an
+      `AssertionError` unconditionally unless a real `Logger.Factory` is installed, which this
+      standalone environment never did. Fixed environment-wide (not just for Move) by installing
+      `LenientLoggerFactory` (`Nbm/.../resolve/LenientLogger.kt`) — a `java.util.logging`-backed
+      `Logger` implementation that logs `error()` instead of throwing — via `Logger.setFactory(...)`
+      at the top of `KotlinAnalysisAPISession.initApplicationEnvironment()`, before any bundled
+      IDEA class can call `Logger.getInstance()`.
+    - NetBeans adapter: `KaMoveDeclarationComputer` (`KotlinRefactoring`); `KotlinMoveDeclarationAction`
+      (Refactor menu) / `KotlinMoveDeclarationUI` (target package + file name fields) /
+      `KotlinMoveDeclarationPlugin` / `KotlinMoveDeclarationRefactoring` (`Nbm`)
 
   - **E9.8** — Change Signature (Ctrl+F6)
     - IDEA sources: `changeSignature/KotlinChangeSignatureUsageSearcher.kt`,
