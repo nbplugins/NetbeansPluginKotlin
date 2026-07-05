@@ -89,6 +89,23 @@ The two trivial `groupByFile`/`sortedByOffset` helpers from `moveUsageUtil.kt` a
 into `KotlinRefactoring/src/main/kotlin/.../move/processor/MoveUsageUtil.kt` (the full file drags in
 the unrelated move-descriptor machinery).
 
+### Module stubs (added for E9.7 Move Declaration)
+
+`KotlinRefactoring` provides its own `SingletonModule`/`ModuleUtilCore`/`ModuleType` (package
+`com.intellij.openapi.module`) so IDEA's ported move-conflict checks can resolve a real, correctly
+behaving `Module` in this plugin's single-module architecture (see `SingletonModule`'s doc
+comment). In the packaged `.nbm`, a bundled platform JAR provides its own real `ModuleUtilCore`
+whose `findModuleForPsiElement()` calls `ProjectFileIndex.getInstance()` — a service never
+registered in this standalone environment — throwing `IllegalStateException`. Classloading order in
+the full `.nbm` let that real class win over `KotlinRefactoring`'s copy (unlike in unit tests, where
+the classpath differs and the plugin's own copy was found first).
+
+| Class | Location | Kind | Purpose |
+|-------|----------|------|---------|
+| `SingletonModule` | `Nbm/src/main/kotlin/com/intellij/openapi/module/` | Runtime (shadows a bundled platform JAR) | Duplicate of `KotlinRefactoring`'s class, same FQN, so `Nbm`'s classloader-first-loaded copy wins at runtime |
+| `ModuleUtilCore` | `Nbm/src/main/kotlin/com/intellij/openapi/module/` | Runtime (shadows a bundled platform JAR) | Same duplication; `findModuleForPsiElement()` never touches `ProjectFileIndex` |
+| `ModuleType` | `Nbm/src/main/java/com/intellij/openapi/module/` | Runtime (shadows a bundled platform JAR) | Same duplication; `isInternal()` always `false` |
+
 ### Service stubs registered at session startup
 
 These are not class-file overrides but *service registrations* performed in
