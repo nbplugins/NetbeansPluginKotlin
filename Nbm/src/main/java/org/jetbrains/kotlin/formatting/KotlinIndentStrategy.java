@@ -22,11 +22,13 @@ package org.jetbrains.kotlin.formatting;
 import com.intellij.formatting.FormatterImpl;
 import com.intellij.formatting.Indent;
 import com.intellij.psi.codeStyle.CodeStyleSettings;
+import com.intellij.psi.codeStyle.CommonCodeStyleSettings;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.StyledDocument;
 import org.jetbrains.kotlin.idea.formatter.KotlinSpacingRulesKt;
 import io.github.nbplugins.kotlin.nbm.formatting.KotlinFormatterUtils;
 import io.github.nbplugins.kotlin.nbm.formatting.options.ProjectCodeStyleStorage;
+import io.github.nbplugins.kotlin.nbm.indentation.PasteAdjustmentSuppressor;
 import org.jetbrains.kotlin.psi.KtFile;
 import org.jetbrains.kotlin.psi.KtPsiFactory;
 import org.jetbrains.kotlin.utils.ProjectUtils;
@@ -99,7 +101,7 @@ public class KotlinIndentStrategy {
         }
         String text = doc.getText(0, doc.getLength());
         String commandText = String.valueOf((text).charAt(offset));
-        
+
         if (isBeforeCloseBrace(text, offset, text.length()) && isAfterOpenBrace(text, offset, 0)) {
             return autoEditAfterOpenBraceAndBeforeCloseBrace(text);
         } else if(CLOSING_BRACE_STRING.equals(commandText)) {
@@ -112,52 +114,99 @@ public class KotlinIndentStrategy {
     private int autoEdit(String text) throws BadLocationException {
         StringBuilder textToFormat = new StringBuilder();
         textToFormat.append(text.substring(0, caretOffset));
-        
+
         char charToInsert = ' ';
         if (isAfterEqualityOrOpenBrace(textToFormat.toString(), textToFormat.length())) {
             charToInsert = '1';
         }
         textToFormat.append(charToInsert).
                 append(text.substring(caretOffset));
-        
+
         String indent = getIndent(textToFormat.toString(), caretOffset);
-        doc.insertString(caretOffset, indent, null);
-        
+        PasteAdjustmentSuppressor.begin();
+        try {
+            doc.insertString(caretOffset, indent, null);
+        } finally {
+            PasteAdjustmentSuppressor.end();
+        }
+
         return caretOffset + indent.length();
     }
 
     private int autoEditAfterOpenBraceAndBeforeCloseBrace(String text) throws BadLocationException {
         int diff = findEndOfWhiteSpaceAfter(text, offset, text.length()) - offset;
+        // Resolved before getIndent(): getIndent() pushes/pops KotlinFormatterUtils'
+        // thread-local settings override around its own formatter call, and that pop
+        // clears the slot outright (it's not a real stack) — reading it afterwards would
+        // silently fall back to the global default settings instead of any override
+        // (e.g. a per-project indent size) that was active when this method was entered.
+        String indentUnit = getIndentUnit();
         String indent = getIndent(text, caretOffset);
         StringBuilder builder = new StringBuilder();
-        builder.append(indent).append("    ").append('\n').append(indent);
-        doc.remove(caretOffset, diff);
-        doc.insertString(caretOffset, builder.toString(), null);
-        setDocumentOffset(indent.length() + 4);
-        
-        return caretOffset + indent.length() + 4;
+        builder.append(indent).append(indentUnit).append('\n').append(indent);
+        PasteAdjustmentSuppressor.begin();
+        try {
+            doc.remove(caretOffset, diff);
+            doc.insertString(caretOffset, builder.toString(), null);
+        } finally {
+            PasteAdjustmentSuppressor.end();
+        }
+        setDocumentOffset(indent.length() + indentUnit.length());
+
+        return caretOffset + indent.length() + indentUnit.length();
+    }
+
+    /**
+     * Returns the single-level indent step (spaces or a tab, per the project's configured
+     * code style) used to indent the content line of a newly-split {@code {}} block.
+     * Falls back to four spaces if no project can be resolved for {@link #file}.
+     */
+    private String getIndentUnit() {
+        Project project = ProjectUtils.getKotlinProjectForFileObject(file);
+        if (project == null) {
+            return "    ";
+        }
+        CommonCodeStyleSettings.IndentOptions indentOptions =
+                ProjectCodeStyleStorage.INSTANCE.getSettings(project).getIndentOptions();
+        if (indentOptions == null) {
+            return "    ";
+        }
+        if (indentOptions.USE_TAB_CHARACTER) {
+            return "\t";
+        }
+        int size = Math.max(1, indentOptions.INDENT_SIZE);
+        StringBuilder unit = new StringBuilder(size);
+        for (int i = 0; i < size; i++) {
+            unit.append(' ');
+        }
+        return unit.toString();
     }
 
     private int autoEditBeforeCloseBrace(String text) throws BadLocationException {
         if (isNewLineBefore(text, caretOffset)) {
             StringBuilder oldText = new StringBuilder();
-            
+
             oldText.append(text.substring(0, caretOffset - 1));
             oldText.append(CLOSING_BRACE_STRING).append(" ");
             oldText.append(text.substring(caretOffset + 1));
-            
+
             if (oldText.charAt(caretOffset - 2) == '\n') {
                 return caretOffset;
             }
-            
+
             String indent = getIndent(oldText.toString(), caretOffset);
-            doc.insertString(caretOffset, indent, null);
+            PasteAdjustmentSuppressor.begin();
+            try {
+                doc.insertString(caretOffset, indent, null);
+            } finally {
+                PasteAdjustmentSuppressor.end();
+            }
             return caretOffset + indent.length();
         }
-        
+
         return caretOffset;
     }
-    
+
     private String getIndent(String text, int offset) throws BadLocationException {
         Project project = ProjectUtils.getKotlinProjectForFileObject(file);
         if (project == null) {
@@ -190,10 +239,10 @@ public class KotlinIndentStrategy {
         if (offset >= newText.length()) {
             return "";
         }
-        newText = newText.substring(offset);
-        
-        int endOfWhiteSpace = findEndOfWhiteSpaceAfter(newText, 0, newText.length());
-        String toReturn = newText.substring(0, endOfWhiteSpace);
+        String afterOffset = newText.substring(offset);
+
+        int endOfWhiteSpace = findEndOfWhiteSpaceAfter(afterOffset, 0, afterOffset.length());
+        String toReturn = afterOffset.substring(0, endOfWhiteSpace);
 
         return toReturn;
     }

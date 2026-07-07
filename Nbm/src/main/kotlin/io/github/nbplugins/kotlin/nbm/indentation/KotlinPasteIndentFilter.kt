@@ -38,7 +38,8 @@ import org.jetbrains.kotlin.formatting.KotlinIndentStrategy
 class KotlinPasteIndentFilter(private val delegate: DocumentFilter?) : DocumentFilter() {
 
     override fun replace(fb: FilterBypass, offset: Int, length: Int, text: String?, attrs: AttributeSet?) {
-        val adjusted = text?.let { computePasteAdjustment(fb.document, offset, it) }
+        val adjusted = if (PasteAdjustmentSuppressor.isSuppressed()) null
+            else text?.let { computePasteAdjustment(fb.document, offset, it) }
         if (adjusted != null) {
             delegate?.replace(fb, offset, length, adjusted, attrs) ?: fb.replace(offset, length, adjusted, attrs)
         } else {
@@ -47,7 +48,8 @@ class KotlinPasteIndentFilter(private val delegate: DocumentFilter?) : DocumentF
     }
 
     override fun insertString(fb: FilterBypass, offset: Int, string: String?, attr: AttributeSet?) {
-        val adjusted = string?.let { computePasteAdjustment(fb.document, offset, it) }
+        val adjusted = if (PasteAdjustmentSuppressor.isSuppressed()) null
+            else string?.let { computePasteAdjustment(fb.document, offset, it) }
         if (adjusted != null) {
             delegate?.insertString(fb, offset, adjusted, attr) ?: fb.insertString(offset, adjusted, attr)
         } else {
@@ -61,6 +63,30 @@ class KotlinPasteIndentFilter(private val delegate: DocumentFilter?) : DocumentF
 }
 
 /**
+ * Reentrancy guard set by [org.jetbrains.kotlin.formatting.KotlinIndentStrategy] while it
+ * performs its own programmatic document edits (Enter-key indentation), so
+ * [KotlinPasteIndentFilter] does not mistake those edits for a user paste and recompute
+ * (and potentially corrupt) indentation that [KotlinIndentStrategy] already computed
+ * correctly via the formatter.
+ */
+object PasteAdjustmentSuppressor {
+    private val suppressed = ThreadLocal.withInitial { false }
+
+    @JvmStatic
+    fun isSuppressed(): Boolean = suppressed.get()
+
+    @JvmStatic
+    fun begin() {
+        suppressed.set(true)
+    }
+
+    @JvmStatic
+    fun end() {
+        suppressed.set(false)
+    }
+}
+
+/**
  * Returns the indentation-adjusted version of [text] when it is a multi-line paste
  * inserted at the start of a line, or null if no adjustment is needed or possible.
  *
@@ -70,6 +96,10 @@ class KotlinPasteIndentFilter(private val delegate: DocumentFilter?) : DocumentF
  * pasted text via [applyDeltaToText], preserving the relative indentation inside the block.
  */
 internal fun computePasteAdjustment(document: Document, offset: Int, text: String): String? {
+    // A single inserted character is a keystroke (typed letter, space, etc.), never a paste —
+    // skip it so plain typing on a blank/whitespace-only line is never "adjusted" away.
+    if (text.length <= 1) return null
+
     val firstNewline = text.indexOf('\n')
     // firstNewline == 0 means paste starts with '\n' (plain Enter) — skip.
     // firstNewline == -1 means single-line paste — still needs indent adjustment.

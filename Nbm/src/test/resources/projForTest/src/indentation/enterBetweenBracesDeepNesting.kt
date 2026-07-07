@@ -1,0 +1,7 @@
+package indentation
+
+class Outer {
+    class Inner {
+        fun f() {<caret>}
+    }
+}
