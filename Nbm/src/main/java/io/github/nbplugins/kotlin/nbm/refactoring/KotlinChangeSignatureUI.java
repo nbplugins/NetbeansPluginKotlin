@@ -163,6 +163,11 @@ public class KotlinChangeSignatureUI implements RefactoringUI {
             tableModel = new ParameterTableModel(new ArrayList<>(initialResult.getParameters()));
             table = new JTable(tableModel);
             table.setPreferredScrollableViewportSize(new java.awt.Dimension(400, 120));
+            // Swing does not commit an in-progress cell edit when focus moves to a component
+            // outside the table (terminateEditOnFocusLost defaults to false) — without this, a
+            // user who types a new value and immediately clicks the dialog's "Refactor" button
+            // (without pressing Enter/Tab first) silently loses that edit.
+            table.putClientProperty("terminateEditOnFocusLost", Boolean.TRUE);
 
             JPanel form = new JPanel(new GridBagLayout());
             form.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
@@ -240,8 +245,16 @@ public class KotlinChangeSignatureUI implements RefactoringUI {
         /** Returns the current text in the name field. */
         String getNameValue() { return nameField.getText(); }
 
-        /** Returns the current parameter rows. */
-        List<KaChangeSignatureParameter> getParameters() { return tableModel.getParameters(); }
+        /**
+         * Returns the current parameter rows, first committing any in-progress cell edit (belt
+         * and suspenders alongside {@code terminateEditOnFocusLost} above).
+         */
+        List<KaChangeSignatureParameter> getParameters() {
+            if (table.isEditing()) {
+                table.getCellEditor().stopCellEditing();
+            }
+            return tableModel.getParameters();
+        }
 
         /** Builds the [KaChangeSignatureRequest] the engine will apply. */
         KaChangeSignatureRequest buildRequest() {
