@@ -25,3 +25,24 @@ tailrec fun KaReceiverValue.unwrapSmartCasts(): KaReceiverValue = when (this) {
     is KaSmartCastedReceiverValue -> original.unwrapSmartCasts()
     else -> this
 }
+
+/**
+ * Copied verbatim from IDEA's `analyzeUtils.kt` (not on standalone classpath): runs [action] with
+ * both write-action and EDT analysis permission opted in, then a normal [analyze] block. Used by
+ * Change Signature (E9.8)'s usage-info classes, which run PSI mutation and analysis interleaved.
+ */
+@OptIn(
+    org.jetbrains.kotlin.analysis.api.KaImplementationDetail::class,
+    org.jetbrains.kotlin.analysis.api.permissions.KaAllowAnalysisFromWriteAction::class,
+    org.jetbrains.kotlin.analysis.api.permissions.KaAllowAnalysisOnEdt::class,
+)
+inline fun <T : KtElement, R> allowAnalysisFromWriteActionInEdt(
+    useSiteElement: T,
+    action: KaSession.(T) -> R,
+): R = org.jetbrains.kotlin.analysis.api.permissions.allowAnalysisOnEdt {
+    org.jetbrains.kotlin.analysis.api.permissions.allowAnalysisFromWriteAction {
+        analyze(useSiteElement) {
+            action(useSiteElement)
+        }
+    }
+}

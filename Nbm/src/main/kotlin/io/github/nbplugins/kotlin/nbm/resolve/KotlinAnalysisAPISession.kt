@@ -444,6 +444,16 @@ class KotlinAnalysisAPISession private constructor(
                 )
                 KotlinLogger.INSTANCE.logInfo("Registered KotlinMoveUsageSearchServiceImpl")
             }
+            // KotlinChangeSignatureUsageSearchService — real project-wide reference search backing
+            // Change Signature's (E9.8) call-site/parameter-reference retargeting (the ported engine
+            // expects ReferencesSearch/MethodReferencesSearch, a no-op standalone).
+            if (app.getService(org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.KotlinChangeSignatureUsageSearchService::class.java) == null) {
+                app.registerService(
+                    org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.KotlinChangeSignatureUsageSearchService::class.java,
+                    io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignatureUsageSearchServiceImpl::class.java,
+                )
+                KotlinLogger.INSTANCE.logInfo("Registered KotlinChangeSignatureUsageSearchServiceImpl")
+            }
         }
 
         private fun registerEpIfAbsent(

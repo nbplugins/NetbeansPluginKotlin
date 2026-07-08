@@ -32,6 +32,8 @@ import io.github.nbplugins.kotlin.nbm.refactoring.KotlinCopyDeclarationPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinCopyDeclarationRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveDeclarationPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveDeclarationRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignaturePlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignatureRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceImportAliasPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceImportAliasRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroducePropertyPlugin;
@@ -74,6 +76,8 @@ import org.openide.util.lookup.ServiceProvider;
  *   <li>{@link KotlinIntroducePropertyRefactoring} — delegates to {@link KotlinIntroducePropertyPlugin}</li>
  *   <li>{@link KotlinIntroduceTypeAliasRefactoring} — delegates to {@link KotlinIntroduceTypeAliasPlugin}</li>
  *   <li>{@link KotlinCopyDeclarationRefactoring} — delegates to {@link KotlinCopyDeclarationPlugin}</li>
+ *   <li>{@link KotlinMoveDeclarationRefactoring} — delegates to {@link KotlinMoveDeclarationPlugin}</li>
+ *   <li>{@link KotlinChangeSignatureRefactoring} — delegates to {@link KotlinChangeSignaturePlugin}</li>
  * </ul>
  */
 @ServiceProvider(service = RefactoringPluginFactory.class, position = 100)
@@ -124,6 +128,9 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         }
         if (refactoring instanceof KotlinMoveDeclarationRefactoring) {
             return new KotlinMoveDeclarationPlugin((KotlinMoveDeclarationRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinChangeSignatureRefactoring) {
+            return new KotlinChangeSignaturePlugin((KotlinChangeSignatureRefactoring) refactoring);
         }
         return null;
     }
