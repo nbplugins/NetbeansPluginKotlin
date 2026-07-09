@@ -25,19 +25,27 @@ import java.awt.Component;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.Transferable;
+import java.awt.datatransfer.UnsupportedFlavorException;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
+import javax.swing.DropMode;
 import javax.swing.JButton;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
+import javax.swing.TransferHandler;
 import javax.swing.event.ChangeListener;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.event.ListSelectionListener;
 import javax.swing.table.AbstractTableModel;
 import org.netbeans.modules.refactoring.api.AbstractRefactoring;
 import org.netbeans.modules.refactoring.api.Problem;
@@ -52,13 +60,9 @@ import org.openide.util.HelpCtx;
  * <ul>
  *   <li>A "Name" text field pre-filled with the current declaration name.</li>
  *   <li>A "Return type" text field pre-filled with the current return type.</li>
- *   <li>A parameter table (name/type columns) with Add/Remove row buttons.</li>
+ *   <li>A parameter table (name/type columns) with Add/Remove/Move Up/Move Down buttons, and
+ *       drag-and-drop row reordering.</li>
  * </ul>
- *
- * Reordering existing parameter rows (drag-to-reorder / move up-down buttons) is deferred to a
- * later milestone (see {@code docs/development-plan.md}'s E9.8 M2 entry) — this M1 panel supports
- * renaming, adding, and removing parameters, which already exercises the same underlying engine
- * path as reordering.
  *
  * @param initialResult the analysis result from {@link io.github.nbplugins.kotlin.refactoring.KaChangeSignatureComputer}
  * @param refactoring   the carrier {@link KotlinChangeSignatureRefactoring}
@@ -168,6 +172,9 @@ public class KotlinChangeSignatureUI implements RefactoringUI {
             // user who types a new value and immediately clicks the dialog's "Refactor" button
             // (without pressing Enter/Tab first) silently loses that edit.
             table.putClientProperty("terminateEditOnFocusLost", Boolean.TRUE);
+            table.setDragEnabled(true);
+            table.setDropMode(DropMode.INSERT_ROWS);
+            table.setTransferHandler(new RowReorderTransferHandler(tableModel, table));
 
             JPanel form = new JPanel(new GridBagLayout());
             form.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
@@ -216,9 +223,41 @@ public class KotlinChangeSignatureUI implements RefactoringUI {
                     }
                 }
             });
+            JButton moveUpButton = new JButton(new AbstractAction("Move Up") {
+                @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                    int row = table.getSelectedRow();
+                    if (row > 0) {
+                        tableModel.moveRow(row, row - 1);
+                        table.setRowSelectionInterval(row - 1, row - 1);
+                        changeListener.stateChanged(null);
+                    }
+                }
+            });
+            JButton moveDownButton = new JButton(new AbstractAction("Move Down") {
+                @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                    int row = table.getSelectedRow();
+                    if (row >= 0 && row < tableModel.getRowCount() - 1) {
+                        tableModel.moveRow(row, row + 1);
+                        table.setRowSelectionInterval(row + 1, row + 1);
+                        changeListener.stateChanged(null);
+                    }
+                }
+            });
+            Runnable updateMoveButtons = () -> {
+                int row = table.getSelectedRow();
+                moveUpButton.setEnabled(row > 0);
+                moveDownButton.setEnabled(row >= 0 && row < tableModel.getRowCount() - 1);
+            };
+            ListSelectionListener selectionListener = e -> updateMoveButtons.run();
+            table.getSelectionModel().addListSelectionListener(selectionListener);
+            tableModel.addTableModelListener(e -> updateMoveButtons.run());
+            updateMoveButtons.run();
+
             JPanel buttons = new JPanel();
             buttons.add(addButton);
             buttons.add(removeButton);
+            buttons.add(moveUpButton);
+            buttons.add(moveDownButton);
             tablePanel.add(buttons, BorderLayout.SOUTH);
 
             GridBagConstraints tc = new GridBagConstraints();
@@ -290,6 +329,14 @@ public class KotlinChangeSignatureUI implements RefactoringUI {
             fireTableRowsDeleted(row, row);
         }
 
+        /** Moves the row at [from] to index [to], shifting the rows in between. */
+        void moveRow(int from, int to) {
+            if (from == to) return;
+            KaChangeSignatureParameter p = parameters.remove(from);
+            parameters.add(to, p);
+            fireTableRowsUpdated(Math.min(from, to), Math.max(from, to));
+        }
+
         @Override public int getRowCount() { return parameters.size(); }
         @Override public int getColumnCount() { return 2; }
 
@@ -315,6 +362,67 @@ public class KotlinChangeSignatureUI implements RefactoringUI {
                     ? p.copy(p.getOriginalIndex(), text, p.getTypeText())
                     : p.copy(p.getOriginalIndex(), p.getName(), text));
             fireTableCellUpdated(rowIndex, columnIndex);
+        }
+    }
+
+    /**
+     * Enables drag-and-drop reordering of {@link ParameterTableModel} rows within [table] — the
+     * standard Swing recipe (a {@link TransferHandler} moving a single row index, imported via a
+     * private {@link DataFlavor}) since {@link JTable} has no built-in row-reorder support outside
+     * {@code JXTable}-style third-party components.
+     */
+    private static final class RowReorderTransferHandler extends TransferHandler {
+
+        private static final DataFlavor ROW_INDEX_FLAVOR =
+                new DataFlavor(Integer.class, "Change Signature parameter row index");
+
+        private final ParameterTableModel tableModel;
+        private final JTable table;
+
+        RowReorderTransferHandler(ParameterTableModel tableModel, JTable table) {
+            this.tableModel = tableModel;
+            this.table = table;
+        }
+
+        @Override
+        public int getSourceActions(JComponent c) {
+            return TransferHandler.MOVE;
+        }
+
+        @Override
+        protected Transferable createTransferable(JComponent c) {
+            int row = table.getSelectedRow();
+            return new Transferable() {
+                @Override public DataFlavor[] getTransferDataFlavors() { return new DataFlavor[]{ROW_INDEX_FLAVOR}; }
+                @Override public boolean isDataFlavorSupported(DataFlavor flavor) { return ROW_INDEX_FLAVOR.equals(flavor); }
+                @Override public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException {
+                    if (!isDataFlavorSupported(flavor)) throw new UnsupportedFlavorException(flavor);
+                    return row;
+                }
+            };
+        }
+
+        @Override
+        public boolean canImport(TransferSupport support) {
+            return support.isDrop() && support.isDataFlavorSupported(ROW_INDEX_FLAVOR);
+        }
+
+        @Override
+        public boolean importData(TransferSupport support) {
+            if (!canImport(support)) return false;
+            try {
+                int fromRow = (Integer) support.getTransferable().getTransferData(ROW_INDEX_FLAVOR);
+                int toRow = ((JTable.DropLocation) support.getDropLocation()).getRow();
+                if (toRow < 0) toRow = tableModel.getRowCount() - 1;
+                if (toRow > fromRow) toRow--; // account for the removed source row shifting later indices down
+                toRow = Math.max(0, Math.min(toRow, tableModel.getRowCount() - 1));
+                if (fromRow == toRow) return false;
+                tableModel.moveRow(fromRow, toRow);
+                table.setRowSelectionInterval(toRow, toRow);
+                return true;
+            } catch (UnsupportedFlavorException | IOException e) {
+                return false;
+            }
         }
     }
 }

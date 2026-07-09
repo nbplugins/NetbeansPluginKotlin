@@ -17,6 +17,7 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.refactoring
 
+import io.github.nbplugins.kotlin.nbm.reformatting.format
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.KaChangeSignatureComputer
 import io.github.nbplugins.kotlin.refactoring.KaChangeSignatureRequest
@@ -141,9 +142,31 @@ class KotlinChangeSignatureApplyElement(
                     for ((path, newText) in outcome.fileTexts) {
                         val fo = FileUtil.toFileObject(FileUtil.normalizeFile(java.io.File(path))) ?: continue
                         val doc = openDocument(fo) ?: continue
+                        val oldText = doc.getText(0, doc.length)
+                        // Replace and reformat only the regions that actually changed — a *vector*
+                        // of small, disjoint hunks (TextRangeDiff.computeHunks, line-granular LCS
+                        // refined to the smallest changed character span) rather than one region
+                        // spanning from the first to the last difference: if the file has two call
+                        // sites Change Signature updates with unrelated (even oddly-formatted) code
+                        // between them, that untouched code must stay exactly as it was, not get
+                        // swept into a "changed" span and reformatted along with the real edits.
+                        // Per hunk this also (a) keeps the editor's native Undo to small edits near
+                        // each edit site, matching MinimalDocumentEdits' rationale, and (b) the
+                        // ported engine's psiFactory-generated text (parameter lists, call
+                        // arguments) is not itself re-run through the code formatter — e.g. missing
+                        // space after a comma in "greet(\"world\",second)" — so a reformat pass is
+                        // still needed, just scoped to each hunk instead of the whole file.
+                        val hunks = TextRangeDiff.computeHunks(oldText, newText).sortedByDescending { it.oldStart }
                         NbDocument.runAtomicAsUser(doc) {
-                            if (doc.length > 0) doc.remove(0, doc.length)
-                            doc.insertString(0, newText, null)
+                            for (hunk in hunks) {
+                                if (hunk.oldEnd > hunk.oldStart) doc.remove(hunk.oldStart, hunk.oldEnd - hunk.oldStart)
+                                val replacement = newText.substring(hunk.newStart, hunk.newEnd)
+                                if (replacement.isNotEmpty()) doc.insertString(hunk.oldStart, replacement, null)
+                                val formatEnd = hunk.oldStart + replacement.length
+                                if (formatEnd > hunk.oldStart) {
+                                    runCatching { format(doc = doc, offset = hunk.oldStart, startOffset = hunk.oldStart, endOffset = formatEnd, proj = nbProject) }
+                                }
+                            }
                         }
                         written.add(fo)
                     }

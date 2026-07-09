@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.165-SNAPSHOT</version>
+    <version>0.11.170-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
@@ -2097,6 +2097,26 @@ private val errorIgnoringRenderer: KaTypeRenderer = KaTypeRendererForSource.WITH
   )
   changeSigTypeInfo.text = text
   log.info("Patched KotlinTypeInfo.kt: dropped custom errorTypeRenderer (PrettyPrinter.append is JetBrains-internal-only in this compiler version)")
+}
+
+// 17. KotlinChangeSignatureUsageProcessor.kt (E9.8): the "propagation" isCaller branch of
+//     processParameterListWithStructuralChanges() unconditionally appends every new parameter to a
+//     caller's own parameter list. This plugin's KaChangeSignatureComputer.withCallerPropagation()
+//     marks *every* direct caller with a CallerUsageInfo (needed so that caller's own call site
+//     still forwards the new argument via KotlinFunctionCallUsage.isCaller() — see that function's
+//     KDoc), including a caller that already declares a same-named parameter from an earlier
+//     propagation or a repeated invocation. Filter newParameters by name here so such a caller's
+//     *own declaration* is left untouched, without dropping it from propagation entirely (which
+//     would also silently stop its call site from forwarding the value).
+def changeSigUsageProcessorDedup = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinChangeSignatureUsageProcessor.kt')
+if (changeSigUsageProcessorDedup.exists()) {
+  def text = changeSigUsageProcessorDedup.text
+  text = text.replace(
+    'val newParameters = changeInfo.newParameters.filter { it.isNewParameter }\n                    if (isNotEmpty() && newParameters.isNotEmpty()) {',
+    'val existingNames = (element as? KtCallableDeclaration)?.valueParameters?.mapNotNull { it.name }?.toSet().orEmpty()\n                    val newParameters = changeInfo.newParameters.filter { it.isNewParameter && it.name !in existingNames }\n                    if (isNotEmpty() && newParameters.isNotEmpty()) {'
+  )
+  changeSigUsageProcessorDedup.text = text
+  log.info("Patched KotlinChangeSignatureUsageProcessor.kt: caller-propagation skips parameters the caller already declares by name")
 }
 
                 ]]></script>

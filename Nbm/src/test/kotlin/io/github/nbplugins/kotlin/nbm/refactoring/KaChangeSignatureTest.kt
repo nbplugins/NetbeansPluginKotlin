@@ -19,6 +19,7 @@ package io.github.nbplugins.kotlin.nbm.refactoring
 
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.KaChangeSignatureComputer
+import io.github.nbplugins.kotlin.refactoring.KaChangeSignatureParameter
 import io.github.nbplugins.kotlin.refactoring.KaChangeSignatureRequest
 import utils.KotlinTestCase
 import java.nio.file.Files
@@ -242,6 +243,197 @@ class KaChangeSignatureTest : KotlinTestCase("KaChangeSignatureTest", "changeSig
             assertTrue(
                 "Expected call-site arguments reordered to (beta, alpha) or equivalent named form, got: $newUsageText",
                 newUsageText!!.indexOf("beta") < newUsageText.indexOf("alpha"),
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Integration test (real K2): adds a new parameter (no default value) to `greet`, declared in
+     * `Source.kt` and called from `Usage.kt`'s `useGreet`. Verifies "propagate to callers": since
+     * `useGreet` directly calls `greet`, `useGreet` must itself grow the same new parameter and
+     * forward it to the original call site — exercising [com.intellij.refactoring.changeSignature.CallerUsageInfo]
+     * and [org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.usages.KotlinCallerCallUsage]
+     * for the first time.
+     */
+    fun testApply_addParameter_propagatesToDirectCallers() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping propagate-to-callers test")
+            return
+        }
+        val tmpDir = Files.createTempDirectory("nbkotlin-changesig-propagate-callers")
+        try {
+            val sourceFile = tmpDir.resolve("Source.kt")
+            Files.writeString(
+                sourceFile,
+                """
+                package changesigtest.propagate
+
+                fun greet(first: String): String = "Hello, ${'$'}first"
+                """.trimIndent()
+            )
+            val usageFile = tmpDir.resolve("Usage.kt")
+            Files.writeString(
+                usageFile,
+                """
+                package changesigtest.propagate
+
+                fun useGreet(): String = greet("world")
+                """.trimIndent()
+            )
+
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-signature-propagate-callers",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(tmpDir),
+            )
+            val sourceKtFile = session.getKtFileForPath(sourceFile.toString()) ?: error("Failed to obtain source KtFile")
+            val computer = KaChangeSignatureComputer(sourceKtFile, sourceKtFile.text.indexOf("greet"))
+
+            val outcome = computer.compute()
+            assertTrue("Expected Ready, got $outcome", outcome is KaChangeSignatureComputer.Outcome.Ready)
+            val result = (outcome as KaChangeSignatureComputer.Outcome.Ready).result
+            val request = KaChangeSignatureRequest(
+                newName = result.declarationName,
+                newReturnTypeText = result.returnTypeText,
+                parameters = result.parameters + KaChangeSignatureParameter(originalIndex = -1, name = "second", typeText = "String"),
+            )
+
+            val applyOutcome = computer.apply(request)
+            assertTrue(
+                "Expected ApplyOutcome.Success, got $applyOutcome",
+                applyOutcome is KaChangeSignatureComputer.ApplyOutcome.Success,
+            )
+            val success = applyOutcome as KaChangeSignatureComputer.ApplyOutcome.Success
+
+            val newSourceText = success.fileTexts[sourceKtFile.virtualFile?.path ?: sourceKtFile.name]
+            assertNotNull("Expected the source file to be among the touched files", newSourceText)
+            assertTrue(
+                "Expected 'second' parameter added to greet's declaration, got: $newSourceText",
+                newSourceText!!.contains("second"),
+            )
+
+            val usagePath = session.getKtFileForPath(usageFile.toString())?.virtualFile?.path
+                ?: error("Failed to obtain usage KtFile path")
+            val newUsageText = success.fileTexts[usagePath]
+            assertNotNull("Expected the caller file (Usage.kt) to be among the touched files", newUsageText)
+            // Accepts "String" or "kotlin.String" (pre-existing shortenReferences limitation,
+            // see testApply_renameParameter's comment) and either spacing around the comma
+            // (psiFactory-generated argument lists aren't re-run through the formatter here).
+            assertTrue(
+                "Expected useGreet (a direct caller) to grow a 'second' parameter of its own, got: $newUsageText",
+                newUsageText!!.contains("fun useGreet(second: String)") ||
+                    newUsageText.contains("fun useGreet(second: kotlin.String)"),
+            )
+            assertTrue(
+                "Expected the original call site to forward the new parameter, got: $newUsageText",
+                newUsageText.contains("greet(\"world\", second)") || newUsageText.contains("greet(\"world\",second)"),
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Integration test (real K2): regression test for a duplicate-parameter bug found during
+     * manual testing — invoking Change Signature a *second* time and adding a new parameter with
+     * the *same name* as one already propagated to `useGreet` by a prior invocation must not
+     * duplicate it (`fun useGreet(second: String, second: String)`). Exercises the idempotency
+     * guard in [io.github.nbplugins.kotlin.refactoring.KaChangeSignatureComputer.withCallerPropagation].
+     */
+    fun testApply_addSameParameterNameTwice_doesNotDuplicateOnCaller() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping duplicate-propagation regression test")
+            return
+        }
+        val tmpDir = Files.createTempDirectory("nbkotlin-changesig-propagate-dedup")
+        try {
+            val sourceFile = tmpDir.resolve("Source.kt")
+            Files.writeString(
+                sourceFile,
+                """
+                package changesigtest.propagatededup
+
+                fun greet(first: String): String = "Hello, ${'$'}first"
+                """.trimIndent()
+            )
+            val usageFile = tmpDir.resolve("Usage.kt")
+            Files.writeString(
+                usageFile,
+                """
+                package changesigtest.propagatededup
+
+                fun useGreet(): String = greet("world")
+                """.trimIndent()
+            )
+
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-signature-propagate-dedup",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(tmpDir),
+            )
+            val sourceKtFile = session.getKtFileForPath(sourceFile.toString()) ?: error("Failed to obtain source KtFile")
+
+            // First invocation: add "second" — propagates to useGreet (same as the test above).
+            val computer1 = KaChangeSignatureComputer(sourceKtFile, sourceKtFile.text.indexOf("greet"))
+            val result1 = (computer1.compute() as KaChangeSignatureComputer.Outcome.Ready).result
+            val request1 = KaChangeSignatureRequest(
+                newName = result1.declarationName,
+                newReturnTypeText = result1.returnTypeText,
+                parameters = result1.parameters + KaChangeSignatureParameter(originalIndex = -1, name = "second", typeText = "String"),
+            )
+            val applyOutcome1 = computer1.apply(request1)
+            assertTrue(
+                "Expected ApplyOutcome.Success, got $applyOutcome1",
+                applyOutcome1 is KaChangeSignatureComputer.ApplyOutcome.Success,
+            )
+
+            // Production (KotlinChangeSignatureApplyElement) writes each touched file back to disk
+            // and then calls KotlinAnalysisAPISession.invalidate() before any further action reuses
+            // the project — mutating the in-memory KtFile via a second Computer without an
+            // equivalent refresh leaves the K2 session's cached symbols out of sync with the
+            // mutated PSI and fails analysis. Model that refresh here: persist the first apply's
+            // result to disk and open a *fresh* session over it, exactly like a second, later
+            // Ctrl+F6 invocation would see.
+            for ((path, text) in (applyOutcome1 as KaChangeSignatureComputer.ApplyOutcome.Success).fileTexts) {
+                Files.writeString(java.nio.file.Path.of(path), text)
+            }
+            val session2 = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-signature-propagate-dedup-2",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(tmpDir),
+            )
+            val sourceKtFile2 = session2.getKtFileForPath(sourceFile.toString()) ?: error("Failed to obtain source KtFile (2nd session)")
+
+            // Second invocation, on the freshly re-read declaration: user adds a *new* parameter
+            // also named "second" (e.g. forgetting it was already added). greet's own descriptor
+            // now correctly lists "second" as an *existing* parameter (originalIndex >= 0), but the
+            // request below still asks for one more, brand-new "second" (originalIndex = -1) to
+            // reproduce the exact user report.
+            val computer2 = KaChangeSignatureComputer(sourceKtFile2, sourceKtFile2.text.indexOf("greet"))
+            val result2 = (computer2.compute() as KaChangeSignatureComputer.Outcome.Ready).result
+            val request2 = KaChangeSignatureRequest(
+                newName = result2.declarationName,
+                newReturnTypeText = result2.returnTypeText,
+                parameters = result2.parameters + KaChangeSignatureParameter(originalIndex = -1, name = "second", typeText = "String"),
+            )
+            val applyOutcome2 = computer2.apply(request2)
+            assertTrue(
+                "Expected ApplyOutcome.Success, got $applyOutcome2",
+                applyOutcome2 is KaChangeSignatureComputer.ApplyOutcome.Success,
+            )
+            val success2 = applyOutcome2 as KaChangeSignatureComputer.ApplyOutcome.Success
+
+            val usagePath = session2.getKtFileForPath(usageFile.toString())?.virtualFile?.path
+                ?: error("Failed to obtain usage KtFile path")
+            val newUsageText = success2.fileTexts[usagePath]
+            assertNotNull("Expected the caller file (Usage.kt) to be among the touched files", newUsageText)
+            val secondOccurrences = Regex("""\bsecond\b""").findAll(newUsageText!!).count()
+            assertEquals(
+                "Expected useGreet to have exactly one 'second' parameter (not duplicated), got: $newUsageText",
+                2, // one in the parameter declaration, one in the forwarded call-site argument
+                secondOccurrences,
             )
         } finally {
             tmpDir.toFile().deleteRecursively()

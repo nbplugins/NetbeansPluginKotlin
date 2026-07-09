@@ -18,12 +18,16 @@
 package io.github.nbplugins.kotlin.refactoring
 
 import com.intellij.psi.util.PsiTreeUtil
+import com.intellij.refactoring.changeSignature.CallerUsageInfo
+import com.intellij.usageView.UsageInfo
 import org.jetbrains.kotlin.analysis.api.analyze
+import org.jetbrains.kotlin.asJava.toLightMethods
 import org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.KotlinChangeInfo
 import org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.KotlinChangeSignatureUsageProcessor
 import org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.KotlinMethodDescriptor
 import org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.KotlinParameterInfo
 import org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.KotlinTypeInfo
+import org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.usages.KotlinFunctionCallUsage
 import org.jetbrains.kotlin.idea.refactoring.changeSignature.KotlinValVar
 import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.psi.KtClass
@@ -169,7 +173,18 @@ class KaChangeSignatureComputer(
             changeInfo.setNewName(request.newName)
             changeInfo.setType(request.newReturnTypeText)
             changeInfo.clearParameters()
-            for (p in request.parameters) {
+            // Guard against a brand-new parameter (originalIndex == -1, e.g. added via the dialog's
+            // "Add" button) whose name collides with a parameter the declaration already has (e.g.
+            // the user re-opens the dialog after a previous invocation already added it, or presses
+            // "Add" twice with the same name by mistake) — the dialog has no live duplicate-name
+            // validation, so silently drop the redundant new parameter here rather than emitting a
+            // second same-named parameter on the declaration and its call sites.
+            val existingNames = request.parameters.filter { it.originalIndex >= 0 }.map { it.name }.toSet()
+            val seenNewNames = mutableSetOf<String>()
+            val deduplicatedParameters = request.parameters.filter { p ->
+                p.originalIndex >= 0 || (p.name !in existingNames && seenNewNames.add(p.name))
+            }
+            for (p in deduplicatedParameters) {
                 val parameterInfo = if (p.originalIndex >= 0) {
                     methodDescriptor.parameters[p.originalIndex].also {
                         it.setName(p.name)
@@ -198,7 +213,7 @@ class KaChangeSignatureComputer(
 
     private fun applyChangeInfo(changeInfo: KotlinChangeInfo): ApplyOutcome {
         val processor = KotlinChangeSignatureUsageProcessor()
-        val usages = processor.findUsages(changeInfo)
+        val usages = withCallerPropagation(changeInfo, processor.findUsages(changeInfo))
 
         for (usage in usages) {
             processor.processUsage(changeInfo, usage, beforeMethodChange = true, usages)
@@ -215,6 +230,49 @@ class KaChangeSignatureComputer(
         }
 
         return ApplyOutcome.Success(touchedFiles.mapValues { (_, file) -> file.text })
+    }
+
+    /**
+     * "Propagate to callers": when [changeInfo] adds a parameter with no default value, every
+     * direct caller of the changed declaration (the enclosing function of each call-site usage)
+     * must itself grow the same parameter, forwarding it down to the original call site — real
+     * IDEA's [CallerUsageInfo] mechanism (see [org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.usages.KotlinFunctionCallUsage.isCaller]),
+     * which this project's ported [org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.KotlinChangeSignatureUsageProcessor.findUsages]
+     * never constructs on its own (real IDEA only builds it from the excluded, IDE-only
+     * "propagate to callers" dialog step) — always propagates to every direct caller found,
+     * since this plugin has no UI to let the user pick a subset.
+     *
+     * [CallerUsageInfo] wraps the caller's light Java method (`toLightMethods()`); processing it
+     * later resolves back to the real Kotlin declaration via `PsiElement.unwrapped`, same as every
+     * other cross-language bridge already used in this ported engine.
+     *
+     * Every direct caller is included here, even one that (from an earlier propagation, or a
+     * repeated invocation) already declares a same-named parameter — [CallerUsageInfo] is also
+     * what [org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.usages.KotlinFunctionCallUsage.isCaller]
+     * consults to decide whether *that caller's own* call site should forward the new argument, so
+     * excluding such a caller here would silently stop it from forwarding the value too. The
+     * duplicate-declaration guard instead lives at the point the new parameter text is actually
+     * appended to the caller's own parameter list (patched into the ported
+     * `processParameterListWithStructuralChanges`'s `isCaller` branch), which only needs to skip
+     * names already present, not drop the caller from propagation entirely.
+     */
+    private fun withCallerPropagation(changeInfo: KotlinChangeInfo, usages: Array<UsageInfo>): Array<UsageInfo> {
+        val newParameterNames = changeInfo.newParameters.filter { it.isNewParameter }.map { it.name }.toSet()
+        if (newParameterNames.isEmpty()) return usages
+
+        val declaration = changeInfo.method
+        val callers = usages
+            .filterIsInstance<KotlinFunctionCallUsage>()
+            .mapNotNull { usage -> usage.element?.let { PsiTreeUtil.getParentOfType(it, KtNamedFunction::class.java) } }
+            .filter { it != declaration }
+            .distinct()
+
+        val callerUsages = callers.mapNotNull { caller ->
+            caller.toLightMethods().firstOrNull()?.let { CallerUsageInfo(it, true, false) }
+        }
+        if (callerUsages.isEmpty()) return usages
+
+        return usages + callerUsages
     }
 
     private fun KtFile.pathOrName(): String = virtualFile?.path ?: name
