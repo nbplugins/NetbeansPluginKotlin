@@ -90,13 +90,17 @@
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveDeclarationAction.instance">
                 <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveDeclarationAction"/>
             </file>
+            <!-- Global Change Signature refactoring action (Refactor menu + Ctrl+F6; E9.8). -->
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangeSignatureAction.instance">
+                <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignatureAction"/>
+            </file>
         </folder>
     </folder>
     <folder name="Menu">
         <folder name="Refactoring">
-            <!-- Copy Declaration at position 250, Move Declaration at 260, before Safely Delete.
-                 Extract Function at 700, Introduce Variable at 1000, Introduce Constant at 1050.
-                 Introduce Property at 1100, Introduce Type Alias at 1125.
+            <!-- Copy Declaration at position 250, Move Declaration at 260, Change Signature at 270,
+                 before Safely Delete. Extract Function at 700, Introduce Variable at 1000,
+                 Introduce Constant at 1050. Introduce Property at 1100, Introduce Type Alias at 1125.
                  Separator at 600 opens the Extract/Introduce group; separator at 900 separates
                  Extract from Introduce; separator at 1300 closes the group before Inline (1400). -->
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinCopyDeclarationAction.shadow">
@@ -106,6 +110,10 @@
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveDeclarationAction.shadow">
                 <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveDeclarationAction.instance"/>
                 <attr name="position" intvalue="260"/>
+            </file>
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangeSignatureAction.shadow">
+                <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangeSignatureAction.instance"/>
+                <attr name="position" intvalue="270"/>
             </file>
             <file name="separator-before-extract.instance">
                 <attr name="instanceClass" stringvalue="javax.swing.JSeparator"/>
@@ -537,6 +545,10 @@
                         <!-- Move Declaration (E9.7): custom Kotlin action (Refactor menu only, no keybinding). -->
                         <file name="kotlin-move-declaration.instance">
                             <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveDeclarationAction"/>
+                        </file>
+                        <!-- Change Signature (E9.8, Ctrl+F6): custom Kotlin action. -->
+                        <file name="kotlin-change-signature.instance">
+                            <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignatureAction"/>
                         </file>
                     </folder>
                     <!-- Kotlin keybindings: Ctrl+Shift+P and Ctrl+Alt+B for Navigate menu actions.

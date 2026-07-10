@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.162-SNAPSHOT</version>
+    <version>0.11.170-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
@@ -742,6 +742,151 @@
               </resources>
             </configuration>
           </execution>
+          <!-- kotlin.refactorings.k2/kotlin.refactorings.common: Change Signature engine (E9.8, M1).
+               Real IDEA algorithm for renaming/reordering/adding/removing parameters and changing
+               the return type/visibility of a function or constructor, then rewriting every usage
+               (call sites, parameter references, overrides, callable references, constructor
+               delegation, callers, data-class components/destructuring, enum entries without a
+               super call, by-convention/operator calls) to match.
+               Excluded: KotlinChangeSignatureProcessor.kt (thin ChangeSignatureProcessorBase wrapper
+               — KaChangeSignatureComputer drives findUsages/findConflicts/processUsage directly,
+               same convention as every other E9.x refactoring never invoking BaseRefactoringProcessor.run()),
+               KotlinChangeSignatureHandler.kt/KotlinChangeSignatureHandlerBase.kt (IDE action-system
+               dispatch — KaChangeSignatureComputer hand-writes the caret-resolution logic instead,
+               same as Move Declaration not porting K2MoveHandler.kt), KotlinJavaChangeInfoConverter.kt
+               (Java interop, out of scope), ui/** (Swing dialogs — NB has its own table-based panel),
+               quickFix/** (not in scope for E9.8), KotlinUsagesViewDescriptor.kt (IDE usage-view only). -->
+          <execution>
+            <id>copy-kotlin-refactoring-changesig-k2</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinChangeInfoBase.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinChangeInfo.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinChangeSignatureConflictFilter.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinChangeSignatureConflictSearcher.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinChangeSignatureUsageProcessor.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinChangeSignatureUsageProvider.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinChangeSignatureUsageSearcher.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinMethodDescriptor.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinParameterInfo.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinTypeInfo.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/usages/**</include>
+                    <!-- ContextReceiversUtil.kt: createContextArgumentReplacementMapForFunctionCall/ForVariableAccess,
+                         createReplacementReceiverArgumentExpression — used by KotlinFunctionCallUsage/
+                         KotlinChangeSignatureUsageSearcher for context-parameter call-site rewriting. -->
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/util/ContextReceiversUtil.kt</include>
+                  </includes>
+                </resource>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.common/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/refactoring/changeSignature/KotlinModifiableChangeInfo.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/changeSignature/KotlinModifiableMethodDescriptor.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/changeSignature/KotlinModifiableParameterInfo.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/changeSignature/KotlinValVar.kt</include>
+                    <!-- conflicts/kotlinMembersNameConflicts.kt: checkNewPropertyConflicts, checkRedeclarationConflicts,
+                         registerAlreadyDeclaredConflict, registerRetargetJobOnPotentialCandidates — used by
+                         KotlinChangeSignatureConflictSearcher. rename/BasicUnresolvableCollisionUsageInfo.kt —
+                         used by the same conflict searcher for name-clash reporting. -->
+                    <include>org/jetbrains/kotlin/idea/refactoring/conflicts/kotlinMembersNameConflicts.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/rename/BasicUnresolvableCollisionUsageInfo.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- kotlin/base/util: KotlinScopeUtils.kt (useScope — used throughout the ported Change
+               Signature usage searcher). kotlin/code-insight/impl-base: ReplaceGetOrSetInspectionUtils,
+               RemoveEmptyParenthesesFromLambdaCallUtils — used by KotlinByConventionCallUsage.
+               Note: KtArrayAccessReference/KtInvokeFunctionReference (imported by
+               KotlinChangeSignatureUsageProvider.kt) do NOT need porting — they already resolve via
+               the bundled kotlin-compiler-ir-for-ide jar, same as for the already-working
+               K2ReferenceMutateService.kt/KtReferenceMutateServiceBase.kt. Their real IDEA
+               implementations (IndexingOperatorReferenceSearcher.kt/InvokeOperatorReferenceSearcher.kt)
+               pull in UAST (OperatorReferenceSearcher, UMethod, UastContext) and must NOT be ported. -->
+          <execution>
+            <id>copy-kotlin-refactoring-changesig-operator-refs</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/util/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/util/KotlinScopeUtils.kt</include>
+                  </includes>
+                </resource>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/impl-base/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsights/impl/base/inspections/ReplaceGetOrSetInspectionUtils.kt</include>
+                    <include>org/jetbrains/kotlin/idea/codeinsights/impl/base/RemoveEmptyParenthesesFromLambdaCallUtils.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- platform/lang-impl: MethodDescriptor (interface KotlinMethodDescriptor implements).
+               Widens the sparse-checkout cone beyond what any prior E9.x refactoring needed;
+               verified present via `git show HEAD:<path>` in the submodule (full history is checked
+               out even though the working tree is sparse).
+               RefactoringUIUtil.java is NOT ported here: a local Kotlin stub already exists at
+               src/main/kotlin/com/intellij/refactoring/util/RefactoringUIUtil.kt (added for Move
+               Declaration) providing the one member (getDescription) Change Signature also needs;
+               porting the real Java class would redeclare it.
+               java/java-impl-refactorings: CallerUsageInfo — base class for KotlinCallerCallUsage
+               ("propagate to callers"); has no real Java-PSI dependency of its own (plain data holder).
+               platform/analysis-impl: CollisionUsageInfo/UnresolvableCollisionUsageInfo — base class
+               for BasicUnresolvableCollisionUsageInfo (used by KotlinChangeSignatureConflictSearcher
+               for name-clash reporting). Both extend com.intellij.refactoring.util.MoveRenameUsageInfo,
+               which is NOT ported here — it already resolves via a bundled dependency jar, same as for
+               the already-working K2MoveRenameUsageInfo.kt/RenamePsiElementProcessorBase.java. -->
+          <execution>
+            <id>copy-platform-changesig-support</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/platform/lang-impl/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>com/intellij/refactoring/changeSignature/MethodDescriptor.java</include>
+                  </includes>
+                </resource>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/java/java-impl-refactorings/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>com/intellij/refactoring/changeSignature/CallerUsageInfo.java</include>
+                  </includes>
+                </resource>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/platform/analysis-impl/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>com/intellij/refactoring/rename/CollisionUsageInfo.java</include>
+                    <include>com/intellij/refactoring/rename/UnresolvableCollisionUsageInfo.java</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
         </executions>
       </plugin>
 
@@ -962,20 +1107,10 @@ if (inlinePreprocessorUtil.exists()) {
   log.info("Patched InlinePreprocessorUtil.kt: removed getKaModule, simplified isImportable")
 }
 
-// 9. ContextReceiversUtil.kt: KotlinParameterInfo is from the changeSignature subpackage (not compiled).
-//    Remove createReplacementReceiverArgumentExpression and its import.
-def contextReceiversUtil = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/util/ContextReceiversUtil.kt')
-if (contextReceiversUtil.exists()) {
-  def text = contextReceiversUtil.text
-  text = text.replace('import org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.KotlinParameterInfo\n', '')
-  def funcMarker = '\ninternal fun createReplacementReceiverArgumentExpression('
-  def funcIdx = text.indexOf(funcMarker)
-  if (funcIdx >= 0) {
-    text = text.substring(0, funcIdx) + '\n'
-  }
-  contextReceiversUtil.text = text
-  log.info("Patched ContextReceiversUtil.kt: removed KotlinParameterInfo import and createReplacementReceiverArgumentExpression")
-}
+// 9. ContextReceiversUtil.kt: previously patched to strip createReplacementReceiverArgumentExpression
+//    because KotlinParameterInfo (changeSignature subpackage) wasn't compiled. Change Signature
+//    (E9.8) now compiles that subpackage and needs createReplacementReceiverArgumentExpression
+//    itself, so the file is left unpatched (full original content, import resolves normally).
 
 // 10. ExtractionData.kt: substringContextOrThis, ExtractableSubstringInfo, extractableSubstringInfo
 //     are in base/analysis which is K1-only. In NB we never extract string-template substrings,
@@ -1725,6 +1860,265 @@ if (visibilityConflictFile.exists()) {
   log.info("Patched visibilityConflict.kt: swapped allowAnalysisFromWriteActionInEdt for analyze")
 }
 
+// 10. KotlinChangeSignatureUsageProcessor.kt (E9.8): strip Java-interop branches (JavaChangeInfo/
+//     MethodCallUsageInfo/OverriderUsageInfo/FunctionalExpressionSearch SAM-conversion search — out
+//     of scope, see E9.8 strategy) and replace ReferencesSearch/MethodReferencesSearch with
+//     KotlinChangeSignatureUsageSearchService (standalone has no PsiSearchHelper-backed index).
+def changeSigUsageProcessor = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinChangeSignatureUsageProcessor.kt')
+if (changeSigUsageProcessor.exists()) {
+  def text = changeSigUsageProcessor.text
+
+  // Drop the JavaChangeInfo/functional-interface-call-site branch at the top of findUsages().
+  def javaBranchMarker = '        if (changeInfo is JavaChangeInfo) {'
+  def javaBranchIdx = text.indexOf(javaBranchMarker)
+  if (javaBranchIdx >= 0) {
+    def afterBranchMarker = '        if (changeInfo !is KotlinChangeInfo) return emptyArray()'
+    def afterBranchIdx = text.indexOf(afterBranchMarker, javaBranchIdx)
+    text = text.substring(0, javaBranchIdx) + text.substring(afterBranchIdx)
+  }
+
+  // Drop the SAM-conversion (FunctionalExpressionSearch) block for bodyless KtNamedFunctions.
+  def samBranchMarker = '        if (ktCallableDeclaration is KtNamedFunction && !ktCallableDeclaration.hasBody()) {'
+  def samBranchIdx = text.indexOf(samBranchMarker)
+  if (samBranchIdx >= 0) {
+    def afterSamMarker = '        val primaryElements = mutableListOf<KtNamedDeclaration>()'
+    def afterSamIdx = text.indexOf(afterSamMarker, samBranchIdx)
+    text = text.substring(0, samBranchIdx) + text.substring(afterSamIdx)
+  }
+
+  // ChangeSignatureUsageProviders.findProvider() dispatches by Language via a LanguageExtension EP
+  // (com.intellij.changeSignature.usageProvider) that no plugin.xml registers standalone, so it
+  // would always return null and silently drop every usage. This plugin only ever deals with
+  // Kotlin, so direct-instantiate the one provider instead of an EP-registry lookup — same
+  // "no EP-registry lookup needed standalone" convention already used for ChangeSignatureUsageProcessor.
+  text = text.replace(
+    'val provider = ChangeSignatureUsageProviders.findProvider(overrider.language)',
+    'val provider = KotlinChangeSignatureUsageProvider()'
+  )
+  text = text.replace(
+    'val provider = ChangeSignatureUsageProviders.findProvider(reference.element.language)',
+    'val provider = KotlinChangeSignatureUsageProvider()'
+  )
+
+  // Replace findReferences() body: ReferencesSearch/MethodReferencesSearch (PsiSearchHelper-backed,
+  // no-op standalone) -> KotlinChangeSignatureUsageSearchService (whole-project PSI scan).
+  def findRefsMarker = '    private fun findReferences(psi: PsiElement): Set<PsiReference> {'
+  def findRefsIdx = text.indexOf(findRefsMarker)
+  if (findRefsIdx >= 0) {
+    def findRefsEndMarker = '\n    }\n\n    override fun findConflicts('
+    def findRefsEndIdx = text.indexOf(findRefsEndMarker, findRefsIdx)
+    def replacement = '''    private fun findReferences(psi: PsiElement): Set<PsiReference> {
+        val service = KotlinChangeSignatureUsageSearchService.getInstance() ?: return emptySet()
+        return service.findUsages(psi).toSet()
+    }
+'''
+    text = text.substring(0, findRefsIdx) + replacement + text.substring(findRefsEndIdx + '\n    }\n'.length())
+  }
+
+  // Drop now-unresolvable imports (Java interop / IDE search-index classes no longer referenced).
+  ['import com.intellij.psi.LambdaUtil\n',
+   'import com.intellij.psi.search.searches.FunctionalExpressionSearch\n',
+   'import com.intellij.psi.search.searches.MethodReferencesSearch\n',
+   'import com.intellij.psi.search.searches.ReferencesSearch\n',
+   'import org.jetbrains.kotlin.idea.search.ideaExtensions.KotlinReferencesSearchOptions\n',
+   'import org.jetbrains.kotlin.idea.search.ideaExtensions.KotlinReferencesSearchParameters\n'].each {
+    text = text.replace(it, '')
+  }
+
+  changeSigUsageProcessor.text = text
+  log.info("Patched KotlinChangeSignatureUsageProcessor.kt: stripped Java-interop branches, wired KotlinChangeSignatureUsageSearchService")
+}
+
+// 11. KotlinChangeSignatureUsageProvider.kt (E9.8): strip JavaChangeInfo-based caller-propagation
+//     ("methodsToPropagateParameters" is Java-only — a pure-Kotlin change never populates it in
+//     real IDEA either, so this is not a functional regression).
+def changeSigUsageProvider = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinChangeSignatureUsageProvider.kt')
+if (changeSigUsageProvider.exists()) {
+  def text = changeSigUsageProvider.text
+  text = text.replace('import com.intellij.refactoring.changeSignature.JavaChangeInfo\n', '')
+  text = text.replace(
+    'val callers = (changeInfo as? JavaChangeInfo)?.methodsToPropagateParameters',
+    'val callers: List<com.intellij.psi.PsiMethod>? = null'
+  )
+  changeSigUsageProvider.text = text
+  log.info("Patched KotlinChangeSignatureUsageProvider.kt: removed JavaChangeInfo caller-propagation (always null for pure-Kotlin changes upstream too)")
+}
+
+// 12. KotlinMethodDescriptor.kt (E9.8): drop runWithModalProgressBlocking (no EDT-modal-progress
+//     concept standalone) — always take the direct (non-modal) getCallable() path.
+def changeSigMethodDescriptor = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinMethodDescriptor.kt')
+if (changeSigMethodDescriptor.exists()) {
+  def text = changeSigMethodDescriptor.text
+  text = text.replace(
+'''        return if (ApplicationManager.getApplication().isDispatchThread && !ApplicationManager.getApplication().isWriteAccessAllowed) {
+            runWithModalProgressBlocking(
+                c.project, KotlinBundle.message("fix.change.signature.prepare")
+            ) { readAction { getCallable() } }
+        } else {
+            getCallable()
+        }''',
+'''        return getCallable()'''
+  )
+  text = text.replace('import com.intellij.openapi.application.ApplicationManager\n', '')
+  text = text.replace('import com.intellij.openapi.application.readAction\n', '')
+  text = text.replace('import com.intellij.platform.ide.progress.runWithModalProgressBlocking\n', '')
+  changeSigMethodDescriptor.text = text
+  log.info("Patched KotlinMethodDescriptor.kt: removed modal-progress branch (no EDT modal progress standalone)")
+}
+
+// 13. kotlinMembersNameConflicts.kt (E9.8): checkRedeclarationConflictsInInheritors uses
+//     ClassInheritorsSearch (whole-project hierarchy index) — same limitation already accepted for
+//     Move Declaration's functionOverriddenInSubclassConflict/sealedClassesConflict checks (no
+//     project-wide inheritor index standalone). Made a no-op rather than falsely reporting/missing
+//     conflicts.
+def membersNameConflicts = new File(srcDir, 'org/jetbrains/kotlin/idea/refactoring/conflicts/kotlinMembersNameConflicts.kt')
+if (membersNameConflicts.exists()) {
+  def text = membersNameConflicts.text
+  text = text.replace('import com.intellij.psi.search.searches.ClassInheritorsSearch\n', '')
+  def fnMarker = 'private fun checkRedeclarationConflictsInInheritors(declaration: KtNamedDeclaration, newName: String, result: MutableList<UsageInfo>) {'
+  def fnIdx = text.indexOf(fnMarker)
+  if (fnIdx >= 0) {
+    def bodyStart = text.indexOf('{', fnIdx) + 1
+    // Find the matching closing brace by tracking nesting depth.
+    def depth = 1
+    def i = bodyStart
+    while (depth > 0 && i < text.length()) {
+      def ch = text.charAt(i)
+      if (ch == '{' as char) depth++
+      else if (ch == '}' as char) depth--
+      i++
+    }
+    text = text.substring(0, bodyStart) + '\n    // No project-wide inheritor index standalone; same limitation as Move Declaration\'s\n    // hierarchy-based conflict checks (see docs/stubs.md).\n' + text.substring(i - 1)
+  }
+  membersNameConflicts.text = text
+  log.info("Patched kotlinMembersNameConflicts.kt: made checkRedeclarationConflictsInInheritors a no-op (no inheritor index standalone)")
+}
+
+// 14. KotlinChangeSignatureConflictSearcher.kt (E9.8): drop the Java-interop conflict branches
+//     (OverriderUsageInfo/MethodCallUsageInfo/JavaChangeSignatureUsageProcessor) — usageInfo is
+//     never one of these types for a pure-Kotlin change (out of scope, see E9.8 strategy).
+def changeSigConflictSearcher = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinChangeSignatureConflictSearcher.kt')
+if (changeSigConflictSearcher.exists()) {
+  def text = changeSigConflictSearcher.text
+  text = text.replace('import com.intellij.refactoring.changeSignature.JavaChangeSignatureUsageProcessor\n', '')
+  text = text.replace('import com.intellij.refactoring.changeSignature.MethodCallUsageInfo\n', '')
+  text = text.replace('import com.intellij.refactoring.changeSignature.OverriderUsageInfo\n', '')
+  text = text.replace(
+'''                is OverriderUsageInfo -> {
+                    JavaChangeSignatureUsageProcessor.ConflictSearcher.checkParametersToDelete(usageInfo.overridingMethod, parametersToRemove, result)
+                }
+                is MethodCallUsageInfo -> {
+                    val conflictMessage = when {
+                        hasDefaultParameter -> KotlinBundle.message("change.signature.conflict.text.kotlin.default.value.in.non.kotlin.files")
+                        else -> continue
+                    }
+
+                    result.putValue(usageInfo.element, conflictMessage)
+                }
+''', '')
+  changeSigConflictSearcher.text = text
+  log.info("Patched KotlinChangeSignatureConflictSearcher.kt: dropped Java-interop conflict branches")
+}
+
+// 15. KotlinFunctionCallUsage.kt (E9.8): drop K2IntroduceVariableHandler.collectCandidateTargetContainersAndDoRefactoring
+//     (Introduce Variable's IDE-action-system handler is not ported — the same "don't port handler
+//     classes" convention as every other E9.x refactoring, see KaMoveDeclarationComputer not porting
+//     K2MoveHandler.kt). It only fires when a default-value expression needs a temp variable
+//     introduced (side-effect ordering edge case); skipping it leaves the expression substituted
+//     inline instead of hoisted to a variable — a conservative simplification, not a correctness bug.
+def functionCallUsage = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/usages/KotlinFunctionCallUsage.kt')
+if (functionCallUsage.exists()) {
+  def text = functionCallUsage.text
+  text = text.replace('import org.jetbrains.kotlin.idea.k2.refactoring.introduce.introduceVariable.K2IntroduceVariableHandler\n', '')
+  text = text.replace(
+'''                allowAnalysisFromWriteAction {
+                    allowAnalysisOnEdt {
+                        K2IntroduceVariableHandler.collectCandidateTargetContainersAndDoRefactoring(
+                            project, null, argumentExpression,
+                            isVar = false,
+                            occurrencesToReplace = listOf(argumentExpression),
+                            onNonInteractiveFinish = {
+                                argumentExpression = psiFactory.createExpression(it.name!!)
+                            })
+                    }
+                }''',
+'''                // K2IntroduceVariableHandler not ported (IDE-action-system handler); expression is
+                // substituted inline instead of hoisted to a temp variable — see patch #15 in pom.xml.'''
+  )
+  functionCallUsage.text = text
+  log.info("Patched KotlinFunctionCallUsage.kt: removed K2IntroduceVariableHandler temp-variable extraction")
+}
+
+// 17. KotlinChangeSignatureUsageSearcher.kt (E9.8): replace ReferencesSearch.search() (no-op
+//     standalone, backed by NoOpPsiSearchHelper) with KotlinChangeSignatureUsageSearchService's
+//     whole-project PSI scan — same call-site-patch strategy as patch #10's findReferences().
+def changeSigUsageSearcher = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinChangeSignatureUsageSearcher.kt')
+if (changeSigUsageSearcher.exists()) {
+  def text = changeSigUsageSearcher.text
+  text = text.replace(
+    'for (reference in ReferencesSearch.search(oldParam, oldParam.useScope()).asIterable()) {',
+    'for (reference in (KotlinChangeSignatureUsageSearchService.getInstance()?.findUsages(oldParam) ?: emptyList())) {'
+  )
+  text = text.replace(
+    'ReferencesSearch.search(it).asIterable().mapNotNullTo(result) { reference ->',
+    '(KotlinChangeSignatureUsageSearchService.getInstance()?.findUsages(it) ?: emptyList()).mapNotNullTo(result) { reference ->'
+  )
+  changeSigUsageSearcher.text = text
+  log.info("Patched KotlinChangeSignatureUsageSearcher.kt: wired KotlinChangeSignatureUsageSearchService")
+}
+
+// 16. KotlinTypeInfo.kt (E9.8): errorIgnoringRenderer's custom KaErrorTypeRenderer calls
+//     PrettyPrinter.append(String), which the era-253 analysis-api jar marks as a JetBrains-internal
+//     API (compile error, not just a warning, under this Kotlin compiler version). Drop the custom
+//     error-type rendering and fall back to the base renderer's default error-type text — a cosmetic
+//     difference (slightly less pretty error-type strings), not a correctness change: this renderer
+//     only affects the type-text shown for exotic/inference-error cases, not normal signatures.
+def changeSigTypeInfo = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinTypeInfo.kt')
+if (changeSigTypeInfo.exists()) {
+  def text = changeSigTypeInfo.text
+  text = text.replace(
+'''@KaExperimentalApi
+private val errorIgnoringRenderer: KaTypeRenderer = KaTypeRendererForSource.WITH_QUALIFIED_NAMES.with {
+    errorTypeRenderer = object : KaErrorTypeRenderer {
+        override fun renderType(
+            analysisSession: KaSession,
+            type: KaErrorType,
+            typeRenderer: KaTypeRenderer,
+            printer: PrettyPrinter
+        ) {
+            type.presentableText?.let {
+                printer.append(it)
+            }
+        }
+    }
+}''',
+'''@KaExperimentalApi
+private val errorIgnoringRenderer: KaTypeRenderer = KaTypeRendererForSource.WITH_QUALIFIED_NAMES'''
+  )
+  changeSigTypeInfo.text = text
+  log.info("Patched KotlinTypeInfo.kt: dropped custom errorTypeRenderer (PrettyPrinter.append is JetBrains-internal-only in this compiler version)")
+}
+
+// 17. KotlinChangeSignatureUsageProcessor.kt (E9.8): the "propagation" isCaller branch of
+//     processParameterListWithStructuralChanges() unconditionally appends every new parameter to a
+//     caller's own parameter list. This plugin's KaChangeSignatureComputer.withCallerPropagation()
+//     marks *every* direct caller with a CallerUsageInfo (needed so that caller's own call site
+//     still forwards the new argument via KotlinFunctionCallUsage.isCaller() — see that function's
+//     KDoc), including a caller that already declares a same-named parameter from an earlier
+//     propagation or a repeated invocation. Filter newParameters by name here so such a caller's
+//     *own declaration* is left untouched, without dropping it from propagation entirely (which
+//     would also silently stop its call site from forwarding the value).
+def changeSigUsageProcessorDedup = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinChangeSignatureUsageProcessor.kt')
+if (changeSigUsageProcessorDedup.exists()) {
+  def text = changeSigUsageProcessorDedup.text
+  text = text.replace(
+    'val newParameters = changeInfo.newParameters.filter { it.isNewParameter }\n                    if (isNotEmpty() && newParameters.isNotEmpty()) {',
+    'val existingNames = (element as? KtCallableDeclaration)?.valueParameters?.mapNotNull { it.name }?.toSet().orEmpty()\n                    val newParameters = changeInfo.newParameters.filter { it.isNewParameter && it.name !in existingNames }\n                    if (isNotEmpty() && newParameters.isNotEmpty()) {'
+  )
+  changeSigUsageProcessorDedup.text = text
+  log.info("Patched KotlinChangeSignatureUsageProcessor.kt: caller-propagation skips parameters the caller already declares by name")
+}
+
                 ]]></script>
               </scripts>
             </configuration>
@@ -1804,6 +2198,36 @@ if (visibilityConflictFile.exists()) {
               <excludes>
                 <exclude>com/intellij/refactoring/inline/GenericInlineHandler.java</exclude>
               </excludes>
+            </configuration>
+          </execution>
+          <!-- Change Signature (E9.8) needs real .class bytecode — not just kotlinc's loose
+               source-path resolution — for a handful of platform Java interfaces/classes that
+               KotlinMethodDescriptor/KotlinChangeInfo/KotlinParameterInfo/BasicUnresolvableCollisionUsageInfo/
+               KotlinCallerCallUsage implement or extend: the JVM verifies superinterfaces/superclasses
+               when *loading* those Kotlin classes at runtime (unlike kotlinc, which only needs source
+               to resolve references at compile time), so without this execution every Change Signature
+               call fails with NoClassDefFoundError even though compilation succeeds. Narrowly scoped
+               (not the whole bulk-copied platform/refactoring/src tree, most of which still doesn't
+               javac-compile standalone) to just the interfaces/classes this feature's class hierarchy
+               actually needs loadable. -->
+          <execution>
+            <id>compile-changesig-platform-interfaces</id>
+            <phase>process-classes</phase>
+            <goals><goal>compile</goal></goals>
+            <configuration>
+              <compileSourceRoots>
+                <compileSourceRoot>${project.build.directory}/generated-sources/refactoring</compileSourceRoot>
+              </compileSourceRoots>
+              <includes>
+                <include>com/intellij/refactoring/changeSignature/ChangeInfo.java</include>
+                <include>com/intellij/refactoring/changeSignature/ParameterInfo.java</include>
+                <include>com/intellij/refactoring/changeSignature/MethodDescriptor.java</include>
+                <include>com/intellij/refactoring/changeSignature/CallerUsageInfo.java</include>
+                <include>com/intellij/refactoring/changeSignature/ChangeSignatureUsageProcessor.java</include>
+                <include>com/intellij/refactoring/changeSignature/ChangeSignatureUsageProvider.java</include>
+                <include>com/intellij/refactoring/rename/CollisionUsageInfo.java</include>
+                <include>com/intellij/refactoring/rename/UnresolvableCollisionUsageInfo.java</include>
+              </includes>
             </configuration>
           </execution>
         </executions>
