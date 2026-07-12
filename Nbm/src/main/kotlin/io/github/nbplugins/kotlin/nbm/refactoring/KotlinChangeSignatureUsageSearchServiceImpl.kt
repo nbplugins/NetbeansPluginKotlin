@@ -14,16 +14,22 @@
  * limitations under the License.
  *
  *******************************************************************************/
+@file:OptIn(org.jetbrains.kotlin.analysis.api.KaExperimentalApi::class)
+
 package io.github.nbplugins.kotlin.nbm.refactoring
 
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiReference
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
+import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
+import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.KotlinChangeSignatureUsageSearchService
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.log.KotlinLogger
+import org.jetbrains.kotlin.psi.KtCallableDeclaration
 import org.jetbrains.kotlin.psi.KtImportDirective
+import org.jetbrains.kotlin.psi.KtNamedDeclaration
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
 import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
 import com.intellij.psi.util.PsiTreeUtil
@@ -39,10 +45,14 @@ import com.intellij.psi.util.PsiTreeUtil
  * [KotlinMoveUsageSearchServiceImpl]: iterate every `KtFile` the session that owns [element] knows
  * about and resolve each simple-name reference.
  *
- * M1 scope: only [KtSimpleNameExpression] references are visited, covering plain function/
- * constructor calls and parameter-name references inside the body. Overrides, callable references
- * (`::foo`), constructor delegation, destructuring, enum entries, and by-convention/operator calls
- * (M2/M3) resolve through different PSI node kinds and are not yet visited here.
+ * [KtSimpleNameExpression] references cover plain function/constructor calls, parameter-name
+ * references inside the body, constructor delegation, and callable references (`::foo` — the name
+ * part of a `KtCallableReferenceExpression` is itself a [KtSimpleNameExpression]), so a single
+ * whole-project scan of simple-name references (below) covers all of them. Destructuring and
+ * enum-entry-without-super-call usages don't need reference search at all — the ported engine finds
+ * them structurally (declaration shape, not references). [findOverridings] is a second, separate
+ * whole-project scan for the one usage kind reference search can't find: declarations that override
+ * [element] without literally referencing it.
  */
 class KotlinChangeSignatureUsageSearchServiceImpl : KotlinChangeSignatureUsageSearchService {
     override fun findUsages(element: PsiElement): List<PsiReference> {
@@ -59,8 +69,8 @@ class KotlinChangeSignatureUsageSearchServiceImpl : KotlinChangeSignatureUsageSe
                             // no live-document sync to keep the import list consistent standalone.
                             if (PsiTreeUtil.getParentOfType(expression, KtImportDirective::class.java) != null) return
                             val reference = expression.references.filterIsInstance<KtReference>().firstOrNull() ?: return
-                            val resolved = runCatching { reference.resolveToSymbol()?.psi }.getOrNull()
-                            if (resolved == element) {
+                            val resolved = runCatching { reference.resolveToSymbol()?.psi }.getOrNull() ?: return
+                            if (resolved == element || isOverrideRelated(resolved, element)) {
                                 references += reference
                             }
                         }
@@ -73,5 +83,56 @@ class KotlinChangeSignatureUsageSearchServiceImpl : KotlinChangeSignatureUsageSe
             }
         }
         return references
+    }
+
+    /**
+     * Whether [resolved] and [target] are two declarations in the same override chain (one
+     * directly or transitively overrides the other), rather than the exact same declaration.
+     *
+     * A call site's static receiver type decides which override K2 resolves it to: `val b: B =
+     * B(); b.ff(...)` resolves to `B`'s override of `ff`, not `Base`'s declaration — even when
+     * Change Signature was invoked on `Base.ff`. Real IDEA's `ReferencesSearch` already accounts
+     * for virtual dispatch when searching for usages of an overridable member; plain PSI-identity
+     * comparison (`resolved == element`) here does not, so a call site through *any* member of the
+     * override chain must also count as a usage — otherwise adding a parameter propagates to every
+     * override's own declaration (via [findOverridings]) but never reaches the call sites that
+     * happen to resolve through one of those overrides.
+     */
+    private fun KaSession.isOverrideRelated(resolved: PsiElement, target: PsiElement): Boolean {
+        if (resolved !is KtCallableDeclaration || target !is KtCallableDeclaration) return false
+        val resolvedSymbol = runCatching { resolved.symbol as? KaCallableSymbol }.getOrNull() ?: return false
+        val targetSymbol = runCatching { target.symbol as? KaCallableSymbol }.getOrNull() ?: return false
+        return runCatching {
+            resolvedSymbol.allOverriddenSymbols.any { it.psi == target } ||
+                targetSymbol.allOverriddenSymbols.any { it.psi == resolved }
+        }.getOrDefault(false)
+    }
+
+    override fun findOverridings(element: PsiElement): List<PsiElement> {
+        val session = KotlinAnalysisAPISession.forProject(element.project) ?: return emptyList()
+        val overridings = mutableListOf<PsiElement>()
+        for (kaFile in session.fileMap.values) {
+            val ktFile = session.getKtFileForPath(kaFile.path) ?: continue
+            runCatching {
+                analyze(ktFile) {
+                    ktFile.accept(object : KtTreeVisitorVoid() {
+                        override fun visitNamedDeclaration(declaration: KtNamedDeclaration) {
+                            super.visitNamedDeclaration(declaration)
+                            if (declaration == element) return
+                            val symbol = runCatching { declaration.symbol as? KaCallableSymbol }.getOrNull() ?: return
+                            val overridesTarget = runCatching {
+                                symbol.allOverriddenSymbols.any { it.psi == element }
+                            }.getOrNull() ?: return
+                            if (overridesTarget) overridings += declaration
+                        }
+                    })
+                }
+            }.onFailure { e ->
+                KotlinLogger.INSTANCE.logException(
+                    "KotlinChangeSignatureUsageSearchServiceImpl.findOverridings: search failed in ${ktFile.name}", e
+                )
+            }
+        }
+        return overridings
     }
 }

@@ -439,4 +439,395 @@ class KaChangeSignatureTest : KotlinTestCase("KaChangeSignatureTest", "changeSig
             tmpDir.toFile().deleteRecursively()
         }
     }
+
+    /**
+     * Integration test (real K2): E9.8 M2 — an `open` base function's signature change must
+     * propagate into every overriding declaration project-wide
+     * ([org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.usages.KotlinOverrideUsageInfo]),
+     * exercising [io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignatureUsageSearchServiceImpl.findOverridings]
+     * for the first time. Renames a parameter on `Base.greet`; `Derived.greet`'s `override fun`
+     * must be renamed to match (it has no explicit parameter type it could otherwise diverge on).
+     */
+    fun testApply_renameParameter_propagatesToOverride() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping override-propagation test")
+            return
+        }
+        val tmpDir = Files.createTempDirectory("nbkotlin-changesig-override")
+        try {
+            val baseFile = tmpDir.resolve("Base.kt")
+            Files.writeString(
+                baseFile,
+                """
+                package changesigtest.override
+
+                open class Base {
+                    open fun greet(first: String): String = "Hello, ${'$'}first"
+                }
+                """.trimIndent()
+            )
+            val derivedFile = tmpDir.resolve("Derived.kt")
+            Files.writeString(
+                derivedFile,
+                """
+                package changesigtest.override
+
+                class Derived : Base() {
+                    override fun greet(first: String): String = "Hi, ${'$'}first"
+                }
+                """.trimIndent()
+            )
+
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-signature-override",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(tmpDir),
+            )
+            val baseKtFile = session.getKtFileForPath(baseFile.toString()) ?: error("Failed to obtain Base KtFile")
+            val computer = KaChangeSignatureComputer(baseKtFile, baseKtFile.text.indexOf("greet"))
+
+            val outcome = computer.compute()
+            assertTrue("Expected Ready, got $outcome", outcome is KaChangeSignatureComputer.Outcome.Ready)
+            val result = (outcome as KaChangeSignatureComputer.Outcome.Ready).result
+            val request = KaChangeSignatureRequest(
+                newName = result.declarationName,
+                newReturnTypeText = result.returnTypeText,
+                parameters = listOf(result.parameters.single().copy(name = "who")),
+            )
+
+            val applyOutcome = computer.apply(request)
+            assertTrue(
+                "Expected ApplyOutcome.Success, got $applyOutcome",
+                applyOutcome is KaChangeSignatureComputer.ApplyOutcome.Success,
+            )
+            val success = applyOutcome as KaChangeSignatureComputer.ApplyOutcome.Success
+
+            val newBaseText = success.fileTexts[baseKtFile.virtualFile?.path ?: baseKtFile.name]
+            assertNotNull("Expected Base.kt among the touched files", newBaseText)
+            assertTrue(
+                "Expected Base.greet's parameter renamed to 'who', got: $newBaseText",
+                newBaseText!!.contains("fun greet(who: String)") || newBaseText.contains("fun greet(who: kotlin.String)"),
+            )
+
+            val derivedPath = session.getKtFileForPath(derivedFile.toString())?.virtualFile?.path
+                ?: error("Failed to obtain Derived KtFile path")
+            val newDerivedText = success.fileTexts[derivedPath]
+            assertNotNull("Expected Derived.kt (the override) among the touched files", newDerivedText)
+            assertTrue(
+                "Expected Derived's override renamed to match ('who'), got: $newDerivedText",
+                newDerivedText!!.contains("override fun greet(who: String)") ||
+                    newDerivedText.contains("override fun greet(who: kotlin.String)"),
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Integration test (real K2): E9.8 M2 — renaming a parameter to collide with another existing
+     * parameter's name (`first` -> `second` when `second` already exists) must be rejected by
+     * [org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.KotlinChangeSignatureConflictSearcher]'s
+     * duplicate-name check (now wired into [KaChangeSignatureComputer.apply]) as
+     * [KaChangeSignatureComputer.ApplyOutcome.Conflicts], with nothing mutated. This is a genuine
+     * rename collision, distinct from the *new*-parameter duplicate-name case already guarded
+     * upstream in [io.github.nbplugins.kotlin.refactoring.KaChangeSignatureComputer.apply] (see
+     * `testApply_addSameParameterNameTwice_doesNotDuplicateOnCaller`) — that guard only dedupes
+     * brand-new parameters, so this rename collision reaches the conflict searcher untouched.
+     */
+    fun testApply_renameParameterToCollideWithExisting_returnsConflicts() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping conflict-detection test")
+            return
+        }
+        val tmpDir = Files.createTempDirectory("nbkotlin-changesig-conflict")
+        try {
+            val sourceFile = tmpDir.resolve("Source.kt")
+            val originalText = """
+                package changesigtest.conflict
+
+                fun greet(first: String, second: String): String = "${'$'}first ${'$'}second"
+            """.trimIndent()
+            Files.writeString(sourceFile, originalText)
+
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-signature-conflict",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(tmpDir),
+            )
+            val sourceKtFile = session.getKtFileForPath(sourceFile.toString()) ?: error("Failed to obtain source KtFile")
+            val computer = KaChangeSignatureComputer(sourceKtFile, sourceKtFile.text.indexOf("greet"))
+
+            val outcome = computer.compute()
+            assertTrue("Expected Ready, got $outcome", outcome is KaChangeSignatureComputer.Outcome.Ready)
+            val result = (outcome as KaChangeSignatureComputer.Outcome.Ready).result
+            val request = KaChangeSignatureRequest(
+                newName = result.declarationName,
+                newReturnTypeText = result.returnTypeText,
+                parameters = listOf(
+                    result.parameters[0].copy(name = "second"),
+                    result.parameters[1],
+                ),
+            )
+
+            val applyOutcome = computer.apply(request)
+            assertTrue(
+                "Expected ApplyOutcome.Conflicts for a rename that duplicates an existing parameter name, got $applyOutcome",
+                applyOutcome is KaChangeSignatureComputer.ApplyOutcome.Conflicts,
+            )
+            assertTrue(
+                "Expected at least one conflict message",
+                (applyOutcome as KaChangeSignatureComputer.ApplyOutcome.Conflicts).messages.isNotEmpty(),
+            )
+            assertEquals("File must be left untouched when conflicts are found", originalText, sourceKtFile.text)
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Integration test (real K2): E9.8 M2 — a callable reference (`::greet`) is a
+     * [org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.usages.KotlinCallableReferenceUsage],
+     * recognized via the same whole-project simple-name scan
+     * ([io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignatureUsageSearchServiceImpl])
+     * used for plain calls — the reference's callable name is itself a `KtSimpleNameExpression`.
+     * Regression: apply() must not crash or spuriously report conflicts when a `::greet` reference
+     * exists alongside a normal call site; the call site's own argument list must still update
+     * correctly.
+     */
+    fun testApply_addParameter_coexistsWithCallableReference() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping callable-reference coexistence test")
+            return
+        }
+        val tmpDir = Files.createTempDirectory("nbkotlin-changesig-callableref")
+        try {
+            val sourceFile = tmpDir.resolve("Source.kt")
+            Files.writeString(
+                sourceFile,
+                """
+                package changesigtest.callableref
+
+                fun greet(first: String): String = "Hello, ${'$'}first"
+                """.trimIndent()
+            )
+            val usageFile = tmpDir.resolve("Usage.kt")
+            Files.writeString(
+                usageFile,
+                """
+                package changesigtest.callableref
+
+                val greeter: (String) -> String = ::greet
+
+                fun useGreet(): String = greet("world")
+                """.trimIndent()
+            )
+
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-signature-callableref",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(tmpDir),
+            )
+            val sourceKtFile = session.getKtFileForPath(sourceFile.toString()) ?: error("Failed to obtain source KtFile")
+            val computer = KaChangeSignatureComputer(sourceKtFile, sourceKtFile.text.indexOf("greet"))
+
+            val outcome = computer.compute()
+            assertTrue("Expected Ready, got $outcome", outcome is KaChangeSignatureComputer.Outcome.Ready)
+            val result = (outcome as KaChangeSignatureComputer.Outcome.Ready).result
+            val request = KaChangeSignatureRequest(
+                newName = result.declarationName,
+                newReturnTypeText = result.returnTypeText,
+                parameters = listOf(result.parameters.single().copy(name = "who")),
+            )
+
+            val applyOutcome = computer.apply(request)
+            assertTrue(
+                "Expected ApplyOutcome.Success (a callable reference must not spuriously break apply), got $applyOutcome",
+                applyOutcome is KaChangeSignatureComputer.ApplyOutcome.Success,
+            )
+            val success = applyOutcome as KaChangeSignatureComputer.ApplyOutcome.Success
+
+            val usagePath = session.getKtFileForPath(usageFile.toString())?.virtualFile?.path
+                ?: error("Failed to obtain usage KtFile path")
+            val newUsageText = success.fileTexts[usagePath]
+            assertNotNull("Expected Usage.kt among the touched files", newUsageText)
+            assertTrue(
+                "Expected the ::greet callable reference to survive untouched, got: $newUsageText",
+                newUsageText!!.contains("::greet"),
+            )
+            assertTrue(
+                "Expected the plain (positional-argument) call site to remain a valid call, got: $newUsageText",
+                newUsageText.contains("greet(\"world\")"),
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Integration test (real K2): E9.8 M2 — adding a brand-new parameter (no default value) to an
+     * `open` base function must also add it to every overriding declaration's own parameter list,
+     * not just rename an existing one (that path is already covered by
+     * [testApply_renameParameter_propagatesToOverride]). Exercises the `isCaller = false`,
+     * `isInherited = true` branch of `processParameterListWithStructuralChanges`, which is a
+     * separate code path from the rename-only case.
+     */
+    fun testApply_addParameter_propagatesToOverride() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping override add-parameter test")
+            return
+        }
+        val tmpDir = Files.createTempDirectory("nbkotlin-changesig-override-add")
+        try {
+            val baseFile = tmpDir.resolve("Base.kt")
+            Files.writeString(
+                baseFile,
+                """
+                package changesigtest.overrideadd
+
+                open class Base {
+                    open fun ff(one: String, two: String) = "${'$'}one ${'$'}two"
+                }
+                """.trimIndent()
+            )
+            val derivedFile = tmpDir.resolve("Derived.kt")
+            Files.writeString(
+                derivedFile,
+                """
+                package changesigtest.overrideadd
+
+                class Derived : Base() {
+                    override fun ff(one: String, two: String) = "${'$'}two ${'$'}one"
+                }
+                """.trimIndent()
+            )
+
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-signature-override-add",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(tmpDir),
+            )
+            val baseKtFile = session.getKtFileForPath(baseFile.toString()) ?: error("Failed to obtain Base KtFile")
+            val computer = KaChangeSignatureComputer(baseKtFile, baseKtFile.text.indexOf("ff"))
+
+            val outcome = computer.compute()
+            assertTrue("Expected Ready, got $outcome", outcome is KaChangeSignatureComputer.Outcome.Ready)
+            val result = (outcome as KaChangeSignatureComputer.Outcome.Ready).result
+            val request = KaChangeSignatureRequest(
+                newName = result.declarationName,
+                newReturnTypeText = result.returnTypeText,
+                parameters = result.parameters + KaChangeSignatureParameter(originalIndex = -1, name = "three", typeText = "Int"),
+            )
+
+            val applyOutcome = computer.apply(request)
+            assertTrue(
+                "Expected ApplyOutcome.Success, got $applyOutcome",
+                applyOutcome is KaChangeSignatureComputer.ApplyOutcome.Success,
+            )
+            val success = applyOutcome as KaChangeSignatureComputer.ApplyOutcome.Success
+
+            val derivedPath = session.getKtFileForPath(derivedFile.toString())?.virtualFile?.path
+                ?: error("Failed to obtain Derived KtFile path")
+            val newDerivedText = success.fileTexts[derivedPath]
+            assertNotNull("Expected Derived.kt among the touched files", newDerivedText)
+            assertTrue(
+                "Expected override to grow the 'three' parameter too, got: $newDerivedText",
+                newDerivedText!!.contains("fun ff(one: String, two: String, three: Int)") ||
+                    newDerivedText.contains("fun ff(one: kotlin.String, two: kotlin.String, three: kotlin.Int)"),
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Integration test (real K2): regression for a manual-test finding — a call site whose
+     * receiver's *static type* is the subclass (`val b = Derived(); b.ff(...)`) resolves to
+     * `Derived.ff` (the override), not `Base.ff`, even when Change Signature is invoked on
+     * `Base.ff`. Plain PSI-identity usage matching (`resolved == element`) never finds such a call
+     * site, so the new parameter reached the override's own declaration (via [findOverridings]) but
+     * never propagated into the enclosing caller or the call site's argument list. Exercises
+     * [io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignatureUsageSearchServiceImpl.isOverrideRelated].
+     */
+    fun testApply_addParameter_propagatesToCallSiteThroughOverride() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping override call-site propagation test")
+            return
+        }
+        val tmpDir = Files.createTempDirectory("nbkotlin-changesig-override-callsite")
+        try {
+            val baseFile = tmpDir.resolve("Base.kt")
+            Files.writeString(
+                baseFile,
+                """
+                package changesigtest.overridecallsite
+
+                open class Base {
+                    open fun ff(one: String, two: String) = "${'$'}one ${'$'}two"
+                }
+                """.trimIndent()
+            )
+            val derivedFile = tmpDir.resolve("Derived.kt")
+            Files.writeString(
+                derivedFile,
+                """
+                package changesigtest.overridecallsite
+
+                class Derived : Base() {
+                    override fun ff(one: String, two: String) = "${'$'}two ${'$'}one"
+                }
+                """.trimIndent()
+            )
+            val usageFile = tmpDir.resolve("Usage.kt")
+            Files.writeString(
+                usageFile,
+                """
+                package changesigtest.overridecallsite
+
+                fun useDerived(): String {
+                    val b = Derived()
+                    return b.ff("alpha", "betta")
+                }
+                """.trimIndent()
+            )
+
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-signature-override-callsite",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(tmpDir),
+            )
+            val baseKtFile = session.getKtFileForPath(baseFile.toString()) ?: error("Failed to obtain Base KtFile")
+            val computer = KaChangeSignatureComputer(baseKtFile, baseKtFile.text.indexOf("ff"))
+
+            val outcome = computer.compute()
+            assertTrue("Expected Ready, got $outcome", outcome is KaChangeSignatureComputer.Outcome.Ready)
+            val result = (outcome as KaChangeSignatureComputer.Outcome.Ready).result
+            val request = KaChangeSignatureRequest(
+                newName = result.declarationName,
+                newReturnTypeText = result.returnTypeText,
+                parameters = result.parameters + KaChangeSignatureParameter(originalIndex = -1, name = "three", typeText = "Int"),
+            )
+
+            val applyOutcome = computer.apply(request)
+            assertTrue(
+                "Expected ApplyOutcome.Success, got $applyOutcome",
+                applyOutcome is KaChangeSignatureComputer.ApplyOutcome.Success,
+            )
+            val success = applyOutcome as KaChangeSignatureComputer.ApplyOutcome.Success
+
+            val usagePath = session.getKtFileForPath(usageFile.toString())?.virtualFile?.path
+                ?: error("Failed to obtain usage KtFile path")
+            val newUsageText = success.fileTexts[usagePath]
+            assertNotNull("Expected Usage.kt among the touched files", newUsageText)
+            assertTrue(
+                "Expected useDerived (a caller through the override) to grow a 'three' parameter of its own, got: $newUsageText",
+                newUsageText!!.contains("fun useDerived(three: Int)") || newUsageText.contains("fun useDerived(three: kotlin.Int)"),
+            )
+            assertTrue(
+                "Expected the call site through the override to forward the new parameter, got: $newUsageText",
+                Regex("""b\.ff\("alpha",\s*"betta",\s*three\)""").containsMatchIn(newUsageText),
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
 }

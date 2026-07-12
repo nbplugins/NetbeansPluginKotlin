@@ -35,6 +35,16 @@ import com.intellij.psi.PsiReference
 interface KotlinChangeSignatureUsageSearchService {
     fun findUsages(element: PsiElement): List<PsiReference>
 
+    /**
+     * Finds every declaration project-wide that directly or transitively overrides [element] (a
+     * `KtCallableDeclaration` — function, property, or constructor). Backs
+     * [org.jetbrains.kotlin.idea.searching.inheritors.findAllOverridings], used by
+     * [KotlinChangeSignatureUsageProcessor] to propagate a signature change into overriders
+     * (`KotlinOverrideUsageInfo`, E9.8 M2). Mirrors [findUsages]'s whole-project scan strategy:
+     * IDEA's real `HierarchySearchRequest`/inheritor index has no standalone equivalent here.
+     */
+    fun findOverridings(element: PsiElement): List<PsiElement>
+
     companion object {
         fun getInstance(): KotlinChangeSignatureUsageSearchService? =
             ApplicationManager.getApplication()?.getService(KotlinChangeSignatureUsageSearchService::class.java)

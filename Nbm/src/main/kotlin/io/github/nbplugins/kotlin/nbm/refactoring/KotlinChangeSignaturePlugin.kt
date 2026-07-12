@@ -45,8 +45,11 @@ import javax.swing.text.StyledDocument
  *
  * `prepare()` validates the caret is on a function/constructor/class-with-primary-constructor,
  * previews the declaration range, and populates [bag] with a single
- * [KotlinChangeSignatureApplyElement]. Conflict-checking is deferred past M1 (see
- * [KaChangeSignatureComputer]'s class doc), so no dry-run conflict check runs here yet.
+ * [KotlinChangeSignatureApplyElement]. No dry-run conflict check runs here (that would need a
+ * second full usage search before the dialog even opens); [KaChangeSignatureComputer.apply] instead
+ * checks conflicts once, right after usage search, and [KotlinChangeSignatureApplyElement] skips the
+ * mutation (logging the conflict messages) if any are found — see [KaChangeSignatureComputer]'s
+ * class doc.
  *
  * @param refactoring the carrier [KotlinChangeSignatureRefactoring]
  */
@@ -100,9 +103,13 @@ class KotlinChangeSignaturePlugin(
  * [KotlinMoveDeclarationApplyElement] already uses for its two files, generalized to N. A single
  * trailing [KotlinAnalysisAPISession.invalidate] refreshes the session once all files are written.
  *
- * Undo is not supported by the underlying engine as a single transaction (multi-file mutation);
- * [undoChange] logs a warning listing every touched file, since this refactoring's blast radius is
- * larger than Move Declaration's.
+ * Undo is not a single transaction in the underlying engine (multi-file mutation), but each file's
+ * pre-change text is cheap to keep around (already read as `oldText` while diffing below), so
+ * [undoChange] restores every touched file verbatim from a snapshot map — same "snapshot the whole
+ * document, restore it whole" strategy [KotlinInlineApplyElement] uses, generalized from N files
+ * found via usage search to N files here too. `Redo Last Refactoring` after an undo re-runs
+ * [performChange] from scratch (NetBeans' refactoring framework calls it again), so no separate redo
+ * bookkeeping is needed.
  *
  * @param callerFile   the file the caret was actually in (used to re-resolve the declaration)
  * @param nbProject    the NetBeans project
@@ -127,7 +134,8 @@ class KotlinChangeSignatureApplyElement(
         PositionBounds(start, end)
     } catch (_: Exception) { null }
 
-    private var touchedFiles: List<FileObject> = emptyList()
+    /** Per-file pre-change text captured in [performChange], restored verbatim by [undoChange]. */
+    private val snapshots: MutableMap<FileObject, String> = mutableMapOf()
 
     override fun performChange() {
         runCatching {
@@ -138,11 +146,11 @@ class KotlinChangeSignatureApplyElement(
             val computer = KaChangeSignatureComputer(callerKtFile, refactoring.caretOffset)
             when (val outcome = computer.apply(request)) {
                 is KaChangeSignatureComputer.ApplyOutcome.Success -> {
-                    val written = mutableListOf<FileObject>()
                     for ((path, newText) in outcome.fileTexts) {
                         val fo = FileUtil.toFileObject(FileUtil.normalizeFile(java.io.File(path))) ?: continue
                         val doc = openDocument(fo) ?: continue
                         val oldText = doc.getText(0, doc.length)
+                        snapshots[fo] = oldText
                         // Replace and reformat only the regions that actually changed — a *vector*
                         // of small, disjoint hunks (TextRangeDiff.computeHunks, line-granular LCS
                         // refined to the smallest changed character span) rather than one region
@@ -168,9 +176,7 @@ class KotlinChangeSignatureApplyElement(
                                 }
                             }
                         }
-                        written.add(fo)
                     }
-                    touchedFiles = written
                 }
                 is KaChangeSignatureComputer.ApplyOutcome.Conflicts -> {
                     KotlinLogger.INSTANCE.logWarning(
@@ -189,11 +195,18 @@ class KotlinChangeSignatureApplyElement(
     }
 
     override fun undoChange() {
-        KotlinLogger.INSTANCE.logWarning(
-            "KotlinChangeSignatureApplyElement: undo is not supported (Change Signature mutates " +
-                    "multiple files); use your VCS or manual edits to revert. Touched files: " +
-                    touchedFiles.joinToString { it.path }
-        )
+        runCatching {
+            for ((fo, originalText) in snapshots) {
+                val doc = openDocument(fo) ?: continue
+                NbDocument.runAtomicAsUser(doc) {
+                    if (doc.length > 0) doc.remove(0, doc.length)
+                    doc.insertString(0, originalText, null)
+                }
+            }
+            KotlinAnalysisAPISession.invalidate(nbProject)
+        }.onFailure { e ->
+            KotlinLogger.INSTANCE.logException("KotlinChangeSignatureApplyElement.undoChange failed", e)
+        }
     }
 
     private fun openDocument(fo: FileObject): StyledDocument? = try {
