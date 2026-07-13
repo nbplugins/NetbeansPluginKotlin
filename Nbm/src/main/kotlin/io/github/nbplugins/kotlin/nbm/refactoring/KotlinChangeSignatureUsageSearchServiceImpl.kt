@@ -28,9 +28,11 @@ import org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.KotlinChangeSign
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.psi.KtCallableDeclaration
+import org.jetbrains.kotlin.psi.KtConstructorDelegationCall
 import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
+import org.jetbrains.kotlin.psi.KtSuperTypeCallEntry
 import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
 import com.intellij.psi.util.PsiTreeUtil
 
@@ -45,14 +47,18 @@ import com.intellij.psi.util.PsiTreeUtil
  * [KotlinMoveUsageSearchServiceImpl]: iterate every `KtFile` the session that owns [element] knows
  * about and resolve each simple-name reference.
  *
- * [KtSimpleNameExpression] references cover plain function/constructor calls, parameter-name
- * references inside the body, constructor delegation, and callable references (`::foo` — the name
- * part of a `KtCallableReferenceExpression` is itself a [KtSimpleNameExpression]), so a single
- * whole-project scan of simple-name references (below) covers all of them. Destructuring and
- * enum-entry-without-super-call usages don't need reference search at all — the ported engine finds
- * them structurally (declaration shape, not references). [findOverridings] is a second, separate
- * whole-project scan for the one usage kind reference search can't find: declarations that override
- * [element] without literally referencing it.
+ * [KtSimpleNameExpression] references cover plain function/constructor calls (including a
+ * primary-constructor-style supertype call, `class Derived : Base(args)` — `Base`'s callee is a
+ * plain simple-name reference), parameter-name references inside the body, and callable references
+ * (`::foo` — the name part of a `KtCallableReferenceExpression` is itself a [KtSimpleNameExpression]),
+ * so a single whole-project scan of simple-name references (below) covers all of them. Destructuring
+ * and enum-entry-without-super-call usages don't need reference search at all — the ported engine
+ * finds them structurally (declaration shape, not references). [findOverridings] and
+ * [findConstructorDelegationCallers] are two further, separate whole-project scans for usage kinds
+ * plain reference search can't find: declarations that override [element] without literally
+ * referencing it, and `this(...)`/`super(...)` constructor-delegation calls (whose callee,
+ * `KtConstructorDelegationReferenceExpression`, is a `KtReferenceExpression` but *not* a
+ * [KtSimpleNameExpression], so the general scan's visitor never visits it).
  */
 class KotlinChangeSignatureUsageSearchServiceImpl : KotlinChangeSignatureUsageSearchService {
     override fun findUsages(element: PsiElement): List<PsiReference> {
@@ -134,5 +140,38 @@ class KotlinChangeSignatureUsageSearchServiceImpl : KotlinChangeSignatureUsageSe
             }
         }
         return overridings
+    }
+
+    /**
+     * `KtSuperTypeCallEntry` (`class Derived : Base(args)`) is *not* handled here — its callee
+     * (`Base`) is a plain [KtSimpleNameExpression], already found by [findUsages]'s general scan.
+     * Only [KtConstructorDelegationCall] (`this(...)`/`super(...)` inside another constructor's own
+     * delegation clause) needs this dedicated scan — see class doc.
+     */
+    override fun findConstructorDelegationCallers(element: PsiElement): List<PsiElement> {
+        val session = KotlinAnalysisAPISession.forProject(element.project) ?: return emptyList()
+        val callers = mutableListOf<PsiElement>()
+        for (kaFile in session.fileMap.values) {
+            val ktFile = session.getKtFileForPath(kaFile.path) ?: continue
+            runCatching {
+                analyze(ktFile) {
+                    ktFile.accept(object : KtTreeVisitorVoid() {
+                        override fun visitConstructorDelegationCall(call: KtConstructorDelegationCall) {
+                            super.visitConstructorDelegationCall(call)
+                            val callee = call.calleeExpression ?: return
+                            val resolved = runCatching {
+                                callee.references.filterIsInstance<KtReference>().firstOrNull()?.resolveToSymbol()?.psi
+                            }.getOrNull()
+                            if (resolved == element) callers += call
+                        }
+                    })
+                }
+            }.onFailure { e ->
+                KotlinLogger.INSTANCE.logException(
+                    "KotlinChangeSignatureUsageSearchServiceImpl.findConstructorDelegationCallers: search failed in ${ktFile.name}", e
+                )
+            }
+        }
+        return callers
     }
 }

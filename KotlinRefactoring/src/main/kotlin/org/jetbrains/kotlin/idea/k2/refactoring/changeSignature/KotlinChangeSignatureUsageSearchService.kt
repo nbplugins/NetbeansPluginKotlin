@@ -45,6 +45,20 @@ interface KotlinChangeSignatureUsageSearchService {
      */
     fun findOverridings(element: PsiElement): List<PsiElement>
 
+    /**
+     * Finds every constructor-delegation call project-wide that targets [element] (a
+     * `KtConstructor<*>`): `this(...)`/`super(...)` inside another constructor's own delegation
+     * call (`KtConstructorDelegationCall`), or a primary-constructor-style supertype call
+     * (`class Derived : Base(args)`, `KtSuperTypeCallEntry`). Backs
+     * [org.jetbrains.kotlin.idea.search.usagesSearch.processDelegationCallConstructorUsages],
+     * used by [KotlinChangeSignatureUsageProcessor] to propagate a signature change into these call
+     * sites (E9.8 M3). [findUsages]'s plain-reference scan doesn't cover
+     * `KtConstructorDelegationCall`: its callee (`KtConstructorDelegationReferenceExpression`,
+     * standing in for the `this`/`super` keyword) is a `KtReferenceExpression` but not a
+     * `KtSimpleNameExpression`, so [findUsages]'s visitor never visits it.
+     */
+    fun findConstructorDelegationCallers(element: PsiElement): List<PsiElement>
+
     companion object {
         fun getInstance(): KotlinChangeSignatureUsageSearchService? =
             ApplicationManager.getApplication()?.getService(KotlinChangeSignatureUsageSearchService::class.java)

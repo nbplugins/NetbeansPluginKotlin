@@ -2119,6 +2119,39 @@ if (changeSigUsageProcessorDedup.exists()) {
   log.info("Patched KotlinChangeSignatureUsageProcessor.kt: caller-propagation skips parameters the caller already declares by name")
 }
 
+// 18. KotlinChangeSignatureUsageProcessor.kt (E9.8 M3): shortenReferences() throws for constructors
+//     specifically, after a *structural* parameter-list change (add/remove/reorder — plain renames
+//     are unaffected), with KotlinIllegalArgumentExceptionWithAttachments: "Error while resolving
+//     FirConstructorImpl/FirPrimaryConstructor from ANNOTATION_ARGUMENTS to BODY_RESOLVE". Root
+//     cause: `replaceListPsiAndKeepDelimiters`/`KtParameterList.replace()` swap in a brand-new
+//     parameter-list PSI node via a raw, non-transactional PSI mutation — this plugin's standalone
+//     `NoOpPomModel.runTransaction` (Nbm's `PomModel` stub) never fires the real "out-of-block
+//     modification" notification a live IDE would, so the low-level FIR cache never gets a chance to
+//     invalidate and rebuild the constructor's FIR node before shortenReferences() forces it to
+//     BODY_RESOLVE phase. Functions apparently tolerate this stale-cache state; constructors do not.
+//     A full fix would mean implementing real PomModel transaction semantics (well beyond this
+//     plugin's standalone-container scope, same class of limitation as the accepted "no whole-project
+//     inheritor index" stubs elsewhere). Reproduced even for the simplest possible constructor (no
+//     supertype, no delegation, no default values) — not something introduced by this plugin's usage-
+//     search additions. Wrapping both call sites in updatePrimaryMethod() so the refactoring still
+//     succeeds, falling back to un-shortened, fully-qualified type names for the constructor's own
+//     parameter list — the same accepted cosmetic-degradation strategy as KotlinTypeInfo.kt's
+//     errorIgnoringRenderer patch above.
+def changeSigUsageProcessorShorten = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinChangeSignatureUsageProcessor.kt')
+if (changeSigUsageProcessorShorten.exists()) {
+  def text = changeSigUsageProcessorShorten.text
+  text = text.replace(
+    '        shortenReferences(newParameterList)\n    }\n\n    private fun updateContextParametersList(',
+    '        runCatching { shortenReferences(newParameterList) }\n    }\n\n    private fun updateContextParametersList('
+  )
+  text = text.replace(
+    '        val parameterList = (element as? KtCallableDeclaration)?.valueParameterList\n        if (parameterList != null) {\n            shortenReferences(parameterList)\n        }\n    }',
+    '        val parameterList = (element as? KtCallableDeclaration)?.valueParameterList\n        if (parameterList != null) {\n            runCatching { shortenReferences(parameterList) }\n        }\n    }'
+  )
+  changeSigUsageProcessorShorten.text = text
+  log.info("Patched KotlinChangeSignatureUsageProcessor.kt: swallowed shortenReferences failure on constructors after a structural parameter-list change (falls back to fully-qualified type names)")
+}
+
                 ]]></script>
               </scripts>
             </configuration>
