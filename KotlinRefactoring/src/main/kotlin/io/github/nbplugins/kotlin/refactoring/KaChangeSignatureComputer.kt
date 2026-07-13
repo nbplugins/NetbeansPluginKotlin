@@ -40,13 +40,17 @@ import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.psiUtil.parentsWithSelf
 
 /**
- * Headless analysis + execution engine for the **Change Signature** refactoring (E9.8). M1 covered
- * plain function/constructor calls and parameter-name references; M2 adds overrides (via
- * [org.jetbrains.kotlin.idea.searching.inheritors.findAllOverridings], project-wide) and callable
- * references (`::foo` — already resolved by M1's simple-name-reference scan, since the name part of
- * a callable reference is itself a `KtSimpleNameExpression`) and wires up conflict detection.
- * Constructor delegation, destructuring, enum entries, and by-convention calls follow in M3 — see
- * `docs/development-plan.md`'s E9.8 entry.
+ * Headless analysis + execution engine for the **Change Signature** refactoring (E9.8). All 11 of
+ * IDEA's ported usage types are covered: plain function/constructor calls and parameter-name
+ * references (M1); overrides (project-wide, via
+ * [org.jetbrains.kotlin.idea.searching.inheritors.findAllOverridings]), callable references (`::foo`
+ * — already resolved by M1's simple-name-reference scan, since the name part of a callable reference
+ * is itself a `KtSimpleNameExpression`), and conflict detection (M2); constructor-delegation calls
+ * (`this(...)`/`super(...)`), data-class destructuring (`val (a, b) = point`), enum entries without
+ * an explicit super call, and by-convention operator calls (`box["key"]`, M3). See
+ * `docs/development-plan.md`'s E9.8 entry and
+ * [io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignatureUsageSearchServiceImpl]'s class
+ * doc for which usage types need a dedicated whole-project scan vs. ride along with the general one.
  *
  * Drives IDEA's real ported Change Signature engine directly:
  * [KotlinMethodDescriptor]/[KotlinChangeInfo] hold the signature, and

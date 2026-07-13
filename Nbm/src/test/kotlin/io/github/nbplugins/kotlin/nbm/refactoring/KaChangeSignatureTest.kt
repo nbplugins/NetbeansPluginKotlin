@@ -970,4 +970,200 @@ class KaChangeSignatureTest : KotlinTestCase("KaChangeSignatureTest", "changeSig
             tmpDir.toFile().deleteRecursively()
         }
     }
+
+    /**
+     * Integration test (real K2): E9.8 M3 — an `enum class` primary constructor is a structural
+     * usage type ([org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.usages.KotlinEnumEntryWithoutSuperCallUsage]):
+     * the ported engine finds every enum entry with no explicit super call by walking the enum
+     * class's own declarations, not via reference search, so this already worked without any Nbm-side
+     * change — this test documents and locks in that behavior. Adding a new parameter with no
+     * default reserves an empty argument slot at each entry (same "no value to forward" degraded
+     * pattern already covered for plain calls without a caller to propagate to).
+     */
+    fun testApply_addParameter_toEnumPrimaryConstructor_reservesSlotAtEachEntry() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping enum-entry test")
+            return
+        }
+        val tmpDir = Files.createTempDirectory("nbkotlin-changesig-enum")
+        try {
+            val f = tmpDir.resolve("Color.kt")
+            Files.writeString(
+                f,
+                """
+                package changesigtest.enumentry
+
+                enum class Color(val hex: String) {
+                    RED("ff0000"),
+                    GREEN("00ff00");
+                }
+                """.trimIndent()
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-signature-enum",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(tmpDir),
+            )
+            val ktFile = session.getKtFileForPath(f.toString()) ?: error("Failed to obtain Color KtFile")
+            val computer = KaChangeSignatureComputer(ktFile, ktFile.text.indexOf("hex: String"))
+
+            val outcome = computer.compute()
+            assertTrue("Expected Ready, got $outcome", outcome is KaChangeSignatureComputer.Outcome.Ready)
+            val result = (outcome as KaChangeSignatureComputer.Outcome.Ready).result
+            val request = KaChangeSignatureRequest(
+                newName = result.declarationName,
+                newReturnTypeText = result.returnTypeText,
+                parameters = result.parameters + KaChangeSignatureParameter(originalIndex = -1, name = "code", typeText = "Int"),
+            )
+
+            val applyOutcome = computer.apply(request)
+            assertTrue("Expected ApplyOutcome.Success, got $applyOutcome", applyOutcome is KaChangeSignatureComputer.ApplyOutcome.Success)
+            val newText = (applyOutcome as KaChangeSignatureComputer.ApplyOutcome.Success).fileTexts.values.first()
+
+            assertTrue(
+                "Expected the enum's primary constructor to grow the 'code' parameter, got: $newText",
+                newText.contains("enum class Color(val hex: String, code: Int)"),
+            )
+            assertTrue(
+                "Expected RED's entry to reserve an (empty) argument slot, got: $newText",
+                Regex("""RED\("ff0000",\s*\)""").containsMatchIn(newText),
+            )
+            assertTrue(
+                "Expected GREEN's entry to reserve an (empty) argument slot, got: $newText",
+                Regex("""GREEN\("00ff00",\s*\)""").containsMatchIn(newText),
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Integration test (real K2): E9.8 M3 — reordering a data class primary constructor's
+     * parameters must reorder any `val (a, b) = point` destructuring accordingly, so each entry
+     * keeps binding to the same semantic value it did before
+     * ([org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.usages.KotlinComponentUsageInDestructuring]).
+     * Regression: a destructuring entry's reference
+     * (`KaFirDestructuringDeclarationReference`, a `KtMultiReference`) doesn't resolve through
+     * `resolveToSymbol()` (returns null) — only through `multiResolve()`, which returns *two*
+     * results (the entry's own declaration and the constructor parameter it destructures). Exercises
+     * [io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignatureUsageSearchServiceImpl]'s
+     * `multiResolve()` fallback, added after this was found to silently do nothing without it.
+     */
+    fun testApply_reorderParameters_reordersDataClassDestructuring() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping data-class destructuring test")
+            return
+        }
+        val tmpDir = Files.createTempDirectory("nbkotlin-changesig-destructuring")
+        try {
+            val f = tmpDir.resolve("Point.kt")
+            Files.writeString(
+                f,
+                """
+                package changesigtest.destructuring
+
+                data class Point(val x: Int, val y: Int)
+
+                fun useIt(p: Point) {
+                    val (a, b) = p
+                }
+                """.trimIndent()
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-signature-destructuring",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(tmpDir),
+            )
+            val ktFile = session.getKtFileForPath(f.toString()) ?: error("Failed to obtain Point KtFile")
+            val computer = KaChangeSignatureComputer(ktFile, ktFile.text.indexOf("x: Int, val y: Int"))
+
+            val outcome = computer.compute()
+            assertTrue("Expected Ready, got $outcome", outcome is KaChangeSignatureComputer.Outcome.Ready)
+            val result = (outcome as KaChangeSignatureComputer.Outcome.Ready).result
+            val request = KaChangeSignatureRequest(
+                newName = result.declarationName,
+                newReturnTypeText = result.returnTypeText,
+                parameters = listOf(result.parameters[1], result.parameters[0]),
+            )
+
+            val applyOutcome = computer.apply(request)
+            assertTrue("Expected ApplyOutcome.Success, got $applyOutcome", applyOutcome is KaChangeSignatureComputer.ApplyOutcome.Success)
+            val newText = (applyOutcome as KaChangeSignatureComputer.ApplyOutcome.Success).fileTexts.values.first()
+
+            assertTrue(
+                "Expected Point's constructor parameters reordered, got: $newText",
+                newText.contains("data class Point(val y: Int, val x: Int)"),
+            )
+            assertTrue(
+                "Expected the destructuring entries reordered to preserve each variable's binding ('a' still binds to x, 'b' still binds to y), got: $newText",
+                newText.contains("val (b, a) = p"),
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Integration test (real K2): E9.8 M3 — a by-convention operator call (`box["key"]`, sugar for
+     * `box.get("key")`) is a [org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.usages.KotlinByConventionCallUsage].
+     * Its call site has no literal callee identifier in source for a plain simple-name scan to find
+     * (`KtArrayAccessExpression`'s reference, `KtArrayAccessReference`, lives on the whole `box["key"]`
+     * expression, not on a name token), so it was previously invisible to usage search entirely.
+     * The ported engine's own preprocessing step desugars the call to explicit dot-call syntax as
+     * part of applying the new parameter list — `box["key"]` becomes `box.get("key")`, matching real
+     * IDEA's behavior for this refactoring (not a regression introduced by porting it standalone).
+     */
+    fun testApply_addParameter_findsByConventionOperatorCall() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping by-convention call test")
+            return
+        }
+        val tmpDir = Files.createTempDirectory("nbkotlin-changesig-convention")
+        try {
+            val f = tmpDir.resolve("Box.kt")
+            Files.writeString(
+                f,
+                """
+                package changesigtest.convention
+
+                class Box {
+                    operator fun get(one: String): String = one
+                }
+
+                fun useIt(b: Box): String = b["hello"]
+                """.trimIndent()
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-signature-convention",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(tmpDir),
+            )
+            val ktFile = session.getKtFileForPath(f.toString()) ?: error("Failed to obtain Box KtFile")
+            val computer = KaChangeSignatureComputer(ktFile, ktFile.text.indexOf("get(one: String)") + "get(".length)
+
+            val outcome = computer.compute()
+            assertTrue("Expected Ready, got $outcome", outcome is KaChangeSignatureComputer.Outcome.Ready)
+            val result = (outcome as KaChangeSignatureComputer.Outcome.Ready).result
+            val request = KaChangeSignatureRequest(
+                newName = result.declarationName,
+                newReturnTypeText = result.returnTypeText,
+                parameters = result.parameters + KaChangeSignatureParameter(originalIndex = -1, name = "two", typeText = "Int"),
+            )
+
+            val applyOutcome = computer.apply(request)
+            assertTrue("Expected ApplyOutcome.Success, got $applyOutcome", applyOutcome is KaChangeSignatureComputer.ApplyOutcome.Success)
+            val newText = (applyOutcome as KaChangeSignatureComputer.ApplyOutcome.Success).fileTexts.values.first()
+
+            assertTrue(
+                "Expected the operator function to grow the 'two' parameter, got: $newText",
+                newText.contains("operator fun get(one: String, two: Int)"),
+            )
+            assertTrue(
+                "Expected the [] call site to have been found and desugared to an explicit call, got: $newText",
+                newText.contains("b.get(\"hello\")"),
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
 }

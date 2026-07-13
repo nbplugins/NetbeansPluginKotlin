@@ -25,10 +25,14 @@ import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.KotlinChangeSignatureUsageSearchService
+import org.jetbrains.kotlin.idea.references.KtMultiReference
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.log.KotlinLogger
+import org.jetbrains.kotlin.psi.KtArrayAccessExpression
 import org.jetbrains.kotlin.psi.KtCallableDeclaration
+import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtConstructorDelegationCall
+import org.jetbrains.kotlin.psi.KtDestructuringDeclarationEntry
 import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
@@ -51,14 +55,20 @@ import com.intellij.psi.util.PsiTreeUtil
  * primary-constructor-style supertype call, `class Derived : Base(args)` — `Base`'s callee is a
  * plain simple-name reference), parameter-name references inside the body, and callable references
  * (`::foo` — the name part of a `KtCallableReferenceExpression` is itself a [KtSimpleNameExpression]),
- * so a single whole-project scan of simple-name references (below) covers all of them. Destructuring
- * and enum-entry-without-super-call usages don't need reference search at all — the ported engine
- * finds them structurally (declaration shape, not references). [findOverridings] and
+ * so a single whole-project scan of simple-name references covers all of them.
+ * [KtDestructuringDeclarationEntry] (`val (a, b) = point` — a data class primary constructor's
+ * reordered/removed parameters change which `componentN()` each entry binds to) and
+ * [KtArrayAccessExpression]/implicit-`invoke` [KtCallExpression] (by-convention operator calls,
+ * `map[key]`/`callable(args)` — no literal callee identifier exists in source for K2 to resolve via
+ * a simple-name reference) are visited the same way, using whatever [PsiReference] each contributes
+ * via [PsiElement.getReferences] rather than assuming a [KtSimpleNameExpression] shape. Enum-entry-
+ * without-super-call usages don't need reference search at all — the ported engine finds them
+ * structurally (declaration shape, not references). [findOverridings] and
  * [findConstructorDelegationCallers] are two further, separate whole-project scans for usage kinds
- * plain reference search can't find: declarations that override [element] without literally
+ * this single scan still can't find: declarations that override [element] without literally
  * referencing it, and `this(...)`/`super(...)` constructor-delegation calls (whose callee,
  * `KtConstructorDelegationReferenceExpression`, is a `KtReferenceExpression` but *not* a
- * [KtSimpleNameExpression], so the general scan's visitor never visits it).
+ * [KtSimpleNameExpression], so this scan's visitor never visits it either).
  */
 class KotlinChangeSignatureUsageSearchServiceImpl : KotlinChangeSignatureUsageSearchService {
     override fun findUsages(element: PsiElement): List<PsiReference> {
@@ -74,12 +84,52 @@ class KotlinChangeSignatureUsageSearchServiceImpl : KotlinChangeSignatureUsageSe
                             // Same import-directive exclusion as KotlinMoveUsageSearchServiceImpl:
                             // no live-document sync to keep the import list consistent standalone.
                             if (PsiTreeUtil.getParentOfType(expression, KtImportDirective::class.java) != null) return
-                            val reference = expression.references.filterIsInstance<KtReference>().firstOrNull() ?: return
-                            val resolved = runCatching { reference.resolveToSymbol()?.psi }.getOrNull() ?: return
-                            if (resolved == element || isOverrideRelated(resolved, element)) {
+                            addIfMatches(expression)
+                        }
+
+                        override fun visitDestructuringDeclarationEntry(entry: KtDestructuringDeclarationEntry) {
+                            super.visitDestructuringDeclarationEntry(entry)
+                            addIfMatches(entry)
+                        }
+
+                        override fun visitArrayAccessExpression(expression: KtArrayAccessExpression) {
+                            super.visitArrayAccessExpression(expression)
+                            addIfMatches(expression)
+                        }
+
+                        override fun visitCallExpression(expression: KtCallExpression) {
+                            super.visitCallExpression(expression)
+                            // Only the implicit-invoke shape (`callable(args)` where `callable` is a
+                            // value, not a named function) has a reference here worth checking — a
+                            // normal `foo(args)` call's callee is already covered by
+                            // visitSimpleNameExpression, so re-checking it here would double-count it.
+                            if (expression.calleeExpression is KtSimpleNameExpression) return
+                            addIfMatches(expression)
+                        }
+
+                        private fun addIfMatches(element2: PsiElement) {
+                            val reference = element2.references.filterIsInstance<KtReference>().firstOrNull() ?: return
+                            val resolvedTargets = resolveAllTargets(reference)
+                            if (resolvedTargets.any { it == element || isOverrideRelated(it, element) }) {
                                 references += reference
                             }
                         }
+
+                        // KaFirDestructuringDeclarationReference (val (a, b) = point) is a
+                        // KtMultiReference whose resolveToSymbol() returns null — it only resolves
+                        // through multiResolve(), which for a destructuring entry returns *two*
+                        // results: the entry's own declaration and the constructor parameter it
+                        // destructures (the one actually needed to match a Change Signature target).
+                        private fun resolveAllTargets(reference: KtReference): List<PsiElement> {
+                            resolveToSymbolPsi(reference)?.let { return listOf(it) }
+                            val multi = reference as? KtMultiReference<*> ?: return emptyList()
+                            return runCatching {
+                                multi.multiResolve(false).mapNotNull { it.element }
+                            }.getOrDefault(emptyList())
+                        }
+
+                        private fun resolveToSymbolPsi(reference: KtReference): PsiElement? =
+                            runCatching { reference.resolveToSymbol()?.psi }.getOrNull()
                     })
                 }
             }.onFailure { e ->
