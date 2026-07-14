@@ -35,6 +35,30 @@ import com.intellij.psi.PsiReference
 interface KotlinChangeSignatureUsageSearchService {
     fun findUsages(element: PsiElement): List<PsiReference>
 
+    /**
+     * Finds every declaration project-wide that directly or transitively overrides [element] (a
+     * `KtCallableDeclaration` — function, property, or constructor). Backs
+     * [org.jetbrains.kotlin.idea.searching.inheritors.findAllOverridings], used by
+     * [KotlinChangeSignatureUsageProcessor] to propagate a signature change into overriders
+     * (`KotlinOverrideUsageInfo`, E9.8 M2). Mirrors [findUsages]'s whole-project scan strategy:
+     * IDEA's real `HierarchySearchRequest`/inheritor index has no standalone equivalent here.
+     */
+    fun findOverridings(element: PsiElement): List<PsiElement>
+
+    /**
+     * Finds every constructor-delegation call project-wide that targets [element] (a
+     * `KtConstructor<*>`): `this(...)`/`super(...)` inside another constructor's own delegation
+     * call (`KtConstructorDelegationCall`), or a primary-constructor-style supertype call
+     * (`class Derived : Base(args)`, `KtSuperTypeCallEntry`). Backs
+     * [org.jetbrains.kotlin.idea.search.usagesSearch.processDelegationCallConstructorUsages],
+     * used by [KotlinChangeSignatureUsageProcessor] to propagate a signature change into these call
+     * sites (E9.8 M3). [findUsages]'s plain-reference scan doesn't cover
+     * `KtConstructorDelegationCall`: its callee (`KtConstructorDelegationReferenceExpression`,
+     * standing in for the `this`/`super` keyword) is a `KtReferenceExpression` but not a
+     * `KtSimpleNameExpression`, so [findUsages]'s visitor never visits it.
+     */
+    fun findConstructorDelegationCallers(element: PsiElement): List<PsiElement>
+
     companion object {
         fun getInstance(): KotlinChangeSignatureUsageSearchService? =
             ApplicationManager.getApplication()?.getService(KotlinChangeSignatureUsageSearchService::class.java)

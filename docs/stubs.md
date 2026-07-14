@@ -106,6 +106,36 @@ the classpath differs and the plugin's own copy was found first).
 | `ModuleUtilCore` | `Nbm/src/main/kotlin/com/intellij/openapi/module/` | Runtime (shadows a bundled platform JAR) | Same duplication; `findModuleForPsiElement()` never touches `ProjectFileIndex` |
 | `ModuleType` | `Nbm/src/main/java/com/intellij/openapi/module/` | Runtime (shadows a bundled platform JAR) | Same duplication; `isInternal()` always `false` |
 
+### Change Signature engine port (added for E9.8)
+
+`KotlinChangeSignatureUsageSearchService` (interface in `KotlinRefactoring`, real implementation
+`KotlinChangeSignatureUsageSearchServiceImpl` in `Nbm`) backs every `ReferencesSearch`-style call
+the ported engine makes — same pattern as `KotlinMoveUsageSearchService` for E9.7. A single
+whole-project scan finds plain calls, parameter references, callable references, data-class
+destructuring, and by-convention operator calls; `findOverridings` and
+`findConstructorDelegationCallers` are two further, separate scans for usage kinds the general scan
+structurally can't reach (see the implementation's class doc for the full breakdown of which PSI
+node types need which scan).
+
+Two narrow standalone-environment gaps found while porting, not upstream bugs:
+
+- `shortenReferences()` throws for *any* constructor (not just primary) after a *structural*
+  parameter-list change — `KotlinIllegalArgumentExceptionWithAttachments: Error while resolving
+  Fir(Primary)ConstructorImpl from ANNOTATION_ARGUMENTS to BODY_RESOLVE`. Root cause: a structural
+  change swaps in a brand-new parameter-list PSI node via a raw, non-transactional mutation — this
+  plugin's `NoOpPomModel.runTransaction` stub never fires the real "out-of-block modification"
+  notification a live IDE would, so the low-level FIR cache never invalidates before
+  `shortenReferences()` forces the constructor's FIR node to `BODY_RESOLVE` phase. Functions
+  tolerate the stale cache state; constructors do not. Not practical to fully fix standalone (would
+  mean implementing real `PomModel` transaction semantics); both call sites in
+  `KotlinChangeSignatureUsageProcessor.updatePrimaryMethod()` now swallow the failure and fall back
+  to un-shortened, fully-qualified type names for the constructor's own parameter list.
+- A data-class destructuring entry's reference (`KaFirDestructuringDeclarationReference`, a
+  `KtMultiReference`) doesn't resolve through `resolveToSymbol()` at all — always returns `null`.
+  It only resolves through `multiResolve()`, which returns *two* results: the entry's own
+  declaration and the constructor parameter it destructures. `KotlinChangeSignatureUsageSearchServiceImpl`
+  falls back to `multiResolve()` when `resolveToSymbol()` comes back empty.
+
 ### Service stubs registered at session startup
 
 These are not class-file overrides but *service registrations* performed in

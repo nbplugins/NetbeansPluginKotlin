@@ -17,6 +17,7 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.refactoring
 
+import com.intellij.openapi.util.Ref
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.refactoring.changeSignature.CallerUsageInfo
 import com.intellij.usageView.UsageInfo
@@ -39,10 +40,17 @@ import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.psiUtil.parentsWithSelf
 
 /**
- * Headless analysis + execution engine for the **Change Signature** refactoring (E9.8, M1: plain
- * function/constructor calls and parameter-name references; overrides, callable references,
- * constructor delegation, callers, destructuring, enum entries, and by-convention calls follow in
- * later milestones — see `docs/development-plan.md`'s E9.8 entry).
+ * Headless analysis + execution engine for the **Change Signature** refactoring (E9.8). All 11 of
+ * IDEA's ported usage types are covered: plain function/constructor calls and parameter-name
+ * references (M1); overrides (project-wide, via
+ * [org.jetbrains.kotlin.idea.searching.inheritors.findAllOverridings]), callable references (`::foo`
+ * — already resolved by M1's simple-name-reference scan, since the name part of a callable reference
+ * is itself a `KtSimpleNameExpression`), and conflict detection (M2); constructor-delegation calls
+ * (`this(...)`/`super(...)`), data-class destructuring (`val (a, b) = point`), enum entries without
+ * an explicit super call, and by-convention operator calls (`box["key"]`, M3). See
+ * `docs/development-plan.md`'s E9.8 entry and
+ * [io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignatureUsageSearchServiceImpl]'s class
+ * doc for which usage types need a dedicated whole-project scan vs. ride along with the general one.
  *
  * Drives IDEA's real ported Change Signature engine directly:
  * [KotlinMethodDescriptor]/[KotlinChangeInfo] hold the signature, and
@@ -52,7 +60,11 @@ import org.jetbrains.kotlin.psi.psiUtil.parentsWithSelf
  * (preprocess pass, primary-method rewrite, main pass; see
  * `platform/lang-impl/.../ChangeSignatureProcessorBase.java` `performRefactoring()` for the order
  * this mirrors) and conflicts are surfaced to the caller (the NetBeans `RefactoringPlugin`/
- * `RefactoringUI`) instead of showing IDEA's `ConflictsDialog`.
+ * `RefactoringUI`) instead of showing IDEA's `ConflictsDialog`: [apply] runs
+ * [KotlinChangeSignatureUsageProcessor.findConflicts] right after usage search and, if any are
+ * found, returns [ApplyOutcome.Conflicts] without mutating anything (hierarchy-dependent checks
+ * that would need a whole-project inheritor index return no conflicts standalone, same accepted
+ * limitation as Move Declaration).
  *
  * **Why [compute]/[apply] never expose [KotlinChangeInfo]/[KotlinParameterInfo] directly:** those
  * classes implement Java interfaces (`com.intellij.refactoring.changeSignature.ChangeInfo`/
@@ -134,19 +146,31 @@ class KaChangeSignatureComputer(
         fun isSupported(declaration: KtNamedDeclaration) =
             declaration is KtNamedFunction || declaration is KtConstructor<*> || declaration is KtClass
 
+        // A KtClass that already has a primary constructor must resolve to that constructor, not
+        // the class itself: KotlinMethodDescriptor only reads parameters off a KtCallableDeclaration
+        // (which KtClass is not, but KtPrimaryConstructor is) — resolving to the bare KtClass here
+        // silently produces a Ready result with an empty parameter list. The KtClass target is only
+        // meaningful for a class with *no* primary constructor yet (Change Signature can add one from
+        // scratch, per processParameterListWithStructuralChanges's `element is KtClass` branch), where
+        // there's no existing constructor to redirect to.
+        fun normalize(declaration: KtNamedDeclaration?): KtNamedDeclaration? =
+            (declaration as? KtClass)?.primaryConstructor ?: declaration
+
         // Caret on a usage: resolve via K2 to the declaring element, in any file.
         val ref = PsiTreeUtil.getParentOfType(leaf, KtNameReferenceExpression::class.java, false)
         if (ref != null) {
             val resolved = runCatching {
                 analyze(ref) { ref.mainReference?.resolveToSymbol()?.psi }
             }.getOrNull()
-            (resolved as? KtNamedDeclaration)?.takeIf(::isSupported)?.let { return it }
+            (resolved as? KtNamedDeclaration)?.takeIf(::isSupported)?.let { return normalize(it) }
         }
 
         // Caret directly on/inside the declaration (its keyword, name, parameter list, or body).
-        return leaf.parentsWithSelf
-            .filterIsInstance<KtNamedDeclaration>()
-            .firstOrNull(::isSupported)
+        return normalize(
+            leaf.parentsWithSelf
+                .filterIsInstance<KtNamedDeclaration>()
+                .firstOrNull(::isSupported)
+        )
     }
 
     /**
@@ -161,7 +185,7 @@ class KaChangeSignatureComputer(
      * `ChangeSignatureProcessorBase.performRefactoring()`'s three-step order: a
      * `beforeMethodChange=true` pass over every usage, then
      * [KotlinChangeSignatureUsageProcessor.processPrimaryMethod], then a `beforeMethodChange=false`
-     * pass. Conflict-checking is deferred past M1 (see class doc).
+     * pass, with a conflict check (see class doc) run between usage search and the two usage passes.
      */
     fun apply(request: KaChangeSignatureRequest): ApplyOutcome = try {
         val declaration = findDeclaration()
@@ -214,6 +238,11 @@ class KaChangeSignatureComputer(
     private fun applyChangeInfo(changeInfo: KotlinChangeInfo): ApplyOutcome {
         val processor = KotlinChangeSignatureUsageProcessor()
         val usages = withCallerPropagation(changeInfo, processor.findUsages(changeInfo))
+
+        val conflicts = processor.findConflicts(changeInfo, Ref(usages))
+        if (!conflicts.isEmpty) {
+            return ApplyOutcome.Conflicts(conflicts.values().toList())
+        }
 
         for (usage in usages) {
             processor.processUsage(changeInfo, usage, beforeMethodChange = true, usages)

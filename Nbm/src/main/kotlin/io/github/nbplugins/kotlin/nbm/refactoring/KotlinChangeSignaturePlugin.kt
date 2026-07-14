@@ -45,8 +45,11 @@ import javax.swing.text.StyledDocument
  *
  * `prepare()` validates the caret is on a function/constructor/class-with-primary-constructor,
  * previews the declaration range, and populates [bag] with a single
- * [KotlinChangeSignatureApplyElement]. Conflict-checking is deferred past M1 (see
- * [KaChangeSignatureComputer]'s class doc), so no dry-run conflict check runs here yet.
+ * [KotlinChangeSignatureApplyElement]. No dry-run conflict check runs here (that would need a
+ * second full usage search before the dialog even opens); [KaChangeSignatureComputer.apply] instead
+ * checks conflicts once, right after usage search, and [KotlinChangeSignatureApplyElement] skips the
+ * mutation (logging the conflict messages) if any are found — see [KaChangeSignatureComputer]'s
+ * class doc.
  *
  * @param refactoring the carrier [KotlinChangeSignatureRefactoring]
  */
@@ -100,9 +103,13 @@ class KotlinChangeSignaturePlugin(
  * [KotlinMoveDeclarationApplyElement] already uses for its two files, generalized to N. A single
  * trailing [KotlinAnalysisAPISession.invalidate] refreshes the session once all files are written.
  *
- * Undo is not supported by the underlying engine as a single transaction (multi-file mutation);
- * [undoChange] logs a warning listing every touched file, since this refactoring's blast radius is
- * larger than Move Declaration's.
+ * Undo is not a single transaction in the underlying engine (multi-file mutation), but each file's
+ * pre-change text is cheap to keep around (already read as `oldText` while diffing below), so
+ * [undoChange] restores every touched file verbatim from a snapshot map — same "snapshot the whole
+ * document, restore it whole" strategy [KotlinInlineApplyElement] uses, generalized from N files
+ * found via usage search to N files here too. `Redo Last Refactoring` after an undo re-runs
+ * [performChange] from scratch (NetBeans' refactoring framework calls it again), so no separate redo
+ * bookkeeping is needed.
  *
  * @param callerFile   the file the caret was actually in (used to re-resolve the declaration)
  * @param nbProject    the NetBeans project
@@ -127,7 +134,8 @@ class KotlinChangeSignatureApplyElement(
         PositionBounds(start, end)
     } catch (_: Exception) { null }
 
-    private var touchedFiles: List<FileObject> = emptyList()
+    /** Per-file pre-change text captured in [performChange], restored verbatim by [undoChange]. */
+    private val snapshots: MutableMap<FileObject, String> = mutableMapOf()
 
     override fun performChange() {
         runCatching {
@@ -138,39 +146,61 @@ class KotlinChangeSignatureApplyElement(
             val computer = KaChangeSignatureComputer(callerKtFile, refactoring.caretOffset)
             when (val outcome = computer.apply(request)) {
                 is KaChangeSignatureComputer.ApplyOutcome.Success -> {
-                    val written = mutableListOf<FileObject>()
+                    // Per-file try/catch, not one guard around the whole loop: Change Signature can
+                    // touch dozens of files (every call site/override/reference project-wide), unlike
+                    // Extract Function (1 file) or Move Declaration (2). If file k of N throws, files
+                    // 1..k-1 are already written to their editors — letting the exception escape the
+                    // loop would abort files k+1..N too without ever explaining which file failed or
+                    // that the earlier ones already succeeded. No rollback is attempted (documented
+                    // best-effort limitation, consistent with this project's stance elsewhere); each
+                    // outcome is just logged per file so a partial failure is diagnosable.
+                    var succeeded = 0
+                    val failed = mutableListOf<String>()
                     for ((path, newText) in outcome.fileTexts) {
-                        val fo = FileUtil.toFileObject(FileUtil.normalizeFile(java.io.File(path))) ?: continue
-                        val doc = openDocument(fo) ?: continue
-                        val oldText = doc.getText(0, doc.length)
-                        // Replace and reformat only the regions that actually changed — a *vector*
-                        // of small, disjoint hunks (TextRangeDiff.computeHunks, line-granular LCS
-                        // refined to the smallest changed character span) rather than one region
-                        // spanning from the first to the last difference: if the file has two call
-                        // sites Change Signature updates with unrelated (even oddly-formatted) code
-                        // between them, that untouched code must stay exactly as it was, not get
-                        // swept into a "changed" span and reformatted along with the real edits.
-                        // Per hunk this also (a) keeps the editor's native Undo to small edits near
-                        // each edit site, matching MinimalDocumentEdits' rationale, and (b) the
-                        // ported engine's psiFactory-generated text (parameter lists, call
-                        // arguments) is not itself re-run through the code formatter — e.g. missing
-                        // space after a comma in "greet(\"world\",second)" — so a reformat pass is
-                        // still needed, just scoped to each hunk instead of the whole file.
-                        val hunks = TextRangeDiff.computeHunks(oldText, newText).sortedByDescending { it.oldStart }
-                        NbDocument.runAtomicAsUser(doc) {
-                            for (hunk in hunks) {
-                                if (hunk.oldEnd > hunk.oldStart) doc.remove(hunk.oldStart, hunk.oldEnd - hunk.oldStart)
-                                val replacement = newText.substring(hunk.newStart, hunk.newEnd)
-                                if (replacement.isNotEmpty()) doc.insertString(hunk.oldStart, replacement, null)
-                                val formatEnd = hunk.oldStart + replacement.length
-                                if (formatEnd > hunk.oldStart) {
-                                    runCatching { format(doc = doc, offset = hunk.oldStart, startOffset = hunk.oldStart, endOffset = formatEnd, proj = nbProject) }
+                        runCatching {
+                            val fo = FileUtil.toFileObject(FileUtil.normalizeFile(java.io.File(path))) ?: return@runCatching
+                            val doc = openDocument(fo) ?: return@runCatching
+                            val oldText = doc.getText(0, doc.length)
+                            snapshots[fo] = oldText
+                            // Replace and reformat only the regions that actually changed — a *vector*
+                            // of small, disjoint hunks (TextRangeDiff.computeHunks, line-granular LCS
+                            // refined to the smallest changed character span) rather than one region
+                            // spanning from the first to the last difference: if the file has two call
+                            // sites Change Signature updates with unrelated (even oddly-formatted) code
+                            // between them, that untouched code must stay exactly as it was, not get
+                            // swept into a "changed" span and reformatted along with the real edits.
+                            // Per hunk this also (a) keeps the editor's native Undo to small edits near
+                            // each edit site, matching MinimalDocumentEdits' rationale, and (b) the
+                            // ported engine's psiFactory-generated text (parameter lists, call
+                            // arguments) is not itself re-run through the code formatter — e.g. missing
+                            // space after a comma in "greet(\"world\",second)" — so a reformat pass is
+                            // still needed, just scoped to each hunk instead of the whole file.
+                            val hunks = TextRangeDiff.computeHunks(oldText, newText).sortedByDescending { it.oldStart }
+                            NbDocument.runAtomicAsUser(doc) {
+                                for (hunk in hunks) {
+                                    if (hunk.oldEnd > hunk.oldStart) doc.remove(hunk.oldStart, hunk.oldEnd - hunk.oldStart)
+                                    val replacement = newText.substring(hunk.newStart, hunk.newEnd)
+                                    if (replacement.isNotEmpty()) doc.insertString(hunk.oldStart, replacement, null)
+                                    val formatEnd = hunk.oldStart + replacement.length
+                                    if (formatEnd > hunk.oldStart) {
+                                        runCatching { format(doc = doc, offset = hunk.oldStart, startOffset = hunk.oldStart, endOffset = formatEnd, proj = nbProject) }
+                                    }
                                 }
                             }
+                            succeeded++
+                        }.onFailure { e ->
+                            failed += path
+                            KotlinLogger.INSTANCE.logException(
+                                "KotlinChangeSignatureApplyElement: failed to write $path (${succeeded + failed.size}/${outcome.fileTexts.size} files processed so far)", e
+                            )
                         }
-                        written.add(fo)
                     }
-                    touchedFiles = written
+                    if (failed.isNotEmpty()) {
+                        KotlinLogger.INSTANCE.logWarning(
+                            "KotlinChangeSignatureApplyElement: $succeeded/${outcome.fileTexts.size} files written successfully; " +
+                                "failed: $failed — the refactoring is incomplete, use your VCS or Undo Last Refactoring to review/revert"
+                        )
+                    }
                 }
                 is KaChangeSignatureComputer.ApplyOutcome.Conflicts -> {
                     KotlinLogger.INSTANCE.logWarning(
@@ -189,11 +219,18 @@ class KotlinChangeSignatureApplyElement(
     }
 
     override fun undoChange() {
-        KotlinLogger.INSTANCE.logWarning(
-            "KotlinChangeSignatureApplyElement: undo is not supported (Change Signature mutates " +
-                    "multiple files); use your VCS or manual edits to revert. Touched files: " +
-                    touchedFiles.joinToString { it.path }
-        )
+        runCatching {
+            for ((fo, originalText) in snapshots) {
+                val doc = openDocument(fo) ?: continue
+                NbDocument.runAtomicAsUser(doc) {
+                    if (doc.length > 0) doc.remove(0, doc.length)
+                    doc.insertString(0, originalText, null)
+                }
+            }
+            KotlinAnalysisAPISession.invalidate(nbProject)
+        }.onFailure { e ->
+            KotlinLogger.INSTANCE.logException("KotlinChangeSignatureApplyElement.undoChange failed", e)
+        }
     }
 
     private fun openDocument(fo: FileObject): StyledDocument? = try {

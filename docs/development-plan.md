@@ -737,14 +737,38 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
       (Refactor menu) / `KotlinMoveDeclarationUI` (target package + file name fields) /
       `KotlinMoveDeclarationPlugin` / `KotlinMoveDeclarationRefactoring` (`Nbm`)
 
-  - **E9.8** — Change Signature (Ctrl+F6)
+  - [x] **E9.8** — Change Signature (Ctrl+F6) — PRs #114, #115
     - IDEA sources: `changeSignature/KotlinChangeSignatureUsageSearcher.kt`,
       `changeSignature/KotlinChangeInfo.kt`, `changeSignature/KotlinChangeInfoBase.kt`,
       `changeSignature/KotlinParameterInfo.kt`, `changeSignature/KotlinMethodDescriptor.kt`,
-      `changeSignature/usages/KotlinFunctionCallUsage.kt`,
-      `changeSignature/usages/KotlinParameterUsage.kt`
-    - NetBeans adapter: `KaChangeSignatureComputer`; `KotlinChangeSignaturePlugin` /
-      `KotlinChangeSignatureUI` (param table: add/remove/move rows) in `Nbm`
+      `changeSignature/KotlinChangeSignatureConflictSearcher.kt`, all 11
+      `changeSignature/usages/Kotlin*Usage.kt` classes (function calls, parameter refs,
+      overrides, callable references, constructor delegation, callers, data-class
+      components/destructuring, enum entries, by-convention calls)
+    - All 11 usage types covered: call sites (including through an overriding declaration and
+      by-convention operator calls, `box["key"]`), in-body parameter references, overrides
+      (project-wide), callable references (`::foo`), `this(...)`/`super(...)` constructor
+      delegation, propagate-to-callers, data-class destructuring (`val (a, b) = point`,
+      reordered to preserve each variable's binding), enum entries without a super call, and
+      conflict detection (duplicate parameter names rejected)
+    - Parameter reordering in the dialog (toolbar buttons + drag-and-drop); real
+      `Refactor → Undo Last Refactoring` support (per-file snapshot/restore, not the "not
+      supported" stub Move Declaration uses); a multi-hunk diff (`TextRangeDiff`) reformats
+      only the actually-changed regions per file, not the whole file
+    - Fixed a standalone-environment gap: `shortenReferences()` throws for *any* constructor
+      after a structural parameter-list change (K2 can't resolve the constructor's FIR node
+      post-replace, since this plugin's `NoOpPomModel` never fires a real out-of-block-
+      modification notification) — both call sites now fall back to fully-qualified type names
+      instead of aborting the refactoring
+    - Fixed a K2 reference-resolution gap: a data-class destructuring entry's reference
+      (`KaFirDestructuringDeclarationReference`) doesn't resolve through `resolveToSymbol()` at
+      all — only through `multiResolve()`, which returns both the entry's own declaration and
+      the constructor parameter it destructures
+    - NetBeans adapter: `KaChangeSignatureComputer` (`KotlinRefactoring`);
+      `KotlinChangeSignaturePlugin` / `KotlinChangeSignatureUI` (param table with reorder
+      buttons + drag-and-drop) / `KotlinChangeSignatureUsageSearchServiceImpl` (whole-project
+      usage scan backing the ported engine's `ReferencesSearch` calls) / `TextRangeDiff` in
+      `Nbm`
 
 - **E10** — J2K (Java→Kotlin): reimplement using `j2k/new` from `submodules/IntellijCommunity`
   or binary artifact once published; wire up stubbed `Java2KotlinConverter` (stubbed since D2)
