@@ -1166,4 +1166,60 @@ class KaChangeSignatureTest : KotlinTestCase("KaChangeSignatureTest", "changeSig
             tmpDir.toFile().deleteRecursively()
         }
     }
+
+    /**
+     * Integration test (real K2): regression for a manual-testing-session finding — with the caret
+     * on the class *name* (`enum class Color(...)`, not inside the parameter list), [findDeclaration]
+     * previously resolved to the `KtClass` itself rather than its primary constructor. Since
+     * `KotlinMethodDescriptor` only reads parameters off a `KtCallableDeclaration` (which `KtClass`
+     * is not, but `KtPrimaryConstructor` is), that silently produced a `Ready` result with an *empty*
+     * parameter list — the dialog would show no parameters at all, even though the class has some.
+     * `findDeclaration`'s `normalize()` step now redirects a `KtClass` target to its primary
+     * constructor whenever one already exists.
+     */
+    fun testCompute_caretOnClassNameWithExistingPrimaryConstructor_returnsParameters() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping caret-on-class-name test")
+            return
+        }
+        val tmpDir = Files.createTempDirectory("nbkotlin-changesig-caret-classname")
+        try {
+            val f = tmpDir.resolve("Color.kt")
+            Files.writeString(
+                f,
+                """
+                package changesigtest.caretclassname
+
+                enum class Color(val hex: String) {
+                    RED("ff0000"),
+                    GREEN("00ff00");
+                }
+                """.trimIndent()
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-signature-caret-classname",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(tmpDir),
+            )
+            val ktFile = session.getKtFileForPath(f.toString()) ?: error("Failed to obtain Color KtFile")
+            // Caret on "Color" itself, not inside "(val hex: String)".
+            val computer = KaChangeSignatureComputer(ktFile, ktFile.text.indexOf("Color"))
+
+            val outcome = computer.compute()
+            assertTrue(
+                "Expected Ready for caret on the class name, got $outcome",
+                outcome is KaChangeSignatureComputer.Outcome.Ready,
+            )
+            val result = (outcome as KaChangeSignatureComputer.Outcome.Ready).result
+            assertEquals("Color", result.declarationName)
+            assertEquals(
+                "Expected the existing primary constructor's parameter to be found, not an empty list",
+                1,
+                result.parameters.size,
+            )
+            assertEquals("hex", result.parameters.single().name)
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
 }

@@ -146,19 +146,31 @@ class KaChangeSignatureComputer(
         fun isSupported(declaration: KtNamedDeclaration) =
             declaration is KtNamedFunction || declaration is KtConstructor<*> || declaration is KtClass
 
+        // A KtClass that already has a primary constructor must resolve to that constructor, not
+        // the class itself: KotlinMethodDescriptor only reads parameters off a KtCallableDeclaration
+        // (which KtClass is not, but KtPrimaryConstructor is) — resolving to the bare KtClass here
+        // silently produces a Ready result with an empty parameter list. The KtClass target is only
+        // meaningful for a class with *no* primary constructor yet (Change Signature can add one from
+        // scratch, per processParameterListWithStructuralChanges's `element is KtClass` branch), where
+        // there's no existing constructor to redirect to.
+        fun normalize(declaration: KtNamedDeclaration?): KtNamedDeclaration? =
+            (declaration as? KtClass)?.primaryConstructor ?: declaration
+
         // Caret on a usage: resolve via K2 to the declaring element, in any file.
         val ref = PsiTreeUtil.getParentOfType(leaf, KtNameReferenceExpression::class.java, false)
         if (ref != null) {
             val resolved = runCatching {
                 analyze(ref) { ref.mainReference?.resolveToSymbol()?.psi }
             }.getOrNull()
-            (resolved as? KtNamedDeclaration)?.takeIf(::isSupported)?.let { return it }
+            (resolved as? KtNamedDeclaration)?.takeIf(::isSupported)?.let { return normalize(it) }
         }
 
         // Caret directly on/inside the declaration (its keyword, name, parameter list, or body).
-        return leaf.parentsWithSelf
-            .filterIsInstance<KtNamedDeclaration>()
-            .firstOrNull(::isSupported)
+        return normalize(
+            leaf.parentsWithSelf
+                .filterIsInstance<KtNamedDeclaration>()
+                .firstOrNull(::isSupported)
+        )
     }
 
     /**
