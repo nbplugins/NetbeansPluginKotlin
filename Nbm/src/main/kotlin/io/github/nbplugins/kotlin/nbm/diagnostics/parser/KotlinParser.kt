@@ -38,9 +38,6 @@ import org.openide.loaders.DataObject
 class KotlinParser : Parser() {
 
     companion object {
-        var file: KtFile? = null
-        var project: Project? = null
-
         // Tracks files that already have a save listener registered.
         private val saveListenedPaths: MutableSet<String> = Collections.synchronizedSet(HashSet())
 
@@ -70,6 +67,8 @@ class KotlinParser : Parser() {
 
     private lateinit var snapshot: Snapshot
     private var cancel = false
+    private var file: KtFile? = null
+    private var project: Project? = null
 
     override fun parse(snapshot: Snapshot, task: Task, event: SourceModificationEvent) {
         this.snapshot = snapshot
@@ -98,8 +97,8 @@ class KotlinParser : Parser() {
             KotlinLogger.INSTANCE.logInfo("KotlinParser.parse: building KtFile for ${fo?.path}")
             val snapshotText = snapshot.text.toString()
             val ktFile = ProjectUtils.getKtFile(snapshotText, fo)
-            Companion.project = project
-            Companion.file = ktFile
+            this.project = project
+            this.file = ktFile
             // Keep the session's LVF-backed KtFile PSI in sync with the current editor snapshot.
             if (fo != null) {
                 val tSession = System.nanoTime()
@@ -118,14 +117,14 @@ class KotlinParser : Parser() {
         val taskName = task.javaClass.simpleName
         val project = project
         if (project == null) {
-            KotlinLogger.INSTANCE.logWarning("KotlinParser.getResult($taskName): companion.project is null")
+            KotlinLogger.INSTANCE.logWarning("KotlinParser.getResult($taskName): project is null")
             return null
         }
         val foPath = snapshot.source.fileObject?.path
         val filePath = file?.virtualFile?.path
         val ktFile = if (foPath == filePath) file else null
         if (ktFile == null) {
-            KotlinLogger.INSTANCE.logWarning("KotlinParser.getResult($taskName): ktFile null (snapshot=$foPath companion=$filePath)")
+            KotlinLogger.INSTANCE.logWarning("KotlinParser.getResult($taskName): ktFile null (snapshot=$foPath parsed=$filePath)")
             return null
         }
 
