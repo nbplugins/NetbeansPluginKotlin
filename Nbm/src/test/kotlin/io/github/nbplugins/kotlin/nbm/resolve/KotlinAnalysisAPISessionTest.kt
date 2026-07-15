@@ -17,12 +17,18 @@
 package io.github.nbplugins.kotlin.nbm.resolve
 
 import com.intellij.codeInsight.multiverse.CodeInsightContextManager
+import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.components.KaDiagnosticCheckerFilter
+import org.jetbrains.kotlin.idea.references.mainReference
+import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtReferenceExpression
 import org.openide.filesystems.FileUtil
 import utils.KotlinTestCase
+import java.io.File
+import java.nio.file.Files
 
 /**
  * Unit tests for [KotlinAnalysisAPISession].
@@ -297,6 +303,70 @@ class KotlinAnalysisAPISessionTest : KotlinTestCase("K2 Analysis API session", "
                 "analyze {} must succeed on update cycle #$i; error: ${result.exceptionOrNull()}",
                 result.isSuccess
             )
+        }
+    }
+
+    /**
+     * Regression test: a sibling Gradle subproject's compiled-output directory
+     * (`<module>/build/classes/kotlin/<sourceSet>/`) on the classpath must be promoted to a
+     * real K2 *source* module (using `<module>/src/<sourceSet>/kotlin/`) when that source
+     * directory exists on disk — not left as a binary-only dependency.
+     *
+     * Before this fix, such directories were only ever added via [buildKtLibraryModule], whose
+     * symbols have no attached PSI ([org.jetbrains.kotlin.analysis.api.symbols.KaSymbol.psi] is
+     * null) — hover/completion worked (they only need the resolved symbol) but Ctrl+Click
+     * "Go to Declaration" silently failed (it needs PSI to navigate to).
+     */
+    fun testCreateWithJars_promotesSiblingModuleBinaryDirToSourceModule() {
+        val siblingModuleBase = Files.createTempDirectory("kaas_sibling_module").toFile()
+        val siblingSrcDir = siblingModuleBase.resolve("src/main/kotlin").apply { mkdirs() }
+        siblingModuleBase.resolve("build/classes/kotlin/main").apply { mkdirs() }
+        File(siblingSrcDir, "IdGenerator.kt").writeText(
+            "package com.example\n\nobject IdGenerator {\n    fun next(): String = \"x\"\n}\n"
+        )
+        val mainSrcDir = Files.createTempDirectory("kaas_main_src").toFile()
+        File(mainSrcDir, "Main.kt").writeText(
+            "package com.example\n\nfun useIt() {\n    IdGenerator.next()\n}\n"
+        )
+        try {
+            val wrapper = KotlinAnalysisAPISession.createWithJars(
+                "test-sibling-source",
+                listOf(siblingModuleBase.resolve("build/classes/kotlin/main").toPath()),
+                listOf(mainSrcDir.toPath())
+            )
+
+            val siblingKtFile = wrapper.session.modulesWithFiles.values
+                .flatten()
+                .filterIsInstance<KtFile>()
+                .firstOrNull { it.name == "IdGenerator.kt" }
+            assertNotNull(
+                "sibling module's Kotlin source must be registered as a real K2 source module, " +
+                    "not just a binary directory",
+                siblingKtFile
+            )
+
+            val mainKtFile = wrapper.session.modulesWithFiles.values
+                .flatten()
+                .filterIsInstance<KtFile>()
+                .firstOrNull { it.name == "Main.kt" }
+            assertNotNull("Main.kt must be in the K2 session's source module", mainKtFile)
+
+            val callExpr = PsiTreeUtil.findChildOfType(mainKtFile, KtCallExpression::class.java)
+            assertNotNull("useIt() body must contain a call expression", callExpr)
+            val refExpr = PsiTreeUtil.findChildOfType(callExpr, KtReferenceExpression::class.java)
+            assertNotNull("call expression must contain a reference", refExpr)
+
+            val symbolPsi = analyze(mainKtFile!!) {
+                refExpr!!.mainReference?.resolveToSymbol()?.psi
+            }
+            assertNotNull(
+                "the resolved symbol for the sibling-module reference must have attached PSI " +
+                    "(required for Ctrl+Click navigation) — a binary-only symbol would have null psi here",
+                symbolPsi
+            )
+        } finally {
+            siblingModuleBase.deleteRecursively()
+            mainSrcDir.deleteRecursively()
         }
     }
 }

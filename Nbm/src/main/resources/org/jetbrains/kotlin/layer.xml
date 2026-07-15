@@ -206,6 +206,14 @@
                 <file name="org.jetbrains.kotlin.projectsextensions.gradle.lookup.GradleProjectLookupProviderExtension.instance"/>
             </folder>
         </folder>
+        <!-- Apache NetBeans's built-in Gradle module (bundled since NB 12+) uses a different
+             project-type folder ID than the old third-party "NetBeans Gradle Support" plugin
+             registered above; register the same extension under both so both are supported. -->
+        <folder name="org-netbeans-modules-gradle">
+            <folder name="Lookup">
+                <file name="org.jetbrains.kotlin.projectsextensions.gradle.lookup.GradleProjectLookupProviderExtension.instance"/>
+            </folder>
+        </folder>
         <!-- Kotlin Formatter category in Project Properties — registered manually because
              -proc:none disables annotation processing (see CLAUDE.md). -->
         <folder name="org-netbeans-modules-java-j2seproject">
@@ -225,6 +233,14 @@
             </folder>
         </folder>
         <folder name="org.netbeans.gradle.project">
+            <folder name="Customizer">
+                <file name="io-github-nbplugins-kotlin-nbm-projectsextensions-KotlinProjectCustomizerProvider.instance">
+                    <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectCustomizerProvider"/>
+                    <attr name="position" intvalue="900"/>
+                </file>
+            </folder>
+        </folder>
+        <folder name="org-netbeans-modules-gradle">
             <folder name="Customizer">
                 <file name="io-github-nbplugins-kotlin-nbm-projectsextensions-KotlinProjectCustomizerProvider.instance">
                     <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectCustomizerProvider"/>

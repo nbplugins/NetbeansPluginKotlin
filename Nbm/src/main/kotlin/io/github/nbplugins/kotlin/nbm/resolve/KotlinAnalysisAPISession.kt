@@ -41,6 +41,8 @@ import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectHelper
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.api.java.classpath.ClassPath
 import org.netbeans.api.project.Project as NBProject
+import org.openide.filesystems.FileUtil
+import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -85,7 +87,7 @@ class KotlinAnalysisAPISession private constructor(
      */
     private constructor(nbProject: NBProject) : this(
         moduleName = nbProject.projectDirectory.name,
-        binaryJars = collectBinaryJars(nbProject),
+        binaryJars = collectBinaryJars(nbProject, collectSourceRoots(nbProject)),
         sourceRoots = collectSourceRoots(nbProject)
     )
 
@@ -124,6 +126,21 @@ class KotlinAnalysisAPISession private constructor(
 
         hasDependencies = binaryJars.isNotEmpty()
 
+        // Sibling Gradle-subproject Kotlin source: a directory binary root that maps to a
+        // sibling module's real Kotlin source (`<module>/src/<sourceSet>/kotlin`) is added as
+        // an additional K2 *source* module instead of only its compiled binary output — a
+        // binary-only symbol has no attached PSI, so Ctrl+Click "Go to Declaration" into it
+        // silently fails even though hover/completion (which only need the resolved symbol,
+        // not its PSI) work fine. The corresponding binary directory is dropped once real
+        // source is available, to avoid registering the same declarations twice.
+        val siblingSourceRoots = binaryJars.filter { it.toFile().isDirectory }
+            .mapNotNull { siblingKotlinSourceRootOf(it) }
+            .distinct()
+        val effectiveBinaryJars = binaryJars.filterNot { siblingKotlinSourceRootOf(it) != null }
+        KotlinLogger.INSTANCE.logInfo(
+            "KotlinAnalysisAPISession '$moduleName': sibling Kotlin source roots (${siblingSourceRoots.size}) = $siblingSourceRoots"
+        )
+
         // Scan source roots and create in-memory LVFs so that updateFileContent() can keep
         // the session's KtFile PSI in sync with live editor snapshots without rebuilding.
         val tScan = System.nanoTime()
@@ -132,6 +149,7 @@ class KotlinAnalysisAPISession private constructor(
         KotlinLogger.INSTANCE.logInfo(
             "[PERF] KotlinAnalysisAPISession '$moduleName': scanSourceFiles=${(System.nanoTime() - tScan) / 1_000_000}ms (${lvfs.size} files)"
         )
+        val siblingLvfs = scanSourceFiles(siblingSourceRoots)
 
         val tBuild = System.nanoTime()
         session = buildStandaloneAnalysisAPISession {
@@ -149,7 +167,7 @@ class KotlinAnalysisAPISession private constructor(
                 )
 
                 val tLibs = System.nanoTime()
-                val libModules = binaryJars.map { jar ->
+                val libModules = effectiveBinaryJars.map { jar ->
                     addModule(buildKtLibraryModule {
                         libraryName = jar.fileName.toString()
                         addBinaryRoot(jar)
@@ -157,8 +175,19 @@ class KotlinAnalysisAPISession private constructor(
                     })
                 }
                 KotlinLogger.INSTANCE.logInfo(
-                    "[PERF] KotlinAnalysisAPISession '$moduleName': library modules=${(System.nanoTime() - tLibs) / 1_000_000}ms (${binaryJars.size} jars)"
+                    "[PERF] KotlinAnalysisAPISession '$moduleName': library modules=${(System.nanoTime() - tLibs) / 1_000_000}ms (${effectiveBinaryJars.size} jars)"
                 )
+
+                val siblingSourceModule = if (siblingLvfs.isEmpty()) null else addModule(buildKtSourceModule {
+                    this.moduleName = "$moduleName-siblings"
+                    languageVersionSettings = LanguageVersionSettingsImpl(
+                        LanguageVersion.KOTLIN_2_0, ApiVersion.KOTLIN_2_0
+                    )
+                    siblingLvfs.forEach { addSourceVirtualFile(it) }
+                    addRegularDependency(jdkModule)
+                    libModules.forEach { addRegularDependency(it) }
+                    platform = JvmPlatforms.unspecifiedJvmPlatform
+                })
 
                 val tSrc = System.nanoTime()
                 addModule(buildKtSourceModule {
@@ -169,6 +198,7 @@ class KotlinAnalysisAPISession private constructor(
                     lvfs.forEach { addSourceVirtualFile(it) }
                     addRegularDependency(jdkModule)
                     libModules.forEach { addRegularDependency(it) }
+                    siblingSourceModule?.let { addRegularDependency(it) }
                     platform = JvmPlatforms.unspecifiedJvmPlatform
                 })
                 KotlinLogger.INSTANCE.logInfo(
@@ -528,27 +558,133 @@ class KotlinAnalysisAPISession private constructor(
         ): KotlinAnalysisAPISession = KotlinAnalysisAPISession(moduleName, binaryJars, sourceRoots)
 
         /**
-         * Collects binary JAR paths from the project classpath.
+         * Collects binary classpath roots (JARs and class-directories) from the project
+         * classpath.
          *
          * Normalises each entry: strips a leading `file:` scheme and a trailing `!/`
          * (the NetBeans Maven integration returns `jar:file:/path/to.jar!/`-style strings
          * whose `.getPath()` still has the `file:` prefix and `!/` suffix).
-         * Only entries whose normalised path ends in `.jar` and exist on disk are included.
+         * Both `.jar` files and plain directories are included — Gradle's IDE-mode compile
+         * classpath represents project-to-project (subproject) dependencies as a directory
+         * of compiled `.class` files (e.g. `otherModule/build/classes/kotlin/main/`) rather
+         * than a JAR, so restricting to `.jar` would silently drop every sibling-module
+         * dependency's symbols from K2 resolution. Only entries that exist on disk are kept.
+         *
+         * Directory entries that coincide with (or contain/are contained by) one of
+         * [sourceRoots] are excluded: some project types put their own compiled-output
+         * directory on the COMPILE classpath, and adding that as a *binary* module alongside
+         * the identical files already present as *source* confuses K2's module resolution
+         * (`KaBaseIllegalPsiException` / module-mismatch errors).
+         *
+         * For a Kotlin-only Gradle subproject dependency, the compile classpath only ever
+         * reports `<module>/build/classes/java/<sourceSet>/` (NetBeans's Gradle support is
+         * Java-plugin-oriented and has no notion of the Kotlin plugin's own output directory),
+         * which is empty for such a module. Each such directory therefore gets its
+         * `build/classes/kotlin/<sourceSet>/` sibling added too, when it exists on disk.
          *
          * @param nbProject the NetBeans project
-         * @return list of existing JAR [Path]s
+         * @param sourceRoots this project's own source roots, to exclude self-referential
+         *        binary directory entries
+         * @return list of existing binary root [Path]s (JAR files or class directories)
          */
-        private fun collectBinaryJars(nbProject: NBProject): List<Path> =
-            ProjectUtils.getClasspath(nbProject)
-                .map { raw ->
-                    var s = raw
-                    if (s.startsWith("file:")) s = s.removePrefix("file:")
-                    if (s.endsWith("!/")) s = s.removeSuffix("!/")
-                    s
+        private fun collectBinaryJars(nbProject: NBProject, sourceRoots: List<Path>): List<Path> {
+            val projectDirPath = FileUtil.toFile(nbProject.projectDirectory)?.toPath()
+            val rawClasspath = ProjectUtils.getClasspath(nbProject)
+            KotlinLogger.INSTANCE.logInfo(
+                "collectBinaryJars '${nbProject.projectDirectory.name}': projectDirPath=$projectDirPath sourceRoots=$sourceRoots"
+            )
+            KotlinLogger.INSTANCE.logInfo(
+                "collectBinaryJars '${nbProject.projectDirectory.name}': raw classpath (${rawClasspath.size} entries) = $rawClasspath"
+            )
+            val normalized = rawClasspath.map { raw ->
+                var s = raw
+                if (s.startsWith("file:")) s = s.removePrefix("file:")
+                if (s.endsWith("!/")) s = s.removeSuffix("!/")
+                s
+            }
+            val parsed = normalized.mapNotNull { runCatching { Path.of(it) }.getOrNull() }
+            // Compute Kotlin-sibling candidates BEFORE the existence filter: a Kotlin-only
+            // module's `build/classes/java/<sourceSet>/` entry may not exist on disk at all
+            // (only its `build/classes/kotlin/<sourceSet>/` sibling does), so the sibling must
+            // be considered on its own merits rather than only for entries that already exist.
+            val withKotlinSiblings = parsed
+                .flatMap { path ->
+                    val kotlinSibling = kotlinClassesSiblingOf(path)
+                    if (kotlinSibling != null) listOf(path, kotlinSibling) else listOf(path)
                 }
-                .filter { it.endsWith(".jar") }
-                .map { Path.of(it) }
-                .filter { it.toFile().exists() }
+                .distinct()
+            val existing = withKotlinSiblings.filter { path ->
+                val f = path.toFile()
+                f.isDirectory || (f.isFile && path.toString().endsWith(".jar"))
+            }
+            KotlinLogger.INSTANCE.logInfo(
+                "collectBinaryJars '${nbProject.projectDirectory.name}': after existence/type filter (${existing.size}/${withKotlinSiblings.size}); " +
+                    "dropped = ${withKotlinSiblings.filterNot { existing.contains(it) }}"
+            )
+            val result = existing.filterNot { binaryRoot ->
+                // Scoped to this project's own directory: a broad sourceRoots prefix match
+                // (e.g. a source root at or above the whole multi-module reactor root) must
+                // not cause sibling subprojects' own binary directories to look self-referential.
+                val selfScoped = projectDirPath != null && binaryRoot.startsWith(projectDirPath)
+                val overlapsSource = sourceRoots.any { src -> binaryRoot == src || binaryRoot.startsWith(src) || src.startsWith(binaryRoot) }
+                if (selfScoped && overlapsSource) {
+                    KotlinLogger.INSTANCE.logInfo(
+                        "collectBinaryJars '${nbProject.projectDirectory.name}': excluding self-referential binary root $binaryRoot"
+                    )
+                }
+                selfScoped && overlapsSource
+            }
+            KotlinLogger.INSTANCE.logInfo(
+                "collectBinaryJars '${nbProject.projectDirectory.name}': resolved binary roots (${result.size}) = $result"
+            )
+            return result
+        }
+
+        /**
+         * For a Gradle Java-source-set output directory (`.../build/classes/java/<sourceSet>/`),
+         * returns the corresponding Kotlin output directory
+         * (`.../build/classes/kotlin/<sourceSet>/`) if it exists on disk. Returns `null` for
+         * paths that don't match that shape, or when no such Kotlin directory exists.
+         *
+         * @param path a binary classpath directory entry
+         * @return the sibling Kotlin output directory, or `null`
+         */
+        private fun kotlinClassesSiblingOf(path: Path): Path? {
+            val marker = "${File.separatorChar}classes${File.separatorChar}java${File.separatorChar}"
+            val s = path.toString()
+            val idx = s.lastIndexOf(marker)
+            if (idx < 0) return null
+            val kotlinPath = Path.of(
+                s.substring(0, idx) + "${File.separatorChar}classes${File.separatorChar}kotlin${File.separatorChar}" +
+                    s.substring(idx + marker.length)
+            )
+            return kotlinPath.takeIf { it.toFile().isDirectory }
+        }
+
+        /**
+         * For a Gradle module's compiled-output directory (`.../<module>/build/classes/<lang>/<sourceSet>/`,
+         * for any `<lang>` — `java`, `kotlin`, etc.), returns that module's actual Kotlin source
+         * directory (`.../<module>/src/<sourceSet>/kotlin/`) if it exists on disk. Returns `null`
+         * for paths that don't match that shape, or when no such source directory exists.
+         *
+         * Used to upgrade a sibling Gradle subproject's *binary* classpath directory into a real
+         * K2 *source* module, so Ctrl+Click navigation into it has PSI to land on.
+         *
+         * @param path a binary classpath directory entry
+         * @return the sibling module's Kotlin source directory, or `null`
+         */
+        private fun siblingKotlinSourceRootOf(path: Path): Path? {
+            val marker = "${File.separatorChar}build${File.separatorChar}classes${File.separatorChar}"
+            val s = path.toString()
+            val idx = s.indexOf(marker)
+            if (idx < 0) return null
+            val rest = s.substring(idx + marker.length).split(File.separatorChar).filter { it.isNotEmpty() }
+            if (rest.size < 2) return null
+            val sourceSet = rest[1]
+            val moduleBase = s.substring(0, idx)
+            val candidate = Path.of(moduleBase, "src", sourceSet, "kotlin")
+            return candidate.takeIf { it.toFile().isDirectory }
+        }
 
         /**
          * Collects source root paths from the project's SOURCE classpath.
