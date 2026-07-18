@@ -770,6 +770,33 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
       usage scan backing the ported engine's `ReferencesSearch` calls) / `TextRangeDiff` in
       `Nbm`
 
+  - [x] **E9.13** — Introduce Parameter (Ctrl+Alt+P)
+    - IDEA source ported verbatim: `introduceParameter/IntroduceParameterDescriptor.kt`
+      (`kotlin.refactorings.common`) — its `valVar`/`parametersToRemove`/`newArgumentValue`
+      logic is driven as-is, not reimplemented
+    - `KotlinFirIntroduceParameterHandler.kt` (IDE action-system entry point, Editor/dialog/
+      inplace-introducer) is not ported; `KaIntroduceParameterComputer` hand-writes the
+      caret/selection resolution and the mutation orchestration instead, reusing E9.8's ported
+      `KotlinMethodDescriptor`/`KotlinChangeInfo`/`KotlinParameterInfo`/
+      `KotlinChangeSignatureUsageProcessor` the same way `KaChangeSignatureComputer` already
+      does standalone
+    - Target: expression inside a function/secondary-constructor body (or a class body/property
+      initializer, targeting its primary constructor) → new parameter; every existing call site
+      updated to pass the original expression explicitly; body occurrences (one or all, matched
+      via `K2SemanticMatcher`) replaced by a reference to the new parameter
+    - Dialog: name, type (editable combo pre-filled with the inferred type + supertypes),
+      "replace all N occurrences" checkbox, "use default value" checkbox, target-scope combo
+      when multiple enclosing declarations are available
+    - Known simplifications vs. real IDEA (documented in `KaIntroduceParameterComputer`'s class
+      doc): a selection resolving to a local `KtProperty` is rejected as `NotApplicable`; a
+      lambda-argument occurrence is always replaced positionally (no named-argument heuristic);
+      context parameters are not tracked by the internal-usage scan (out of scope — this
+      plugin's language version is capped below context parameters, see *Key Versions*); a
+      `KtClass` target with no primary constructor yet is out of scope (no "add one from
+      scratch" path)
+    - NetBeans adapter: `KaIntroduceParameterComputer` (`KotlinRefactoring`);
+      `KotlinIntroduceParameter{Refactoring,Plugin,UI,Action}` (`Nbm`)
+
 - **E10** — J2K (Java→Kotlin): reimplement using `j2k/new` from `submodules/IntellijCommunity`
   or binary artifact once published; wire up stubbed `Java2KotlinConverter` (stubbed since D2)
   and re-enable `J2KTest`

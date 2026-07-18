@@ -1,0 +1,5 @@
+package introduceParameter.notApplicable
+
+<caret>fun main() {
+    println("hello")
+}

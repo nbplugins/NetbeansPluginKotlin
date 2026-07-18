@@ -24,6 +24,8 @@
     <bind actionName="kotlin-introduce-property" key="DA-F"/>
     <!-- Introduce Type Alias (Ctrl+Alt+Shift+A) — mirrors IntelliJ IDEA introduce type alias shortcut -->
     <bind actionName="kotlin-introduce-type-alias" key="DAS-A"/>
+    <!-- Introduce Parameter (Ctrl+Alt+P) — mirrors IntelliJ IDEA introduce parameter shortcut -->
+    <bind actionName="kotlin-introduce-parameter" key="DA-P"/>
     <!-- Change Signature (Ctrl+F6) — mirrors IntelliJ IDEA change signature shortcut -->
     <bind actionName="kotlin-change-signature" key="D-F6"/>
 </bindings>

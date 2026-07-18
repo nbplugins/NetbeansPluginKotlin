@@ -36,6 +36,8 @@ import io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignaturePlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignatureRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceImportAliasPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceImportAliasRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceParameterPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceParameterRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroducePropertyPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroducePropertyRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceTypeAliasPlugin;
@@ -75,6 +77,7 @@ import org.openide.util.lookup.ServiceProvider;
  *   <li>{@link KotlinIntroduceImportAliasRefactoring} — delegates to {@link KotlinIntroduceImportAliasPlugin}</li>
  *   <li>{@link KotlinIntroducePropertyRefactoring} — delegates to {@link KotlinIntroducePropertyPlugin}</li>
  *   <li>{@link KotlinIntroduceTypeAliasRefactoring} — delegates to {@link KotlinIntroduceTypeAliasPlugin}</li>
+ *   <li>{@link KotlinIntroduceParameterRefactoring} — delegates to {@link KotlinIntroduceParameterPlugin}</li>
  *   <li>{@link KotlinCopyDeclarationRefactoring} — delegates to {@link KotlinCopyDeclarationPlugin}</li>
  *   <li>{@link KotlinMoveDeclarationRefactoring} — delegates to {@link KotlinMoveDeclarationPlugin}</li>
  *   <li>{@link KotlinChangeSignatureRefactoring} — delegates to {@link KotlinChangeSignaturePlugin}</li>
@@ -131,6 +134,9 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         }
         if (refactoring instanceof KotlinChangeSignatureRefactoring) {
             return new KotlinChangeSignaturePlugin((KotlinChangeSignatureRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinIntroduceParameterRefactoring) {
+            return new KotlinIntroduceParameterPlugin((KotlinIntroduceParameterRefactoring) refactoring);
         }
         return null;
     }
