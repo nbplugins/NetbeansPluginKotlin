@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.190-SNAPSHOT</version>
+    <version>0.11.192-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
@@ -882,6 +882,43 @@
                   <includes>
                     <include>com/intellij/refactoring/rename/CollisionUsageInfo.java</include>
                     <include>com/intellij/refactoring/rename/UnresolvableCollisionUsageInfo.java</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- kotlin.refactorings.common/introduceParameter: IntroduceParameterDescriptor (E9.13).
+               Real IDEA data holder computing valVar (val/var for a primary-constructor parameter),
+               parametersToRemove (existing parameters that become dead once their only usages fall
+               inside the replaced occurrences), and newArgumentValue (auto-parenthesizing the
+               replacement expression) — no Editor/UI dependency.
+               Excluded: KotlinFirIntroduceParameterHandler.kt (IDE action-system entry point, takes
+               Editor/DataContext, drives the dialog/inplace introducer — KaIntroduceParameterComputer
+               hand-writes the caret/selection resolution and mutation orchestration instead, same
+               convention as KaChangeSignatureComputer not porting KotlinChangeSignatureHandler.kt),
+               KotlinIntroduceParameterDialog.kt (Swing dialog — NB has its own panel),
+               KotlinInplaceParameterIntroducerBase.kt (IDE inplace-rename-style template editor, no
+               NetBeans equivalent), KotlinIntroduceParameterMethodUsageProcessor.kt (Java-interop SPI
+               hook for Java's own Introduce Parameter calling a Kotlin method, out of scope),
+               kotlinIntroduceParameterUtil.kt (selectNewParameterContext takes an Editor — NB does
+               its own selection resolution; INTRODUCE_PARAMETER/KotlinIntroduceParameterHelper are
+               trivial IDE-bundle/hook plumbing not worth porting).
+               mustBeParenthesizedInInitializerPosition (needed by IntroduceParameterDescriptor's
+               newArgumentValue) already exists in this module's local
+               org/jetbrains/kotlin/idea/refactoring/introduce/introduceUtilsStub.kt. -->
+          <execution>
+            <id>copy-kotlin-refactoring-introduce-parameter</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.common/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/introduceParameter/IntroduceParameterDescriptor.kt</include>
                   </includes>
                 </resource>
               </resources>

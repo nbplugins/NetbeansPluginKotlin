@@ -809,17 +809,36 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
     - Files: `KaCopyDeclarationComputer`, `KotlinCopyDeclaration{Refactoring,Plugin,UI}`;
       hooks into NB's built-in Copy action (F5), no new `Action` class needed
 
-  - **E9.13** — Introduce Parameter (Ctrl+Alt+P) — *not started*
-    - IDEA source: `introduceParameter/KotlinFirIntroduceParameterHandler.kt` (~1,062 LOC)
-    - Target: expression → new function parameter, updates all call sites
-    - Dialog: name, type (editable), default value, "replace all occurrences in body",
-      "replace all calls with default value"
-    - Depends on E9.8's call-site update infrastructure (`KotlinChangeSignatureUsageSearchServiceImpl`)
-    - layer.xml position ~1150
+  - [x] **E9.13** — Introduce Parameter (Ctrl+Alt+P) — PR #119
+    - IDEA source ported verbatim: `introduceParameter/IntroduceParameterDescriptor.kt`
+      (`kotlin.refactorings.common`) — its `valVar`/`parametersToRemove`/`newArgumentValue`
+      logic is driven as-is, not reimplemented
+    - `KotlinFirIntroduceParameterHandler.kt` (IDE action-system entry point, Editor/dialog/
+      inplace-introducer) is not ported; `KaIntroduceParameterComputer` hand-writes the
+      caret/selection resolution and the mutation orchestration instead, reusing E9.8's ported
+      `KotlinMethodDescriptor`/`KotlinChangeInfo`/`KotlinParameterInfo`/
+      `KotlinChangeSignatureUsageProcessor` the same way `KaChangeSignatureComputer` already
+      does standalone
+    - Target: expression inside a function/secondary-constructor body (or a class body/property
+      initializer, targeting its primary constructor) → new parameter; every existing call site
+      updated to pass the original expression explicitly; body occurrences (one or all, matched
+      via `K2SemanticMatcher`) replaced by a reference to the new parameter
+    - Dialog: name, type (editable combo pre-filled with the inferred type + supertypes),
+      "replace all N occurrences" checkbox, "use default value" checkbox, target-scope combo
+      when multiple enclosing declarations are available
+    - Known simplifications vs. real IDEA (documented in `KaIntroduceParameterComputer`'s class
+      doc): a selection resolving to a local `KtProperty` is rejected as `NotApplicable`; a
+      lambda-argument occurrence is always replaced positionally (no named-argument heuristic);
+      context parameters are not tracked by the internal-usage scan (out of scope — this
+      plugin's language version is capped below context parameters, see *Key Versions*); a
+      `KtClass` target with no primary constructor yet is out of scope (no "add one from
+      scratch" path)
+    - NetBeans adapter: `KaIntroduceParameterComputer` (`KotlinRefactoring`);
+      `KotlinIntroduceParameter{Refactoring,Plugin,UI,Action}` (`Nbm`)
 
   - **E9.14** — Introduce Functional Parameter (Ctrl+Alt+Shift+P) — *not started*
     - Variant of E9.13 wrapping the expression in `() -> Type`; reuses
-      `KaIntroduceParameterComputer` with an `asFunctional` flag once E9.13 exists
+      `KaIntroduceParameterComputer` with an `asFunctional` flag
     - layer.xml position ~1175
 
   - **E9.15** — Extract Interface — *not started*
@@ -874,7 +893,7 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
   Introduce Import Alias                        1075   [x] E9.10
   Introduce Property          Ctrl+Alt+F        1100   [x] E9.11
   Introduce Type Alias        Ctrl+Alt+Shift+A  1125   [x] E9.12
-  Introduce Parameter         Ctrl+Alt+P        1150   [ ] E9.13
+  Introduce Parameter         Ctrl+Alt+P        1150   [x] E9.13
   Introduce Functional Param  Ctrl+Alt+Shift+P  1175   [ ] E9.14
   --- separator ---                              1300
   Inline                      Ctrl+Alt+N        1400   [x] E9.3/E9.4
@@ -891,7 +910,7 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
   3. Manual test in NetBeans: open file → invoke refactoring → check dialog → preview → apply → undo
   4. CHANGELOG bullet updated together with the code
 
-  **Remaining E9 work, in dependency order:** E9.13 → E9.14 (reuses E9.13's call-site
+  **Remaining E9 work, in dependency order:** E9.14 (reuses E9.13's call-site
   update logic) → E9.15 → E9.16 (reuses E9.15's engine) → E9.17 → E9.18 (depends on E9.17).
 
 - **E10** — J2K (Java→Kotlin): reimplement using `j2k/new` from `submodules/IntellijCommunity`

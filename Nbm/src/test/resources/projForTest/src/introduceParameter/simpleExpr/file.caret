@@ -1,0 +1,5 @@
+package introduceParameter.simpleExpr
+
+fun greet(): String {
+    return "Hello, " + "wor<caret>ld"
+}
