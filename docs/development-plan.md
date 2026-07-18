@@ -770,7 +770,46 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
       usage scan backing the ported engine's `ReferencesSearch` calls) / `TextRangeDiff` in
       `Nbm`
 
-  - [x] **E9.13** — Introduce Parameter (Ctrl+Alt+P)
+  - [x] **E9.6+** — Enhanced Introduce Variable dialog: `KotlinIntroduceVariableUI` adds
+    "Replace all occurrences" checkbox (default on), `val`/`var` radio, "Specify type
+    explicitly" checkbox; carried on `KotlinIntroduceVariableRefactoring` (`replaceAll`,
+    `useVar`, `explicitType`) and applied by `KotlinIntroduceVariablePlugin.performChange()`
+
+  - [x] **E9.9** — Introduce Constant (Ctrl+Alt+C) — PR #108
+    - IDEA source: `introduceConstant/KotlinIntroduceConstantHandler.kt`
+    - Reuses most of `KaIntroduceVariableComputer`; only compile-time constant expressions
+      (literals, arithmetic on literals) accepted, validated via K2 `evaluate()`
+    - Inserts into companion object or top-level depending on context
+    - Files: `KaIntroduceConstantComputer`, `KotlinIntroduceConstant{Refactoring,Plugin,UI,Action}`
+
+  - [x] **E9.10** — Introduce Import Alias — PR #108
+    - IDEA source: `introduceImportAlias/KotlinIntroduceImportAliasHandler.kt`
+    - Target is a type reference inside an import statement: `import pkg.Class` →
+      `import pkg.Class as Alias`, all FQN usages replaced with the alias
+    - No IDEA keybinding (Refactor menu / Alt+Enter on import only)
+    - Files: `KaIntroduceImportAliasComputer`, `KotlinIntroduceImportAlias{Refactoring,Plugin,UI,Action}`
+
+  - [x] **E9.11** — Introduce Property (Ctrl+Alt+F) — PR #109
+    - IDEA source: `introduceProperty/KotlinIntroducePropertyHandler.kt`
+    - Target: expression → class property (not local val); destination combo (primary
+      constructor param / class body / companion object), initializer vs getter,
+      replace-all-occurrences checkbox
+    - Files: `KaIntroducePropertyComputer`, `KotlinIntroduceProperty{Refactoring,Plugin,UI,Action}`
+
+  - [x] **E9.12** — Introduce Type Alias (Ctrl+Alt+Shift+A) — PR #109
+    - IDEA source: `introduceTypeAlias/KotlinIntroduceTypeAliasHandler.kt`
+    - Target: type reference (not expression) → `typealias Name = Type`; visibility combo,
+      replace-all-occurrences, type parameters when the source type is generic
+    - Files: `KaIntroduceTypeAliasComputer`, `KotlinIntroduceTypeAlias{Refactoring,Plugin,UI,Action}`
+
+  - [x] **E9.19** — Copy Declaration (F5) — PR #109
+    - IDEA source: `copy/CopyKotlinDeclarationsHandler.kt`
+    - Duplicates a declaration into a target file without removing it from the source
+      (simpler than Move — no source-side import/reference updates)
+    - Files: `KaCopyDeclarationComputer`, `KotlinCopyDeclaration{Refactoring,Plugin,UI}`;
+      hooks into NB's built-in Copy action (F5), no new `Action` class needed
+
+  - [x] **E9.13** — Introduce Parameter (Ctrl+Alt+P) — PR #119
     - IDEA source ported verbatim: `introduceParameter/IntroduceParameterDescriptor.kt`
       (`kotlin.refactorings.common`) — its `valVar`/`parametersToRemove`/`newArgumentValue`
       logic is driven as-is, not reimplemented
@@ -796,6 +835,83 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
       scratch" path)
     - NetBeans adapter: `KaIntroduceParameterComputer` (`KotlinRefactoring`);
       `KotlinIntroduceParameter{Refactoring,Plugin,UI,Action}` (`Nbm`)
+
+  - **E9.14** — Introduce Functional Parameter (Ctrl+Alt+Shift+P) — *not started*
+    - Variant of E9.13 wrapping the expression in `() -> Type`; reuses
+      `KaIntroduceParameterComputer` with an `asFunctional` flag
+    - layer.xml position ~1175
+
+  - **E9.15** — Extract Interface — *not started*
+    - IDEA source: `extractClass/K2ExtractSuperRefactoring.kt` (~958 LOC)
+    - Creates a new `interface` from selected members, adds `: Interface` to the class
+    - Dialog: interface name, member-selection table (checkbox per method/property),
+      visibility combo, "extract as Kotlin file" checkbox
+
+  - **E9.16** — Extract Superclass — *not started*
+    - Same `K2ExtractSuperRefactoring` engine as E9.15, creates `abstract class` instead;
+      dialog adds a "Make Abstract" column per member
+
+  - **E9.17** — Pull Members Up (Ctrl+Alt+U) — *not started*
+    - IDEA source: `pullUp/K2PullUpHelperFactory.kt` (~1,982 LOC)
+    - Dialog: target superclass combo, member-selection table with "Make Abstract" per
+      member, conflict-preview panel
+
+  - **E9.18** — Push Members Down (Ctrl+Alt+O) — *not started*
+    - IDEA source: `pushDown/K2PushDownProcessorProvider.kt` (~1,034 LOC)
+    - Depends on E9.17; dialog: member-selection table, "keep abstract in superclass"
+      checkbox per member
+
+  **Common file-layout template for every E9.x refactoring:**
+  ```
+  KotlinRefactoring/src/main/kotlin/.../Ka*Computer.kt          — headless K2 analysis, sealed Outcome
+  KotlinRefactoring/target/generated-sources/refactoring/       — IDEA sources, copied via pom.xml
+  Nbm/src/main/kotlin/.../refactoring/Kotlin*Plugin.kt          — RefactoringPlugin (prepare → bag)
+  Nbm/src/main/kotlin/.../refactoring/Kotlin*Refactoring.kt     — AbstractRefactoring carrier
+  Nbm/src/main/java/.../refactoring/Kotlin*UI.java              — CustomRefactoringPanel + RefactoringUI
+  Nbm/src/main/kotlin/.../refactoring/Kotlin*Action.kt          — BaseAction, opens the dialog
+  layer.xml                                                      — Actions, Menu (position), keybindings
+  ```
+  Reusable IDEA infrastructure already vendored in `generated-sources` (no changes needed):
+  `K2SemanticMatcher` (semantic-duplicate search), `KotlinNameSuggester` (name generation from
+  type/context), `K2ExtractableSubstringInfo` (substring extraction), `ExtractionData` /
+  `ExtractionDataAnalyzer` / `Generator` (Extract Function/Property).
+
+  **Target `Refactor` menu layout** (layer.xml position, `[x]` = wired today):
+  ```
+  Rename                      Shift+F6          ~100   [x] E9.1
+  Change Signature            Ctrl+F6            150   [x] E9.8
+  Move                        F6                ~200   [x] E9.7
+  Copy                        F5                ~250   [x] E9.19
+  Safely Delete                Alt+Delete       ~500   [x] E9.2
+  --- separator ---                              600
+  Extract Function            Ctrl+Alt+M         700   [x] E9.5
+  Extract Interface                               750   [ ] E9.15
+  Extract Superclass                              760   [ ] E9.16
+  --- separator ---                               900
+  Introduce Variable          Ctrl+Alt+V        1000   [x] E9.6
+  Introduce Constant          Ctrl+Alt+C        1050   [x] E9.9
+  Introduce Import Alias                        1075   [x] E9.10
+  Introduce Property          Ctrl+Alt+F        1100   [x] E9.11
+  Introduce Type Alias        Ctrl+Alt+Shift+A  1125   [x] E9.12
+  Introduce Parameter         Ctrl+Alt+P        1150   [x] E9.13
+  Introduce Functional Param  Ctrl+Alt+Shift+P  1175   [ ] E9.14
+  --- separator ---                              1300
+  Inline                      Ctrl+Alt+N        1400   [x] E9.3/E9.4
+  Pull Members Up             Ctrl+Alt+U        1450   [ ] E9.17
+  Push Members Down           Ctrl+Alt+O        1500   [ ] E9.18
+  --- separator ---                              1550
+  Undo Last Refactoring                          1600   [x] (Change Signature only; others "not supported")
+  Redo Last Refactoring                          1700
+  ```
+
+  **Verification checklist for every E9.x refactoring:**
+  1. `mvn package -DskipTests` — builds everything
+  2. `mvn test -pl Nbm -Dtest=Ka<Feature>Test` — unit tests
+  3. Manual test in NetBeans: open file → invoke refactoring → check dialog → preview → apply → undo
+  4. CHANGELOG bullet updated together with the code
+
+  **Remaining E9 work, in dependency order:** E9.14 (reuses E9.13's call-site
+  update logic) → E9.15 → E9.16 (reuses E9.15's engine) → E9.17 → E9.18 (depends on E9.17).
 
 - **E10** — J2K (Java→Kotlin): reimplement using `j2k/new` from `submodules/IntellijCommunity`
   or binary artifact once published; wire up stubbed `Java2KotlinConverter` (stubbed since D2)
