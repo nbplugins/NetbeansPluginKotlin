@@ -583,4 +583,83 @@ class KaExtractFunctionTest : KotlinTestCase("KaExtractFunctionTest", "extractFu
             tmpDir.toFile().deleteRecursively()
         }
     }
+
+    /**
+     * Regression test (E9.14): `ExtractableCodeDescriptor.duplicates` was un-stubbed from
+     * `emptyList()` to the real `findDuplicates()` (`KotlinRefactoring/pom.xml` patch #13) so
+     * E9.14's Introduce Functional Parameter can drive multi-occurrence replacement through the
+     * genuine IDEA mechanism. `withDuplicate/file.kt` selects the *first* `a + 1` (inside
+     * `val t = (a + 1) * 2`); a second, textually identical `a + 1` occurs in the `return`
+     * statement.
+     *
+     * Populating `duplicates` changes more than whether duplicates get replaced: it also feeds
+     * `ExtractFunctionGenerator`'s anchor-selection (`anchorCandidates` includes duplicate
+     * locations, not just the primary `targetSibling`), which can move the extracted
+     * declaration's insertion point earlier than before — here, before `val t = ...` instead of
+     * immediately before the `return` statement — and IDEA's own `insertDeclaration()` (which
+     * only inserts explicit `"\n\n"` whitespace, not full re-indentation — see its
+     * `// TODO: Get rid of explicit new-lines in favor of formatter rules` comment) leaves the
+     * pushed-down statement without its original leading indent at the raw-PSI level. That is
+     * *not* a correctness bug: [KaExtractFunctionComputer.generate]'s `computeMinimalDiff`
+     * output already spans the whole shifted region — verified below — and every E9.x apply path
+     * (e.g. `KotlinExtractFunctionPlugin.performChange`) reformats `[changedRange.start,
+     * formatEndOffset)` via NetBeans' own formatter after applying the edit, which fixes this
+     * class of raw-insertion whitespace roughness.
+     *
+     * Note what this test does *not* expect: [KaExtractFunctionComputer.generate] never calls
+     * `processDuplicates()`/consumes `ExtractionResult.duplicateReplacers`, so the duplicate
+     * occurrence (`val t = (a + 1) * 2`) is *not* rewritten to a call — only the primary selected
+     * occurrence is (unchanged E9.5/E9.6 behavior; un-stubbing `duplicates` for E9.14 only feeds
+     * the anchor-selection logic here, it doesn't newly activate duplicate replacement for Extract
+     * Function). This test verifies the two things that *would* indicate real corruption from that
+     * anchor shift: the primary occurrence still cleanly becomes a call, the duplicate's text
+     * survives intact (not mangled), and `formatEndOffset` extends far enough to cover the
+     * anchor-shifted duplicate line so the follow-up reformat pass can fix its indentation.
+     */
+    fun testGenerate_withRealSession_withDuplicate_anchorShiftStaysWithinFormatRange() {
+        val triple = prepareWithRealSession("withDuplicate")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping real-session test")
+                return
+            }
+        val (computer, ktFile, tmpDir) = triple
+        try {
+            val outcome = computer.generate(chosenName = "extracted")
+
+            assertTrue("Expected Ready, got $outcome", outcome is GenerateOutcome.Ready)
+            val edit = (outcome as GenerateOutcome.Ready).edit
+            val newText = ktFile.text
+
+            assertTrue(
+                "Expected extracted function 'fun extracted(): Int' in output:\n$newText",
+                newText.contains("fun extracted(): Int"),
+            )
+            assertTrue(
+                "Expected the primary selection to become a call to 'extracted()':\n$newText",
+                newText.contains("return extracted() - t"),
+            )
+            assertTrue(
+                "Expected the (unreplaced) duplicate statement's text to survive intact:\n$newText",
+                newText.contains("val t = (a + 1) * 2"),
+            )
+
+            // The duplicate line's post-edit position must fall inside [changedRange.start,
+            // formatEndOffset) so the caller's follow-up NetBeans reformat pass actually reaches
+            // it — otherwise the anchor shift described above really would leave corrupted
+            // (permanently mis-indented) output in production.
+            val dupIndexInNewText = newText.indexOf("val t = (a + 1) * 2")
+            assertTrue("Expected to find the (unreplaced) duplicate statement in output:\n$newText", dupIndexInNewText >= 0)
+            val dupIndexInReplacement = edit.changedRange.startOffset + edit.replacementText.indexOf("val t = (a + 1) * 2")
+            assertTrue(
+                "Expected replacementText to contain the shifted duplicate statement",
+                edit.replacementText.contains("val t = (a + 1) * 2"),
+            )
+            assertTrue(
+                "Expected formatEndOffset (${edit.formatEndOffset}) to cover the anchor-shifted duplicate line at $dupIndexInReplacement, so the caller's reformat pass fixes its indentation",
+                edit.formatEndOffset > dupIndexInReplacement,
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
 }

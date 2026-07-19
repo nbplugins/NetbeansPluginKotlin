@@ -86,6 +86,10 @@
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceParameterAction.instance">
                 <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceParameterAction"/>
             </file>
+            <!-- Global Introduce Functional Parameter refactoring action (Ctrl+Alt+Shift+P; E9.14). -->
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceFunctionalParameterAction.instance">
+                <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceFunctionalParameterAction"/>
+            </file>
             <!-- Global Copy Declaration refactoring action (Refactor menu only). -->
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinCopyDeclarationAction.instance">
                 <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinCopyDeclarationAction"/>
@@ -105,9 +109,9 @@
             <!-- Copy Declaration at position 250, Move Declaration at 260, Change Signature at 270,
                  before Safely Delete. Extract Function at 700, Introduce Variable at 1000,
                  Introduce Constant at 1050. Introduce Property at 1100, Introduce Type Alias at 1125,
-                 Introduce Parameter at 1150. Separator at 600 opens the Extract/Introduce group;
-                 separator at 900 separates Extract from Introduce; separator at 1300 closes the
-                 group before Inline (1400). -->
+                 Introduce Parameter at 1150, Introduce Functional Parameter at 1175. Separator at 600
+                 opens the Extract/Introduce group; separator at 900 separates Extract from Introduce;
+                 separator at 1300 closes the group before Inline (1400). -->
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinCopyDeclarationAction.shadow">
                 <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinCopyDeclarationAction.instance"/>
                 <attr name="position" intvalue="250"/>
@@ -155,6 +159,10 @@
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceParameterAction.shadow">
                 <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceParameterAction.instance"/>
                 <attr name="position" intvalue="1150"/>
+            </file>
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceFunctionalParameterAction.shadow">
+                <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinIntroduceFunctionalParameterAction.instance"/>
+                <attr name="position" intvalue="1175"/>
             </file>
             <file name="separator-after-introduce.instance">
                 <attr name="instanceClass" stringvalue="javax.swing.JSeparator"/>
@@ -566,6 +574,10 @@
                         <!-- Introduce Parameter (Ctrl+Alt+P): custom Kotlin action. -->
                         <file name="kotlin-introduce-parameter.instance">
                             <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceParameterAction"/>
+                        </file>
+                        <!-- Introduce Functional Parameter (Ctrl+Alt+Shift+P; E9.14): custom Kotlin action. -->
+                        <file name="kotlin-introduce-functional-parameter.instance">
+                            <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceFunctionalParameterAction"/>
                         </file>
                         <!-- Copy Declaration: custom Kotlin action (Refactor menu only, no keybinding). -->
                         <file name="kotlin-copy-declaration.instance">

@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.192-SNAPSHOT</version>
+    <version>0.11.194-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
@@ -287,8 +287,12 @@
           </execution>
           <!-- kotlin.refactorings.common/extractionEngine: analysis-engine data classes (E9.5).
                Excluded: ExtractFunctionGenerator.kt (PSI mutation, not needed for text-based apply),
-               duplicateUtil.kt (IDE-heavy: Editor/Messages), IExtractionEngine.kt (IDE: Editor),
-               PostInsertDeclarationCallback.kt (extension point for generator). -->
+               IExtractionEngine.kt (IDE: Editor), PostInsertDeclarationCallback.kt (extension point
+               for generator). duplicateUtil.kt IS included (E9.14) but patched below (patch #13) to
+               strip its IDE-heavy UI functions (highlight/preview/processDuplicates*, which need
+               Editor/Messages/HighlightManager) down to the two pure functions
+               (getControlFlowIfMatched/processWeakMatch) that ExtractableCodeDescriptor.duplicates
+               actually needs. -->
           <execution>
             <id>copy-kotlin-refactoring-common-extraction</id>
             <phase>initialize</phase>
@@ -306,6 +310,7 @@
                     <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/ControlFlow.kt</include>
                     <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/ControlFlowBuilder.kt</include>
                     <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/DuplicateInfo.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/duplicateUtil.kt</include>
                     <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/encodeDecodeUtil.kt</include>
                     <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/ExtractableCodeDescriptorWithConflictsResult.kt</include>
                     <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/ExtractionGeneratorOptions.kt</include>
@@ -348,8 +353,13 @@
                   <filtering>false</filtering>
                   <includes>
                     <include>org/jetbrains/kotlin/idea/k2/refactoring/extractFunction/ExtractableCodeDescriptor.kt</include>
-                    <!-- extractDuplicatesUtil.kt excluded: imports getControlFlowIfMatched from IDE-heavy duplicateUtil.kt;
-                         ExtractableCodeDescriptor.duplicates is patched below to return emptyList() -->
+                    <!-- extractDuplicatesUtil.kt (E9.14): findDuplicates() is pure analysis code
+                         (K2SemanticMatcher.matchRanges/ExtractionDataAnalyzer/getOccurrenceContainer,
+                         all already compiled here); its only IDE-heavy dependency was
+                         getControlFlowIfMatched from duplicateUtil.kt, which is now included above
+                         in stripped form (patch #13). ExtractableCodeDescriptor.duplicates calls
+                         findDuplicates() for real (patch #13 no longer stubs it to emptyList()). -->
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/extractFunction/extractDuplicatesUtil.kt</include>
                     <include>org/jetbrains/kotlin/idea/k2/refactoring/extractFunction/ExtractFunctionDescriptorModifier.kt</include>
                     <include>org/jetbrains/kotlin/idea/k2/refactoring/extractFunction/ExtractionData.kt</include>
                     <include>org/jetbrains/kotlin/idea/k2/refactoring/extractFunction/ExtractionGeneratorConfiguration.kt</include>
@@ -370,8 +380,8 @@
                Excluded: IExtractionEngine.kt, ExtractionEngineHelper.kt, extractionEngineUtil.kt
                (pure UI-orchestration: dialogs, EDT commands, conflict balloons — we call
                Generator.generateDeclaration(config, null) directly instead of their run()/
-               doRefactor() flow); duplicateUtil.kt (already unneeded, duplicates patched to
-               emptyList() in ExtractableCodeDescriptor.kt). -->
+               doRefactor() flow). duplicateUtil.kt is included above (copy-kotlin-refactoring-common-extraction,
+               stripped by patch #13, E9.14). -->
           <execution>
             <id>copy-kotlin-refactoring-extraction-generator</id>
             <phase>initialize</phase>
@@ -1181,18 +1191,51 @@ if (parametersUtil.exists()) {
   log.info("Patched parametersUtil.kt: removed unused BuiltinTypes import")
 }
 
-// 13. ExtractableCodeDescriptor.kt: duplicates property calls findDuplicates() from
-//     extractDuplicatesUtil.kt which imports IDE-heavy duplicateUtil.kt (Editor, Messages, etc.).
-//     Stub duplicates to emptyList() — NB does not use the duplicate-replacement UI.
+// 13. duplicateUtil.kt (E9.14): the file mixes two pure functions (getControlFlowIfMatched,
+//     processWeakMatch — no Editor/UI dependency) with genuinely IDE-heavy UI orchestration
+//     (highlight/preview/processDuplicates/processDuplicatesSilently — HighlightManager, Messages,
+//     CodeFoldingManager, FindManager, ReplacePromptDialog, MethodDuplicatesHandler,
+//     ApplicationNamesInfo). Strip the UI functions and their now-unused imports so only the pure
+//     half remains; ExtractableCodeDescriptor.duplicates (below) is no longer stubbed to
+//     emptyList() and calls the real findDuplicates(), which depends only on the pure half.
+def duplicateUtilFile = new File(srcDir, 'org/jetbrains/kotlin/idea/refactoring/introduce/extractionEngine/duplicateUtil.kt')
+if (duplicateUtilFile.exists()) {
+  def text = duplicateUtilFile.text
+  [
+    'import com.intellij.codeInsight.folding.CodeFoldingManager\n',
+    'import com.intellij.codeInsight.highlighting.HighlightManager\n',
+    'import com.intellij.find.FindManager\n',
+    'import com.intellij.java.refactoring.JavaRefactoringBundle\n',
+    'import com.intellij.openapi.application.ApplicationNamesInfo\n',
+    'import com.intellij.openapi.editor.Editor\n',
+    'import com.intellij.openapi.editor.ScrollType\n',
+    'import com.intellij.openapi.editor.colors.EditorColors\n',
+    'import com.intellij.openapi.editor.markup.RangeHighlighter\n',
+    'import com.intellij.openapi.project.Project\n',
+    'import com.intellij.openapi.ui.Messages\n',
+    'import com.intellij.refactoring.util.duplicates.MethodDuplicatesHandler\n',
+    'import com.intellij.ui.ReplacePromptDialog\n',
+    'import org.jetbrains.kotlin.idea.base.resources.KotlinBundle\n',
+    'import org.jetbrains.kotlin.idea.base.psi.unifier.KotlinPsiRange\n',
+    'import org.jetbrains.kotlin.idea.util.application.executeWriteCommand\n',
+    'import org.jetbrains.kotlin.idea.util.application.isUnitTestMode\n',
+  ].each { imp -> text = text.replace(imp, '') }
+
+  def highlightStart = text.indexOf('fun KotlinPsiRange.highlight(')
+  def processWeakMatchStart = text.indexOf('fun <KotlinType> IExtractableCodeDescriptor<KotlinType>.processWeakMatch(')
+  if (highlightStart >= 0 && processWeakMatchStart > highlightStart) {
+    text = text.substring(0, highlightStart) + text.substring(processWeakMatchStart)
+  }
+
+  duplicateUtilFile.text = text
+  log.info("Patched duplicateUtil.kt: stripped highlight/preview/processDuplicates/processDuplicatesSilently and their IDE-heavy imports, keeping processWeakMatch/getControlFlowIfMatched")
+}
+
+// ExtractableCodeDescriptor.kt: duplicates now calls the real findDuplicates() (E9.14) — no
+// longer stubbed to emptyList(), now that extractDuplicatesUtil.kt/duplicateUtil.kt are compiled.
 def extractableDescriptor = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/extractFunction/ExtractableCodeDescriptor.kt')
 if (extractableDescriptor.exists()) {
-  def text = extractableDescriptor.text
-  text = text.replace(
-    'override val duplicates: List<DuplicateInfo<KaType>> by lazy { findDuplicates() }',
-    'override val duplicates: List<DuplicateInfo<KaType>> by lazy { emptyList() }'
-  )
-  extractableDescriptor.text = text
-  log.info("Patched ExtractableCodeDescriptor.kt: stubbed duplicates to emptyList()")
+  log.info("ExtractableCodeDescriptor.kt: left unpatched — duplicates calls the real findDuplicates() (E9.14)")
 }
 
 // 14. K2MoveRenameUsageInfo.kt: the IDEA Copy Declaration retargeting engine (E9.19).

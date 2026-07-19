@@ -36,6 +36,8 @@ import io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignaturePlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignatureRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceImportAliasPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceImportAliasRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceFunctionalParameterPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceFunctionalParameterRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceParameterPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceParameterRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroducePropertyPlugin;
@@ -78,6 +80,7 @@ import org.openide.util.lookup.ServiceProvider;
  *   <li>{@link KotlinIntroducePropertyRefactoring} — delegates to {@link KotlinIntroducePropertyPlugin}</li>
  *   <li>{@link KotlinIntroduceTypeAliasRefactoring} — delegates to {@link KotlinIntroduceTypeAliasPlugin}</li>
  *   <li>{@link KotlinIntroduceParameterRefactoring} — delegates to {@link KotlinIntroduceParameterPlugin}</li>
+ *   <li>{@link KotlinIntroduceFunctionalParameterRefactoring} — delegates to {@link KotlinIntroduceFunctionalParameterPlugin}</li>
  *   <li>{@link KotlinCopyDeclarationRefactoring} — delegates to {@link KotlinCopyDeclarationPlugin}</li>
  *   <li>{@link KotlinMoveDeclarationRefactoring} — delegates to {@link KotlinMoveDeclarationPlugin}</li>
  *   <li>{@link KotlinChangeSignatureRefactoring} — delegates to {@link KotlinChangeSignaturePlugin}</li>
@@ -137,6 +140,9 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         }
         if (refactoring instanceof KotlinIntroduceParameterRefactoring) {
             return new KotlinIntroduceParameterPlugin((KotlinIntroduceParameterRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinIntroduceFunctionalParameterRefactoring) {
+            return new KotlinIntroduceFunctionalParameterPlugin((KotlinIntroduceFunctionalParameterRefactoring) refactoring);
         }
         return null;
     }
