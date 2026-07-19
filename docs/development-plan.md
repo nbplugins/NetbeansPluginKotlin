@@ -836,10 +836,38 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
     - NetBeans adapter: `KaIntroduceParameterComputer` (`KotlinRefactoring`);
       `KotlinIntroduceParameter{Refactoring,Plugin,UI,Action}` (`Nbm`)
 
-  - **E9.14** — Introduce Functional Parameter (Ctrl+Alt+Shift+P) — *not started*
-    - Variant of E9.13 wrapping the expression in `() -> Type`; reuses
-      `KaIntroduceParameterComputer` with an `asFunctional` flag
-    - layer.xml position ~1175
+  - [x] **E9.14** — Introduce Functional Parameter (Ctrl+Alt+Shift+P)
+    - Not a flag on E9.13's computer (that description didn't match real IDEA): real IDEA's
+      `KotlinFirIntroduceLambdaParameterHandler` runs the **Extract Function engine**
+      (`ExtractionDataAnalyzer`/`Generator.generateDeclaration` with
+      `ExtractionTarget.FAKE_LAMBDALIKE_FUNCTION`) to compute which local variables/receiver the
+      selection captures (these become the lambda's parameters), then drives the same
+      `IntroduceParameterDescriptor`/`KotlinChangeSignatureUsageProcessor` pipeline E9.13 already
+      uses. New file `KaIntroduceFunctionalParameterComputer` (`KotlinRefactoring`); uses
+      `targetParent` itself (not an inner block) as `ExtractionData.targetSibling` — ported
+      verbatim from `KotlinFirIntroduceLambdaParameterHandler.invoke()` — since the extracted code
+      becomes a lambda literal living at each call site, not a nested local function, so
+      `targetParent`'s own parameters must be captured explicitly rather than closed over
+    - Un-stubbed `ExtractableCodeDescriptor.duplicates` (`KotlinRefactoring/pom.xml` patch #13,
+      previously `emptyList()` since E9.5/E9.6) to the real `findDuplicates()`: it was pure
+      analysis code, stubbed only because it transitively pulled in a few genuinely IDE-heavy
+      functions (`highlight`/`preview`/`processDuplicates*`, need `Editor`) sharing a file
+      (`duplicateUtil.kt`) with two pure ones (`processWeakMatch`/`getControlFlowIfMatched`) that
+      *are* needed — the file is now included with the IDE-heavy half stripped by patch #13.
+      Verified no regression to E9.5/E9.6/E9.11 via a new `KaExtractFunctionTest` fixture
+      (`withDuplicate`) exercising a previously-impossible duplicate-occurrence path; the one real
+      behavior change (anchor-selection now considers duplicate locations, matching real IDEA) is
+      non-corrupting since `computeMinimalDiff`'s `formatEndOffset` already covers the shifted
+      region for the existing post-edit reformat pass
+    - Known simplifications vs. real IDEA (documented in the class doc): single-expression
+      selection only (not a multi-statement block); an existing lambda-argument occurrence is not
+      given IDEA's double-lambda wrap; the final parameter's type text in the signature may appear
+      fully qualified (`kotlin.Int` vs `Int`) — a pre-existing characteristic of the shared E9.8
+      `KotlinChangeSignatureUsageProcessor` pipeline, not new to this feature; call-site lambda
+      arguments are inserted positionally, not as an idiomatic trailing lambda
+    - NetBeans adapter: `KaIntroduceFunctionalParameterComputer` (`KotlinRefactoring`);
+      `KotlinIntroduceFunctionalParameter{Refactoring,Plugin,UI,Action}` (`Nbm`)
+    - layer.xml position 1175
 
   - **E9.15** — Extract Interface — *not started*
     - IDEA source: `extractClass/K2ExtractSuperRefactoring.kt` (~958 LOC)
@@ -894,7 +922,7 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
   Introduce Property          Ctrl+Alt+F        1100   [x] E9.11
   Introduce Type Alias        Ctrl+Alt+Shift+A  1125   [x] E9.12
   Introduce Parameter         Ctrl+Alt+P        1150   [x] E9.13
-  Introduce Functional Param  Ctrl+Alt+Shift+P  1175   [ ] E9.14
+  Introduce Functional Param  Ctrl+Alt+Shift+P  1175   [x] E9.14
   --- separator ---                              1300
   Inline                      Ctrl+Alt+N        1400   [x] E9.3/E9.4
   Pull Members Up             Ctrl+Alt+U        1450   [ ] E9.17
@@ -910,8 +938,8 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
   3. Manual test in NetBeans: open file → invoke refactoring → check dialog → preview → apply → undo
   4. CHANGELOG bullet updated together with the code
 
-  **Remaining E9 work, in dependency order:** E9.14 (reuses E9.13's call-site
-  update logic) → E9.15 → E9.16 (reuses E9.15's engine) → E9.17 → E9.18 (depends on E9.17).
+  **Remaining E9 work, in dependency order:** E9.15 → E9.16 (reuses E9.15's engine) → E9.17 →
+  E9.18 (depends on E9.17).
 
 - **E10** — J2K (Java→Kotlin): reimplement using `j2k/new` from `submodules/IntellijCommunity`
   or binary artifact once published; wire up stubbed `Java2KotlinConverter` (stubbed since D2)

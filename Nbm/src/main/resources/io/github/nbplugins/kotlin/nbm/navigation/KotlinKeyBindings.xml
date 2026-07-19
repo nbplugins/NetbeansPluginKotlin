@@ -26,6 +26,8 @@
     <bind actionName="kotlin-introduce-type-alias" key="DAS-A"/>
     <!-- Introduce Parameter (Ctrl+Alt+P) — mirrors IntelliJ IDEA introduce parameter shortcut -->
     <bind actionName="kotlin-introduce-parameter" key="DA-P"/>
+    <!-- Introduce Functional Parameter (Ctrl+Alt+Shift+P; E9.14) — mirrors IntelliJ IDEA introduce lambda parameter shortcut -->
+    <bind actionName="kotlin-introduce-functional-parameter" key="DAS-P"/>
     <!-- Change Signature (Ctrl+F6) — mirrors IntelliJ IDEA change signature shortcut -->
     <bind actionName="kotlin-change-signature" key="D-F6"/>
 </bindings>

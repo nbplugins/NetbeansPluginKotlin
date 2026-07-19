@@ -1,0 +1,4 @@
+fun foo(a: Int, s: String): Int {
+    val t = (a + 1) * 2
+    return <start>a + 1<end> - t
+}

@@ -1,8 +1,10 @@
 // Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.kotlin.idea.refactoring.introduce
 
+import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiWhiteSpace
 import org.jetbrains.kotlin.idea.base.psi.dropCurlyBracketsIfPossible
+import org.jetbrains.kotlin.idea.base.psi.unifier.KotlinPsiRange
 import org.jetbrains.kotlin.psi.KtBinaryExpression
 import org.jetbrains.kotlin.psi.KtBlockStringTemplateEntry
 import org.jetbrains.kotlin.psi.KtCallExpression
@@ -23,6 +25,15 @@ import org.jetbrains.kotlin.utils.getElementTextWithContext
  * `ExtractFunctionGenerator`. The rest of that file uses IDE-only types (`Editor`,
  * `CommonRefactoringUtil`, `chooseContainerElementIfNecessary`) not available standalone.
  */
+
+/**
+ * Simplified port of IDEA's `KotlinPsiRange.getPhysicalTextRange()`: the original falls back to
+ * `extractableSubstringInfo?.contentRange` for a string-template substring selection, but this
+ * port never extracts string-template substrings (see `ExtractionData.kt` patch #10 in
+ * `KotlinRefactoring/pom.xml`), so that branch always yields `null` here — simplified to the
+ * unconditional fallback.
+ */
+fun KotlinPsiRange.getPhysicalTextRange(): TextRange = textRange
 
 /** Copied verbatim from IDEA's introduceUtils.kt. */
 fun KtExpression.removeTemplateEntryBracesIfPossible(): KtExpression {
