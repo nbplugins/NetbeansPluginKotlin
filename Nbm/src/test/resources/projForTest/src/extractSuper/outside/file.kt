@@ -1,0 +1,1 @@
+fun standalone() = 42

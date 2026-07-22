@@ -15,11 +15,19 @@ import org.jetbrains.kotlin.analysis.api.resolution.successfulFunctionCallOrNull
 import org.jetbrains.kotlin.analysis.api.resolution.successfulVariableAccessCall
 import org.jetbrains.kotlin.analysis.api.resolution.symbol
 import org.jetbrains.kotlin.analysis.api.components.containingSymbol
+import org.jetbrains.kotlin.analysis.api.components.declaredMemberScope
+import org.jetbrains.kotlin.analysis.api.components.semanticallyEquals
+import org.jetbrains.kotlin.analysis.api.scopes.KaScope
+import org.jetbrains.kotlin.analysis.api.signatures.KaCallableSignature
+import org.jetbrains.kotlin.analysis.api.signatures.KaFunctionSignature
 import org.jetbrains.kotlin.analysis.api.symbols.KaAnonymousObjectSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassKind
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassifierSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaReceiverParameterSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaFunctionSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.markers.KaDeclarationContainerSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
 import org.jetbrains.kotlin.analysis.api.types.KaType
 import org.jetbrains.kotlin.analysis.api.types.KaTypeParameterType
@@ -146,6 +154,63 @@ fun getThisQualifier(receiverValue: KaImplicitReceiverValue): String {
         symbol is KaReceiverParameterSymbol ->
             (symbol.owningCallableSymbol as? KaNamedSymbol)?.name?.let { "this@${it.asString()}" } ?: "this"
         else -> "this"
+    }
+}
+
+/**
+ * Finds a callable member of [container] by its K2 signature.
+ *
+ * Ported verbatim in behavior from IDEA's 2025.3 `utils.kt`; Extract Super uses it to detect
+ * existing declarations in the newly created interface or superclass before moving a member.
+ *
+ * @param container class-like declaration container to search.
+ * @param callableSignature callable signature to match.
+ * @param ignoreReturnType whether return type differences should be ignored.
+ * @return matching declared callable, or `null`.
+ */
+@OptIn(KaExperimentalApi::class)
+fun KaSession.findCallableMemberBySignature(
+    container: KaDeclarationContainerSymbol,
+    callableSignature: KaCallableSignature<KaCallableSymbol>,
+    ignoreReturnType: Boolean = false,
+): KaCallableSymbol? = findCallableMemberBySignature(
+    scope = container.declaredMemberScope,
+    callableSignature = callableSignature,
+    ignoreReturnType = ignoreReturnType,
+)
+
+/**
+ * Finds a callable member in this scope by its K2 signature.
+ *
+ * @param scope declared-member scope to search.
+ * @param callableSignature callable signature to match.
+ * @param ignoreReturnType whether return type differences should be ignored.
+ * @return matching callable, or `null`.
+ */
+@OptIn(KaExperimentalApi::class)
+fun KaSession.findCallableMemberBySignature(
+    scope: KaScope,
+    callableSignature: KaCallableSignature<KaCallableSymbol>,
+    ignoreReturnType: Boolean = false,
+): KaCallableSymbol? {
+    fun KaType?.eq(anotherType: KaType?): Boolean {
+        if (this == null || anotherType == null) return this == anotherType
+        return this.semanticallyEquals(anotherType)
+    }
+
+    val callableName = (callableSignature.symbol as? KaNamedSymbol)?.name ?: return null
+    return scope.callables(callableName).firstOrNull { callable ->
+        fun parametersMatch(): Boolean {
+            if (callableSignature is KaFunctionSignature && callable is KaFunctionSymbol) {
+                if (callable.valueParameters.size != callableSignature.valueParameters.size) return false
+                return callable.valueParameters.zip(callableSignature.valueParameters)
+                    .all { (left, right) -> left.returnType.eq(right.returnType) }
+            }
+            return callableSignature !is KaFunctionSignature && callable !is KaFunctionSymbol
+        }
+
+        parametersMatch() &&
+            (ignoreReturnType || callable.returnType.semanticallyEquals(callableSignature.returnType))
     }
 }
 
