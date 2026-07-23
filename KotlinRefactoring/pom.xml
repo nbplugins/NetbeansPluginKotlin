@@ -987,13 +987,13 @@
                     <include>com/intellij/refactoring/memberPullUp/*.java</include>
                   </includes>
                 </resource>
-                <resource>
-                  <directory>${basedir}/../submodules/IntellijCommunity/java/java-impl-refactorings/src</directory>
-                  <filtering>false</filtering>
-                  <!-- PullUpProcessor itself is replaced after this copy by the standalone
-                       lifecycle-free extraction of the same upstream moveMembersToBase path. -->
-                  <includes/>
-                </resource>
+                <!-- java-impl-refactorings/src is NOT copied here: an empty <includes/> is not
+                     "include nothing" for maven-resources-plugin — with no include patterns it
+                     defaults to ** and copies the entire directory tree, which under a wide
+                     sparse-checkout cone drags in unrelated Java-refactoring UI classes (migration,
+                     move-to-directory, rename naming factories, ...) that fail to compile. The
+                     standalone PullUpProcessor.java in src/main/java already replaces the upstream
+                     moveMembersToBase path, so nothing from this directory is needed at all. -->
               </resources>
             </configuration>
           </execution>
