@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.194-SNAPSHOT</version>
+    <version>0.11.203-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
@@ -100,6 +100,11 @@
                 <resource>
                   <directory>${basedir}/../submodules/IntellijCommunity/platform/refactoring/src</directory>
                   <filtering>false</filtering>
+                  <excludes>
+                    <!-- Standalone E9.15/E9.16 versions in src/main/java avoid unsupported IDE APIs. -->
+                    <exclude>com/intellij/refactoring/classMembers/MemberInfoBase.java</exclude>
+                    <exclude>com/intellij/refactoring/util/DocCommentPolicy.java</exclude>
+                  </excludes>
                 </resource>
               </resources>
             </configuration>
@@ -934,6 +939,64 @@
               </resources>
             </configuration>
           </execution>
+          <!-- E9.15/E9.16: real IDEA K2 Extract Interface / Extract Superclass engine and its
+               shared member-info + Kotlin Pull Up implementation. UI/action handlers are deliberately
+               excluded: NetBeans supplies its own action, dialog, preview, and apply lifecycle. -->
+          <execution>
+            <id>copy-kotlin-refactoring-extract-super-k2</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.common/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractClass/ExtractSuperInfo.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/introduce/extractClass/KotlinExtractSuperRefactoring.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/memberInfo/KotlinMemberInfo.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/memberInfo/KotlinMemberInfoSupport.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/memberInfo/KotlinMemberInfoStorageSupport.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/memberInfo/KtPsiClassWrapper.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/pullUp/EmptyPullUpHelper.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/pullUp/commonPullUpUtils.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/pullUp/KotlinPullUpConflictSearcher.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/supertypesUtils.kt</include>
+                  </includes>
+                </resource>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/extractClass/K2ExtractSuperRefactoring.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/memberInfo/K2MemberInfoSupport.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/pullUp/K2MemberInfoStorageSupport.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/pullUp/K2PullUpData.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/pullUp/K2PullUpHelper.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/pullUp/K2PullUpHelperFactory.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/pullUp/markingUtils.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/pullUp/pullUpUtils.kt</include>
+                  </includes>
+                </resource>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/java/openapi/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>com/intellij/refactoring/memberPullUp/*.java</include>
+                  </includes>
+                </resource>
+                <!-- java-impl-refactorings/src is NOT copied here: an empty <includes/> is not
+                     "include nothing" for maven-resources-plugin — with no include patterns it
+                     defaults to ** and copies the entire directory tree, which under a wide
+                     sparse-checkout cone drags in unrelated Java-refactoring UI classes (migration,
+                     move-to-directory, rename naming factories, ...) that fail to compile. The
+                     standalone PullUpProcessor.java in src/main/java already replaces the upstream
+                     moveMembersToBase path, so nothing from this directory is needed at all. -->
+              </resources>
+            </configuration>
+          </execution>
         </executions>
       </plugin>
 
@@ -1189,6 +1252,209 @@ if (parametersUtil.exists()) {
   text = text.replace('import org.jetbrains.kotlin.fir.BuiltinTypes\n', '')
   parametersUtil.text = text
   log.info("Patched parametersUtil.kt: removed unused BuiltinTypes import")
+}
+
+// E9.15/E9.16: adapt the copied Extract Super engine only at standalone lifecycle seams.
+// NetBeans creates target FileObjects and provides writable session KtFiles, so IDEA's template-based
+// file creation is replaced by an already-existing target. The semantic class construction and the
+// real PullUpProcessor invocation remain unchanged.
+def extractSuperRefactoring = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/extractClass/K2ExtractSuperRefactoring.kt')
+if (extractSuperRefactoring.exists()) {
+  def text = extractSuperRefactoring.text
+  text = text.replace('internal class K2ExtractSuperRefactoring', 'class K2ExtractSuperRefactoring')
+  text = text.replace('import com.intellij.ide.fileTemplates.FileTemplateManager\n', '')
+  text = text.replace('import com.intellij.openapi.actionSystem.ex.ActionUtil\n', '')
+  text = text.replace('import com.intellij.refactoring.RefactoringBundle\n', '')
+  text = text.replace('import org.jetbrains.kotlin.idea.actions.createKotlinFileFromTemplate\n', '')
+  text = text.replace('import org.jetbrains.kotlin.idea.util.application.executeWriteCommand\n', '')
+  text = text.replace('''        val handler = if (extractInfo.isInterface) KotlinExtractInterfaceHandler else KotlinExtractSuperclassHandler
+        handler.getErrorMessage(originalClass)?.let { throw CommonRefactoringUtil.RefactoringErrorHintException(it) }
+
+''', '')
+  text = text.replace('''        val createClassInfo = ActionUtil.underModalProgress(
+            project,
+            RefactoringBundle.message("refactoring.prepare.progress"),
+        ) {
+            analyze(originalClass) {
+                computeCreateClassInfo(extractInfo)
+            }
+        }''', '''        val createClassInfo = analyze(originalClass) {
+            computeCreateClassInfo(extractInfo)
+        }''')
+  text = text.replace('project.executeWriteCommand(KotlinExtractSuperclassHandler.REFACTORING_NAME) {', 'com.intellij.openapi.application.ApplicationManager.getApplication().runWriteAction {')
+  text = text.replace('return@executeWriteCommand', 'return@runWriteAction')
+  text = text.replace('''        val file = targetParent.findFile(extractInfo.targetFileName) ?: run {
+            val template = FileTemplateManager.getInstance(project).getInternalTemplate("Kotlin File")
+            createKotlinFileFromTemplate(extractInfo.targetFileName, template, targetParent) ?: return null
+        }
+        file.add(prototype) as KtClass''', '''        val file = targetParent.findFile(extractInfo.targetFileName) ?: return null
+        file.add(prototype) as KtClass''')
+  // A standalone K2 target file is backed by a LightVirtualFile and has no PsiDirectory parent.
+  // It is already created and refreshed by NetBeans, so insert the IDEA prototype directly into it.
+  text = text.replace('''    val newClass = if (targetParent is PsiDirectory) {
+        val file = targetParent.findFile(extractInfo.targetFileName) ?: return null
+        file.add(prototype) as KtClass
+    } else {
+        val targetSibling = originalClass.parentsWithSelf.first { it.parent == targetParent }
+        insertDeclaration(prototype, targetSibling)
+    }''', '''    val newClass = when (targetParent) {
+        is PsiDirectory -> {
+            val file = targetParent.findFile(extractInfo.targetFileName) ?: return null
+            file.add(prototype) as KtClass
+        }
+        is KtFile -> targetParent.add(prototype) as KtClass
+        else -> {
+            val targetSibling = originalClass.parentsWithSelf.first { it.parent == targetParent }
+            insertDeclaration(prototype, targetSibling)
+        }
+    }''')
+  text = text.replace('''    val targetPackageFqName = (targetParent as? PsiDirectory)
+        ?.getFqNameWithImplicitPrefix()
+        ?.quoteIfNeeded()
+        ?.asString()''', '''    val targetPackageFqName = when (targetParent) {
+        is PsiDirectory -> targetParent.getFqNameWithImplicitPrefix()?.quoteIfNeeded()?.asString()
+        is KtFile -> targetParent.packageFqName.quoteIfNeeded().asString()
+        else -> null
+    }''')
+  // The standalone target KtFile has no PsiDirectory, and reference shortening cannot resolve its
+  // newly inserted declaration soon enough. A same-package type needs no qualification at all.
+  text = text.replace('''        if (!targetPackageFqName.isNullOrEmpty()) append(targetPackageFqName).append('.')
+        append(newClassName)''', '''        if (!targetPackageFqName.isNullOrEmpty() &&
+            targetPackageFqName != originalClass.containingKtFile.packageFqName.quoteIfNeeded().asString()
+        ) append(targetPackageFqName).append('.')
+        append(newClassName)''')
+  extractSuperRefactoring.text = text
+  log.info("Patched K2ExtractSuperRefactoring.kt: use standalone write action and pre-created target file")
+}
+
+// E9.15/E9.16: preserve the real target-member collision matcher from IDEA's Pull Up conflict
+// source without compiling its project-index conflict-search UI/helpers.
+def pullUpConflictUtils = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/pullUp/pullUpConflictUtils.kt')
+pullUpConflictUtils.parentFile.mkdirs()
+pullUpConflictUtils.text = '''package org.jetbrains.kotlin.idea.k2.refactoring.pullUp
+
+import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
+import org.jetbrains.kotlin.analysis.api.KaSession
+import org.jetbrains.kotlin.analysis.api.resolution.symbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.markers.KaDeclarationContainerSymbol
+import org.jetbrains.kotlin.idea.k2.refactoring.findCallableMemberBySignature
+
+@OptIn(KaExperimentalApi::class)
+internal fun KaSession.getClashingMemberInTargetClass(
+    data: K2PullUpData,
+    callableSymbol: KaCallableSymbol,
+): KaCallableSymbol? {
+    val targetClassSymbol = data.getTargetClassSymbol(analysisSession = this) as? KaDeclarationContainerSymbol ?: return null
+    val substitutor = data.getSourceToTargetClassSubstitutor(analysisSession = this)
+    return findCallableMemberBySignature(targetClassSymbol, callableSymbol.substitute(substitutor))
+}
+'''
+
+// E9.15/E9.16: Extract Interface/Superclass always creates a Kotlin target type. The Kotlin-to-Java
+// Pull Up branch requires IDEA's full Java refactoring platform (unavailable in standalone) and is
+// unreachable from these NetBeans actions, so remove only that branch and its imports. The complete
+// Kotlin-to-Kotlin K2 Pull Up algorithm remains copied verbatim.
+def k2PullUpHelper = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/pullUp/K2PullUpHelper.kt')
+if (k2PullUpHelper.exists()) {
+  def text = k2PullUpHelper.text
+  text = text.replace('import com.intellij.psi.impl.light.LightField\n', '')
+  text = text.replace('import com.intellij.psi.codeStyle.JavaCodeStyleManager\n', '')
+  text = text.replace('import com.intellij.psi.search.GlobalSearchScope\n', '')
+  text = text.replace('import com.intellij.refactoring.util.RefactoringUtil\n', '')
+  text = text.replace('import org.jetbrains.kotlin.asJava.getRepresentativeLightMethod\n', '')
+  text = text.replace('import org.jetbrains.kotlin.idea.util.isBackingFieldRequired\n', 'import org.jetbrains.kotlin.idea.k2.refactoring.isBackingFieldRequired\n')
+  text = text.replace('import org.jetbrains.kotlin.idea.refactoring.rename.dropDefaultValue\n', 'import org.jetbrains.kotlin.idea.refactoring.pullUp.dropDefaultValue\n')
+  text = text.replace('import org.jetbrains.kotlin.idea.k2.refactoring.pushDown.getSuperTypeEntryBySymbol\n', 'import org.jetbrains.kotlin.idea.k2.refactoring.pushDown.getSuperTypeEntryBySymbol\nimport org.jetbrains.kotlin.idea.k2.refactoring.pullUp.getClashingMemberInTargetClass\nimport io.github.nbplugins.kotlin.refactoring.invalidateStandaloneFirCaches\n')
+  def javaBranchStart = text.indexOf('    private fun moveToJavaClass(')
+  def moveOverrideStart = text.indexOf('    @OptIn(KaExperimentalApi::class, KaAllowAnalysisOnEdt::class)\n    override fun move(', javaBranchStart)
+  if (javaBranchStart >= 0 && moveOverrideStart >= 0) {
+    text = text.substring(0, javaBranchStart) + text.substring(moveOverrideStart)
+  }
+  def movedMemberStart = text.indexOf('    private var dummyField: PsiField? = null')
+  def visibilityStart = text.indexOf('    private fun liftVisibility(', movedMemberStart)
+  if (movedMemberStart >= 0 && visibilityStart >= 0) {
+    text = text.substring(0, movedMemberStart) + '''    private fun addMovedMember(newMember: KtNamedDeclaration) {
+        org.jetbrains.kotlin.idea.refactoring.memberInfo.lightElementForMemberInfo(newMember)
+            ?.let { javaData.movedMembers.add(it) }
+    }
+
+''' + text.substring(visibilityStart)
+  }
+  text = text.replace('''        val targetClass = data.targetClass
+        if (targetClass is PsiClass) {
+            moveToJavaClass(member, substitutor)
+            return
+        } else if (targetClass !is KtClass) return''', '''        val targetClass = data.targetClass as? KtClass ?: return''')
+  text = text.replace('''                val unmovableProperties = RefactoringUtil.transitiveClosure(object : RefactoringUtil.Graph<KtProperty> {
+                    override fun getVertices(): MutableSet<KtProperty> = propertyToInitializerInfo.keys
+                    override fun getTargets(source: KtProperty): Set<KtProperty>? = propertyToInitializerInfo[source]?.usedProperties
+                }) { !propertyToInitializerInfo.containsKey(it) }''', '''                val unmovableProperties = buildSet {
+                    var changed: Boolean
+                    do {
+                        changed = false
+                        for (property in propertyToInitializerInfo.keys) {
+                            if (property !in this && (!propertyToInitializerInfo.containsKey(property) ||
+                                    propertyToInitializerInfo[property]?.usedProperties.orEmpty().any { it in this || !propertyToInitializerInfo.containsKey(it) })) {
+                                add(property)
+                                changed = true
+                            }
+                        }
+                    } while (changed)
+                }''')
+  // The K2 helper has structurally mutated both source and target PSI before applyMarking() walks
+  // the new declaration and shortens its types. Standalone mode lacks IDE PSI-change listeners, so
+  // clear the FIR source/session caches at this exact mutation-to-analysis boundary.
+  text = text.replace('''            applyMarking(movedMember, targetClass)
+            addMovedMember(movedMember)''', '''            invalidateStandaloneFirCaches(
+                movedMember.project,
+                "K2PullUpHelper.applyMarking",
+            )
+            applyMarking(movedMember, targetClass)
+            addMovedMember(movedMember)''')
+  k2PullUpHelper.text = text
+  log.info("Patched K2PullUpHelper.kt: stripped unreachable Kotlin-to-Java Pull Up branch and invalidated FIR before marking")
+}
+
+// E9.15/E9.16: IDEA relies on CodeStyleManager to add whitespace after it inserts a copied Pull Up
+// member immediately after the previous one. The standalone CodeStyleManager compatibility stub is
+// deliberately a no-op, so retain the IDEA insertion algorithm but insert the missing newline here.
+def commonPullUpUtils = new File(srcDir, 'org/jetbrains/kotlin/idea/refactoring/pullUp/commonPullUpUtils.kt')
+if (commonPullUpUtils.exists()) {
+  def text = commonPullUpUtils.text
+  text = text.replace('''    return when {
+        anchor == null && targetMember is KtProperty -> targetClass.addDeclarationBefore(targetMember, null)
+        else -> targetClass.addDeclarationAfter(targetMember, anchor)
+    }
+}''', '''    val addedMember = when {
+        anchor == null && targetMember is KtProperty -> targetClass.addDeclarationBefore(targetMember, null)
+        else -> targetClass.addDeclarationAfter(targetMember, anchor)
+    }
+    if (anchor != null) {
+        addedMember.parent.addBefore(KtPsiFactory(targetClass.project).createNewLine(), addedMember)
+    }
+    return addedMember as KtNamedDeclaration
+}''')
+  commonPullUpUtils.text = text
+  log.info("Patched commonPullUpUtils.kt: separated standalone Pull Up declarations")
+}
+
+// E9.15/E9.16: these implementations are application/extension registrations in IDEA's plugin.xml.
+// NetBeans registers them programmatically from another Maven module, so make their visibility public.
+def k2MemberStorage = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/pullUp/K2MemberInfoStorageSupport.kt')
+if (k2MemberStorage.exists()) {
+  k2MemberStorage.text = k2MemberStorage.text.replace('internal class K2MemberInfoStorageSupport', 'class K2MemberInfoStorageSupport')
+}
+def k2PullUpFactory = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/pullUp/K2PullUpHelperFactory.kt')
+if (k2PullUpFactory.exists()) {
+  def text = k2PullUpFactory.text
+  text = text.replace('internal class K2PullUpHelperFactory', 'class K2PullUpHelperFactory')
+  // Extract Super has just added the target supertype to standalone PSI. Its Java light class has
+  // not refreshed inheritance metadata yet, so isInheritor() falsely selects EmptyPullUpHelper.
+  // toKotlinPullUpData() below still rejects unsupported/non-Kotlin source and target classes.
+  text = text.replace('''        if (!data.sourceClass.isInheritor(data.targetClass, true)) return EmptyPullUpHelper
+''', '')
+  k2PullUpFactory.text = text
 }
 
 // 13. duplicateUtil.kt (E9.14): the file mixes two pure functions (getControlFlowIfMatched,
@@ -2310,6 +2576,8 @@ if (changeSigUsageProcessorShorten.exists()) {
                    through this class), so it's excluded from real compilation rather than fixed. -->
               <excludes>
                 <exclude>com/intellij/refactoring/inline/GenericInlineHandler.java</exclude>
+                <!-- Compiled later with its generated-source contracts, after Kotlin compilation. -->
+                <exclude>com/intellij/refactoring/memberPullUp/PullUpProcessor.java</exclude>
               </excludes>
             </configuration>
           </execution>
@@ -2341,6 +2609,37 @@ if (changeSigUsageProcessorShorten.exists()) {
                 <include>com/intellij/refactoring/rename/CollisionUsageInfo.java</include>
                 <include>com/intellij/refactoring/rename/UnresolvableCollisionUsageInfo.java</include>
               </includes>
+            </configuration>
+          </execution>
+          <!-- E9.15/E9.16: compile the narrow upstream Java Pull Up contracts first, then the
+               local lifecycle-free copy of IDEA PullUpProcessor against their bytecode. -->
+          <execution>
+            <id>compile-extract-super-pullup-contracts</id>
+            <phase>process-classes</phase>
+            <goals><goal>compile</goal></goals>
+            <configuration>
+              <compileSourceRoots>
+                <compileSourceRoot>${project.build.directory}/generated-sources/refactoring</compileSourceRoot>
+              </compileSourceRoots>
+              <includes>
+                <include>com/intellij/refactoring/classMembers/MemberInfoBase.java</include>
+                <include>com/intellij/refactoring/util/DocCommentPolicy.java</include>
+                <include>com/intellij/refactoring/util/classMembers/MemberInfo.java</include>
+                <include>com/intellij/refactoring/memberPullUp/PullUpData.java</include>
+                <include>com/intellij/refactoring/memberPullUp/PullUpHelper.java</include>
+                <include>com/intellij/refactoring/memberPullUp/PullUpHelperFactory.java</include>
+              </includes>
+            </configuration>
+          </execution>
+          <execution>
+            <id>compile-extract-super-pullup-processor</id>
+            <phase>process-classes</phase>
+            <goals><goal>compile</goal></goals>
+            <configuration>
+              <compileSourceRoots>
+                <compileSourceRoot>${basedir}/src/main/java</compileSourceRoot>
+              </compileSourceRoots>
+              <includes><include>com/intellij/refactoring/memberPullUp/PullUpProcessor.java</include></includes>
             </configuration>
           </execution>
         </executions>

@@ -34,7 +34,7 @@ import org.jetbrains.kotlin.psi.KtFile
  * for [ShortenReferencesFacility]; without it, IDEA's `InlinePostProcessor.shortenReferences`
  * throws `RuntimeException: Cannot find service` at the end of an inline refactoring.
  *
- * The two abstract methods clear the FIR-session caches (see [invalidateFirCaches]) before
+ * The two abstract methods clear the FIR-session caches (see [invalidateStandaloneFirCaches]) before
  * delegating — needed when the element/range to shorten was just inserted by a live PSI mutation
  * in the same session (e.g. the real Extract Function generator, E9 Phase 2): our standalone
  * container has no PSI-change-listener-driven invalidation, so without this, resolving a
@@ -46,37 +46,46 @@ class KotlinSymbolBasedShortenReferencesFacility : ShortenReferencesFacility {
     private val delegate = SymbolBasedShortenReferencesFacility()
 
     override fun shorten(file: KtFile, range: TextRange, shortenOptions: ShortenOptions) {
-        invalidateFirCaches(file.project)
+        invalidateStandaloneFirCaches(
+            file.project,
+            "KotlinSymbolBasedShortenReferencesFacility.shorten",
+        )
         delegate.shorten(file, range, shortenOptions)
     }
 
     override fun shorten(element: KtElement, shortenOptions: ShortenOptions): PsiElement? {
-        invalidateFirCaches(element.project)
+        invalidateStandaloneFirCaches(
+            element.project,
+            "KotlinSymbolBasedShortenReferencesFacility.shorten",
+        )
         return delegate.shorten(element, shortenOptions)
     }
+}
 
-    /**
-     * Clears the two FIR-session caches that may hold state built before [project]'s live PSI was
-     * last mutated, so the next analysis access rebuilds them from the current PSI. Same two-step
-     * clear `KotlinAnalysisAPISession.updateFileContent` (Nbm module) uses for the same reason — a
-     * real IDE clears these via `LLFirSessionInvalidationService` listeners fired by PSI change
-     * events, which standalone/`MockProject` mode does not have wired up. Each step is
-     * independently best-effort: a failure in one must not skip the other.
-     */
-    @OptIn(
-        org.jetbrains.kotlin.analysis.low.level.api.fir.LLFirInternals::class,
-        org.jetbrains.kotlin.analysis.api.KaImplementationDetail::class,
-    )
-    private fun invalidateFirCaches(project: Project) {
-        runCatching {
-            org.jetbrains.kotlin.analysis.low.level.api.fir.sessions.LLFirSessionCache
-                .getInstance(project)
-                .storage.sourceCache.clear("KotlinSymbolBasedShortenReferencesFacility.shorten")
-        }
-        runCatching {
-            org.jetbrains.kotlin.analysis.api.session.KaSessionProvider
-                .getInstance(project)
-                .clearCaches()
-        }
+/**
+ * Clears the two FIR-session caches that may hold state built before [project]'s live PSI was last
+ * mutated, so the next analysis access rebuilds them from the current PSI. Same two-step clear
+ * `KotlinAnalysisAPISession.updateFileContent` (Nbm module) uses for the same reason — a real IDE
+ * clears these via `LLFirSessionInvalidationService` listeners fired by PSI change events, which
+ * standalone/`MockProject` mode does not have wired up. Each step is independently best-effort: a
+ * failure in one must not skip the other.
+ *
+ * @param project project whose standalone FIR state must be rebuilt.
+ * @param reason diagnostic reason recorded by the low-level source-cache invalidation.
+ */
+@OptIn(
+    org.jetbrains.kotlin.analysis.low.level.api.fir.LLFirInternals::class,
+    org.jetbrains.kotlin.analysis.api.KaImplementationDetail::class,
+)
+internal fun invalidateStandaloneFirCaches(project: Project, reason: String) {
+    runCatching {
+        org.jetbrains.kotlin.analysis.low.level.api.fir.sessions.LLFirSessionCache
+            .getInstance(project)
+            .storage.sourceCache.clear(reason)
+    }
+    runCatching {
+        org.jetbrains.kotlin.analysis.api.session.KaSessionProvider
+            .getInstance(project)
+            .clearCaches()
     }
 }

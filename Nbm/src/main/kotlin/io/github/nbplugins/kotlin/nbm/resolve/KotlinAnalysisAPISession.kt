@@ -484,6 +484,31 @@ class KotlinAnalysisAPISession private constructor(
                 )
                 KotlinLogger.INSTANCE.logInfo("Registered KotlinChangeSignatureUsageSearchServiceImpl")
             }
+            registerExtractSuperServices(app)
+        }
+
+        /** Registers the K2 services and Kotlin language extension required by E9.15/E9.16. */
+        private fun registerExtractSuperServices(app: MockApplication) {
+            if (app.getService(org.jetbrains.kotlin.idea.refactoring.memberInfo.KotlinMemberInfoSupport::class.java) == null) {
+                app.registerService(
+                    org.jetbrains.kotlin.idea.refactoring.memberInfo.KotlinMemberInfoSupport::class.java,
+                    org.jetbrains.kotlin.idea.k2.refactoring.memberInfo.K2MemberInfoSupport::class.java,
+                )
+            }
+            if (app.getService(org.jetbrains.kotlin.idea.refactoring.memberInfo.KotlinMemberInfoStorageSupport::class.java) == null) {
+                app.registerService(
+                    org.jetbrains.kotlin.idea.refactoring.memberInfo.KotlinMemberInfoStorageSupport::class.java,
+                    org.jetbrains.kotlin.idea.k2.refactoring.pullUp.K2MemberInfoStorageSupport::class.java,
+                )
+            }
+            val helpers = com.intellij.refactoring.memberPullUp.PullUpHelper.INSTANCE
+            if (helpers.forLanguage(org.jetbrains.kotlin.idea.KotlinLanguage.INSTANCE) == null) {
+                helpers.addExplicitExtension(
+                    org.jetbrains.kotlin.idea.KotlinLanguage.INSTANCE,
+                    org.jetbrains.kotlin.idea.k2.refactoring.pullUp.K2PullUpHelperFactory(),
+                )
+                KotlinLogger.INSTANCE.logInfo("Registered K2PullUpHelperFactory for Kotlin")
+            }
         }
 
         private fun registerEpIfAbsent(

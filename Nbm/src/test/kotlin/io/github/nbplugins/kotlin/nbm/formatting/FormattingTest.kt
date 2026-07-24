@@ -26,6 +26,7 @@ import com.intellij.psi.PsiFile
 import javaproject.JavaProject
 import javax.swing.text.Document
 import io.github.nbplugins.kotlin.nbm.formatting.KotlinFormatterUtils
+import io.github.nbplugins.kotlin.nbm.refactoring.formatExtractSuperText
 import org.jetbrains.kotlin.formatting.NetBeansDocumentFormattingModel
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.api.project.Project
@@ -85,6 +86,35 @@ class FormattingTest : KotlinTestCase("Formatting test", "formatting") {
     fun testWhitespaceBeforeBrace() = doTest("withWhitespaceBeforeBrace.kt")
 
     fun testWhithoutComments() = doTest("withoutComments.kt")
+
+    /**
+     * Verifies that the NetBeans formatter normalizes the raw PSI shape emitted by IDEA K2 Extract
+     * Super before the refactoring adapter persists source and target files. The copied engine uses
+     * IntelliJ's {@code CodeStyleManager}, which is intentionally a no-op in standalone mode.
+     */
+    fun testFormatExtractSuperOutput_normalizesGeneratedInterfaceAndInheritance() {
+        val rawSource = """
+            package extractsuper.same
+
+            class Greeter :extractsuper.same.IGreeter{
+                fun greet(): String = \"hello\"
+            }
+        """.trimIndent()
+        val rawTarget = """
+            package extractsuper.same
+
+            interface IGreeter{
+            fun greet(): String
+            }
+        """.trimIndent()
+
+        val formattedSource = formatExtractSuperText(rawSource, "Greeter.kt", project)
+        val formattedTarget = formatExtractSuperText(rawTarget, "IGreeter.kt", project)
+
+        assertTrue("Expected formatted inheritance clause, got:\n$formattedSource", formattedSource.contains("class Greeter : extractsuper.same.IGreeter {"))
+        assertTrue("Expected formatted interface body, got:\n$formattedTarget", formattedTarget.contains("interface IGreeter {"))
+        assertTrue("Expected interface member to remain formatted, got:\n$formattedTarget", formattedTarget.contains("fun greet(): String"))
+    }
 
     /**
      * Verifies that [KotlinFormatterUtils.formatRange] reformats only the selected
