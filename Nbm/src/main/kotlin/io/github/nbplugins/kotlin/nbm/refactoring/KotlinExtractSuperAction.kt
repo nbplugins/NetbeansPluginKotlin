@@ -43,14 +43,25 @@ abstract class KotlinExtractSuperAction(
 
     /** Resolves IDEA candidates before opening the NetBeans refactoring UI. */
     override fun actionPerformed(evt: ActionEvent, target: JTextComponent) {
-        val document = target.document as? StyledDocument ?: return
+        val document = target.document as? StyledDocument ?: run {
+            KotlinLogger.INSTANCE.logWarning("$actionLabel: active editor has no StyledDocument")
+            return
+        }
         val caretOffset = target.caretPosition
+        KotlinLogger.INSTANCE.logInfo("$actionLabel: invoked at caret=$caretOffset")
         runCatching {
-            val sourceFile = ProjectUtils.getFileObjectForDocument(document) ?: return@runCatching
+            val sourceFile = ProjectUtils.getFileObjectForDocument(document)
+                ?: error("$actionLabel: no FileObject for editor document")
             val project = ProjectUtils.getKotlinProjectForFileObject(sourceFile)
                 ?: ProjectUtils.getValidProject()
-                ?: return@runCatching
-            val discovery = discover(project, sourceFile, caretOffset) ?: return@runCatching
+                ?: error("$actionLabel: no Kotlin project for ${sourceFile.path}")
+            KotlinLogger.INSTANCE.logInfo("$actionLabel: source=${sourceFile.path}, project=${project.projectDirectory.path}")
+            val discovery = discover(project, sourceFile, caretOffset)
+                ?: error("$actionLabel: discovery is not applicable at caret=$caretOffset")
+            KotlinLogger.INSTANCE.logInfo(
+                "$actionLabel: discovery class=${discovery.sourceName}, classOffset=${discovery.classOffset}, " +
+                    "members=${discovery.members.size}",
+            )
             val refactoring = KotlinExtractSuperRefactoring(document, caretOffset, kind).apply {
                 classOffset = discovery.classOffset
             }

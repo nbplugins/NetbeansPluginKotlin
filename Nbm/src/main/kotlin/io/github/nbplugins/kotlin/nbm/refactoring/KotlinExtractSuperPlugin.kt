@@ -17,9 +17,13 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.refactoring
 
+import io.github.nbplugins.kotlin.nbm.formatting.KotlinFormatterUtils
+import io.github.nbplugins.kotlin.nbm.formatting.options.ProjectCodeStyleStorage
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.ExtractSuperRequest
 import io.github.nbplugins.kotlin.refactoring.KaExtractSuperComputer
+import com.intellij.psi.PsiErrorElement
+import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.modules.refactoring.api.Problem
@@ -46,6 +50,10 @@ class KotlinExtractSuperPlugin(
 
     /** Validates the request against current K2 candidates and adds its multi-file apply operation. */
     override fun prepare(bag: RefactoringElementsBag): Problem? {
+        KotlinLogger.INSTANCE.logInfo(
+            "$label: prepare caret=${refactoring.caretOffset}, classOffset=${refactoring.classOffset}, " +
+                "root=${refactoring.targetRootPath}, package=${refactoring.targetPackage}, file=${refactoring.targetFileName}",
+        )
         val source = ProjectUtils.getFileObjectForDocument(refactoring.document)
             ?: return Problem(true, "$label requires a saved Kotlin source file.")
         val project = ProjectUtils.getKotlinProjectForFileObject(source)
@@ -60,6 +68,10 @@ class KotlinExtractSuperPlugin(
                 val targetDirectory = KotlinPackageTarget(project, source)
                     .resolveDirectory(refactoring.targetRootPath, refactoring.targetPackage)
                     ?: return Problem(true, "$label could not resolve the selected target package.")
+                KotlinLogger.INSTANCE.logInfo(
+                    "$label: prepare ready class=${discovery.sourceName}, members=${discovery.members.size}, " +
+                        "targetDirectory=${targetDirectory.path}",
+                )
                 bag.add(
                     refactoring,
                     KotlinExtractSuperApplyElement(
@@ -75,6 +87,48 @@ class KotlinExtractSuperPlugin(
                 null
             }
         }
+    }
+}
+
+/**
+ * Formats one generated Extract Super file with the selected NetBeans Kotlin code-style settings.
+ *
+ * @param text raw text produced by the copied IDEA K2 engine.
+ * @param fileName Kotlin file name used by the formatter PSI factory.
+ * @param project project whose Kotlin formatting settings apply.
+ * @return formatted Kotlin source text ready to persist.
+ */
+internal fun formatExtractSuperText(
+    text: String,
+    fileName: String,
+    project: org.netbeans.api.project.Project,
+): String {
+    KotlinFormatterUtils.pushSettings(ProjectCodeStyleStorage.getSettings(project))
+    return try {
+        KotlinFormatterUtils.formatCode(text, fileName, project, "\n")
+    } finally {
+        KotlinFormatterUtils.popSettings()
+    }
+}
+
+/**
+ * Logs syntax diagnostics for the target text immediately before it is persisted.
+ *
+ * @param label name of the Extract Super operation being applied.
+ * @param text formatted target Kotlin source text.
+ * @param project NetBeans project supplying the Kotlin PSI factory.
+ */
+private fun logTargetSyntaxErrors(label: String, text: String, project: org.netbeans.api.project.Project) {
+    val target = KotlinFormatterUtils.createPsiFactory(project).createFile("ExtractSuperTarget.kt", text)
+    val errors = PsiTreeUtil.collectElementsOfType(target, PsiErrorElement::class.java)
+    if (errors.isEmpty()) {
+        KotlinLogger.INSTANCE.logInfo("$label: formatted target has no syntax errors")
+    } else {
+        KotlinLogger.INSTANCE.logInfo(
+            "$label: formatted target syntax errors=" + errors.joinToString { error ->
+                "${error.errorDescription} at ${error.textOffset}"
+            },
+        )
     }
 }
 
@@ -103,34 +157,63 @@ private class KotlinExtractSuperApplyElement(
         val request = requestProvider()
             ?: throw IllegalStateException("$label has no validated request.")
         val targetFileName = request.targetFileName.ensureKotlinExtension()
+        KotlinLogger.INSTANCE.logInfo(
+            "$label: apply start source=${sourceFile.path}, targetDirectory=${targetDirectory.path}, " +
+                "targetFile=$targetFileName, package=${request.targetPackage}, caret=$caretOffset, " +
+                "classOffset=${request.classOffset}, selected=${request.selectedOffsets}",
+        )
         val preexistingTarget = targetDirectory.getFileObject(targetFileName)
         val targetFile = preexistingTarget ?: targetDirectory.createData(targetFileName).also { createdTarget = it }
         try {
+            KotlinLogger.INSTANCE.logInfo(
+                "$label: target created=${preexistingTarget == null}, path=${targetFile.path}, valid=${targetFile.isValid}",
+            )
             if (preexistingTarget == null) {
-                targetFile.getOutputStream().use { output -> output.write(packageHeader(request.targetPackage).toByteArray()) }
+                val header = packageHeader(request.targetPackage)
+                targetFile.getOutputStream().use { output -> output.write(header.toByteArray()) }
+                KotlinLogger.INSTANCE.logInfo("$label: seeded target header=${header.replace("\n", "\\n")}")
             }
             targetSnapshot = preexistingTarget?.asText()
             sourceSnapshot = sourceDocument.getText(0, sourceDocument.length)
 
+            KotlinLogger.INSTANCE.logInfo("$label: invalidating K2 session")
             KotlinAnalysisAPISession.invalidate(project)
             val session = KotlinAnalysisAPISession.getSession(project)
             val sourceKtFile = session.getKtFileForPath(sourceFile.path)
                 ?: throw IllegalStateException("$label could not refresh the source Kotlin PSI.")
             val targetKtFile = session.getKtFileForPath(targetFile.path)
                 ?: throw IllegalStateException("$label could not refresh the target Kotlin PSI.")
+            KotlinLogger.INSTANCE.logInfo(
+                "$label: refreshed PSI source=${sourceKtFile.virtualFile?.path}, target=${targetKtFile.virtualFile?.path}, " +
+                    "targetParent=${targetKtFile.parent?.javaClass?.name}",
+            )
             when (val result = KaExtractSuperComputer(sourceKtFile, caretOffset)
                 .apply(request.copy(targetFileName = targetFileName), targetKtFile)) {
                 is KaExtractSuperComputer.Apply.Success -> {
-                    replaceText(sourceDocument, result.sourceText)
-                    targetFile.getOutputStream().use { output -> output.write(result.targetText.toByteArray()) }
+                    KotlinLogger.INSTANCE.logInfo(
+                        "$label: IDEA engine success sourceLength=${result.sourceText.length}, " +
+                            "targetLength=${result.targetText.length}",
+                    )
+                    KotlinLogger.INSTANCE.logInfo("$label: raw target text:\n${result.targetText}")
+                    val formattedSource = formatExtractSuperText(result.sourceText, sourceFile.nameExt, project)
+                    val formattedTarget = formatExtractSuperText(result.targetText, targetFile.nameExt, project)
+                    KotlinLogger.INSTANCE.logInfo("$label: formatted target text:\n$formattedTarget")
+                    logTargetSyntaxErrors(label, formattedTarget, project)
+                    replaceText(sourceDocument, formattedSource)
+                    targetFile.getOutputStream().use { output -> output.write(formattedTarget.toByteArray()) }
                     KotlinAnalysisAPISession.invalidate(project)
+                    KotlinLogger.INSTANCE.logInfo("$label: apply complete targetExists=${targetFile.isValid}")
                 }
                 is KaExtractSuperComputer.Apply.Error -> throw result.error
                 KaExtractSuperComputer.Apply.NotApplicable ->
                     throw IllegalStateException("$label is no longer applicable at this caret location.")
             }
         } catch (error: Throwable) {
-            if (preexistingTarget == null && targetFile.isValid) targetFile.delete()
+            KotlinLogger.INSTANCE.logException("$label: apply failed; target=${targetFile.path}", error)
+            if (preexistingTarget == null && targetFile.isValid) {
+                targetFile.delete()
+                KotlinLogger.INSTANCE.logInfo("$label: removed failed target ${targetFile.path}")
+            }
             throw error
         }
     }

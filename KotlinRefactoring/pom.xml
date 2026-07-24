@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.197-SNAPSHOT</version>
+    <version>0.11.203-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
@@ -1263,12 +1263,24 @@ if (extractSuperRefactoring.exists()) {
   def text = extractSuperRefactoring.text
   text = text.replace('internal class K2ExtractSuperRefactoring', 'class K2ExtractSuperRefactoring')
   text = text.replace('import com.intellij.ide.fileTemplates.FileTemplateManager\n', '')
+  text = text.replace('import com.intellij.openapi.actionSystem.ex.ActionUtil\n', '')
+  text = text.replace('import com.intellij.refactoring.RefactoringBundle\n', '')
   text = text.replace('import org.jetbrains.kotlin.idea.actions.createKotlinFileFromTemplate\n', '')
   text = text.replace('import org.jetbrains.kotlin.idea.util.application.executeWriteCommand\n', '')
   text = text.replace('''        val handler = if (extractInfo.isInterface) KotlinExtractInterfaceHandler else KotlinExtractSuperclassHandler
         handler.getErrorMessage(originalClass)?.let { throw CommonRefactoringUtil.RefactoringErrorHintException(it) }
 
 ''', '')
+  text = text.replace('''        val createClassInfo = ActionUtil.underModalProgress(
+            project,
+            RefactoringBundle.message("refactoring.prepare.progress"),
+        ) {
+            analyze(originalClass) {
+                computeCreateClassInfo(extractInfo)
+            }
+        }''', '''        val createClassInfo = analyze(originalClass) {
+            computeCreateClassInfo(extractInfo)
+        }''')
   text = text.replace('project.executeWriteCommand(KotlinExtractSuperclassHandler.REFACTORING_NAME) {', 'com.intellij.openapi.application.ApplicationManager.getApplication().runWriteAction {')
   text = text.replace('return@executeWriteCommand', 'return@runWriteAction')
   text = text.replace('''        val file = targetParent.findFile(extractInfo.targetFileName) ?: run {
@@ -1277,6 +1289,40 @@ if (extractSuperRefactoring.exists()) {
         }
         file.add(prototype) as KtClass''', '''        val file = targetParent.findFile(extractInfo.targetFileName) ?: return null
         file.add(prototype) as KtClass''')
+  // A standalone K2 target file is backed by a LightVirtualFile and has no PsiDirectory parent.
+  // It is already created and refreshed by NetBeans, so insert the IDEA prototype directly into it.
+  text = text.replace('''    val newClass = if (targetParent is PsiDirectory) {
+        val file = targetParent.findFile(extractInfo.targetFileName) ?: return null
+        file.add(prototype) as KtClass
+    } else {
+        val targetSibling = originalClass.parentsWithSelf.first { it.parent == targetParent }
+        insertDeclaration(prototype, targetSibling)
+    }''', '''    val newClass = when (targetParent) {
+        is PsiDirectory -> {
+            val file = targetParent.findFile(extractInfo.targetFileName) ?: return null
+            file.add(prototype) as KtClass
+        }
+        is KtFile -> targetParent.add(prototype) as KtClass
+        else -> {
+            val targetSibling = originalClass.parentsWithSelf.first { it.parent == targetParent }
+            insertDeclaration(prototype, targetSibling)
+        }
+    }''')
+  text = text.replace('''    val targetPackageFqName = (targetParent as? PsiDirectory)
+        ?.getFqNameWithImplicitPrefix()
+        ?.quoteIfNeeded()
+        ?.asString()''', '''    val targetPackageFqName = when (targetParent) {
+        is PsiDirectory -> targetParent.getFqNameWithImplicitPrefix()?.quoteIfNeeded()?.asString()
+        is KtFile -> targetParent.packageFqName.quoteIfNeeded().asString()
+        else -> null
+    }''')
+  // The standalone target KtFile has no PsiDirectory, and reference shortening cannot resolve its
+  // newly inserted declaration soon enough. A same-package type needs no qualification at all.
+  text = text.replace('''        if (!targetPackageFqName.isNullOrEmpty()) append(targetPackageFqName).append('.')
+        append(newClassName)''', '''        if (!targetPackageFqName.isNullOrEmpty() &&
+            targetPackageFqName != originalClass.containingKtFile.packageFqName.quoteIfNeeded().asString()
+        ) append(targetPackageFqName).append('.')
+        append(newClassName)''')
   extractSuperRefactoring.text = text
   log.info("Patched K2ExtractSuperRefactoring.kt: use standalone write action and pre-created target file")
 }
@@ -1319,7 +1365,7 @@ if (k2PullUpHelper.exists()) {
   text = text.replace('import org.jetbrains.kotlin.asJava.getRepresentativeLightMethod\n', '')
   text = text.replace('import org.jetbrains.kotlin.idea.util.isBackingFieldRequired\n', 'import org.jetbrains.kotlin.idea.k2.refactoring.isBackingFieldRequired\n')
   text = text.replace('import org.jetbrains.kotlin.idea.refactoring.rename.dropDefaultValue\n', 'import org.jetbrains.kotlin.idea.refactoring.pullUp.dropDefaultValue\n')
-  text = text.replace('import org.jetbrains.kotlin.idea.k2.refactoring.pushDown.getSuperTypeEntryBySymbol\n', 'import org.jetbrains.kotlin.idea.k2.refactoring.pushDown.getSuperTypeEntryBySymbol\nimport org.jetbrains.kotlin.idea.k2.refactoring.pullUp.getClashingMemberInTargetClass\n')
+  text = text.replace('import org.jetbrains.kotlin.idea.k2.refactoring.pushDown.getSuperTypeEntryBySymbol\n', 'import org.jetbrains.kotlin.idea.k2.refactoring.pushDown.getSuperTypeEntryBySymbol\nimport org.jetbrains.kotlin.idea.k2.refactoring.pullUp.getClashingMemberInTargetClass\nimport io.github.nbplugins.kotlin.refactoring.invalidateStandaloneFirCaches\n')
   def javaBranchStart = text.indexOf('    private fun moveToJavaClass(')
   def moveOverrideStart = text.indexOf('    @OptIn(KaExperimentalApi::class, KaAllowAnalysisOnEdt::class)\n    override fun move(', javaBranchStart)
   if (javaBranchStart >= 0 && moveOverrideStart >= 0) {
@@ -1356,8 +1402,41 @@ if (k2PullUpHelper.exists()) {
                         }
                     } while (changed)
                 }''')
+  // The K2 helper has structurally mutated both source and target PSI before applyMarking() walks
+  // the new declaration and shortens its types. Standalone mode lacks IDE PSI-change listeners, so
+  // clear the FIR source/session caches at this exact mutation-to-analysis boundary.
+  text = text.replace('''            applyMarking(movedMember, targetClass)
+            addMovedMember(movedMember)''', '''            invalidateStandaloneFirCaches(
+                movedMember.project,
+                "K2PullUpHelper.applyMarking",
+            )
+            applyMarking(movedMember, targetClass)
+            addMovedMember(movedMember)''')
   k2PullUpHelper.text = text
-  log.info("Patched K2PullUpHelper.kt: stripped unreachable Kotlin-to-Java Pull Up branch")
+  log.info("Patched K2PullUpHelper.kt: stripped unreachable Kotlin-to-Java Pull Up branch and invalidated FIR before marking")
+}
+
+// E9.15/E9.16: IDEA relies on CodeStyleManager to add whitespace after it inserts a copied Pull Up
+// member immediately after the previous one. The standalone CodeStyleManager compatibility stub is
+// deliberately a no-op, so retain the IDEA insertion algorithm but insert the missing newline here.
+def commonPullUpUtils = new File(srcDir, 'org/jetbrains/kotlin/idea/refactoring/pullUp/commonPullUpUtils.kt')
+if (commonPullUpUtils.exists()) {
+  def text = commonPullUpUtils.text
+  text = text.replace('''    return when {
+        anchor == null && targetMember is KtProperty -> targetClass.addDeclarationBefore(targetMember, null)
+        else -> targetClass.addDeclarationAfter(targetMember, anchor)
+    }
+}''', '''    val addedMember = when {
+        anchor == null && targetMember is KtProperty -> targetClass.addDeclarationBefore(targetMember, null)
+        else -> targetClass.addDeclarationAfter(targetMember, anchor)
+    }
+    if (anchor != null) {
+        addedMember.parent.addBefore(KtPsiFactory(targetClass.project).createNewLine(), addedMember)
+    }
+    return addedMember as KtNamedDeclaration
+}''')
+  commonPullUpUtils.text = text
+  log.info("Patched commonPullUpUtils.kt: separated standalone Pull Up declarations")
 }
 
 // E9.15/E9.16: these implementations are application/extension registrations in IDEA's plugin.xml.
@@ -1368,7 +1447,14 @@ if (k2MemberStorage.exists()) {
 }
 def k2PullUpFactory = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/pullUp/K2PullUpHelperFactory.kt')
 if (k2PullUpFactory.exists()) {
-  k2PullUpFactory.text = k2PullUpFactory.text.replace('internal class K2PullUpHelperFactory', 'class K2PullUpHelperFactory')
+  def text = k2PullUpFactory.text
+  text = text.replace('internal class K2PullUpHelperFactory', 'class K2PullUpHelperFactory')
+  // Extract Super has just added the target supertype to standalone PSI. Its Java light class has
+  // not refreshed inheritance metadata yet, so isInheritor() falsely selects EmptyPullUpHelper.
+  // toKotlinPullUpData() below still rejects unsupported/non-Kotlin source and target classes.
+  text = text.replace('''        if (!data.sourceClass.isInheritor(data.targetClass, true)) return EmptyPullUpHelper
+''', '')
+  k2PullUpFactory.text = text
 }
 
 // 13. duplicateUtil.kt (E9.14): the file mixes two pure functions (getControlFlowIfMatched,

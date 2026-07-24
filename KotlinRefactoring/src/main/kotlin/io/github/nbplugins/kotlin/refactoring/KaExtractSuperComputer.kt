@@ -22,6 +22,7 @@ import org.jetbrains.kotlin.idea.k2.refactoring.extractClass.K2ExtractSuperRefac
 import org.jetbrains.kotlin.idea.refactoring.introduce.extractClass.ExtractSuperInfo
 import org.jetbrains.kotlin.idea.refactoring.memberInfo.KotlinMemberInfo
 import org.jetbrains.kotlin.psi.KtClass
+import java.util.logging.Logger
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
@@ -157,21 +158,31 @@ class KaExtractSuperComputer(
             }
         if (request.name.isBlank() || request.targetFileName.isBlank() || selected.isEmpty()) return Apply.NotApplicable
 
+        LOG.info(
+            "ExtractSuper: engine start class=${klass.name}, classOffset=${klass.textOffset}, " +
+                "target=${targetFile.virtualFile?.path}, targetParent=${targetFile.parent?.javaClass?.name}, " +
+                "members=${selected.map { it.member?.name }}",
+        )
         K2ExtractSuperRefactoring().performRefactoring(
             ExtractSuperInfo(
                 originalClass = klass,
                 memberInfos = selected,
-                targetParent = targetFile.parent ?: return Apply.NotApplicable,
+                targetParent = targetFile,
                 targetFileName = request.targetFileName,
                 newClassName = request.name,
                 isInterface = request.kind == ExtractSuperKind.INTERFACE,
                 docPolicy = DocCommentPolicy(0),
             ),
         )
+        LOG.info("ExtractSuper: engine complete targetLength=${targetFile.text.length}")
         Apply.Success(file.text, targetFile.text)
     }.getOrElse(Apply::Error)
 
     /** @return the class or object under the original caret, if any. */
     private fun findClass(): KtClassOrObject? =
         file.findElementAt(caretOffset)?.getNonStrictParentOfType<KtClassOrObject>()
+
+    private companion object {
+        val LOG: Logger = Logger.getLogger(KaExtractSuperComputer::class.java.name)
+    }
 }
