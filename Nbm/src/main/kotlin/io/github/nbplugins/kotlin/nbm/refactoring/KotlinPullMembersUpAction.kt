@@ -1,0 +1,64 @@
+/*******************************************************************************
+ * Copyright 2000-2025 JetBrains s.r.o.
+ * Copyright 2026 nbplugins contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ *******************************************************************************/
+package io.github.nbplugins.kotlin.nbm.refactoring
+
+import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
+import io.github.nbplugins.kotlin.refactoring.KaPullMembersUpComputer
+import org.jetbrains.kotlin.log.KotlinLogger
+import org.jetbrains.kotlin.utils.ProjectUtils
+import org.netbeans.editor.BaseAction
+import org.netbeans.modules.refactoring.spi.ui.UI
+import org.openide.windows.TopComponent
+import java.awt.event.ActionEvent
+import javax.swing.text.JTextComponent
+import javax.swing.text.StyledDocument
+
+/** Opens the Kotlin Pull Members Up selection and conflict-preview refactoring UI. */
+class KotlinPullMembersUpAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBREV_RESET) {
+    init {
+        putValue(NAME, "Pull Members Up...")
+        putValue(SHORT_DESCRIPTION, "Pull Members Up")
+        putValue(POPUP_MENU_TEXT, "Pull Members Up...")
+    }
+
+    /** Resolves K2 candidates at the active editor caret and opens the refactoring UI. */
+    override fun actionPerformed(evt: ActionEvent, target: JTextComponent) {
+        val document = target.document as? StyledDocument ?: return
+        runCatching {
+            val source = ProjectUtils.getFileObjectForDocument(document)
+                ?: error("Pull Members Up requires a saved Kotlin source file.")
+            val project = ProjectUtils.getKotlinProjectForFileObject(source)
+                ?: ProjectUtils.getValidProject()
+                ?: error("Pull Members Up could not resolve the Kotlin project.")
+            val psi = KotlinAnalysisAPISession.getSession(project).getKtFileForPath(source.path)
+                ?: error("Pull Members Up could not resolve the Kotlin source file.")
+            val discovery = KaPullMembersUpComputer(psi, target.caretPosition).discover()
+                as? KaPullMembersUpComputer.Discovery.Ready
+                ?: error("Pull Members Up is not available at this caret location.")
+            val refactoring = KotlinPullMembersUpRefactoring(document, target.caretPosition).apply {
+                sourceOffset = discovery.sourceOffset
+            }
+            UI.openRefactoringUI(KotlinPullMembersUpUI(discovery, refactoring), TopComponent.getRegistry().activated)
+        }.onFailure { KotlinLogger.INSTANCE.logException("Pull Members Up action failed", it) }
+    }
+
+    companion object {
+        /** Layer action identifier. */
+        const val ACTION_NAME = "kotlin-pull-members-up"
+    }
+}

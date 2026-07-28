@@ -869,20 +869,24 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
       `KotlinIntroduceFunctionalParameter{Refactoring,Plugin,UI,Action}` (`Nbm`)
     - layer.xml position 1175
 
-  - **E9.15** — Extract Interface — *not started*
-    - IDEA source: `extractClass/K2ExtractSuperRefactoring.kt` (~958 LOC)
-    - Creates a new `interface` from selected members, adds `: Interface` to the class
-    - Dialog: interface name, member-selection table (checkbox per method/property),
-      visibility combo, "extract as Kotlin file" checkbox
+  - [x] **E9.15** — Extract Interface — PR #121
+    - IDEA source: `extractClass/K2ExtractSuperRefactoring.kt`.
+    - Creates a new `interface` from selected members, adds `: Interface` to the class.
+    - NetBeans dialog selects the interface name, members, source root, package, and target Kotlin file;
+      the copied K2 engine moves members and Undo Last Refactoring restores both files.
 
-  - **E9.16** — Extract Superclass — *not started*
-    - Same `K2ExtractSuperRefactoring` engine as E9.15, creates `abstract class` instead;
-      dialog adds a "Make Abstract" column per member
+  - [x] **E9.16** — Extract Superclass — PR #121
+    - Reuses the E9.15 `K2ExtractSuperRefactoring` engine to create an `abstract class`.
+    - Dialog additionally supports making selected members abstract.
 
-  - **E9.17** — Pull Members Up (Ctrl+Alt+U) — *not started*
-    - IDEA source: `pullUp/K2PullUpHelperFactory.kt` (~1,982 LOC)
-    - Dialog: target superclass combo, member-selection table with "Make Abstract" per
-      member, conflict-preview panel
+  - [x] **E9.17** — Pull Members Up (Ctrl+Alt+U)
+    - Reuses the copied IDEA K2 `PullUpProcessor` and registered `K2PullUpHelperFactory` to move
+      selected Kotlin declarations from a child class into a selected direct Kotlin superclass or interface.
+    - Dialog supports cross-file targets, member selection, and a Make Abstract option; **Preview Conflicts**
+      reports target-member collisions before NetBeans schedules a mutation.
+    - The NetBeans apply element snapshots, formats, and restores both source documents for Undo Last Refactoring.
+    - Current standalone conflict preview covers direct target-member collisions; IDEA's index-backed inheritor,
+      visibility, and accidental-override checks remain unavailable until their project-search infrastructure is ported.
 
   - **E9.18** — Push Members Down (Ctrl+Alt+O) — *not started*
     - IDEA source: `pushDown/K2PushDownProcessorProvider.kt` (~1,034 LOC)
@@ -913,8 +917,8 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
   Safely Delete                Alt+Delete       ~500   [x] E9.2
   --- separator ---                              600
   Extract Function            Ctrl+Alt+M         700   [x] E9.5
-  Extract Interface                               750   [ ] E9.15
-  Extract Superclass                              760   [ ] E9.16
+  Extract Interface                               750   [x] E9.15
+  Extract Superclass                              760   [x] E9.16
   --- separator ---                               900
   Introduce Variable          Ctrl+Alt+V        1000   [x] E9.6
   Introduce Constant          Ctrl+Alt+C        1050   [x] E9.9
@@ -925,7 +929,7 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
   Introduce Functional Param  Ctrl+Alt+Shift+P  1175   [x] E9.14
   --- separator ---                              1300
   Inline                      Ctrl+Alt+N        1400   [x] E9.3/E9.4
-  Pull Members Up             Ctrl+Alt+U        1450   [ ] E9.17
+  Pull Members Up             Ctrl+Alt+U        1450   [x] E9.17
   Push Members Down           Ctrl+Alt+O        1500   [ ] E9.18
   --- separator ---                              1550
   Undo Last Refactoring                          1600   [x] (Change Signature only; others "not supported")
@@ -938,8 +942,7 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
   3. Manual test in NetBeans: open file → invoke refactoring → check dialog → preview → apply → undo
   4. CHANGELOG bullet updated together with the code
 
-  **Remaining E9 work, in dependency order:** E9.15 → E9.16 (reuses E9.15's engine) → E9.17 →
-  E9.18 (depends on E9.17).
+  **Remaining E9 work, in dependency order:** E9.18 (depends on E9.17).
 
 - **E10** — J2K (Java→Kotlin): reimplement using `j2k/new` from `submodules/IntellijCommunity`
   or binary artifact once published; wire up stubbed `Java2KotlinConverter` (stubbed since D2)
