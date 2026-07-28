@@ -146,6 +146,15 @@ These are not class-file overrides but *service registrations* performed in
 |------------------|----------------|-------|---------|
 | `PsiSearchHelper` (`com.intellij.psi.search`) | `NoOpPsiSearchHelper` (`io.github.nbplugins.kotlin.nbm.resolve`) | Project | Called by `SearchRequestQuery.processResults` regardless of the search EP.  No-op: `getUseScope` returns `LocalSearchScope(file)`, booleans return `true`, arrays return empty. |
 | `ShortenReferencesFacility` (`org.jetbrains.kotlin.idea.base.codeInsight`) | `KotlinSymbolBasedShortenReferencesFacility` (`io.github.nbplugins.kotlin.refactoring`) | Application | Called by `InlinePostProcessor.shortenReferences` after each inline substitution.  Wraps `SymbolBasedShortenReferencesFacility` (IDEA `internal` class) via Kotlin delegation — wrapper lives in `KotlinRefactoring` module which can access `internal` Kotlin symbols of that module. |
+| `KotlinMemberInfoSupport` / `KotlinMemberInfoStorageSupport` (`org.jetbrains.kotlin.idea.refactoring.memberInfo`) | `K2MemberInfoSupport` / `K2MemberInfoStorageSupport` | Application | Supplies K2 member labels, override metadata, and hierarchy membership needed by Extract Super (E9.15/E9.16) and Pull Members Up (E9.17). |
+| Kotlin `PullUpHelper` language extension (`com.intellij.refactoring.memberPullUp`) | `K2PullUpHelperFactory` | Application extension | Resolves the copied lifecycle-free `PullUpProcessor` to IDEA's real K2 Kotlin member-move helper. Used by Extract Super and Pull Members Up. |
+
+### Pull Members Up limitations
+
+E9.17 reuses the K2 mutation engine and supports source and target classes in different Kotlin files.
+The standalone conflict preview currently detects direct target-member name collisions. IDEA's additional
+project-index-backed checks (inheritor accidental overrides and full cross-project visibility search) rely on
+IDE services not present in the standalone Analysis API environment and are deliberately not simulated.
 
 ## Active resource replacements
 

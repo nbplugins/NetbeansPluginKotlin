@@ -30,4 +30,6 @@
     <bind actionName="kotlin-introduce-functional-parameter" key="DAS-P"/>
     <!-- Change Signature (Ctrl+F6) — mirrors IntelliJ IDEA change signature shortcut -->
     <bind actionName="kotlin-change-signature" key="D-F6"/>
+    <!-- Pull Members Up (Ctrl+Alt+U) — mirrors IntelliJ IDEA pull-members-up shortcut -->
+    <bind actionName="kotlin-pull-members-up" key="DA-U"/>
 </bindings>

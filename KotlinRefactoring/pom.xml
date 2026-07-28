@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.203-SNAPSHOT</version>
+    <version>0.11.209-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
@@ -1402,9 +1402,18 @@ if (k2PullUpHelper.exists()) {
                         }
                     } while (changed)
                 }''')
-  // The K2 helper has structurally mutated both source and target PSI before applyMarking() walks
-  // the new declaration and shortens its types. Standalone mode lacks IDE PSI-change listeners, so
-  // clear the FIR source/session caches at this exact mutation-to-analysis boundary.
+  // The K2 helper mutates live source/target PSI before each reference-shortening call. Standalone
+  // mode has no IDE PSI-change listener, so FIR source/session caches must be cleared before both
+  // shortening paths and before applyMarking() analyzes the newly inserted declaration.
+  text = text.replace('''                if (member.typeReference == null) {
+                    movedMember.typeReference?.let(::shortenReferences)
+                }''', '''                if (member.typeReference == null) {
+                    invalidateStandaloneFirCaches(
+                        movedMember.project,
+                        "K2PullUpHelper.shortenMovedMemberType",
+                    )
+                    movedMember.typeReference?.let(::shortenReferences)
+                }''')
   text = text.replace('''            applyMarking(movedMember, targetClass)
             addMovedMember(movedMember)''', '''            invalidateStandaloneFirCaches(
                 movedMember.project,
@@ -1413,26 +1422,26 @@ if (k2PullUpHelper.exists()) {
             applyMarking(movedMember, targetClass)
             addMovedMember(movedMember)''')
   k2PullUpHelper.text = text
-  log.info("Patched K2PullUpHelper.kt: stripped unreachable Kotlin-to-Java Pull Up branch and invalidated FIR before marking")
+  log.info("Patched K2PullUpHelper.kt: stripped unreachable Kotlin-to-Java Pull Up branch and invalidated FIR before shortening and marking")
 }
 
-// E9.15/E9.16: IDEA relies on CodeStyleManager to add whitespace after it inserts a copied Pull Up
-// member immediately after the previous one. The standalone CodeStyleManager compatibility stub is
-// deliberately a no-op, so retain the IDEA insertion algorithm but insert the missing newline here.
+// E9.15/E9.16/E9.17: IDEA relies on CodeStyleManager to format copied Pull Up members. The
+// standalone compatibility stub is deliberately a no-op. Inserting through KtClassOrObject lets
+// CodeEditUtil collapse the whitespace placeholder, so insert both declaration and separator
+// directly in the class body, where the newline becomes a concrete sibling between declarations.
 def commonPullUpUtils = new File(srcDir, 'org/jetbrains/kotlin/idea/refactoring/pullUp/commonPullUpUtils.kt')
 if (commonPullUpUtils.exists()) {
   def text = commonPullUpUtils.text
-  text = text.replace('''    return when {
+  text = text.replace('''    val anchor = targetClass.declarations.asSequence().filterIsInstance(targetMember::class.java).lastOrNull()
+    return when {
         anchor == null && targetMember is KtProperty -> targetClass.addDeclarationBefore(targetMember, null)
         else -> targetClass.addDeclarationAfter(targetMember, anchor)
     }
-}''', '''    val addedMember = when {
-        anchor == null && targetMember is KtProperty -> targetClass.addDeclarationBefore(targetMember, null)
-        else -> targetClass.addDeclarationAfter(targetMember, anchor)
-    }
-    if (anchor != null) {
-        addedMember.parent.addBefore(KtPsiFactory(targetClass.project).createNewLine(), addedMember)
-    }
+}''', '''    val body = targetClass.getOrCreateBody()
+    val psiFactory = KtPsiFactory(targetClass.project)
+    val anchor = body.declarations.lastOrNull() ?: body.lBrace!!
+    val addedMember = body.addAfter(targetMember, anchor)
+    body.addBefore(psiFactory.createNewLine(), addedMember)
     return addedMember as KtNamedDeclaration
 }''')
   commonPullUpUtils.text = text
