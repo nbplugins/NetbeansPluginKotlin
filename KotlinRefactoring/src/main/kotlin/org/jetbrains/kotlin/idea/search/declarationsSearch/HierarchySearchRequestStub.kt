@@ -18,17 +18,27 @@ package org.jetbrains.kotlin.idea.search.declarationsSearch
 
 import com.intellij.psi.PsiElement
 import com.intellij.psi.search.SearchScope
+import com.intellij.util.CollectionQuery
+import com.intellij.util.Query
+import org.jetbrains.kotlin.idea.searching.inheritors.StandaloneInheritorSearch
 
 /**
- * Stub of IntelliJ's `com.intellij.psi.search.searches.HierarchySearchRequest` /
- * `org.jetbrains.kotlin.idea.search.declarationsSearch.searchOverriders`: a whole-project
- * class-hierarchy search index does not exist standalone. Consistent with the already-established
- * precedent in this codebase for the same limitation
- * ([OverridingDeclarations.forEachOverridingElement][forEachOverridingElement], added for E8/E9
- * navigation features), returns no overriders — Move Declaration's "is this overridden in a
- * subclass" conflict check is skipped rather than falsely reported, same tradeoff already accepted
- * elsewhere in this plugin.
+ * Compatibility representation of IntelliJ's hierarchy-search request.
+ *
+ * IDEA normally resolves this request through its indexes. The standalone bridge delegates to a
+ * registered K2-backed search service, which is populated by the NetBeans build-scoped session.
+ * This preserves processor control flow while substituting only the unavailable index layer.
  */
-class HierarchySearchRequest(val original: PsiElement, val searchScope: SearchScope, val searchDeeply: Boolean)
+class HierarchySearchRequest<T : PsiElement>(
+    val original: T,
+    val searchScope: SearchScope,
+    val searchDeeply: Boolean = false,
+)
 
-fun HierarchySearchRequest.searchOverriders(): Sequence<PsiElement> = emptySequence()
+/** Returns direct or transitive K2-backed inheritors for this request. */
+fun HierarchySearchRequest<*>.searchInheritors(): Query<PsiElement> =
+    CollectionQuery(StandaloneInheritorSearch.searchElements(original, searchDeeply).toList())
+
+/** Returns K2-backed overriding declarations for this request. */
+fun HierarchySearchRequest<*>.searchOverriders(): Sequence<PsiElement> =
+    StandaloneInheritorSearch.searchOverriderElements(original, searchDeeply)

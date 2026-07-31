@@ -32,4 +32,6 @@
     <bind actionName="kotlin-change-signature" key="D-F6"/>
     <!-- Pull Members Up (Ctrl+Alt+U) — mirrors IntelliJ IDEA pull-members-up shortcut -->
     <bind actionName="kotlin-pull-members-up" key="DA-U"/>
+    <!-- Push Members Down (Ctrl+Alt+O) — mirrors IntelliJ IDEA push-members-down shortcut -->
+    <bind actionName="kotlin-push-members-down" key="DA-O"/>
 </bindings>

@@ -26,6 +26,8 @@ import io.github.nbplugins.kotlin.nbm.refactoring.KotlinExtractSuperPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinExtractSuperRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinPullMembersUpPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinPullMembersUpRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinPushMembersDownPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinPushMembersDownRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineFunctionPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineFunctionRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariablePlugin;
@@ -129,6 +131,9 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         }
         if (refactoring instanceof KotlinPullMembersUpRefactoring) {
             return new KotlinPullMembersUpPlugin((KotlinPullMembersUpRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinPushMembersDownRefactoring) {
+            return new KotlinPushMembersDownPlugin((KotlinPushMembersDownRefactoring) refactoring);
         }
         if (refactoring instanceof KotlinIntroduceConstantRefactoring) {
             return new KotlinIntroduceConstantPlugin((KotlinIntroduceConstantRefactoring) refactoring);

@@ -30,9 +30,22 @@ object Messages {
         icon: Any? = null,
     ): Int = YES
 
-    /** Stub: always returns true in standalone mode. */
+    /**
+     * Stub: always returns [YES] in standalone mode.
+     *
+     * NetBeans invokes the refactoring only after the user accepts its own dialog; IDEA's no-
+     * inheritor warning therefore must not open a second UI surface.
+     */
+    @JvmStatic
+    fun showYesNoDialog(message: String, title: String, icon: Any? = null): Int = YES
+
+    /** Stub: always returns `true` in standalone mode. */
     @JvmStatic
     fun showYesNoDialog(project: Project?, message: String, title: String, icon: Any? = null): Boolean = true
+
+    /** @return a placeholder IDEA warning icon; NetBeans never renders it. */
+    @JvmStatic
+    fun getWarningIcon(): Any? = null
 }
 
 /** Alias so callers can `import com.intellij.openapi.ui.Messages.showYesNoCancelDialog`. */

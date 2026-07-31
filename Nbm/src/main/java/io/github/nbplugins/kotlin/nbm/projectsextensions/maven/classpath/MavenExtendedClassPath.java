@@ -109,6 +109,11 @@ public class MavenExtendedClassPath implements ClassPathExtender {
         List<String> dirs = MavenHelper.getKotlinPluginSourceDirs(project);
         if (dirs.isEmpty()) return sourceClassPath;
 
+        // Maven can expose a project before its SOURCE classpath has been initialized, notably
+        // while NetBeans indexes generated build directories. Treat that transient state as an
+        // empty classpath so parser startup cannot fail and retry once per source file.
+        if (sourceClassPath == null) sourceClassPath = ClassPath.EMPTY;
+
         Set<URL> existing = new HashSet<>();
         for (ClassPath.Entry e : sourceClassPath.entries()) existing.add(e.getURL());
 

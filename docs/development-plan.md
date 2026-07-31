@@ -888,10 +888,14 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
     - Current standalone conflict preview covers direct target-member collisions; IDEA's index-backed inheritor,
       visibility, and accidental-override checks remain unavailable until their project-search infrastructure is ported.
 
-  - **E9.18** — Push Members Down (Ctrl+Alt+O) — *not started*
-    - IDEA source: `pushDown/K2PushDownProcessorProvider.kt` (~1,034 LOC)
-    - Depends on E9.17; dialog: member-selection table, "keep abstract in superclass"
-      checkbox per member
+  - [x] **E9.18** — Push Members Down (Ctrl+Alt+O)
+    - Reuses the copied IDEA K2 Push Down processor to move selected declarations from a superclass
+      or interface into every direct Kotlin subclass in the related build scope.
+    - Dialog supports member selection and a per-member **Make Abstract** option; the NetBeans
+      apply element snapshots, formats, and restores every changed source/child document for
+      Undo Last Refactoring.
+    - Direct inheritors are discovered from writable K2 source files in the standalone session;
+      project-index-only IDEA searches remain bridged by the standalone compatibility layer.
 
   **Common file-layout template for every E9.x refactoring:**
   ```
@@ -930,7 +934,7 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
   --- separator ---                              1300
   Inline                      Ctrl+Alt+N        1400   [x] E9.3/E9.4
   Pull Members Up             Ctrl+Alt+U        1450   [x] E9.17
-  Push Members Down           Ctrl+Alt+O        1500   [ ] E9.18
+  Push Members Down           Ctrl+Alt+O        1500   [x] E9.18
   --- separator ---                              1550
   Undo Last Refactoring                          1600   [x] (Change Signature only; others "not supported")
   Redo Last Refactoring                          1700
@@ -942,7 +946,7 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
   3. Manual test in NetBeans: open file → invoke refactoring → check dialog → preview → apply → undo
   4. CHANGELOG bullet updated together with the code
 
-  **Remaining E9 work, in dependency order:** E9.18 (depends on E9.17).
+  **E9 is complete.**
 
 - **E10** — J2K (Java→Kotlin): reimplement using `j2k/new` from `submodules/IntellijCommunity`
   or binary artifact once published; wire up stubbed `Java2KotlinConverter` (stubbed since D2)

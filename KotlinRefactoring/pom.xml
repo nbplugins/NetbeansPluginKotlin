@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.209-SNAPSHOT</version>
+    <version>0.11.211-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
@@ -963,6 +963,8 @@
                     <include>org/jetbrains/kotlin/idea/refactoring/pullUp/EmptyPullUpHelper.kt</include>
                     <include>org/jetbrains/kotlin/idea/refactoring/pullUp/commonPullUpUtils.kt</include>
                     <include>org/jetbrains/kotlin/idea/refactoring/pullUp/KotlinPullUpConflictSearcher.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/pushDown/KotlinPushDownContext.kt</include>
+                    <include>org/jetbrains/kotlin/idea/refactoring/pushDown/KotlinPushDownProcessor.kt</include>
                     <include>org/jetbrains/kotlin/idea/refactoring/supertypesUtils.kt</include>
                   </includes>
                 </resource>
@@ -978,6 +980,11 @@
                     <include>org/jetbrains/kotlin/idea/k2/refactoring/pullUp/K2PullUpHelperFactory.kt</include>
                     <include>org/jetbrains/kotlin/idea/k2/refactoring/pullUp/markingUtils.kt</include>
                     <include>org/jetbrains/kotlin/idea/k2/refactoring/pullUp/pullUpUtils.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/pushDown/K2PushDownContext.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/pushDown/K2PushDownProcessor.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/pushDown/pushDownImpl.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/pushDown/pushDownMemberRemoval.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/pushDown/pushDownConflictsUtils.kt</include>
                   </includes>
                 </resource>
                 <resource>
@@ -1254,6 +1261,68 @@ if (parametersUtil.exists()) {
   log.info("Patched parametersUtil.kt: removed unused BuiltinTypes import")
 }
 
+// E9.18: make the copied processor callable by NetBeans while retaining its upstream lifecycle.
+def k2PushDownProcessor = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/pushDown/K2PushDownProcessor.kt')
+if (k2PushDownProcessor.exists()) {
+  def text = k2PushDownProcessor.text
+  // After every copied engine mutation, FIR still points to the pre-change PSI identities because
+  // standalone MockProject has no IDE PSI listener. Clear both caches before the engine analyzes or
+  // marks a freshly inserted member (the same environment seam E9.15/E9.17 already require).
+  if (!text.contains('invalidateStandaloneFirCaches')) {
+    text = text.replace('import org.jetbrains.kotlin.psi.KtNamedDeclaration\n',
+                        'import org.jetbrains.kotlin.psi.KtNamedDeclaration\nimport io.github.nbplugins.kotlin.refactoring.invalidateStandaloneFirCaches\n')
+  }
+  text = text.replace('''                    val added = action.execute() ?: return@forEach
+                    applyMarking(added, targetClass)''', '''                    val added = action.execute() ?: return@forEach
+                    invalidateStandaloneFirCaches(added.project, "K2PushDownProcessor.applyMarking")
+                    applyMarking(added, targetClass)''')
+  // RefactoringEventData belongs to IDE refactoring listeners, which the standalone NBM classpath
+  // deliberately does not include. These telemetry-only overrides are irrelevant to mutation.
+  def beforeDataStart = text.indexOf('    override fun getBeforeData()')
+  def findUsagesStart = text.indexOf('    protected override fun findUsages()', beforeDataStart)
+  if (beforeDataStart >= 0 && findUsagesStart > beforeDataStart) {
+    text = text.substring(0, beforeDataStart) + text.substring(findUsagesStart)
+  }
+  k2PushDownProcessor.text = text
+}
+
+// E9.18: the copied Push Down engine targets an Analysis API build where KaSymbol.psi is exposed
+// through a different extension. Preserve its algorithm and substitute only that ABI seam.
+['org/jetbrains/kotlin/idea/k2/refactoring/pushDown/pushDownImpl.kt',
+ 'org/jetbrains/kotlin/idea/k2/refactoring/pushDown/pushDownConflictsUtils.kt'].each { relative ->
+  def pushDownFile = new File(srcDir, relative)
+  if (pushDownFile.exists()) {
+    def text = pushDownFile.text
+    if (!text.contains('import org.jetbrains.kotlin.idea.k2.refactoring.pullUp.standalonePsi')) {
+      text = text.replace('package org.jetbrains.kotlin.idea.k2.refactoring.pushDown\n',
+                          'package org.jetbrains.kotlin.idea.k2.refactoring.pushDown\n\nimport org.jetbrains.kotlin.idea.k2.refactoring.pullUp.standalonePsi\n')
+    }
+    // Only analysis-symbol PSI access changed across the Analysis API eras. Do not transform
+    // package/import names such as com.intellij.psi or org.jetbrains.kotlin.psi.
+    text = text.replace('?.psi', '?.standalonePsi')
+    text = text.replace(')?.psi', ')?.standalonePsi')
+    // Kotlin 2.3.21 exposes substituted signature types with captured symbols. The compatibility
+    // overload accepts the same runtime object but needs the cast at IDEA's generic call site.
+    text = text.replace('.findCallableMemberBySignature(', '.findCallableMemberBySignature(')
+    if (!text.contains('import org.jetbrains.kotlin.idea.k2.refactoring.pullUp.findStandaloneCallableMemberBySignature')) {
+      text = text.replace('package org.jetbrains.kotlin.idea.k2.refactoring.pushDown\n',
+                          'package org.jetbrains.kotlin.idea.k2.refactoring.pushDown\n\nimport org.jetbrains.kotlin.idea.k2.refactoring.pullUp.findStandaloneCallableMemberBySignature\n')
+    }
+    text = text.replace('.findCallableMemberBySignature(', '.findStandaloneCallableMemberBySignature(')
+    text = text.replace('targetClassSymbol.findStandaloneCallableMemberBySignature(',
+                        'findStandaloneCallableMemberBySignature(targetClassSymbol, ')
+    text = text.replace('(context.sourceClass.symbol as KaClassSymbol).findStandaloneCallableMemberBySignature(',
+                        'findStandaloneCallableMemberBySignature(context.sourceClass.symbol as KaClassSymbol, ')
+    text = text.replace('callableSymbol.substitute(substitutor), ignoreReturnType = true',
+                        'callableSymbol.substitute(substitutor) as org.jetbrains.kotlin.analysis.api.signatures.KaCallableSignature<*>, ignoreReturnType = true')
+    text = text.replace('substituted, ignoreReturnType = true',
+                        'substituted as org.jetbrains.kotlin.analysis.api.signatures.KaCallableSignature<*>, ignoreReturnType = true')
+    text = text.replace('callableSymbol.asSignature(),',
+                        'callableSymbol.asSignature() as org.jetbrains.kotlin.analysis.api.signatures.KaCallableSignature<*>,')
+    pushDownFile.text = text
+  }
+}
+
 // E9.15/E9.16: adapt the copied Extract Super engine only at standalone lifecycle seams.
 // NetBeans creates target FileObjects and provides writable session KtFiles, so IDEA's template-based
 // file creation is replaced by an already-existing target. The semantic class construction and the
@@ -1327,11 +1396,14 @@ if (extractSuperRefactoring.exists()) {
   log.info("Patched K2ExtractSuperRefactoring.kt: use standalone write action and pre-created target file")
 }
 
-// E9.15/E9.16: preserve the real target-member collision matcher from IDEA's Pull Up conflict
-// source without compiling its project-index conflict-search UI/helpers.
-def pullUpConflictUtils = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/pullUp/pullUpConflictUtils.kt')
-pullUpConflictUtils.parentFile.mkdirs()
-pullUpConflictUtils.text = '''package org.jetbrains.kotlin.idea.k2.refactoring.pullUp
+// E9.15/E9.16/E9.18: preserve the target-member collision matcher required by the copied Pull Up
+// and Push Down processors without compiling IDEA's project-index conflict-search UI/helpers.
+// The local implementation keeps the upstream decision while adapting the Analysis API signature
+// boundary used by Kotlin 2.3.21.
+if (true) {
+  def pullUpConflictUtils = new File(srcDir, 'org/jetbrains/kotlin/idea/k2/refactoring/pullUp/pullUpConflictUtils.kt')
+  pullUpConflictUtils.parentFile.mkdirs()
+  pullUpConflictUtils.text = '''package org.jetbrains.kotlin.idea.k2.refactoring.pullUp
 
 import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
 import org.jetbrains.kotlin.analysis.api.KaSession
@@ -1347,9 +1419,13 @@ internal fun KaSession.getClashingMemberInTargetClass(
 ): KaCallableSymbol? {
     val targetClassSymbol = data.getTargetClassSymbol(analysisSession = this) as? KaDeclarationContainerSymbol ?: return null
     val substitutor = data.getSourceToTargetClassSubstitutor(analysisSession = this)
-    return findCallableMemberBySignature(targetClassSymbol, callableSymbol.substitute(substitutor))
+    return findCallableMemberBySignature(
+        targetClassSymbol,
+        callableSymbol.substitute(substitutor) as org.jetbrains.kotlin.analysis.api.signatures.KaCallableSignature<*>,
+    )
 }
 '''
+}
 
 // E9.15/E9.16: Extract Interface/Superclass always creates a Kotlin target type. The Kotlin-to-Java
 // Pull Up branch requires IDEA's full Java refactoring platform (unavailable in standalone) and is
