@@ -1,4 +1,4 @@
-# 0.11
+# 0.11.32 (2026-07-31)
 
 - Added **Push Members Down** for Kotlin: place the caret in a superclass or interface, invoke **Refactor → Push Members Down...** or press **Ctrl+Alt+O**, select members and optional per-member **Make Abstract** declarations, and push the selected members into every direct Kotlin subclass in the related build; the K2-backed operation formats every changed document and **Refactor → Undo Last Refactoring** restores all edited source and child files.
 - Added **Pull Members Up** for Kotlin: place the caret in a child class, invoke **Refactor → Pull Members Up...** or press **Ctrl+Alt+U**, select a Kotlin superclass or interface (including one in another file), choose members and optional abstract declarations, and apply the K2-backed move; direct target-member conflicts are checked automatically before the move, while **Preview Conflicts** remains available as an optional early check; **Refactor → Undo Last Refactoring** restores both edited files.
