@@ -14,18 +14,12 @@
  * limitations under the License.
  *
  *******************************************************************************/
-package org.jetbrains.kotlin.idea.searching.inheritors
-
-import com.intellij.psi.PsiElement
-import org.jetbrains.kotlin.psi.KtClass
+package org.jetbrains.kotlin.idea.refactoring.pushDown
 
 /**
- * Stub of IntelliJ's `org.jetbrains.kotlin.idea.searching.inheritors.DirectKotlinClassInheritorsSearch`:
- * a whole-project class-inheritance search index does not exist standalone, same limitation as
- * [org.jetbrains.kotlin.idea.search.declarationsSearch.HierarchySearchRequest]. Move Declaration's
- * sealed-class-hierarchy conflict check degrades gracefully: with no known inheritors it simply
- * never reports the "broken sealed hierarchy" conflict, rather than falsely flagging one.
+ * Standalone title for the copied IDEA Push Members Down processor.
+ *
+ * IDEA normally obtains this through its action handler and localized bundle. NetBeans supplies the
+ * visible action and dialog, while the processor retains this value for its lifecycle messages.
  */
-object DirectKotlinClassInheritorsSearch {
-    fun search(ktClass: KtClass): Sequence<PsiElement> = emptySequence()
-}
+val PUSH_MEMBERS_DOWN: String = "Push Members Down"

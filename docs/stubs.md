@@ -63,7 +63,7 @@ JVM linkage without pulling in the rest of the IDEA refactoring runtime.
 
 | Class | Location | Kind | Purpose |
 |-------|----------|------|---------|
-| `BaseRefactoringProcessor` | `Nbm/src/main/java/com/intellij/refactoring/` | Runtime | Abstract superclass of `AbstractKotlinDeclarationInlineProcessor`; three constructors `(Project)`, `(Project, Runnable)`, `(Project, SearchScope, Runnable)`; abstract methods declared; `run()` throws `UnsupportedOperationException` (never called) |
+| `BaseRefactoringProcessor` | `Nbm/src/main/java/com/intellij/refactoring/` | Runtime | ABI-compatible superclass of the inline and Push Members Down processors. Its non-modal `run()` executes the standard `findUsages → preprocessUsages → performRefactoring` lifecycle without IDEA's Usage View; NetBeans owns the dialog, preview, and undo transaction. |
 | `UsageViewDescriptor` | `Nbm/src/main/java/com/intellij/usageView/` | Compile-only | Interface required by `BaseRefactoringProcessor.createUsageViewDescriptor()` abstract method signature |
 | `MoveRenameUsageInfo` | `Nbm/src/main/java/com/intellij/refactoring/util/` | Runtime (shadows `analysis:253`) | Superclass of the Copy Declaration engine's `K2MoveRenameUsageInfo` (E9.19). The real platform ctor calls `PsiDocumentManager.getDocument` and asserts `refEnd <= document.getTextLength()`; the standalone MockProject keeps no live document for mutated PSI, so this stub provides the same ABI (3-arg + 6-arg ctors, `getReferencedElement()`) with **no document access**. `KotlinRefactoring` still compiles against the real `analysis:253` class; this shadows it at runtime because `Nbm` classes load first. |
 
@@ -148,6 +148,25 @@ These are not class-file overrides but *service registrations* performed in
 | `ShortenReferencesFacility` (`org.jetbrains.kotlin.idea.base.codeInsight`) | `KotlinSymbolBasedShortenReferencesFacility` (`io.github.nbplugins.kotlin.refactoring`) | Application | Called by `InlinePostProcessor.shortenReferences` after each inline substitution.  Wraps `SymbolBasedShortenReferencesFacility` (IDEA `internal` class) via Kotlin delegation — wrapper lives in `KotlinRefactoring` module which can access `internal` Kotlin symbols of that module. |
 | `KotlinMemberInfoSupport` / `KotlinMemberInfoStorageSupport` (`org.jetbrains.kotlin.idea.refactoring.memberInfo`) | `K2MemberInfoSupport` / `K2MemberInfoStorageSupport` | Application | Supplies K2 member labels, override metadata, and hierarchy membership needed by Extract Super (E9.15/E9.16) and Pull Members Up (E9.17). |
 | Kotlin `PullUpHelper` language extension (`com.intellij.refactoring.memberPullUp`) | `K2PullUpHelperFactory` | Application extension | Resolves the copied lifecycle-free `PullUpProcessor` to IDEA's real K2 Kotlin member-move helper. Used by Extract Super and Pull Members Up. |
+
+### Push Members Down engine port (added for E9.18)
+
+`KotlinRefactoring` compiles the original IDEA K2 Push Down source set through
+`maven-resources-plugin`; `KaPushMembersDownComputer` supplies selected `KotlinMemberInfo`
+objects and invokes its normal processor lifecycle. The following standalone seams let the copied
+engine operate against K2 source PSI rather than IDEA indexes:
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| `K2PushDownProcessorRunner` | `KotlinRefactoring` | Public bridge in the processor package that creates and runs the copied K2 processor without changing its transfer, removal, substitution, marking, or conflict algorithms. |
+| `HierarchySearchRequestStub` / `StandaloneInheritorSearch` | `KotlinRefactoring` | Replaces index-backed direct-inheritor queries with a scan of writable Kotlin PSI registered in the standalone K2 session. |
+| `KotlinPushDownTargetSearchService` | session service | Supplies source-scope direct-subclass targets to the engine; it bypasses unavailable IDEA indexes. |
+| `Messages`, `RefactoringBundle`, `ProgressUtils`, and Push Down compatibility files | `Nbm` / `KotlinRefactoring` | Provide non-modal UI/progress and API-era ABI contracts. Conflict presentation remains NetBeans's responsibility. |
+
+The processor invalidates standalone FIR caches before it marks freshly inserted members, since
+raw PSI mutations do not trigger IDEA's normal PSI/POM invalidation events. The NetBeans apply
+element snapshots every session-owned document before mutation, formats changed Kotlin files with
+the active project style, and restores each snapshot for **Undo Last Refactoring**.
 
 ### Pull Members Up limitations
 

@@ -47,9 +47,12 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /**
- * Manages a K2 Analysis API session ([StandaloneAnalysisAPISession]) for a single NetBeans project.
+ * Manages a K2 Analysis API session ([StandaloneAnalysisAPISession]) for a NetBeans project.
  *
- * One instance is created per open [NBProject] and cached for the project's lifetime
+ * The ordinary session, created by [getSession], contains only the owning project's sources so it
+ * remains safe to create from NetBeans parsing and indexing tasks. Build-wide refactorings obtain a
+ * separate writable session through [getBuildScopedSession]; Maven and Gradle sibling sources never
+ * enter the ordinary editor-analysis session.
  * (see [getSession]). The IntelliJ application environment is initialised at plugin startup
  * by [io.github.nbplugins.kotlin.nbm.startup.FakeIntellijHome.startUp], which satisfies the
  * `PathManager.getHomePath()` requirement before `buildStandaloneAnalysisAPISession` is called.
@@ -85,10 +88,12 @@ class KotlinAnalysisAPISession private constructor(
      *
      * @param nbProject the NetBeans project this session analyses
      */
-    private constructor(nbProject: NBProject) : this(
+    private constructor(nbProject: NBProject, buildScoped: Boolean = false) : this(
         moduleName = nbProject.projectDirectory.name,
+        // Preserve the owner's normal dependency classpath. Passing build-wide roots here would
+        // classify sibling compiled output as a second copy of the same source declarations.
         binaryJars = collectBinaryJars(nbProject, collectSourceRoots(nbProject)),
-        sourceRoots = collectSourceRoots(nbProject)
+        sourceRoots = if (buildScoped) collectBuildSourceRoots(nbProject) else collectSourceRoots(nbProject),
     )
 
     /**
@@ -230,6 +235,12 @@ class KotlinAnalysisAPISession private constructor(
         // both the normal getSession(nbProject) path and standalone sessions built via
         // createWithJars() (used by tests), which aren't NBProject-keyed at all.
         byProject[session.project] = this
+        // The active session determines the standalone hierarchy-search scope. Ordinary sessions
+        // contain only their owner; the explicit Push Members Down build session installs a bridge
+        // over the owner plus sibling build modules.
+        org.jetbrains.kotlin.idea.searching.inheritors.StandaloneInheritorSearch.install(
+            io.github.nbplugins.kotlin.nbm.refactoring.KotlinStandaloneInheritorSearch(this),
+        )
     }
 
     /**
@@ -292,6 +303,7 @@ class KotlinAnalysisAPISession private constructor(
 
     companion object {
         private val cache = hashMapOf<NBProject, KotlinAnalysisAPISession>()
+        private val buildScopedCache = hashMapOf<NBProject, KotlinAnalysisAPISession>()
 
         /** Secondary index by the underlying IntelliJ [com.intellij.openapi.project.Project] — see [forProject]. */
         private val byProject = hashMapOf<com.intellij.openapi.project.Project, KotlinAnalysisAPISession>()
@@ -536,6 +548,18 @@ class KotlinAnalysisAPISession private constructor(
             cache.getOrPut(nbProject) { KotlinAnalysisAPISession(nbProject) }
 
         /**
+         * Returns the K2 session containing the owner and writable Kotlin sources from its related
+         * Maven reactor or Gradle build. This is intentionally opt-in for build-wide refactorings;
+         * parser and indexing paths must use [getSession].
+         *
+         * @param nbProject the project that owns the refactoring source declaration
+         * @return a cached build-scoped session for the owner project
+         */
+        @Synchronized
+        fun getBuildScopedSession(nbProject: NBProject): KotlinAnalysisAPISession =
+            buildScopedCache.getOrPut(nbProject) { KotlinAnalysisAPISession(nbProject, buildScoped = true) }
+
+        /**
          * Removes all cached sessions from the cache.
          *
          * Call when the plugin is unloaded or all projects are closed to release resources.
@@ -544,6 +568,8 @@ class KotlinAnalysisAPISession private constructor(
         @Synchronized
         fun disposeAll() {
             cache.clear()
+            buildScopedCache.clear()
+            byProject.clear()
         }
 
         /**
@@ -559,6 +585,7 @@ class KotlinAnalysisAPISession private constructor(
         @Synchronized
         fun invalidate(nbProject: NBProject) {
             cache.remove(nbProject)
+            buildScopedCache.remove(nbProject)
         }
 
         /**
@@ -716,6 +743,21 @@ class KotlinAnalysisAPISession private constructor(
          *
          * @param nbProject the NetBeans project
          * @return list of source root [Path]s, or an empty list if none are available
+         */
+        private fun collectBuildSourceRoots(nbProject: NBProject): List<Path> =
+            BuildProjectScope.relatedProjects(nbProject)
+                .flatMap(::collectSourceRoots)
+                .distinct()
+
+        /**
+         * Collects source root paths for exactly one NetBeans project.
+         *
+         * [collectBuildSourceRoots] combines this result across sibling modules when a refactoring
+         * needs build-wide PSI; the ordinary classpath query remains isolated here so unrelated
+         * open projects cannot enter the K2 source module.
+         *
+         * @param nbProject one project belonging to the active build.
+         * @return source root paths, or an empty list if none are available.
          */
         private fun collectSourceRoots(nbProject: NBProject): List<Path> =
             with(KotlinProjectHelper) { nbProject.getExtendedClassPath() }

@@ -171,13 +171,16 @@ fun getThisQualifier(receiverValue: KaImplicitReceiverValue): String {
 @OptIn(KaExperimentalApi::class)
 fun KaSession.findCallableMemberBySignature(
     container: KaDeclarationContainerSymbol,
-    callableSignature: KaCallableSignature<KaCallableSymbol>,
+    callableSignature: KaCallableSignature<*>,
     ignoreReturnType: Boolean = false,
-): KaCallableSymbol? = findCallableMemberBySignature(
-    scope = container.declaredMemberScope,
-    callableSignature = callableSignature,
-    ignoreReturnType = ignoreReturnType,
-)
+): KaCallableSymbol? {
+    @Suppress("UNCHECKED_CAST")
+    return findCallableMemberBySignature(
+        scope = container.declaredMemberScope,
+        callableSignature = callableSignature as KaCallableSignature<out KaCallableSymbol>,
+        ignoreReturnType = ignoreReturnType,
+    )
+}
 
 /**
  * Finds a callable member in this scope by its K2 signature.
@@ -190,7 +193,7 @@ fun KaSession.findCallableMemberBySignature(
 @OptIn(KaExperimentalApi::class)
 fun KaSession.findCallableMemberBySignature(
     scope: KaScope,
-    callableSignature: KaCallableSignature<KaCallableSymbol>,
+    callableSignature: KaCallableSignature<out KaCallableSymbol>,
     ignoreReturnType: Boolean = false,
 ): KaCallableSymbol? {
     fun KaType?.eq(anotherType: KaType?): Boolean {

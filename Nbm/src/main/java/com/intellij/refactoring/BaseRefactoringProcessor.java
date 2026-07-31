@@ -118,17 +118,40 @@ public abstract class BaseRefactoringProcessor implements Runnable {
     }
 
     /**
-     * The {@link Runnable} contract on the real BRP triggers the whole modal refactoring pipeline.
-     * In the NetBeans plugin we never let it run: Inline Variable wires the {@code CodeInliner}
-     * engine directly via {@code KaInlineVariableComputer}. Reaching this point indicates a bug.
+     * Executes the non-UI portion of IDEA's standard refactoring lifecycle.
+     *
+     * The standalone plugin has no UsageView or modal conflict dialog, but copied K2 processors
+     * still rely on the lifecycle ordering: discover usages, validate them, then mutate. NetBeans
+     * presents conflicts in its own {@code RefactoringUI}; {@link #showConflicts} therefore simply
+     * records acceptance here. Existing callers that never invoke {@code run()} remain unchanged.
      */
     @Override
     public final void run() {
-        throw new UnsupportedOperationException(
-            "BaseRefactoringProcessor stub: the NetBeans Kotlin plugin does not run IDEA refactoring "
-            + "processors directly. Inline Variable / Safe Delete drive the CodeInliner engine "
-            + "through KaInlineVariableComputer instead.");
+        UsageInfo[] usages = findUsages();
+        Ref<UsageInfo[]> usageRef = Ref.create(usages == null ? UsageInfo.EMPTY_ARRAY : usages);
+        if (!preprocessUsages(usageRef)) {
+            return;
+        }
+        UsageInfo[] prepared = usageRef.get();
+        performRefactoring(prepared == null ? UsageInfo.EMPTY_ARRAY : prepared);
+        if (myPrepareSuccessfulSwingThreadCallback != null) {
+            myPrepareSuccessfulSwingThreadCallback.run();
+        }
     }
+
+    /**
+     * Compatibility replacement for IDEA's modal conflict window.
+     *
+     * @param conflicts conflicts produced by a copied processor.
+     * @param usages affected usages.
+     * @return {@code true}; NetBeans inspects conflicts before it invokes the processor.
+     */
+    protected boolean showConflicts(
+            com.intellij.util.containers.MultiMap<PsiElement, String> conflicts,
+            UsageInfo[] usages) {
+        return true;
+    }
+
 
     /**
      * Thrown by IDEA's ported {@code ExtractFunctionGenerator.buildSignature}/{@code
