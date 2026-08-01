@@ -1,7 +1,6 @@
+# 0.11
+
 - Added a Kotlin refactoring coverage matrix that tracks IntelliJ IDEA parity, tests, known limitations, and the planned work needed to complete each refactoring family.
-
-# 0.11.32 (2026-07-31)
-
 - Added **Push Members Down** for Kotlin: place the caret in a superclass or interface, invoke **Refactor → Push Members Down...** or press **Ctrl+Alt+O**, select members and optional per-member **Make Abstract** declarations, and push the selected members into every direct Kotlin subclass in the related build; the K2-backed operation formats every changed document and **Refactor → Undo Last Refactoring** restores all edited source and child files.
 - Added **Pull Members Up** for Kotlin: place the caret in a child class, invoke **Refactor → Pull Members Up...** or press **Ctrl+Alt+U**, select a Kotlin superclass or interface (including one in another file), choose members and optional abstract declarations, and apply the K2-backed move; direct target-member conflicts are checked automatically before the move, while **Preview Conflicts** remains available as an optional early check; **Refactor → Undo Last Refactoring** restores both edited files.
 - Added **Extract Interface** and **Extract Superclass** refactorings for Kotlin: place the caret in a class, invoke **Refactor → Extract Interface...** or **Refactor → Extract Superclass...**, choose the members, target name, package, and source root, and the selected declarations are moved into a newly created Kotlin interface or superclass while the source class inherits from it; generated code follows the project's Kotlin formatting settings and **Refactor → Undo Last Refactoring** restores both the source and generated file.
