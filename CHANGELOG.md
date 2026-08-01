@@ -1,3 +1,5 @@
+- Added a Kotlin refactoring coverage matrix that tracks IntelliJ IDEA parity, tests, known limitations, and the planned work needed to complete each refactoring family.
+
 # 0.11.32 (2026-07-31)
 
 - Added **Push Members Down** for Kotlin: place the caret in a superclass or interface, invoke **Refactor → Push Members Down...** or press **Ctrl+Alt+O**, select members and optional per-member **Make Abstract** declarations, and push the selected members into every direct Kotlin subclass in the related build; the K2-backed operation formats every changed document and **Refactor → Undo Last Refactoring** restores all edited source and child files.
