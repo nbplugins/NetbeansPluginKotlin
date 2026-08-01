@@ -52,8 +52,10 @@ class CaretRestoreOnUndoTest : NbTestCase("CaretRestoreOnUndoTest") {
         var called = false
         val edit = CaretRestoreOnUndoEdit { called = true }
 
-        edit.undo()
-        assertFalse("restore must be deferred, not run synchronously in undo()", called)
+        SwingUtilities.invokeAndWait {
+            edit.undo()
+            assertFalse("restore must be deferred, not run synchronously in undo()", called)
+        }
 
         drainEdt()
         assertTrue("restore action must run once the EDT queue drains", called)
