@@ -70,13 +70,24 @@ class KaMoveDeclarationComputer(
         data class Conflicts(val messages: List<String>) : MoveOutcome()
 
         /**
-         * The move completed successfully (in-memory PSI only — the underlying VFS in this
-         * standalone environment is read-only, see [resolveDirectory]'s doc comment). [sourceText]
-         * and [targetText] are the resulting file contents; the caller must persist them itself
-         * (e.g. via a live NetBeans `Document` for the source, and `FileObject.getOutputStream()`
-         * for the target — mirroring how Copy Declaration writes its result).
+         * The move completed successfully in the in-memory K2 PSI model. [changedFiles] contains
+         * every source, target, and external-usage file modified by IDEA's processor, keyed by its
+         * physical path. The caller must persist every entry: persisting only the declaration files
+         * loses import/reference retargeting in external usages.
          */
-        data class Success(val sourceText: String, val targetText: String) : MoveOutcome()
+        data class Success(
+            val changedFiles: Map<String, String>,
+            val sourceFilePath: String,
+            val targetFilePath: String,
+        ) : MoveOutcome() {
+            /** Final text of the declaration's original file. */
+            val sourceText: String get() = changedFiles[sourceFilePath]
+                ?: error("Move outcome does not contain source file $sourceFilePath")
+
+            /** Final text of the destination file. */
+            val targetText: String get() = changedFiles[targetFilePath]
+                ?: error("Move outcome does not contain target file $targetFilePath")
+        }
 
         /** The move failed with [error]. */
         data class Error(val error: Throwable) : MoveOutcome()
@@ -173,7 +184,10 @@ class KaMoveDeclarationComputer(
      */
     fun move(targetDirectory: PsiDirectory, targetKtFile: KtFile, targetPackage: FqName): MoveOutcome? {
         val declaration = findDeclaration() ?: return null
+        val declarationName = declaration.name ?: return null
         val sourceKtFile = declaration.containingFile as? KtFile ?: return null
+        val targetTextBeforeMove = targetKtFile.text
+        val targetHadDeclarations = targetKtFile.declarations.isNotEmpty()
         return try {
             val operationDescriptor = K2MoveOperationDescriptor.Declarations(
                 project = declaration.project,
@@ -195,12 +209,72 @@ class KaMoveDeclarationComputer(
                 return MoveOutcome.Conflicts(processor.conflicts.values().toList())
             }
 
+            // The processor invalidates the individual UsageInfo elements while retargeting them.
+            // Query the same project-wide Kotlin search used by it and retain the containing files
+            // before mutation, then read those writable session files after the move completes.
+            val usageFiles = KotlinMoveUsageSearchService.getInstance()?.findUsages(declaration)
+                .orEmpty()
+                .mapNotNull { reference -> reference.element.containingFile as? KtFile }
+                .distinct()
             processor.performRefactoring(usages)
 
-            MoveOutcome.Success(sourceText = sourceKtFile.text, targetText = targetKtFile.text)
+            val sourceFqName = sourceKtFile.packageFqName.child(
+                org.jetbrains.kotlin.name.Name.identifier(declarationName),
+            ).asString()
+            val targetFqName = targetPackage.child(
+                org.jetbrains.kotlin.name.Name.identifier(declarationName),
+            ).asString()
+            val changedFiles = buildList {
+                add(sourceKtFile)
+                add(targetKtFile)
+                addAll(usageFiles)
+            }.distinct().mapNotNull { file ->
+                file.virtualFile?.path?.let { path ->
+                    val text = when {
+                        file == targetKtFile && targetHadDeclarations ->
+                            separateMovedDeclaration(targetTextBeforeMove, file.text)
+                        file in usageFiles ->
+                            normalizeExternalUsageImports(file.text, sourceFqName, targetFqName)
+                        else -> file.text
+                    }
+                    path to text
+                }
+            }.toMap()
+            MoveOutcome.Success(
+                changedFiles = changedFiles,
+                sourceFilePath = sourceKtFile.virtualFile?.path ?: error("Moved source has no virtual file"),
+                targetFilePath = targetKtFile.virtualFile?.path ?: error("Target has no virtual file"),
+            )
         } catch (e: Exception) {
             MoveOutcome.Error(e)
         }
+    }
+
+    /**
+     * Restores the declaration boundary which the standalone PSI implementation omits when the K2
+     * engine appends to an existing target file. The processor preserves the original target text
+     * byte-for-byte and appends the moved declaration immediately after it; declarations need a
+     * blank line to remain separate Kotlin syntax.
+     */
+    private fun separateMovedDeclaration(targetTextBeforeMove: String, targetTextAfterMove: String): String {
+        if (!targetTextAfterMove.startsWith(targetTextBeforeMove)) return targetTextAfterMove
+        val movedSuffix = targetTextAfterMove.removePrefix(targetTextBeforeMove)
+        if (movedSuffix.isBlank()) return targetTextAfterMove
+        return targetTextBeforeMove.trimEnd() + "\n\n" + movedSuffix.trimStart()
+    }
+
+    /**
+     * Replaces the processor's fully-qualified external reference with an import plus the original
+     * short name when that file already imported the declaration. The standalone environment lacks
+     * IDEA's import-optimizer service, so its shortening phase intentionally leaves the old import
+     * behind; persisting that output would produce an unresolved stale import.
+     */
+    private fun normalizeExternalUsageImports(text: String, oldFqName: String, newFqName: String): String {
+        val oldImport = "import $oldFqName"
+        if (oldImport !in text) return text
+        val qualification = Regex("(?<![A-Za-z0-9_.])${Regex.escape(newFqName)}(?=\\s*\\()")
+        return text.replace(oldImport, "import $newFqName")
+            .replace(qualification, newFqName.substringAfterLast('.'))
     }
 
     companion object {
