@@ -67,7 +67,7 @@ The corresponding record comments above are deliberately machine-readable. `Refa
 | `introduce-import-alias` | Introduce Import Alias | Refactor menu | Partial | Import/reference invocation and in-file replacements work; broader import edge cases remain. | F6 |
 | `introduce-parameter` | Introduce Parameter | `Ctrl+Alt+P` | Partial | Change Signature pipeline updates callers; context parameters and adding an absent primary constructor remain. | F6 |
 | `introduce-functional-parameter` | Introduce Functional Parameter | `Ctrl+Alt+Shift+P` | Partial | K2 extraction/Change Signature path covers single expressions; multi-statement and idiomatic lambda cases remain. | F6 |
-| `move-declaration` | Move top-level declaration | Refactor → Move Declaration | Partial | Real K2 move/retargeting engine is used; only top-level declarations are exposed and Undo Last Refactoring is not yet transactional. | F1 |
+| `move-declaration` | Move top-level declaration | Refactor → Move Declaration | Partial | Real K2 move/retargeting engine is used; source/target mutations now roll back atomically and support Undo Last Refactoring, while only top-level declarations are exposed. | F1 |
 | `copy-declaration` | Copy declaration | Refactor → Copy / F5 | Partial | Top-level copy and internal retargeting work; target selection and transaction semantics require consolidation. | F1 |
 | `extract-interface-superclass` | Extract Interface / Superclass | Refactor menu | Partial | K2 Extract Super engine is wired; advanced constructors, generics and full conflicts remain. | F6 |
 | `pull-members-up` | Pull Members Up | `Ctrl+Alt+U` | Partial | Direct target-member conflicts work; project-index-based hierarchy, visibility and accidental-override checks remain. | F2 |

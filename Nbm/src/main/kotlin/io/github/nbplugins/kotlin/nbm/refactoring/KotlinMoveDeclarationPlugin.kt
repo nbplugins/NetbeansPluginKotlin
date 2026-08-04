@@ -137,9 +137,9 @@ class KotlinMoveDeclarationPlugin(
  * ([KaMoveDeclarationComputer.move]) to perform usage search, conflict detection, and the actual
  * move+retarget once the target file exists as a real, disk-backed file the session can see.
  *
- * Undo is not supported by the underlying engine (multi-file mutation); [undoChange] logs a
- * warning — same limitation as other multi-file E9.x refactorings that mutate more than the
- * current document.
+ * A [KotlinRefactoringTransaction] snapshots both source and target before mutation. It owns a
+ * newly-created target through engine setup, rolls it back on conflicts/errors, and restores both
+ * documents through [undoChange].
  *
  * @param sourceFile   the file containing the declaration
  * @param nbProject    the NetBeans project
@@ -164,7 +164,11 @@ class KotlinMoveDeclarationApplyElement(
         PositionBounds(start, end)
     } catch (_: Exception) { null }
 
+    /** Transaction from the last successful application, used by Undo Last Refactoring. */
+    private var transaction: KotlinRefactoringTransaction? = null
+
     override fun performChange() {
+        var pendingTransaction: KotlinRefactoringTransaction? = null
         runCatching {
             // `fo` is the file the caret is actually in — needed to seed the Computer (it locates
             // the leaf/reference at the caret offset). The declaration itself, resolved by the
@@ -176,79 +180,76 @@ class KotlinMoveDeclarationApplyElement(
             val callerKtFile = session.getKtFileForPath(fo.path) ?: return@runCatching
 
             val computer = KaMoveDeclarationComputer(callerKtFile, refactoring.caretOffset)
-            val outcome = computer.compute()
-            val ready = outcome as? KaMoveDeclarationComputer.Outcome.Ready ?: return@runCatching
+            val ready = computer.compute() as? KaMoveDeclarationComputer.Outcome.Ready ?: return@runCatching
             val result = ready.result
-
             val sourceFo = FileUtil.toFileObject(FileUtil.normalizeFile(java.io.File(result.sourceFilePath))) ?: fo
-
             val targetPackage = refactoring.targetPackage.ifBlank { result.packageName }
             val targetFileNameRaw = refactoring.targetFileName.ifBlank { result.suggestedFileName }
             val targetFileName = if (targetFileNameRaw.endsWith(".kt")) targetFileNameRaw else "$targetFileNameRaw.kt"
+            val packageTarget = KotlinPackageTarget(nbProject2, sourceFo)
+            val targetFolder = packageTarget.resolveDirectory(packageTarget.defaultRootPath, targetPackage)
+                ?: error("Move Declaration could not resolve target package '$targetPackage'.")
+            val targetDirectory = KaMoveDeclarationComputer.resolveDirectory(callerKtFile.project, targetFolder.path)
+                ?: error("Move Declaration could not resolve target directory ${targetFolder.path}.")
 
-            // The target file is created alongside the *declaration's* file, not necessarily
-            // alongside the file the caret happened to be in.
-            val parentDir = sourceFo.parent ?: return@runCatching
-            val targetDirectory = KaMoveDeclarationComputer.resolveDirectory(callerKtFile.project, parentDir.path)
-                ?: return@runCatching
-
-            // The target file must already exist, and be picked up by the analysis session as a
-            // writable, LightVirtualFile-backed KtFile, before calling move() — see
-            // KaMoveDeclarationComputer.move()'s doc comment. Created here via plain NetBeans
-            // FileObject I/O (same strategy as Copy Declaration), seeded with the package
-            // directive, then the session is refreshed so both files re-resolve through it.
-            val existingTargetFo = parentDir.getFileObject(targetFileName)
-            val targetFo = existingTargetFo ?: parentDir.createData(targetFileName)
+            val currentTransaction = KotlinRefactoringTransaction()
+            pendingTransaction = currentTransaction
+            currentTransaction.captureExisting(sourceFo)
+            val existingTargetFo = targetFolder.getFileObject(targetFileName)
             val packageLine = if (targetPackage.isNotEmpty()) "package $targetPackage\n\n" else ""
-            if (existingTargetFo == null) {
-                writeFile(targetFo, packageLine)
-            }
+            val targetFo = existingTargetFo?.also { currentTransaction.captureExisting(it) }
+                ?: currentTransaction.createFile(targetFolder, targetFileName, packageLine)
 
+            // The seeded target must be visible as a writable LightVirtualFile before the ported
+            // engine can mutate it. This is the only intentional pre-commit filesystem mutation;
+            // the transaction owns it and removes it on every unsuccessful path.
             KotlinAnalysisAPISession.invalidate(nbProject2)
             val session2 = KotlinAnalysisAPISession.getSession(nbProject2)
             val callerKtFile2 = session2.getKtFileForPath(fo.path)
             val targetKtFile = session2.getKtFileForPath(targetFo.path)
             if (callerKtFile2 == null || targetKtFile == null) {
-                if (existingTargetFo == null) targetFo.delete()
-                return@runCatching
+                error("Move Declaration could not refresh Kotlin PSI for source or target.")
             }
             val computer2 = KaMoveDeclarationComputer(callerKtFile2, refactoring.caretOffset)
 
             when (val moveOutcome = computer2.move(targetDirectory, targetKtFile, FqName(targetPackage))) {
                 is KaMoveDeclarationComputer.MoveOutcome.Success -> {
-                    writeFile(sourceFo, moveOutcome.sourceText)
-                    writeFile(targetFo, moveOutcome.targetText)
+                    moveOutcome.changedFiles.forEach { (path, text) ->
+                        val changedFile = FileUtil.toFileObject(FileUtil.normalizeFile(java.io.File(path)))
+                            ?: error("Move Declaration could not resolve changed file $path.")
+                        if (changedFile != targetFo && changedFile != sourceFo) {
+                            currentTransaction.captureExisting(changedFile)
+                        }
+                        currentTransaction.stageText(changedFile, text)
+                    }
+                    currentTransaction.commit()
+                    transaction = currentTransaction
+                    pendingTransaction = null
                 }
                 is KaMoveDeclarationComputer.MoveOutcome.Conflicts -> {
                     KotlinLogger.INSTANCE.logWarning(
                         "KotlinMoveDeclarationApplyElement: move skipped, conflicts found: ${moveOutcome.messages}"
                     )
-                    if (existingTargetFo == null) targetFo.delete()
                 }
-                is KaMoveDeclarationComputer.MoveOutcome.Error -> {
-                    KotlinLogger.INSTANCE.logException("KotlinMoveDeclarationApplyElement: move failed", moveOutcome.error)
-                    if (existingTargetFo == null) targetFo.delete()
-                }
+                is KaMoveDeclarationComputer.MoveOutcome.Error -> throw moveOutcome.error
                 null -> Unit
             }
-
-            KotlinAnalysisAPISession.invalidate(nbProject)
-        }.onFailure { e ->
-            KotlinLogger.INSTANCE.logException("KotlinMoveDeclarationApplyElement.performChange failed", e)
+        }.onFailure { error ->
+            KotlinLogger.INSTANCE.logException("KotlinMoveDeclarationApplyElement.performChange failed", error)
         }
+        runCatching { pendingTransaction?.rollback() }
+            .onFailure { KotlinLogger.INSTANCE.logException("KotlinMoveDeclarationApplyElement rollback failed", it) }
+        KotlinAnalysisAPISession.invalidate(nbProject)
     }
 
-    /** Overwrites [fo] with [content] (UTF-8). */
-    private fun writeFile(fo: FileObject, content: String) {
-        fo.getOutputStream().use { out ->
-            out.write(content.toByteArray(Charsets.UTF_8))
-        }
-    }
-
+    /** Restores source and target text and removes a target that this refactoring created. */
     override fun undoChange() {
-        KotlinLogger.INSTANCE.logWarning(
-            "KotlinMoveDeclarationApplyElement: undo is not supported (Move Declaration mutates multiple files); " +
-                    "use your VCS or manual edits to revert."
-        )
+        runCatching {
+            transaction?.undo()
+            transaction = null
+            KotlinAnalysisAPISession.invalidate(nbProject)
+        }.onFailure { error ->
+            KotlinLogger.INSTANCE.logException("KotlinMoveDeclarationApplyElement.undoChange failed", error)
+        }
     }
 }

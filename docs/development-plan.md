@@ -736,6 +736,9 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
     - NetBeans adapter: `KaMoveDeclarationComputer` (`KotlinRefactoring`); `KotlinMoveDeclarationAction`
       (Refactor menu) / `KotlinMoveDeclarationUI` (target package + file name fields) /
       `KotlinMoveDeclarationPlugin` / `KotlinMoveDeclarationRefactoring` (`Nbm`)
+    - Source and target mutation is now staged through `KotlinRefactoringTransaction`: a new target
+      is removed on any conflict/error, an existing target is restored exactly, and **Refactor → Undo
+      Last Refactoring** restores both documents (or removes the target file if the refactoring created it).
 
   - [x] **E9.8** — Change Signature (Ctrl+F6) — PRs #114, #115
     - IDEA sources: `changeSignature/KotlinChangeSignatureUsageSearcher.kt`,
@@ -936,7 +939,7 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
   Pull Members Up             Ctrl+Alt+U        1450   [x] E9.17
   Push Members Down           Ctrl+Alt+O        1500   [x] E9.18
   --- separator ---                              1550
-  Undo Last Refactoring                          1600   [x] (Change Signature only; others "not supported")
+  Undo Last Refactoring                          1600   [x] (Change Signature, Move Declaration, Extract, Introduce, Inline, Pull Up, and Push Down)
   Redo Last Refactoring                          1700
   ```
 

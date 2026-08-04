@@ -153,7 +153,9 @@ class KaMoveDeclarationTest : KotlinTestCase("KaMoveDeclarationTest", "moveDecla
                 fun useGreet(): String = greet("world")
                 """.trimIndent()
             )
-            val targetDir = tmpDir.resolve("target")
+            // The destination directory mirrors the target package beneath the session's source
+            // root, as KotlinMoveDeclarationApplyElement does through KotlinPackageTarget.
+            val targetDir = tmpDir.resolve("movetest/target")
             Files.createDirectories(targetDir)
             // The target file must already exist (seeded with its package directive) before
             // calling move() — this environment's disk-backed VFS is read-only for writes.
@@ -195,11 +197,15 @@ class KaMoveDeclarationTest : KotlinTestCase("KaMoveDeclarationTest", "moveDecla
                 "Expected target text to contain the moved function, got: ${success.targetText}",
                 success.targetText.contains("fun greet"),
             )
+            assertEquals(
+                "Expected source, target, and external usage files to be returned for persistence",
+                setOf(sourceFile.toString(), targetFile.toString(), usageFile.toString()),
+                success.changedFiles.keys,
+            )
 
-            // Persist both results via plain I/O, mirroring how the NB adapter must (the VFS here
-            // does not auto-persist in-memory PSI mutations back to disk).
-            Files.writeString(sourceFile, success.sourceText)
-            Files.writeString(targetFile, success.targetText)
+            // Persist every changed file via plain I/O, mirroring the NetBeans adapter. Persisting
+            // only source and target would discard the engine's usage import retargeting.
+            success.changedFiles.forEach { (path, text) -> Files.writeString(Path.of(path), text) }
 
             val targetText = Files.readString(targetFile)
             assertTrue(
@@ -207,12 +213,72 @@ class KaMoveDeclarationTest : KotlinTestCase("KaMoveDeclarationTest", "moveDecla
                 targetText.contains("fun greet"),
             )
 
-            val usageKtFile = session.getKtFileForPath(usageFile.toString())
-            assertNotNull("Expected usage KtFile to still be resolvable", usageKtFile)
+            val usageTextAfterMove = Files.readString(usageFile)
             assertTrue(
-                "Expected usage import to be retargeted to the new package, got: ${usageKtFile!!.text}",
-                usageKtFile.text.contains("movetest.target"),
+                "Expected persisted usage import to be retargeted to the new package, got: $usageTextAfterMove",
+                usageTextAfterMove.contains("import movetest.target.greet"),
             )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Integration test (real K2): moving into a target which already has a declaration must
+     * preserve a blank-line boundary between the existing and moved declarations. The standalone
+     * PSI target does not receive IDEA editor whitespace normalization after `KtFile.add`.
+     */
+    fun testMove_realSession_existingTargetSeparatesDeclarations() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping move integration test")
+            return
+        }
+
+        val tmpDir = Files.createTempDirectory("nbkotlin-move-decl-existing-target")
+        try {
+            val sourceFile = tmpDir.resolve("Source.kt")
+            Files.writeString(
+                sourceFile,
+                """
+                package movetest.source
+
+                fun greet(who: String, second: String): String = "${'$'}who ${'$'}second"
+                """.trimIndent(),
+            )
+            val targetDir = tmpDir.resolve("movetest/target")
+            Files.createDirectories(targetDir)
+            val targetFile = targetDir.resolve("Target.kt")
+            Files.writeString(
+                targetFile,
+                """
+                package movetest.target
+
+                fun unrelated(): Int = 42
+                """.trimIndent(),
+            )
+
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "move-declaration-existing-target",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(tmpDir),
+            )
+            val sourceKtFile = session.getKtFileForPath(sourceFile.toString())
+                ?: error("Failed to obtain source KtFile")
+            val targetKtFile = session.getKtFileForPath(targetFile.toString())
+                ?: error("Failed to obtain target KtFile")
+            val targetPsiDirectory = KaMoveDeclarationComputer.resolveDirectory(sourceKtFile.project, targetDir.toString())
+                ?: error("Failed to resolve target PsiDirectory")
+
+            val outcome = KaMoveDeclarationComputer(sourceKtFile, sourceKtFile.text.indexOf("greet"))
+                .move(targetPsiDirectory, targetKtFile, FqName("movetest.target"))
+            assertTrue("Expected MoveOutcome.Success, got $outcome", outcome is KaMoveDeclarationComputer.MoveOutcome.Success)
+            val success = outcome as KaMoveDeclarationComputer.MoveOutcome.Success
+            success.changedFiles.forEach { (path, text) -> Files.writeString(Path.of(path), text) }
+
+            val targetText = Files.readString(targetFile)
+            assertTrue("Expected existing declaration to remain, got: $targetText", targetText.contains("fun unrelated(): Int = 42"))
+            assertTrue("Expected moved declaration to be separated, got: $targetText", targetText.contains("42\n\nfun greet"))
+            assertFalse("Target declarations must not be concatenated, got: $targetText", targetText.contains("42fun greet"))
         } finally {
             tmpDir.toFile().deleteRecursively()
         }

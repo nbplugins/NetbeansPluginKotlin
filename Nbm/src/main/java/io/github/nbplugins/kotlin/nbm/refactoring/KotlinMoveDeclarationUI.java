@@ -46,10 +46,8 @@ import org.openide.util.HelpCtx;
  *   <li>A "Target file name" text field pre-filled with the suggested file name.</li>
  * </ul>
  *
- * The target file is always created in the same directory as the source file (this plugin has no
- * source-root/package-directory picker yet — same tradeoff already accepted by Copy Declaration);
- * only the package *directive* changes, which is valid Kotlin (unlike Java, Kotlin does not
- * require a file's directory to match its package).
+ * The target file is created below the source file's source root in directories matching the
+ * selected package. A future source-root picker may allow choosing a different root.
  *
  * @param initialResult  the analysis result from {@link io.github.nbplugins.kotlin.refactoring.KaMoveDeclarationComputer}
  * @param refactoring    the carrier {@link KotlinMoveDeclarationRefactoring}
