@@ -102,12 +102,36 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
         val target = fixture.existing("Target.kt", "package target\n\nfun existing() = 1\n")
 
         fixture.transaction.captureExisting(target)
-        fixture.transaction.stageText(target, "package target\n\nfun moved() = 2\n")
+        fixture.transaction.stageText(target, "package target\n\nfun copied() = 2\n")
         fixture.transaction.commit()
         fixture.transaction.undo()
 
         assertTrue("pre-existing target must not be deleted", target.isValid())
         assertEquals("package target\n\nfun existing() = 1\n", fixture.text(target))
+    }
+
+    /** Verifies package rewriting uses physical line breaks rather than literal escape characters. */
+    fun testRewritePackage_insertsLineBreaks() {
+        val rewritten = KotlinCopyDeclarationApplyElement.rewritePackage(
+            "package source\n\nfun greet() = Unit\n",
+            "target",
+        )
+
+        assertEquals("package target\n\nfun greet() = Unit\n", rewritten)
+        assertFalse("package header must not contain literal backslash escapes", rewritten.contains("\\n"))
+    }
+
+    /** Verifies a Copy Declaration-style target seed is replaced atomically by its final text. */
+    fun testCommit_replacesCreatedTargetSeedWithCopiedDeclaration() {
+        val fixture = fixture()
+        val target = fixture.transaction.createFile(fixture.root, "Copied.kt", "package copied\n\n")
+
+        fixture.transaction.stageText(target, "package copied\n\nfun copied() = 1\n")
+        fixture.transaction.commit()
+
+        assertEquals("package copied\n\nfun copied() = 1\n", fixture.text(target))
+        fixture.transaction.undo()
+        assertFalse("undo must remove the created copied target", target.isValid())
     }
 
     /** Verifies a failure after an earlier write rolls back documents and deletes an owned target. */

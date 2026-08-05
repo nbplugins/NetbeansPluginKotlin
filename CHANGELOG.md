@@ -1,5 +1,6 @@
 # 0.11.36 (2026-08-01)
 
+- Improved Kotlin Copy Declaration: choose a target source root, package (including a new package), and filename; copying into a new target removes it on undo, while copying into an existing target restores that file's original contents; failed copies roll back their target changes.
 - Fixed Undo Last Refactoring for Kotlin Move Declaration across source and target files.
 - Added a Kotlin refactoring coverage matrix that tracks IntelliJ IDEA parity, tests, known limitations, and the planned work needed to complete each refactoring family.
 - Added **Push Members Down** for Kotlin: place the caret in a superclass or interface, invoke **Refactor → Push Members Down...** or press **Ctrl+Alt+O**, select members and optional per-member **Make Abstract** declarations, and push the selected members into every direct Kotlin subclass in the related build; the K2-backed operation formats every changed document and **Refactor → Undo Last Refactoring** restores all edited source and child files.

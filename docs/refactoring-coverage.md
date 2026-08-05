@@ -68,7 +68,7 @@ The corresponding record comments above are deliberately machine-readable. `Refa
 | `introduce-parameter` | Introduce Parameter | `Ctrl+Alt+P` | Partial | Change Signature pipeline updates callers; context parameters and adding an absent primary constructor remain. | F6 |
 | `introduce-functional-parameter` | Introduce Functional Parameter | `Ctrl+Alt+Shift+P` | Partial | K2 extraction/Change Signature path covers single expressions; multi-statement and idiomatic lambda cases remain. | F6 |
 | `move-declaration` | Move top-level declaration | Refactor → Move Declaration | Partial | Real K2 move/retargeting engine is used; source/target mutations now roll back atomically and support Undo Last Refactoring, while only top-level declarations are exposed. | F1 |
-| `copy-declaration` | Copy declaration | Refactor → Copy / F5 | Partial | Top-level copy and internal retargeting work; target selection and transaction semantics require consolidation. | F1 |
+| `copy-declaration` | Copy declaration | Refactor → Copy / F5 | Partial | Top-level copy supports selectable source-root/package targets, internal retargeting, atomic rollback, and Undo Last Refactoring; nested declarations and broader IDEA target workflows remain. | F1 |
 | `extract-interface-superclass` | Extract Interface / Superclass | Refactor menu | Partial | K2 Extract Super engine is wired; advanced constructors, generics and full conflicts remain. | F6 |
 | `pull-members-up` | Pull Members Up | `Ctrl+Alt+U` | Partial | Direct target-member conflicts work; project-index-based hierarchy, visibility and accidental-override checks remain. | F2 |
 | `push-members-down` | Push Members Down | `Ctrl+Alt+O` | Partial | Direct subclass mutation works; conflict discovery must be backed by project hierarchy search. | F2 |
@@ -107,7 +107,8 @@ The existing NetBeans tests are the initial executable sample set. They intentio
 | Extract Function with captured locals in top-level scope | `KaExtractFunctionTest` | Exact parity baseline |
 | Change Signature across declaration and separate call site | `KaChangeSignatureTest` | Exact parity baseline |
 | Inline Function from a call site with multiple usages | `KaInlineFunctionTest` | Exact parity baseline |
-| Move Declaration with external usage retargeting | `KaMoveDeclarationTest` | Exact parity baseline; undo is a known F1 gap |
+| Move Declaration with external usage retargeting | `KaMoveDeclarationTest` | Exact parity baseline; transactional source/target undo baseline |
+| Copy Declaration into new or existing target | `KaCopyDeclarationTest`, `KotlinRefactoringTransactionTest` | Transactional target creation/replacement and undo baseline |
 | Pull Members Up direct target collision | `KaPullMembersUpComputerTest` | Documented standalone limitation beyond direct collision |
 | Push Members Down into direct subclasses | `KaPushMembersDownComputerTest` | Documented standalone limitation: conflict scan is incomplete |
 | Introduce Type Alias on generic type text | `KaIntroduceTypeAliasTest` | Documented deviation: no generic type-parameter extraction |

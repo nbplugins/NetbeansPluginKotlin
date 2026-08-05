@@ -24,7 +24,8 @@ import javax.swing.text.StyledDocument
 /**
  * Carrier [AbstractRefactoring] for the Kotlin **Copy Declaration** refactoring.
  *
- * After the UI dialog is confirmed, [targetFileName] holds the path chosen by the user.
+ * After the UI dialog is confirmed, [targetRootPath], [targetPackage], and [targetFileName] hold
+ * the destination selected by the user.
  *
  * @param doc          the document containing the declaration
  * @param caretOffset  caret position within [doc]
@@ -34,9 +35,12 @@ class KotlinCopyDeclarationRefactoring(
     val caretOffset: Int,
 ) : AbstractRefactoring(Lookups.fixed(doc)) {
 
-    /**
-     * Target file name (just the simple name, e.g. `"Foo.kt"`) or a full path entered by the user
-     * in the dialog.  Set by [KotlinCopyDeclarationUI.setParameters].
-     */
+    /** Target source-root path selected in the dialog. */
+    var targetRootPath: String = ""
+
+    /** Target package (fully qualified, e.g. `"com.example.other"`). */
+    var targetPackage: String = ""
+
+    /** Target file name (just the simple name, e.g. `"Foo.kt"`). */
     var targetFileName: String = ""
 }

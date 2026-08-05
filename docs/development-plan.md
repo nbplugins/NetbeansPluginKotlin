@@ -811,6 +811,11 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
       (simpler than Move — no source-side import/reference updates)
     - Files: `KaCopyDeclarationComputer`, `KotlinCopyDeclaration{Refactoring,Plugin,UI}`;
       hooks into NB's built-in Copy action (F5), no new `Action` class needed
+    - The dialog selects a target source root, existing/new package, and target filename. Target
+      creation/replacement is staged through `KotlinRefactoringTransaction`: failed copies roll back
+      the target, and **Refactor → Undo Last Refactoring** removes a newly-created target or restores
+      a pre-existing target's exact original text. Whole-file copies update the selected package and
+      use IDEA's internal-usage retargeting pass before persistence.
 
   - [x] **E9.13** — Introduce Parameter (Ctrl+Alt+P) — PR #119
     - IDEA source ported verbatim: `introduceParameter/IntroduceParameterDescriptor.kt`
