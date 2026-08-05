@@ -234,15 +234,61 @@ class KaCopyDeclarationTest : KotlinTestCase("KaCopyDeclarationTest", "copyDecla
     }
 
     /**
-     * Integration test (real K2) for the multi-declaration **engine** path
-     * ([KaCopyDeclarationComputer.copyDeclarationInto], a port of IDEA's `doRefactoringOnElement`).
-     *
-     * The `multiDecl` fixture has two top-level functions, so copying `processFile` goes through the
-     * `K2MoveRenameUsageInfo` retargeting engine rather than a whole-file copy.  The test builds a
-     * source file and an (initially package-only) target file in the same temp source root, runs the
-     * engine, and verifies the copied declaration lands in the target file.  Faithful to IDEA, the
-     * element path does **not** synthesise imports, so we assert on the declaration, not the import.
+     * Integration test (real K2): a whole-file copy staged only in the session's in-memory document
+     * must retain its selected package, imports, and declaration through IDEA's retargeting pass.
      */
+    fun testSoleDeclaration_engineCopiesFileIntoDifferentPackage() {
+        val stdlib = System.getProperty("java.class.path")
+            .split(System.getProperty("path.separator"))
+            .map { Path.of(it) }
+            .firstOrNull { it.fileName?.toString()?.startsWith("kotlin-stdlib") == true && it.toFile().exists() }
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping whole-file copy test")
+                return
+            }
+        val tmpDir = Files.createTempDirectory("nbkotlin-copy-decl-package")
+        try {
+            val sourceDir = tmpDir.resolve("source")
+            val targetDir = tmpDir.resolve("target")
+            Files.createDirectories(sourceDir)
+            Files.createDirectories(targetDir)
+            val sourceFile = sourceDir.resolve("Source.kt")
+            Files.writeString(
+                sourceFile,
+                """
+                package copy.source
+
+                import java.io.File
+
+                fun process(file: File): String = file.name
+                """.trimIndent(),
+            )
+            val targetFile = targetDir.resolve("Copied.kt")
+            Files.writeString(targetFile, "package copy.target\n\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "copy-declaration-different-package",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(tmpDir),
+            )
+            val sourceKtFile = session.getKtFileForPath(sourceFile.toString())
+                ?: error("Failed to obtain source KtFile")
+            val copiedSource = Files.readString(sourceFile).replaceFirst("package copy.source", "package copy.target")
+            session.updateFileContent(targetFile.toString(), copiedSource)
+            val targetKtFile = session.getKtFileForPath(targetFile.toString())
+                ?: error("Failed to obtain target KtFile")
+
+            val copiedText = KaCopyDeclarationComputer(sourceKtFile, sourceKtFile.text.indexOf("process"))
+                .retargetCopiedFile(targetKtFile)
+
+            assertTrue("Expected selected target package, got: $copiedText", copiedText.contains("package copy.target"))
+            assertFalse("Source package must not remain in target, got: $copiedText", copiedText.contains("package copy.source"))
+            assertTrue("Expected copied declaration, got: $copiedText", copiedText.contains("fun process"))
+            assertTrue("Expected copied import, got: $copiedText", copiedText.contains("import java.io.File"))
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
     fun testMultiDeclaration_engineCopiesDeclaration() {
         val stdlib = System.getProperty("java.class.path")
             .split(System.getProperty("path.separator"))

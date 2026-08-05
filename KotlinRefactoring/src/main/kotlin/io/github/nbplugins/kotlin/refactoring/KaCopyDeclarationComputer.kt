@@ -145,6 +145,18 @@ class KaCopyDeclarationComputer(
         K2MoveRenameUsageInfo.retargetUsages(emptyList(), oldToNew, fromCopy = true)
         return copied
     }
+
+    /**
+     * Retargets references inside an already-copied complete source file using IDEA's whole-file
+     * Copy Declaration path.
+     *
+     * @param targetFile destination file whose text is a package-adjusted copy of this computer's source
+     * @return final target text ready to be committed through the NetBeans document transaction
+     */
+    fun retargetCopiedFile(targetFile: KtFile): String {
+        K2MoveRenameUsageInfo.retargetInternalUsagesForCopyFile(ktFile, targetFile)
+        return targetFile.text
+    }
 }
 
 /**

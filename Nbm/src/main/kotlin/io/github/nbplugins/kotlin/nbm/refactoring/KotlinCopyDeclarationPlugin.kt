@@ -116,7 +116,9 @@ class KotlinCopyDeclarationPlugin(
  *     engine ([io.github.nbplugins.kotlin.refactoring.KaCopyDeclarationComputer.copyDeclarationInto]
  *     → `K2MoveRenameUsageInfo`) copies the declaration and rebinds its internal usages on PSI.
  *
- * Undo deletes the created file.
+ * A [KotlinRefactoringTransaction] stages the target replacement, removes a newly-created target
+ * after a failed operation or undo, and restores an existing target exactly through Undo Last
+ * Refactoring.
  *
  * @param sourceFile   the file containing the declaration
  * @param nbProject    the NetBeans project
@@ -128,8 +130,8 @@ class KotlinCopyDeclarationApplyElement(
     private val refactoring: KotlinCopyDeclarationRefactoring,
 ) : SimpleRefactoringElementImplementation() {
 
-    /** The file created during [performChange], used by [undoChange] to delete it. */
-    private var createdFile: FileObject? = null
+    /** Successfully committed transaction, used to restore the target through [undoChange]. */
+    private var transaction: KotlinRefactoringTransaction? = null
 
     override fun getText(): String = "Copy declaration"
     override fun getDisplayText(): String = getText()
@@ -145,6 +147,7 @@ class KotlinCopyDeclarationApplyElement(
     } catch (_: Exception) { null }
 
     override fun performChange() {
+        var pendingTransaction: KotlinRefactoringTransaction? = null
         runCatching {
             val fo = ProjectUtils.getFileObjectForDocument(refactoring.doc) ?: return@runCatching
             val nbProject2 = ProjectUtils.getKotlinProjectForFileObject(fo) ?: return@runCatching
@@ -158,55 +161,75 @@ class KotlinCopyDeclarationApplyElement(
 
             val targetName = refactoring.targetFileName.ifBlank { result.suggestedFileName }
             val targetSimple = if (targetName.endsWith(".kt")) targetName else "$targetName.kt"
+            val packageTarget = KotlinPackageTarget(nbProject2, fo)
+            val targetPackage = refactoring.targetPackage.ifBlank { result.packageName }
+            val targetRoot = refactoring.targetRootPath.ifBlank { packageTarget.defaultRootPath }
+            val targetDirectory = packageTarget.resolveDirectory(targetRoot, targetPackage)
+                ?: error("Copy Declaration could not resolve target package '$targetPackage'.")
+            val packageLine = if (targetPackage.isNotEmpty()) "package $targetPackage\n\n" else ""
 
-            val parentDir = fo.parent ?: return@runCatching
-            val existingFo = parentDir.getFileObject(targetSimple)
-            val targetFo = existingFo ?: parentDir.createData(targetSimple)
-            createdFile = if (existingFo == null) targetFo else null
+            val currentTransaction = KotlinRefactoringTransaction()
+            pendingTransaction = currentTransaction
+            val existingTarget = targetDirectory.getFileObject(targetSimple)
+            val targetFo = existingTarget?.also { currentTransaction.captureExisting(it) }
+                ?: currentTransaction.createFile(targetDirectory, targetSimple, packageLine)
 
+            // The selected target must join the standalone K2 session before either IDEA copy path
+            // can update its package declaration and retarget internal references.
+            KotlinAnalysisAPISession.invalidate(nbProject2)
+            val session2 = KotlinAnalysisAPISession.getSession(nbProject2)
+            val sourceKtFile = session2.getKtFileForPath(fo.path)
+            val targetKtFile = session2.getKtFileForPath(targetFo.path)
+            check(sourceKtFile != null && targetKtFile != null) {
+                "Copy Declaration could not refresh Kotlin PSI for source or target."
+            }
+            val computer2 = KaCopyDeclarationComputer(sourceKtFile, refactoring.caretOffset)
             if (result.isSoleDeclarationInFile) {
-                // IDEA's doRefactoringOnFile path: the declaration is the only one in its file, so
-                // the whole file is copied verbatim — every import is preserved.
-                writeFile(targetFo, result.sourceFileText)
+                // Keep the copied text inside the current K2 session rather than rebuilding from
+                // disk: a staged editor-document edit is not necessarily flushed to disk yet.
+                session2.updateFileContent(targetFo.path, rewritePackage(result.sourceFileText, targetPackage))
+                val copiedTargetKtFile = session2.getKtFileForPath(targetFo.path)
+                    ?: error("Copy Declaration could not update copied target Kotlin PSI.")
+                currentTransaction.stageText(targetFo, computer2.retargetCopiedFile(copiedTargetKtFile))
             } else {
-                // IDEA's doRefactoringOnElement path: seed the target with the package directive,
-                // refresh the session so the new file joins the source module, then run the real
-                // K2 retargeting engine (markInternalUsages + retargetUsages) on PSI and persist
-                // the resulting file text.
-                val packageLine = if (result.packageName.isNotEmpty()) "package ${result.packageName}\n\n" else ""
-                writeFile(targetFo, packageLine)
-
-                KotlinAnalysisAPISession.invalidate(nbProject2)
-                val session2 = KotlinAnalysisAPISession.getSession(nbProject2)
-                val sourceKtFile = session2.getKtFileForPath(fo.path)
-                val targetKtFile = session2.getKtFileForPath(targetFo.path)
-                if (sourceKtFile != null && targetKtFile != null) {
-                    val computer2 = KaCopyDeclarationComputer(sourceKtFile, refactoring.caretOffset)
-                    val copied = computer2.copyDeclarationInto(targetKtFile)
-                    if (copied != null) {
-                        writeFile(targetFo, targetKtFile.text)
-                    }
+                checkNotNull(computer2.copyDeclarationInto(targetKtFile)) {
+                    "Copy Declaration engine did not produce a target declaration."
                 }
+                currentTransaction.stageText(targetFo, targetKtFile.text)
             }
 
-            KotlinAnalysisAPISession.invalidate(nbProject)
-        }.onFailure { e ->
-            KotlinLogger.INSTANCE.logException("KotlinCopyDeclarationApplyElement.performChange failed", e)
+            currentTransaction.commit()
+            transaction = currentTransaction
+            pendingTransaction = null
+        }.onFailure { error ->
+            KotlinLogger.INSTANCE.logException("KotlinCopyDeclarationApplyElement.performChange failed", error)
         }
+        runCatching { pendingTransaction?.rollback() }
+            .onFailure { KotlinLogger.INSTANCE.logException("KotlinCopyDeclarationApplyElement rollback failed", it) }
+        KotlinAnalysisAPISession.invalidate(nbProject)
     }
 
-    /** Overwrites [fo] with [content] (UTF-8). */
-    private fun writeFile(fo: FileObject, content: String) {
-        fo.getOutputStream().use { out ->
-            out.write(content.toByteArray(Charsets.UTF_8))
-        }
-    }
-
+    /** Restores an overwritten target or removes the target created by this refactoring. */
     override fun undoChange() {
         runCatching {
-            createdFile?.delete()
-            createdFile = null
+            transaction?.undo()
+            transaction = null
             KotlinAnalysisAPISession.invalidate(nbProject)
+        }.onFailure { error ->
+            KotlinLogger.INSTANCE.logException("KotlinCopyDeclarationApplyElement.undoChange failed", error)
+        }
+    }
+
+    internal companion object {
+        /** Replaces or adds the package directive before K2 retargets the copied file's references. */
+        internal fun rewritePackage(sourceText: String, targetPackage: String): String {
+            val packageDirective = Regex("^\\s*package\\s+[^\\s;]+\\s*(?:\\r?\\n)?", RegexOption.MULTILINE)
+            val header = if (targetPackage.isEmpty()) "" else "package $targetPackage\n\n"
+            return if (packageDirective.containsMatchIn(sourceText)) {
+                packageDirective.replaceFirst(sourceText, header)
+            } else {
+                header + sourceText
+            }
         }
     }
 }

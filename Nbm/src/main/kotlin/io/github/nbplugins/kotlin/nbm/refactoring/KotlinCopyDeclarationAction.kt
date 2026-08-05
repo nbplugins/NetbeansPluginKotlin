@@ -53,8 +53,12 @@ class KotlinCopyDeclarationAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABB
         runCatching {
             val result = resolveOutcome(doc, caretOffset) ?: return@runCatching
             val refactoring = KotlinCopyDeclarationRefactoring(doc, caretOffset)
+            val project = ProjectUtils.getKotlinProjectForFileObject(
+                ProjectUtils.getFileObjectForDocument(doc) ?: return@runCatching,
+            ) ?: ProjectUtils.getValidProject() ?: return@runCatching
+            val sourceFile = ProjectUtils.getFileObjectForDocument(doc) ?: return@runCatching
             UI.openRefactoringUI(
-                KotlinCopyDeclarationUI(result, refactoring),
+                KotlinCopyDeclarationUI(result, refactoring, KotlinPackageTarget(project, sourceFile)),
                 TopComponent.getRegistry().activated,
             )
         }.onFailure { e ->
