@@ -134,6 +134,50 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
         assertFalse("undo must remove the created copied target", target.isValid())
     }
 
+    /** Verifies a hunk writer preserves unrelated text and undo restores exact originals. */
+    fun testHunkCommitAndUndo_preservesUntouchedTextAndRestoresEveryDocument() {
+        val fixture = fixture()
+        val source = fixture.existing("Source.kt", "fun one() = 1\nodd  spacing\nfun two() = 2\n")
+        val target = fixture.existing("Target.kt", "fun target() = 3\n")
+
+        fixture.transaction.captureExisting(source)
+        fixture.transaction.captureExisting(target)
+        fixture.transaction.stageText(source, "fun one() = 10\nodd  spacing\nfun two() = 20\n", ::applyHunks)
+        fixture.transaction.stageText(target, "fun target() = 30\n", ::applyHunks)
+        fixture.transaction.commit()
+
+        assertEquals("fun one() = 10\nodd  spacing\nfun two() = 20\n", fixture.text(source))
+        assertEquals("fun target() = 30\n", fixture.text(target))
+        fixture.transaction.undo()
+        assertEquals("fun one() = 1\nodd  spacing\nfun two() = 2\n", fixture.text(source))
+        assertEquals("fun target() = 3\n", fixture.text(target))
+    }
+
+    /** Verifies a hunk writer failure rolls back an earlier document without touching later ones. */
+    fun testHunkCommitFailure_rollsBackEarlierDocumentAndSkipsLaterDocument() {
+        val fixture = fixture()
+        val source = fixture.existing("Source.kt", "fun source() = 1\n")
+        val failing = fixture.existing("Failing.kt", "fun failing() = 2\n")
+        val later = fixture.existing("Later.kt", "fun later() = 3\n")
+
+        fixture.transaction.captureExisting(source)
+        fixture.transaction.captureExisting(failing)
+        fixture.transaction.captureExisting(later)
+        fixture.transaction.stageText(source, "fun source() = 10\n", ::applyHunks)
+        fixture.transaction.stageText(failing, "fun failing() = 20\n") { _, _, _ -> error("Injected hunk failure") }
+        fixture.transaction.stageText(later, "fun later() = 30\n", ::applyHunks)
+
+        try {
+            fixture.transaction.commit()
+            fail("commit must fail when a hunk writer throws")
+        } catch (_: KotlinRefactoringTransaction.Failure) {
+            // Expected: every participant remains at its original text.
+        }
+        assertEquals("fun source() = 1\n", fixture.text(source))
+        assertEquals("fun failing() = 2\n", fixture.text(failing))
+        assertEquals("fun later() = 3\n", fixture.text(later))
+    }
+
     /** Verifies a failure after an earlier write rolls back documents and deletes an owned target. */
     fun testCommitFailure_rollsBackEarlierWritesAndDeletesCreatedFile() {
         var target: FileObject? = null
@@ -173,6 +217,17 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
         assertEquals("fun source() = 3\n", fixture.text(source))
         fixture.transaction.undo()
         assertEquals("fun source() = 1\n", fixture.text(source))
+    }
+
+    /** Applies the same descending minimal-hunk sequence used by multi-file refactorings. */
+    private fun applyHunks(document: StyledDocument, originalText: String, finalText: String) {
+        TextRangeDiff.computeHunks(originalText, finalText)
+            .sortedByDescending { it.oldStart }
+            .forEach { hunk ->
+                if (hunk.oldEnd > hunk.oldStart) document.remove(hunk.oldStart, hunk.oldEnd - hunk.oldStart)
+                val replacement = finalText.substring(hunk.newStart, hunk.newEnd)
+                if (replacement.isNotEmpty()) document.insertString(hunk.oldStart, replacement, null)
+            }
     }
 
     /** Test-only transaction collaborators. */

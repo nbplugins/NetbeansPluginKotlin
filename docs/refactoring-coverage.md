@@ -56,7 +56,7 @@ The corresponding record comments above are deliberately machine-readable. `Refa
 |---|---|---|---|---|---|
 | `rename` | Rename | Rename (`Alt+Shift+R`) | Partial | K2 declaration/reference rename and override cascade are covered; file/package/directory renames and IDEA automatic renamers remain. | F7 |
 | `safe-delete` | Safe Delete | Safe Delete (`Alt+Delete`) | Partial | Declaration usage check is available; IDEA supertype, type/value-argument, and Java-bridge cases remain. | F7 |
-| `change-signature` | Change Signature | `Ctrl+F6` | Partial | K2 signature engine handles calls, overrides, constructors, destructuring and operators; atomic rollback and a shared undo transaction are still missing. | F1 |
+| `change-signature` | Change Signature | `Ctrl+F6` | Partial | K2 signature engine handles calls, overrides, constructors, destructuring and operators; every touched document now commits or rolls back through one hunk-preserving transaction, while broader IDEA scenarios remain. | F1 |
 | `inline-variable-property` | Inline property | Inline (`Ctrl+Alt+N`) | Partial | IDEA code inliner backs `val`/property scenarios; broader `var`, receiver, comment and Java cases remain. | F3 |
 | `inline-function` | Inline function | Inline (`Ctrl+Alt+N`) | Partial | K2 engine supports named functions; complex callable-reference, recursion and Java cases need parity tests. | F3 |
 | `extract-function` | Extract Function | `Ctrl+Alt+M` | Partial | Real IDEA generator supports captured parameters, return values, multi-statements and scopes; control-flow, smart-cast, receiver and duplicate matrices remain. | F6 |
@@ -65,8 +65,8 @@ The corresponding record comments above are deliberately machine-readable. `Refa
 | `introduce-property` | Introduce Property | `Ctrl+Alt+F` | Partial | Class/constructor/companion targets work; delegated and complex receiver cases remain. | F6 |
 | `introduce-type-alias` | Introduce Type Alias | `Ctrl+Alt+Shift+A` | Partial | Simple alias extraction works; generic type parameter extraction is intentionally not implemented. | F3 |
 | `introduce-import-alias` | Introduce Import Alias | Refactor menu | Partial | Import/reference invocation and in-file replacements work; broader import edge cases remain. | F6 |
-| `introduce-parameter` | Introduce Parameter | `Ctrl+Alt+P` | Partial | Change Signature pipeline updates callers; context parameters and adding an absent primary constructor remain. | F6 |
-| `introduce-functional-parameter` | Introduce Functional Parameter | `Ctrl+Alt+Shift+P` | Partial | K2 extraction/Change Signature path covers single expressions; multi-statement and idiomatic lambda cases remain. | F6 |
+| `introduce-parameter` | Introduce Parameter | `Ctrl+Alt+P` | Partial | Change Signature pipeline updates callers through a transaction that rolls every touched file back on failure; context parameters and adding an absent primary constructor remain. | F6 |
+| `introduce-functional-parameter` | Introduce Functional Parameter | `Ctrl+Alt+Shift+P` | Partial | K2 extraction/Change Signature path covers single expressions with transactional multi-file persistence; multi-statement and idiomatic lambda cases remain. | F6 |
 | `move-declaration` | Move top-level declaration | Refactor → Move Declaration | Partial | Real K2 move/retargeting engine is used; source/target mutations now roll back atomically and support Undo Last Refactoring, while only top-level declarations are exposed. | F1 |
 | `copy-declaration` | Copy declaration | Refactor → Copy / F5 | Partial | Top-level copy supports selectable source-root/package targets, internal retargeting, atomic rollback, and Undo Last Refactoring; nested declarations and broader IDEA target workflows remain. | F1 |
 | `extract-interface-superclass` | Extract Interface / Superclass | Refactor menu | Partial | K2 Extract Super engine is wired; advanced constructors, generics and full conflicts remain. | F6 |

@@ -1,3 +1,5 @@
+- Improved Kotlin Change Signature, Introduce Parameter, and Introduce Functional Parameter: when updating any touched Kotlin file fails, all declaration and caller changes now roll back together while preserving formatting outside the changed hunks.
+
 # 0.11.36 (2026-08-01)
 
 - Improved Kotlin Copy Declaration: choose a target source root, package (including a new package), and filename; copying into a new target removes it on undo, while copying into an existing target restores that file's original contents; failed copies roll back their target changes.

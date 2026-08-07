@@ -755,9 +755,9 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
       reordered to preserve each variable's binding), enum entries without a super call, and
       conflict detection (duplicate parameter names rejected)
     - Parameter reordering in the dialog (toolbar buttons + drag-and-drop); real
-      `Refactor → Undo Last Refactoring` support (per-file snapshot/restore, not the "not
-      supported" stub Move Declaration uses); a multi-hunk diff (`TextRangeDiff`) reformats
-      only the actually-changed regions per file, not the whole file
+      `Refactor → Undo Last Refactoring` support through `KotlinRefactoringTransaction`, which
+      commits every touched document or restores all of them after a write failure; a multi-hunk
+      diff (`TextRangeDiff`) reformats only the actually-changed regions per file, not the whole file
     - Fixed a standalone-environment gap: `shortenReferences()` throws for *any* constructor
       after a structural parameter-list change (K2 can't resolve the constructor's FIR node
       post-replace, since this plugin's `NoOpPomModel` never fires a real out-of-block-
@@ -842,7 +842,9 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
       `KtClass` target with no primary constructor yet is out of scope (no "add one from
       scratch" path)
     - NetBeans adapter: `KaIntroduceParameterComputer` (`KotlinRefactoring`);
-      `KotlinIntroduceParameter{Refactoring,Plugin,UI,Action}` (`Nbm`)
+      `KotlinIntroduceParameter{Refactoring,Plugin,UI,Action}` (`Nbm`). Every changed declaration
+      and caller is staged through `KotlinRefactoringTransaction`, retaining hunk-only formatting
+      while rolling every file back if any persistence step fails.
 
   - [x] **E9.14** — Introduce Functional Parameter (Ctrl+Alt+Shift+P)
     - Not a flag on E9.13's computer (that description didn't match real IDEA): real IDEA's
@@ -874,7 +876,9 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
       `KotlinChangeSignatureUsageProcessor` pipeline, not new to this feature; call-site lambda
       arguments are inserted positionally, not as an idiomatic trailing lambda
     - NetBeans adapter: `KaIntroduceFunctionalParameterComputer` (`KotlinRefactoring`);
-      `KotlinIntroduceFunctionalParameter{Refactoring,Plugin,UI,Action}` (`Nbm`)
+      `KotlinIntroduceFunctionalParameter{Refactoring,Plugin,UI,Action}` (`Nbm`). Its declaration
+      and caller writes use the same hunk-preserving transaction and all-or-rollback failure contract
+      as Change Signature and Introduce Parameter.
     - layer.xml position 1175
 
   - [x] **E9.15** — Extract Interface — PR #121
