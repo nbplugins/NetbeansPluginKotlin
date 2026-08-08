@@ -117,11 +117,10 @@ class KotlinIntroduceParameterPlugin(
  * The single all-or-nothing refactoring element that adds the new parameter, updates every call
  * site, and replaces the chosen occurrences in the body.
  *
- * [KaIntroduceParameterComputer.apply] performs the entire in-memory PSI rewrite in one call,
- * returning a path→text map; this element then, per touched file, opens the live NetBeans
- * `Document` and applies only the changed hunks via [TextRangeDiff.computeHunks] — the same
- * multi-file, hunk-granular write strategy [KotlinChangeSignatureApplyElement] already uses (Change
- * Signature usage processing is exactly what backs the call-site updates here too).
+ * [KaIntroduceParameterComputer.apply] performs the entire in-memory PSI rewrite in one call and
+ * returns a path→text map. Every touched NetBeans document is captured before the hunk-only writes
+ * are staged through [KotlinRefactoringTransaction], so a failed participant restores every earlier
+ * declaration/caller change exactly while unrelated text remains untouched.
  *
  * @param callerFile the file the caret/selection was actually in (used to re-resolve the expression)
  * @param nbProject  the NetBeans project
@@ -146,91 +145,48 @@ class KotlinIntroduceParameterApplyElement(
         PositionBounds(start, end)
     } catch (_: Exception) { null }
 
-    /** Per-file pre-change text captured in [performChange], restored verbatim by [undoChange]. */
-    private val snapshots: MutableMap<FileObject, String> = mutableMapOf()
+    /** Successfully committed transaction, used to restore every touched document on undo. */
+    private var transaction: KotlinRefactoringTransaction? = null
 
-    /** Applies [refactoring]'s request via [KaIntroduceParameterComputer.apply] and writes every touched file. */
+    /** Applies the K2 result atomically while preserving hunk-only formatting. */
     override fun performChange() {
+        var pendingTransaction: KotlinRefactoringTransaction? = null
         runCatching {
             val request = refactoring.request ?: return@runCatching
             val session = KotlinAnalysisAPISession.getSession(nbProject)
             val callerKtFile = session.getKtFileForPath(callerFile.path) ?: return@runCatching
-
-            val computer = KaIntroduceParameterComputer(
+            val outcome = KaIntroduceParameterComputer(
                 callerKtFile, refactoring.startOffset, refactoring.endOffset, session.session.project,
-            )
-            when (val outcome = computer.apply(request)) {
-                is KaIntroduceParameterComputer.ApplyOutcome.Success -> {
-                    var succeeded = 0
-                    val failed = mutableListOf<String>()
-                    for ((path, newText) in outcome.fileTexts) {
-                        runCatching {
-                            val fo = FileUtil.toFileObject(FileUtil.normalizeFile(java.io.File(path))) ?: return@runCatching
-                            val doc = openDocument(fo) ?: return@runCatching
-                            val oldText = doc.getText(0, doc.length)
-                            snapshots[fo] = oldText
-                            val hunks = TextRangeDiff.computeHunks(oldText, newText).sortedByDescending { it.oldStart }
-                            NbDocument.runAtomicAsUser(doc) {
-                                for (hunk in hunks) {
-                                    if (hunk.oldEnd > hunk.oldStart) doc.remove(hunk.oldStart, hunk.oldEnd - hunk.oldStart)
-                                    val replacement = newText.substring(hunk.newStart, hunk.newEnd)
-                                    if (replacement.isNotEmpty()) doc.insertString(hunk.oldStart, replacement, null)
-                                    val formatEnd = hunk.oldStart + replacement.length
-                                    if (formatEnd > hunk.oldStart) {
-                                        runCatching { format(doc = doc, offset = hunk.oldStart, startOffset = hunk.oldStart, endOffset = formatEnd, proj = nbProject) }
-                                    }
-                                }
-                            }
-                            succeeded++
-                        }.onFailure { e ->
-                            failed += path
-                            KotlinLogger.INSTANCE.logException(
-                                "KotlinIntroduceParameterApplyElement: failed to write $path (${succeeded + failed.size}/${outcome.fileTexts.size} files processed so far)", e
-                            )
-                        }
-                    }
-                    if (failed.isNotEmpty()) {
-                        KotlinLogger.INSTANCE.logWarning(
-                            "KotlinIntroduceParameterApplyElement: $succeeded/${outcome.fileTexts.size} files written successfully; " +
-                                "failed: $failed — the refactoring is incomplete, use your VCS or Undo Last Refactoring to review/revert"
-                        )
-                    }
+            ).apply(request)
+            if (outcome is KaIntroduceParameterComputer.ApplyOutcome.Success) {
+                val currentTransaction = KotlinRefactoringTransaction()
+                pendingTransaction = currentTransaction
+                outcome.fileTexts.forEach { (path, text) ->
+                    val file = FileUtil.toFileObject(FileUtil.normalizeFile(java.io.File(path)))
+                        ?: error("Introduce Parameter could not resolve changed file $path.")
+                    currentTransaction.captureExisting(file)
+                    currentTransaction.stageHunkText(file, text, nbProject)
                 }
-                is KaIntroduceParameterComputer.ApplyOutcome.Conflicts -> {
-                    KotlinLogger.INSTANCE.logWarning(
-                        "KotlinIntroduceParameterApplyElement: change skipped, conflicts found: ${outcome.messages}"
-                    )
-                }
-                is KaIntroduceParameterComputer.ApplyOutcome.Error -> {
-                    KotlinLogger.INSTANCE.logException("KotlinIntroduceParameterApplyElement: apply failed", outcome.error)
-                }
+                currentTransaction.commit()
+                transaction = currentTransaction
+                pendingTransaction = null
+            } else if (outcome is KaIntroduceParameterComputer.ApplyOutcome.Conflicts) {
+                KotlinLogger.INSTANCE.logWarning("KotlinIntroduceParameterApplyElement: change skipped, conflicts found: ${outcome.messages}")
+            } else if (outcome is KaIntroduceParameterComputer.ApplyOutcome.Error) {
+                throw outcome.error
             }
-
-            KotlinAnalysisAPISession.invalidate(nbProject)
-        }.onFailure { e ->
-            KotlinLogger.INSTANCE.logException("KotlinIntroduceParameterApplyElement.performChange failed", e)
-        }
+        }.onFailure { KotlinLogger.INSTANCE.logException("KotlinIntroduceParameterApplyElement.performChange failed", it) }
+        runCatching { pendingTransaction?.rollback() }
+            .onFailure { KotlinLogger.INSTANCE.logException("KotlinIntroduceParameterApplyElement rollback failed", it) }
+        KotlinAnalysisAPISession.invalidate(nbProject)
     }
 
-    /** Restores every touched file verbatim from the snapshot captured in [performChange]. */
+    /** Restores every touched file exactly as it was before the committed refactoring. */
     override fun undoChange() {
         runCatching {
-            for ((fo, originalText) in snapshots) {
-                val doc = openDocument(fo) ?: continue
-                NbDocument.runAtomicAsUser(doc) {
-                    if (doc.length > 0) doc.remove(0, doc.length)
-                    doc.insertString(0, originalText, null)
-                }
-            }
+            transaction?.undo()
+            transaction = null
             KotlinAnalysisAPISession.invalidate(nbProject)
-        }.onFailure { e ->
-            KotlinLogger.INSTANCE.logException("KotlinIntroduceParameterApplyElement.undoChange failed", e)
-        }
+        }.onFailure { KotlinLogger.INSTANCE.logException("KotlinIntroduceParameterApplyElement.undoChange failed", it) }
     }
-
-    private fun openDocument(fo: FileObject): StyledDocument? = try {
-        val dob = DataObject.find(fo)
-        val ec = dob.lookup.lookup(EditorCookie::class.java) ?: return null
-        ec.openDocument()
-    } catch (_: Exception) { null }
 }

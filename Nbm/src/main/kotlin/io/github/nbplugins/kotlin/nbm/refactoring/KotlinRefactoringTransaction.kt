@@ -49,6 +49,7 @@ internal class KotlinRefactoringTransaction internal constructor(
         val originalText: String?,
         val document: StyledDocument,
         var stagedText: String? = null,
+        var stagedWriter: ((StyledDocument, String, String) -> Unit)? = null,
     )
 
     private val entries = linkedMapOf<FileObject, Entry>()
@@ -109,6 +110,28 @@ internal class KotlinRefactoringTransaction internal constructor(
     fun stageText(file: FileObject, text: String) {
         val entry = entries[file] ?: error("File was not captured by this transaction: ${file.path}")
         entry.stagedText = text
+        entry.stagedWriter = null
+    }
+
+    /**
+     * Stages [text] for [file] using [writer] instead of a whole-document replacement.
+     *
+     * The writer receives the immutable pre-transaction text and final text while [document] is
+     * still unchanged. It may apply minimal edits and scoped formatting, but a later rollback or
+     * undo always restores the exact original snapshot.
+     *
+     * @param file transaction participant to change
+     * @param text final document text
+     * @param writer atomic edit strategy for this participant
+     */
+    fun stageText(
+        file: FileObject,
+        text: String,
+        writer: (document: StyledDocument, originalText: String, finalText: String) -> Unit,
+    ) {
+        val entry = entries[file] ?: error("File was not captured by this transaction: ${file.path}")
+        entry.stagedText = text
+        entry.stagedWriter = writer
     }
 
     /**
@@ -128,7 +151,8 @@ internal class KotlinRefactoringTransaction internal constructor(
             }
             stagedEntries.forEach { entry ->
                 try {
-                    writeDocument(entry.file, entry.document, entry.stagedText!!)
+                    entry.stagedWriter?.invoke(entry.document, entry.originalText ?: "", entry.stagedText!!)
+                        ?: writeDocument(entry.file, entry.document, entry.stagedText!!)
                 } catch (error: Throwable) {
                     throw Failure(entry.file, error)
                 }
