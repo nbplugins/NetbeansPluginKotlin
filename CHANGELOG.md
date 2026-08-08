@@ -1,3 +1,4 @@
+- Improved Kotlin Extract Interface and Extract Superclass: source and target Kotlin files now roll back together if an update fails, generated supertypes remain correctly separated from existing target declarations, and Undo Last Refactoring precisely restores an existing target or removes a generated one.
 - Improved Kotlin Change Signature, Introduce Parameter, and Introduce Functional Parameter: when updating any touched Kotlin file fails, all declaration and caller changes now roll back together while preserving formatting outside the changed hunks.
 
 # 0.11.36 (2026-08-01)

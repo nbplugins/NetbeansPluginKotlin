@@ -110,6 +110,43 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
         assertEquals("package target\n\nfun existing() = 1\n", fixture.text(target))
     }
 
+    /** Verifies an Extract Super-style new target is removed while its source is restored by undo. */
+    fun testExtractSuperLifecycle_undoRestoresSourceAndDeletesCreatedTarget() {
+        val fixture = fixture()
+        val source = fixture.existing("Greeter.kt", "package sample\n\nclass Greeter\n")
+        val target = fixture.transaction.createFile(fixture.root, "IGreeter.kt", "package sample\n\n")
+
+        fixture.transaction.captureExisting(source)
+        fixture.transaction.stageText(source, "package sample\n\nclass Greeter : IGreeter\n")
+        fixture.transaction.stageText(target, "package sample\n\ninterface IGreeter\n")
+        fixture.transaction.commit()
+
+        assertEquals("package sample\n\nclass Greeter : IGreeter\n", fixture.text(source))
+        assertEquals("package sample\n\ninterface IGreeter\n", fixture.text(target))
+        fixture.transaction.undo()
+
+        assertEquals("package sample\n\nclass Greeter\n", fixture.text(source))
+        assertFalse("undo must remove the generated Extract Super target", target.isValid())
+    }
+
+    /** Verifies an Extract Super-style existing target is restored rather than deleted by undo. */
+    fun testExtractSuperLifecycle_undoRestoresExistingTarget() {
+        val fixture = fixture()
+        val source = fixture.existing("Greeter.kt", "package sample\n\nclass Greeter\n")
+        val target = fixture.existing("IGreeter.kt", "package sample\n\ninterface Existing\n")
+
+        fixture.transaction.captureExisting(source)
+        fixture.transaction.captureExisting(target)
+        fixture.transaction.stageText(source, "package sample\n\nclass Greeter : IGreeter\n")
+        fixture.transaction.stageText(target, "package sample\n\ninterface IGreeter\n")
+        fixture.transaction.commit()
+        fixture.transaction.undo()
+
+        assertEquals("package sample\n\nclass Greeter\n", fixture.text(source))
+        assertTrue("undo must retain the pre-existing Extract Super target", target.isValid())
+        assertEquals("package sample\n\ninterface Existing\n", fixture.text(target))
+    }
+
     /** Verifies package rewriting uses physical line breaks rather than literal escape characters. */
     fun testRewritePackage_insertsLineBreaks() {
         val rewritten = KotlinCopyDeclarationApplyElement.rewritePackage(

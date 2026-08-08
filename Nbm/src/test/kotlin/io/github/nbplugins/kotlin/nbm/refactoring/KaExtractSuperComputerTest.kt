@@ -115,6 +115,33 @@ class KaExtractSuperComputerTest : KotlinTestCase("KaExtractSuperComputerTest", 
         }
     }
 
+    /** Verifies an existing target keeps its final declaration separate from the extracted superclass. */
+    fun testApply_realSession_existingTargetSeparatesGeneratedSuperclass() {
+        val fixture = createExtractInterfaceFixture("package extractsuper.same\n\nfun unrelated(): Int = 42\n") ?: return
+        try {
+            val result = fixture.apply(
+                abstractMembers = false,
+                kind = ExtractSuperKind.SUPERCLASS,
+                name = "Existing",
+            )
+
+            assertTrue("Expected Extract Superclass to succeed, got $result", result is KaExtractSuperComputer.Apply.Success)
+            result as KaExtractSuperComputer.Apply.Success
+            assertTrue(
+                "Expected unrelated function and generated class to be separate declarations, got:\n${result.targetText}",
+                Regex("fun unrelated\\(\\): Int = 42\\R\\s*open class Existing").containsMatchIn(result.targetText),
+            )
+            val parsedTarget = KotlinFormatterUtils.createPsiFactory(project).createFile("Existing.kt", result.targetText)
+            val errors = PsiTreeUtil.collectElementsOfType(parsedTarget, PsiErrorElement::class.java)
+            assertTrue(
+                "Expected a syntactically valid existing target, got errors ${errors.map(PsiErrorElement::getErrorDescription)} in:\n${result.targetText}",
+                errors.isEmpty(),
+            )
+        } finally {
+            fixture.directory.toFile().deleteRecursively()
+        }
+    }
+
     /** Verifies that an extracted type in the source package is not rendered with a redundant FQ name. */
     fun testApply_realSession_samePackageUsesUnqualifiedSupertype() {
         val fixture = createExtractInterfaceFixture() ?: return
@@ -134,7 +161,9 @@ class KaExtractSuperComputerTest : KotlinTestCase("KaExtractSuperComputerTest", 
     }
 
     /** Creates a real standalone K2 source/target pair for Extract Interface integration tests. */
-    private fun createExtractInterfaceFixture(): ExtractInterfaceFixture? {
+    private fun createExtractInterfaceFixture(
+        targetText: String = "package extractsuper.same\n\n",
+    ): ExtractInterfaceFixture? {
         val stdlib = findKotlinStdlib() ?: run {
             println("kotlin-stdlib not on test classpath — skipping Extract Super integration test")
             return null
@@ -153,7 +182,7 @@ class KaExtractSuperComputerTest : KotlinTestCase("KaExtractSuperComputerTest", 
             }
             """.trimIndent(),
         )
-        Files.writeString(targetPath, "package extractsuper.same\n\n")
+        Files.writeString(targetPath, targetText)
 
         val session = KotlinAnalysisAPISession.createWithJars(
             moduleName = "extract-super-integration",
@@ -188,7 +217,11 @@ class KaExtractSuperComputerTest : KotlinTestCase("KaExtractSuperComputerTest", 
          * @param abstractMembers whether selected members should be abstract in the generated interface.
          * @return outcome from the copied IDEA K2 engine.
          */
-        fun apply(abstractMembers: Boolean = true): KaExtractSuperComputer.Apply {
+        fun apply(
+            abstractMembers: Boolean = true,
+            kind: ExtractSuperKind = ExtractSuperKind.INTERFACE,
+            name: String = "IGreeter",
+        ): KaExtractSuperComputer.Apply {
             val sourceClass = sourceFile.declarations
                 .filterIsInstance<org.jetbrains.kotlin.psi.KtClass>()
                 .single { it.name == "Greeter" }
@@ -199,11 +232,11 @@ class KaExtractSuperComputerTest : KotlinTestCase("KaExtractSuperComputerTest", 
             return KaExtractSuperComputer(sourceFile, sourceClass.textOffset).apply(
                 ExtractSuperRequest(
                     classOffset = sourceClass.textOffset,
-                    name = "IGreeter",
-                    kind = ExtractSuperKind.INTERFACE,
+                    name = name,
+                    kind = kind,
                     selectedOffsets = selectedOffsets,
                     abstractOffsets = if (abstractMembers) selectedOffsets else emptySet(),
-                    targetFileName = "IGreeter.kt",
+                    targetFileName = "$name.kt",
                     targetPackage = "extractsuper.same",
                 ),
                 targetFile,

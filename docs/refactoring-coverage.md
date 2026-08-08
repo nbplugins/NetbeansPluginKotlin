@@ -69,7 +69,7 @@ The corresponding record comments above are deliberately machine-readable. `Refa
 | `introduce-functional-parameter` | Introduce Functional Parameter | `Ctrl+Alt+Shift+P` | Partial | K2 extraction/Change Signature path covers single expressions with transactional multi-file persistence; multi-statement and idiomatic lambda cases remain. | F6 |
 | `move-declaration` | Move top-level declaration | Refactor → Move Declaration | Partial | Real K2 move/retargeting engine is used; source/target mutations now roll back atomically and support Undo Last Refactoring, while only top-level declarations are exposed. | F1 |
 | `copy-declaration` | Copy declaration | Refactor → Copy / F5 | Partial | Top-level copy supports selectable source-root/package targets, internal retargeting, atomic rollback, and Undo Last Refactoring; nested declarations and broader IDEA target workflows remain. | F1 |
-| `extract-interface-superclass` | Extract Interface / Superclass | Refactor menu | Partial | K2 Extract Super engine is wired; advanced constructors, generics and full conflicts remain. | F6 |
+| `extract-interface-superclass` | Extract Interface / Superclass | Refactor menu | Partial | K2 Extract Super engine atomically creates or restores its target together with the source, including Undo Last Refactoring; advanced constructors, generics and full conflicts remain. | F6 |
 | `pull-members-up` | Pull Members Up | `Ctrl+Alt+U` | Partial | Direct target-member conflicts work; project-index-based hierarchy, visibility and accidental-override checks remain. | F2 |
 | `push-members-down` | Push Members Down | `Ctrl+Alt+O` | Partial | Direct subclass mutation works; conflict discovery must be backed by project hierarchy search. | F2 |
 
