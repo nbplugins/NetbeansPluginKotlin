@@ -32,11 +32,9 @@ import org.netbeans.modules.refactoring.spi.RefactoringElementsBag
 import org.netbeans.modules.refactoring.spi.RefactoringPlugin
 import org.netbeans.modules.refactoring.spi.SimpleRefactoringElementImplementation
 import org.openide.filesystems.FileObject
-import org.openide.text.NbDocument
 import org.openide.text.PositionBounds
 import org.openide.util.Lookup
 import org.openide.util.lookup.Lookups
-import javax.swing.text.StyledDocument
 
 /** Shared NetBeans refactoring plugin for Extract Interface and Extract Superclass. */
 class KotlinExtractSuperPlugin(
@@ -78,7 +76,6 @@ class KotlinExtractSuperPlugin(
                         source,
                         project,
                         targetDirectory,
-                        refactoring.document,
                         refactoring.caretOffset,
                         refactoring::request,
                         label,
@@ -137,14 +134,12 @@ private class KotlinExtractSuperApplyElement(
     private val sourceFile: FileObject,
     private val project: org.netbeans.api.project.Project,
     private val targetDirectory: FileObject,
-    private val sourceDocument: StyledDocument,
     private val caretOffset: Int,
     private val requestProvider: () -> ExtractSuperRequest?,
     private val label: String,
 ) : SimpleRefactoringElementImplementation() {
-    private var sourceSnapshot: String? = null
-    private var targetSnapshot: String? = null
-    private var createdTarget: FileObject? = null
+    /** Successfully committed transaction, retained for Undo Last Refactoring. */
+    private var transaction: KotlinRefactoringTransaction? = null
 
     override fun getText(): String = label
     override fun getDisplayText(): String = label
@@ -152,56 +147,47 @@ private class KotlinExtractSuperApplyElement(
     override fun getParentFile(): FileObject = sourceFile
     override fun getPosition(): PositionBounds? = null
 
-    /** Creates the destination file, refreshes K2 PSI, and persists both IDEA-mutated files. */
+    /** Creates or captures the destination, runs K2, then commits source and target together. */
     override fun performChange() {
-        val request = requestProvider()
-            ?: throw IllegalStateException("$label has no validated request.")
-        val targetFileName = request.targetFileName.ensureKotlinExtension()
-        KotlinLogger.INSTANCE.logInfo(
-            "$label: apply start source=${sourceFile.path}, targetDirectory=${targetDirectory.path}, " +
-                "targetFile=$targetFileName, package=${request.targetPackage}, caret=$caretOffset, " +
-                "classOffset=${request.classOffset}, selected=${request.selectedOffsets}",
-        )
-        val preexistingTarget = targetDirectory.getFileObject(targetFileName)
-        val targetFile = preexistingTarget ?: targetDirectory.createData(targetFileName).also { createdTarget = it }
+        var pendingTransaction: KotlinRefactoringTransaction? = null
+        var targetPath = "<unresolved>"
         try {
+            val request = requestProvider()
+                ?: throw IllegalStateException("$label has no validated request.")
+            val targetFileName = request.targetFileName.ensureKotlinExtension()
+            KotlinLogger.INSTANCE.logInfo(
+                "$label: apply start source=${sourceFile.path}, targetDirectory=${targetDirectory.path}, " +
+                    "targetFile=$targetFileName, package=${request.targetPackage}, caret=$caretOffset, " +
+                    "classOffset=${request.classOffset}, selected=${request.selectedOffsets}",
+            )
+            val currentTransaction = KotlinRefactoringTransaction()
+            pendingTransaction = currentTransaction
+            currentTransaction.captureExisting(sourceFile)
+            val preexistingTarget = targetDirectory.getFileObject(targetFileName)
+            val targetFile = preexistingTarget?.also(currentTransaction::captureExisting)
+                ?: currentTransaction.createFile(targetDirectory, targetFileName, packageHeader(request.targetPackage))
+            targetPath = targetFile.path
             KotlinLogger.INSTANCE.logInfo(
                 "$label: target created=${preexistingTarget == null}, path=${targetFile.path}, valid=${targetFile.isValid}",
             )
-            if (preexistingTarget == null) {
-                val header = packageHeader(request.targetPackage)
-                targetFile.getOutputStream().use { output -> output.write(header.toByteArray()) }
-                KotlinLogger.INSTANCE.logInfo("$label: seeded target header=${header.replace("\n", "\\n")}")
-            }
-            targetSnapshot = preexistingTarget?.asText()
-            sourceSnapshot = sourceDocument.getText(0, sourceDocument.length)
 
-            KotlinLogger.INSTANCE.logInfo("$label: invalidating K2 session")
             KotlinAnalysisAPISession.invalidate(project)
             val session = KotlinAnalysisAPISession.getSession(project)
             val sourceKtFile = session.getKtFileForPath(sourceFile.path)
                 ?: throw IllegalStateException("$label could not refresh the source Kotlin PSI.")
             val targetKtFile = session.getKtFileForPath(targetFile.path)
                 ?: throw IllegalStateException("$label could not refresh the target Kotlin PSI.")
-            KotlinLogger.INSTANCE.logInfo(
-                "$label: refreshed PSI source=${sourceKtFile.virtualFile?.path}, target=${targetKtFile.virtualFile?.path}, " +
-                    "targetParent=${targetKtFile.parent?.javaClass?.name}",
-            )
             when (val result = KaExtractSuperComputer(sourceKtFile, caretOffset)
                 .apply(request.copy(targetFileName = targetFileName), targetKtFile)) {
                 is KaExtractSuperComputer.Apply.Success -> {
-                    KotlinLogger.INSTANCE.logInfo(
-                        "$label: IDEA engine success sourceLength=${result.sourceText.length}, " +
-                            "targetLength=${result.targetText.length}",
-                    )
-                    KotlinLogger.INSTANCE.logInfo("$label: raw target text:\n${result.targetText}")
                     val formattedSource = formatExtractSuperText(result.sourceText, sourceFile.nameExt, project)
                     val formattedTarget = formatExtractSuperText(result.targetText, targetFile.nameExt, project)
-                    KotlinLogger.INSTANCE.logInfo("$label: formatted target text:\n$formattedTarget")
                     logTargetSyntaxErrors(label, formattedTarget, project)
-                    replaceText(sourceDocument, formattedSource)
-                    targetFile.getOutputStream().use { output -> output.write(formattedTarget.toByteArray()) }
-                    KotlinAnalysisAPISession.invalidate(project)
+                    currentTransaction.stageText(sourceFile, formattedSource)
+                    currentTransaction.stageText(targetFile, formattedTarget)
+                    currentTransaction.commit()
+                    transaction = currentTransaction
+                    pendingTransaction = null
                     KotlinLogger.INSTANCE.logInfo("$label: apply complete targetExists=${targetFile.isValid}")
                 }
                 is KaExtractSuperComputer.Apply.Error -> throw result.error
@@ -209,35 +195,21 @@ private class KotlinExtractSuperApplyElement(
                     throw IllegalStateException("$label is no longer applicable at this caret location.")
             }
         } catch (error: Throwable) {
-            KotlinLogger.INSTANCE.logException("$label: apply failed; target=${targetFile.path}", error)
-            if (preexistingTarget == null && targetFile.isValid) {
-                targetFile.delete()
-                KotlinLogger.INSTANCE.logInfo("$label: removed failed target ${targetFile.path}")
-            }
-            throw error
+            KotlinLogger.INSTANCE.logException("$label: apply failed; target=$targetPath", error)
+        } finally {
+            runCatching { pendingTransaction?.rollback() }
+                .onFailure { KotlinLogger.INSTANCE.logException("$label: rollback failed", it) }
+            KotlinAnalysisAPISession.invalidate(project)
         }
     }
 
-    /** Restores both documents or removes the file that this operation created. */
+    /** Restores both source and target through the successful transaction snapshots. */
     override fun undoChange() {
         runCatching {
-            sourceSnapshot?.let { replaceText(sourceDocument, it) }
-            val target = createdTarget
-            if (target != null && target.isValid) target.delete()
-            else targetSnapshot?.let { original ->
-                val request = requestProvider() ?: return@let
-                targetDirectory.getFileObject(request.targetFileName.ensureKotlinExtension())?.getOutputStream()?.use {
-                    it.write(original.toByteArray())
-                }
-            }
+            transaction?.undo()
+            transaction = null
             KotlinAnalysisAPISession.invalidate(project)
         }.onFailure { error -> KotlinLogger.INSTANCE.logException("Undo $label failed", error) }
-    }
-
-    /** Replaces a document atomically so the source editor observes one coherent change. */
-    private fun replaceText(document: StyledDocument, text: String) = NbDocument.runAtomicAsUser(document) {
-        if (document.length > 0) document.remove(0, document.length)
-        document.insertString(0, text, null)
     }
 
     /** Creates the selected package directive when seeding a destination Kotlin file. */

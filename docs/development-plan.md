@@ -885,11 +885,13 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
     - IDEA source: `extractClass/K2ExtractSuperRefactoring.kt`.
     - Creates a new `interface` from selected members, adds `: Interface` to the class.
     - NetBeans dialog selects the interface name, members, source root, package, and target Kotlin file;
-      the copied K2 engine moves members and Undo Last Refactoring restores both files.
+      source and target are committed through `KotlinRefactoringTransaction`, so failed writes roll
+      both back and Undo Last Refactoring restores an existing target or removes a generated one.
 
   - [x] **E9.16** — Extract Superclass — PR #121
     - Reuses the E9.15 `K2ExtractSuperRefactoring` engine to create an `abstract class`.
-    - Dialog additionally supports making selected members abstract.
+    - Dialog additionally supports making selected members abstract and uses the same transactional
+      source/target persistence and undo behavior as Extract Interface.
 
   - [x] **E9.17** — Pull Members Up (Ctrl+Alt+U)
     - Reuses the copied IDEA K2 `PullUpProcessor` and registered `K2PullUpHelperFactory` to move
