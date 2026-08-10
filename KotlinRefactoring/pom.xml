@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.223-SNAPSHOT</version>
+    <version>0.11.225-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
@@ -1317,6 +1317,19 @@ if (k2PushDownProcessor.exists()) {
                         'callableSymbol.substitute(substitutor) as org.jetbrains.kotlin.analysis.api.signatures.KaCallableSignature<*>, ignoreReturnType = true')
     text = text.replace('substituted, ignoreReturnType = true',
                         'substituted as org.jetbrains.kotlin.analysis.api.signatures.KaCallableSignature<*>, ignoreReturnType = true')
+    // Removing `override` from an existing direct child's implementation makes the member final
+    // unless its previous implicit openness is preserved. A deeper child can still override it.
+    text = text.replace('''        if (memberContext.doesNotOverride) {
+            removeModifier(KtTokens.OVERRIDE_KEYWORD)
+        } else {''', '''        if (memberContext.doesNotOverride) {
+            if (hasModifier(KtTokens.OVERRIDE_KEYWORD) &&
+                !hasModifier(KtTokens.FINAL_KEYWORD) &&
+                !hasModifier(KtTokens.ABSTRACT_KEYWORD)
+            ) {
+                addModifier(KtTokens.OPEN_KEYWORD)
+            }
+            removeModifier(KtTokens.OVERRIDE_KEYWORD)
+        } else {''')
     text = text.replace('callableSymbol.asSignature(),',
                         'callableSymbol.asSignature() as org.jetbrains.kotlin.analysis.api.signatures.KaCallableSignature<*>,')
     pushDownFile.text = text

@@ -18,6 +18,10 @@ package io.github.nbplugins.kotlin.nbm.refactoring
 
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.KaPushMembersDownComputer
+import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
+import org.jetbrains.kotlin.analysis.api.analyze
+import org.jetbrains.kotlin.analysis.api.components.KaDiagnosticCheckerFilter
+import org.jetbrains.kotlin.analysis.api.diagnostics.KaSeverity
 import org.jetbrains.kotlin.psi.KtClass
 import utils.KotlinTestCase
 import java.nio.file.Files
@@ -41,6 +45,34 @@ class KaPushMembersDownComputerTest : KotlinTestCase("KaPushMembersDownComputerT
             val secondChild = fixture.session.getKtFileForPath(fixture.secondChildPath) ?: return
             assertTrue("First child must receive method:\n${firstChild.text}", firstChild.text.contains("fun greet(): String = \"hello\""))
             assertTrue("Second child must receive method:\n${secondChild.text}", secondChild.text.contains("fun greet(): String = \"hello\""))
+        } finally {
+            fixture.directory.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Keeps a pre-existing child implementation overridable after its source super member is removed.
+     *
+     * `override` makes a Kotlin member implicitly open. Push Down must therefore add explicit `open`
+     * when it removes that modifier from Middle's member while Leaf still overrides it.
+     */
+    fun testApply_existingOverrideBecomesOpenForTransitiveOverride() {
+        val fixture = createOverrideChainFixture() ?: return
+        try {
+            val computer = KaPushMembersDownComputer(fixture.sourceFile, fixture.root.textOffset)
+            val discovery = computer.discover() as? KaPushMembersDownComputer.Discovery.Ready ?: return
+            val ping = discovery.members.single { it.presentation.contains("ping") }
+
+            val result = computer.apply(setOf(ping.offset), emptySet())
+
+            assertTrue("Expected Push Members Down success, got $result", result is KaPushMembersDownComputer.Apply.Success)
+            assertFalse("Root member must be removed:\n${fixture.sourceFile.text}", fixture.sourceFile.text.contains("fun ping"))
+            val middle = fixture.session.getKtFileForPath(fixture.middlePath) ?: return
+            val leaf = fixture.session.getKtFileForPath(fixture.leafPath) ?: return
+            assertTrue("Middle must remain overridable:\n${middle.text}", middle.text.contains("open fun ping(): Int = 1"))
+            assertFalse("Middle must no longer override Root:\n${middle.text}", middle.text.contains("override fun ping"))
+            assertTrue("Leaf must retain its override:\n${leaf.text}", leaf.text.contains("override fun ping(): Int = 2"))
+            assertNoErrors(middle, leaf)
         } finally {
             fixture.directory.toFile().deleteRecursively()
         }
@@ -87,11 +119,54 @@ class KaPushMembersDownComputerTest : KotlinTestCase("KaPushMembersDownComputerT
         return Fixture(directory, session, sourceFile, base, basePath.toString(), firstChildPath.toString(), secondChildPath.toString())
     }
 
+    /** Creates a three-level override chain which must remain valid after Push Down. */
+    private fun createOverrideChainFixture(): OverrideChainFixture? {
+        val stdlib = findKotlinStdlib() ?: return null
+        val directory = Files.createTempDirectory("nbkotlin-push-members-down-overrides")
+        val rootPath = directory.resolve("Root.kt")
+        val middlePath = directory.resolve("Middle.kt")
+        val leafPath = directory.resolve("Leaf.kt")
+        Files.writeString(rootPath, "package pushdown\n\nopen class Root {\n    open fun ping(): Int = 0\n}\n")
+        Files.writeString(middlePath, "package pushdown\n\nopen class Middle : Root() {\n    override fun ping(): Int = 1\n}\n")
+        Files.writeString(leafPath, "package pushdown\n\nclass Leaf : Middle() {\n    override fun ping(): Int = 2\n}\n")
+        val session = KotlinAnalysisAPISession.createWithJars(
+            moduleName = "push-members-down-overrides",
+            binaryJars = listOf(stdlib),
+            sourceRoots = listOf(directory),
+        )
+        val sourceFile = session.getKtFileForPath(rootPath.toString()) ?: return null
+        val root = sourceFile.declarations.filterIsInstance<KtClass>().single { it.name == "Root" }
+        return OverrideChainFixture(directory, session, sourceFile, root, middlePath.toString(), leafPath.toString())
+    }
+
+    /** Verifies that the mutated override chain still has no compiler-level K2 errors. */
+    @OptIn(KaExperimentalApi::class)
+    private fun assertNoErrors(vararg files: org.jetbrains.kotlin.psi.KtFile) {
+        val errors = files.flatMap { file ->
+            analyze(file) {
+                file.collectDiagnostics(KaDiagnosticCheckerFilter.ONLY_COMMON_CHECKERS)
+                    .filter { it.severity == KaSeverity.ERROR }
+                    .map { it.factoryName }
+            }
+        }
+        assertTrue("Push Down must leave a compilable override chain, got: $errors", errors.isEmpty())
+    }
+
     /** Finds the standard library JAR required by standalone Analysis API fixture sessions. */
     private fun findKotlinStdlib(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))
         .map(Path::of)
         .firstOrNull { it.fileName?.toString()?.startsWith("kotlin-stdlib") == true && it.toFile().exists() }
+
+    /** Test fixture state retained for the transitive-override Push Down regression. */
+    private data class OverrideChainFixture(
+        val directory: Path,
+        val session: KotlinAnalysisAPISession,
+        val sourceFile: org.jetbrains.kotlin.psi.KtFile,
+        val root: KtClass,
+        val middlePath: String,
+        val leafPath: String,
+    )
 
     /** Test fixture state retained for one Push Members Down invocation. */
     private data class Fixture(
