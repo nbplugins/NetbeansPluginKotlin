@@ -1,0 +1,3 @@
+package hierarchySearch
+
+class CoverageFixture

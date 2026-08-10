@@ -669,9 +669,11 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
       resolves `Module.toKaSourceModuleContainingElement`/`getKaModuleOfTypeSafe` via
       `analyze(element) { useSiteModule }` instead of an IDE project-structure index lookup.
     - Hierarchy/inheritor search (`functionOverriddenInSubclassConflict`, `sealedClassesConflict`)
-      has no whole-project index standalone; consistent with the existing
-      `OverridingDeclarations.forEachOverridingElement` precedent (E8/E9 navigation), these checks
-      return no results rather than falsely flagging conflicts.
+      uses the standalone K2 build-session bridge: `KotlinStandaloneInheritorSearch` scans Kotlin
+      source files for inheritors and override chains, and the compatible
+      `OverridingDeclarations.forEachOverridingElement` / `KotlinSearchUsagesSupport` APIs expose
+      those results to copied IDEA code. Java/library results and full IDEA-index conflict coverage
+      remain unavailable.
     - `KotlinMoveUsageSearchService` (new interface in `KotlinRefactoring`, real impl
       `KotlinMoveUsageSearchServiceImpl` registered from `Nbm`'s `KotlinAnalysisAPISession`):
       whole-project external-usage search reusing the same file-iteration strategy as Find Usages

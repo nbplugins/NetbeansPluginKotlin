@@ -70,8 +70,8 @@ The corresponding record comments above are deliberately machine-readable. `Refa
 | `move-declaration` | Move top-level declaration | Refactor → Move Declaration | Partial | Real K2 move/retargeting engine is used; source/target mutations now roll back atomically and support Undo Last Refactoring, while only top-level declarations are exposed. | F1 |
 | `copy-declaration` | Copy declaration | Refactor → Copy / F5 | Partial | Top-level copy supports selectable source-root/package targets, internal retargeting, atomic rollback, and Undo Last Refactoring; nested declarations and broader IDEA target workflows remain. | F1 |
 | `extract-interface-superclass` | Extract Interface / Superclass | Refactor menu | Partial | K2 Extract Super engine atomically creates or restores its target together with the source, including Undo Last Refactoring; advanced constructors, generics and full conflicts remain. | F6 |
-| `pull-members-up` | Pull Members Up | `Ctrl+Alt+U` | Partial | Direct target-member conflicts work; project-index-based hierarchy, visibility and accidental-override checks remain. | F2 |
-| `push-members-down` | Push Members Down | `Ctrl+Alt+O` | Partial | Direct subclass mutation works; conflict discovery must be backed by project hierarchy search. | F2 |
+| `pull-members-up` | Pull Members Up | `Ctrl+Alt+U` | Partial | Build-wide K2 hierarchy discovery covers Kotlin override chains; visibility, accidental-override, Java and full IDEA-index conflict checks remain. | F2 |
+| `push-members-down` | Push Members Down | `Ctrl+Alt+O` | Partial | Build-wide K2 direct-subclass discovery works; visibility, accidental-override, Java and full IDEA-index conflict checks remain. | F2 |
 
 ## Absent IDEA families
 
@@ -110,7 +110,8 @@ The existing NetBeans tests are the initial executable sample set. They intentio
 | Move Declaration with external usage retargeting | `KaMoveDeclarationTest` | Exact parity baseline; transactional source/target undo baseline |
 | Copy Declaration into new or existing target | `KaCopyDeclarationTest`, `KotlinRefactoringTransactionTest` | Transactional target creation/replacement and undo baseline |
 | Pull Members Up direct target collision | `KaPullMembersUpComputerTest` | Documented standalone limitation beyond direct collision |
-| Push Members Down into direct subclasses | `KaPushMembersDownComputerTest` | Documented standalone limitation: conflict scan is incomplete |
+| Push Members Down into direct subclasses | `KaPushMembersDownComputerTest` | Build-wide Kotlin hierarchy baseline; advanced conflict scan remains incomplete |
+| Standalone K2 override/super-method bridge | `KotlinStandaloneHierarchySearchTest` | Build-wide Kotlin hierarchy baseline; Java and full IDEA-index coverage remain incomplete |
 | Introduce Type Alias on generic type text | `KaIntroduceTypeAliasTest` | Documented deviation: no generic type-parameter extraction |
 
 When a future port changes a row from Partial to Complete, it must add or strengthen the relevant compatibility fixture before changing this matrix status.
