@@ -309,14 +309,13 @@ class KaIntroduceTypeAliasTest : KotlinTestCase("KaIntroduceTypeAliasTest", "int
     }
 
     /**
-     * A non-empty editor selection ends immediately after its last selected character. The action
-     * must therefore pass its start offset to the computer: the start of `List<String>` is valid,
-     * while its exclusive end is outside the type reference.
+     * A complete type selection must be passed to the computer from its start offset while retaining
+     * its bounds. The selection means the concrete `List<String>`, not its generic constructor.
      */
-    fun testGenericType_selectionStartIsApplicableButExclusiveEndIsNot() {
+    fun testGenericType_completeSelectionExtractsConcreteAlias() {
         val triple = prepareWithRealSession("genericSubstitutions")
             ?: run {
-                println("kotlin-stdlib not on test classpath — skipping selection offset test")
+                println("kotlin-stdlib not on test classpath — skipping complete-selection test")
                 return
             }
         val (_, ktFile, tmpDir) = triple
@@ -326,12 +325,20 @@ class KaIntroduceTypeAliasTest : KotlinTestCase("KaIntroduceTypeAliasTest", "int
             assertTrue("Expected List<String> in the generic fixture", selectionStart >= 0)
             val selectionEnd = selectionStart + "List<String>".length
 
-            val startOutcome = KaIntroduceTypeAliasComputer(ktFile, selectionStart).compute()
-            assertTrue("Selection start should resolve to List<String>, got $startOutcome", startOutcome is KaIntroduceTypeAliasComputer.Outcome.Ready)
+            val outcome = KaIntroduceTypeAliasComputer(
+                ktFile,
+                selectionStart,
+                TextRange(selectionStart, selectionEnd),
+            ).compute()
+            assertTrue("Expected Ready for selected List<String>, got $outcome", outcome is KaIntroduceTypeAliasComputer.Outcome.Ready)
+            val result = (outcome as KaIntroduceTypeAliasComputer.Outcome.Ready).result
+
+            assertEquals("Expected the complete concrete alias body", "List<String>", result.aliasTypeText)
+            assertEquals("A complete selected type must have no alias parameters", emptyList<String>(), result.typeParameterNames)
             assertEquals(
-                "Selection start should yield the parameterized alias body",
-                "List<T>",
-                (startOutcome as KaIntroduceTypeAliasComputer.Outcome.Ready).result.aliasTypeText,
+                "Only identical List<String> occurrences should be replaced",
+                listOf("StringList", "StringList"),
+                result.occurrenceReplacements.map { it.replacementText },
             )
 
             val endOutcome = KaIntroduceTypeAliasComputer(ktFile, selectionEnd).compute()
@@ -341,21 +348,23 @@ class KaIntroduceTypeAliasTest : KotlinTestCase("KaIntroduceTypeAliasTest", "int
         }
     }
 
-    /**
-     * A generic selection must abstract its concrete argument into a type parameter instead of
-     * embedding `String` in the alias body. The same structural type at another use site must keep
-     * that site's own argument when it is replaced.
-     */
-    fun testGenericType_withRealSession_extractsParameterAndSubstitutesOccurrences() {
+    /** Selecting only `List` extracts its type constructor and preserves each occurrence's arguments. */
+    fun testGenericType_constructorSelectionExtractsParameterAndSubstitutesOccurrences() {
         val triple = prepareWithRealSession("genericSubstitutions")
             ?: run {
-                println("kotlin-stdlib not on test classpath — skipping generic extraction test")
+                println("kotlin-stdlib not on test classpath — skipping constructor-selection test")
                 return
             }
-        val (computer, _, tmpDir) = triple
+        val (_, ktFile, tmpDir) = triple
         try {
-            val outcome = computer.compute()
-            assertTrue("Expected Ready for List<String>, got $outcome", outcome is KaIntroduceTypeAliasComputer.Outcome.Ready)
+            val constructorStart = ktFile.text.indexOf("List<String>")
+            assertTrue("Expected List<String> in the generic fixture", constructorStart >= 0)
+            val outcome = KaIntroduceTypeAliasComputer(
+                ktFile,
+                constructorStart,
+                TextRange(constructorStart, constructorStart + "List".length),
+            ).compute()
+            assertTrue("Expected Ready for selected List constructor, got $outcome", outcome is KaIntroduceTypeAliasComputer.Outcome.Ready)
             val result = (outcome as KaIntroduceTypeAliasComputer.Outcome.Ready).result
 
             assertEquals("Expected the generic alias body", "List<T>", result.aliasTypeText)
@@ -370,20 +379,43 @@ class KaIntroduceTypeAliasTest : KotlinTestCase("KaIntroduceTypeAliasTest", "int
         }
     }
 
-    /**
-     * Nested generic arguments must be abstracted recursively, while each compatible occurrence
-     * supplies its own replacement arguments in the same traversal order.
-     */
-    fun testNestedGenericType_withRealSession_extractsNestedParameters() {
-        val triple = prepareWithRealSession("nestedGeneric")
+    /** A caret inside a generic type aliases the complete concrete type unless a constructor is selected. */
+    fun testGenericType_caretExtractsConcreteAlias() {
+        val triple = prepareWithRealSession("genericSubstitutions")
             ?: run {
-                println("kotlin-stdlib not on test classpath — skipping nested generic extraction test")
+                println("kotlin-stdlib not on test classpath — skipping caret semantics test")
                 return
             }
         val (computer, _, tmpDir) = triple
         try {
             val outcome = computer.compute()
-            assertTrue("Expected Ready for List<Map<String, Int>>, got $outcome", outcome is KaIntroduceTypeAliasComputer.Outcome.Ready)
+            assertTrue("Expected Ready for List<String>, got $outcome", outcome is KaIntroduceTypeAliasComputer.Outcome.Ready)
+            val result = (outcome as KaIntroduceTypeAliasComputer.Outcome.Ready).result
+
+            assertEquals("Expected a concrete alias body at caret", "List<String>", result.aliasTypeText)
+            assertEquals("Expected no extracted type parameters at caret", emptyList<String>(), result.typeParameterNames)
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /** Constructor selection recursively abstracts nested generic leaves. */
+    fun testNestedGenericType_constructorSelectionExtractsNestedParameters() {
+        val triple = prepareWithRealSession("nestedGeneric")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping nested constructor-selection test")
+                return
+            }
+        val (_, ktFile, tmpDir) = triple
+        try {
+            val constructorStart = ktFile.text.indexOf("List<Map<String, Int>>")
+            assertTrue("Expected nested List in fixture", constructorStart >= 0)
+            val outcome = KaIntroduceTypeAliasComputer(
+                ktFile,
+                constructorStart,
+                TextRange(constructorStart, constructorStart + "List".length),
+            ).compute()
+            assertTrue("Expected Ready for selected List constructor, got $outcome", outcome is KaIntroduceTypeAliasComputer.Outcome.Ready)
             val result = (outcome as KaIntroduceTypeAliasComputer.Outcome.Ready).result
 
             assertEquals("Expected recursively parameterized alias body", "List<Map<T, U>>", result.aliasTypeText)
@@ -403,20 +435,24 @@ class KaIntroduceTypeAliasTest : KotlinTestCase("KaIntroduceTypeAliasTest", "int
         }
     }
 
-    /**
-     * Qualified generic user types must retain their full qualifier path while parameterizing the
-     * type arguments owned by every segment of that path.
-     */
-    fun testQualifiedGenericType_withRealSession_preservesQualifierStructure() {
+    /** Constructor selection retains a qualified user-type path while parameterizing every segment. */
+    fun testQualifiedGenericType_constructorSelectionPreservesQualifierStructure() {
         val triple = prepareWithRealSession("qualifiedGeneric")
             ?: run {
-                println("kotlin-stdlib not on test classpath — skipping qualified generic extraction test")
+                println("kotlin-stdlib not on test classpath — skipping qualified constructor-selection test")
                 return
             }
-        val (computer, _, tmpDir) = triple
+        val (_, ktFile, tmpDir) = triple
         try {
-            val outcome = computer.compute()
-            assertTrue("Expected Ready for Outer<String>.Inner<Int>, got $outcome", outcome is KaIntroduceTypeAliasComputer.Outcome.Ready)
+            val fullTypeStart = ktFile.text.indexOf("Outer<String>.Inner<Int>")
+            assertTrue("Expected qualified type in fixture", fullTypeStart >= 0)
+            val constructorStart = fullTypeStart + "Outer<String>.".length
+            val outcome = KaIntroduceTypeAliasComputer(
+                ktFile,
+                constructorStart,
+                TextRange(constructorStart, constructorStart + "Inner".length),
+            ).compute()
+            assertTrue("Expected Ready for selected Inner constructor, got $outcome", outcome is KaIntroduceTypeAliasComputer.Outcome.Ready)
             val result = (outcome as KaIntroduceTypeAliasComputer.Outcome.Ready).result
 
             assertEquals("Expected parameterized qualified alias body", "Outer<T>.Inner<U>", result.aliasTypeText)

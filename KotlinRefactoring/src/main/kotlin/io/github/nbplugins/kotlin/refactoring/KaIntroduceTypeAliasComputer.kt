@@ -122,7 +122,6 @@ class KaIntroduceTypeAliasComputer(
         CONCRETE_TYPE,
         TYPE_CONSTRUCTOR,
     }
-    }
 
     /** Validates that every user type within [typeRef] remains accessible to a top-level alias. */
     context(_: org.jetbrains.kotlin.analysis.api.KaSession)
@@ -131,7 +130,7 @@ class KaIntroduceTypeAliasComputer(
             (typeRef.typeElement as? KtUserType)?.let(::add)
             addAll(typeRef.collectDescendantsOfType<KtUserType>())
         }
-        userTypes.forEach(::validateAliasScope)
+        userTypes.forEach { validateAliasScope(it) }
         if (typeRef.containsStarProjection()) {
             throw UnsupportedTypeAlias("Introduce Type Alias does not support star projections")
         }
@@ -240,15 +239,17 @@ class KaIntroduceTypeAliasComputer(
         extractionMode: ExtractionMode,
         genericShape: GenericShape?,
         suggestedName: String,
-    ): String? = when (extractionMode) {
-        ExtractionMode.CONCRETE_TYPE -> suggestedName.takeIf { candidate.text.trim() == origin.text.trim() }
-        ExtractionMode.TYPE_CONSTRUCTOR -> {
-            val shape = genericShape ?: return null
-            val originUserType = origin.typeElement as? KtUserType ?: return null
-            val candidateUserType = candidate.typeElement as? KtUserType ?: return null
-            val arguments = collectSubstitutionArguments(originUserType, candidateUserType) ?: return null
-            if (arguments.size != shape.parameterNames.size) return null
-            "$suggestedName<${arguments.joinToString(", ")}>"
+    ): String? {
+        return when (extractionMode) {
+            ExtractionMode.CONCRETE_TYPE -> suggestedName.takeIf { candidate.text.trim() == origin.text.trim() }
+            ExtractionMode.TYPE_CONSTRUCTOR -> {
+                val shape = genericShape ?: return null
+                val originUserType = origin.typeElement as? KtUserType ?: return null
+                val candidateUserType = candidate.typeElement as? KtUserType ?: return null
+                val arguments = collectSubstitutionArguments(originUserType, candidateUserType) ?: return null
+                if (arguments.size != shape.parameterNames.size) return null
+                "$suggestedName<${arguments.joinToString(", ")}>"
+            }
         }
     }
 
