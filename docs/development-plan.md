@@ -804,7 +804,9 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
   - [x] **E9.12** — Introduce Type Alias (Ctrl+Alt+Shift+A) — PR #109
     - IDEA source: `introduceTypeAlias/KotlinIntroduceTypeAliasHandler.kt`
     - Target: type reference (not expression) → `typealias Name = Type`; visibility combo,
-      replace-all-occurrences, type parameters when the source type is generic
+      replace-all-occurrences, and K2-backed same-file generic extraction with nested/qualified
+      type-argument substitutions; star projections, local type parameters, class-body targets,
+      expressions, and project-wide duplicate search remain unsupported
     - Files: `KaIntroduceTypeAliasComputer`, `KotlinIntroduceTypeAlias{Refactoring,Plugin,UI,Action}`
 
   - [x] **E9.19** — Copy Declaration (F5) — PR #109

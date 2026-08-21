@@ -1,0 +1,5 @@
+package introduceTypeAlias.nestedGeneric
+
+fun strings(values: <caret>List<Map<String, Int>>): List<Map<String, Int>> = values
+
+fun booleans(values: List<Map<Boolean, Long>>): List<Map<Boolean, Long>> = values

@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.225-SNAPSHOT</version>
+    <version>0.11.227-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
@@ -285,6 +285,27 @@
                     <include>org/jetbrains/kotlin/idea/k2/refactoring/introduce/K2SemanticMatcher.kt</include>
                     <include>org/jetbrains/kotlin/idea/k2/refactoring/introduce/K2ExtractableSubstringInfo.kt</include>
                     <!-- utils.kt excluded: local stub in src/main/kotlin (avoids IDE-specific analyzeInModalWindow/Messages deps) -->
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <!-- kotlin.refactorings.k2/introduceTypeAlias: generic extraction model and K2 analysis.
+               The action handler and Swing dialog remain in Nbm; these copied sources supply only
+               IDEA's descriptor/type-parameter analysis used by KaIntroduceTypeAliasComputer. -->
+          <execution>
+            <id>copy-kotlin-refactoring-k2-introduce-type-alias</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/refactoring</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/introduceTypeAlias/extractionModel.kt</include>
                   </includes>
                 </resource>
               </resources>
