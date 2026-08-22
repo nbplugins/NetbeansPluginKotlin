@@ -164,6 +164,30 @@ class KotlinNameSuggester(
 
     companion object {
         /**
+         * Suggests distinct conventional names for extracted type parameters.
+         *
+         * The full IDEA implementation uses richer context-sensitive naming. Standalone
+         * refactorings only need stable, valid defaults for the K2 Introduce Type Alias model.
+         *
+         * @param count number of type parameter names to produce
+         * @param validator returns `true` when a candidate is available
+         * @return exactly [count] distinct accepted names
+         */
+        fun suggestNamesForTypeParameters(count: Int, validator: (String) -> Boolean): List<String> {
+            val names = ArrayList<String>(count)
+            val bases = listOf("T", "U", "V", "W", "X", "Y", "Z")
+            var attempt = 0
+            while (names.size < count) {
+                val base = bases[attempt % bases.size]
+                val suffix = attempt / bases.size
+                val candidate = if (suffix == 0) base else "$base$suffix"
+                attempt++
+                if (validator(candidate)) names += candidate
+            }
+            return names
+        }
+
+        /**
          * Suggests a type alias name derived from the PSI structure of [typeElement].
          *
          * Ported verbatim from `KotlinNameSuggester.suggestTypeAliasNameByPsi` in

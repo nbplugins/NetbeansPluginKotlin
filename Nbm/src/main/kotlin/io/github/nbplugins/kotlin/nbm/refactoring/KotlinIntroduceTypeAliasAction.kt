@@ -20,6 +20,7 @@ package io.github.nbplugins.kotlin.nbm.refactoring
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.KaIntroduceTypeAliasComputer
 import io.github.nbplugins.kotlin.refactoring.KaIntroduceTypeAliasResult
+import com.intellij.openapi.util.TextRange
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.editor.BaseAction
@@ -34,8 +35,10 @@ import javax.swing.text.StyledDocument
  *
  * Registered under action name [ACTION_NAME] in `layer.xml` for `text/x-kotlin`.
  *
- * The action validates that the caret is on a type reference via [KaIntroduceTypeAliasComputer]
- * before opening the dialog.
+ * The action validates the caret location, or a non-empty editor selection, via
+ * [KaIntroduceTypeAliasComputer] before opening the dialog. The selection range is retained so
+ * selecting a complete type extracts that concrete type, while selecting its constructor extracts
+ * a generic alias.
  */
 class KotlinIntroduceTypeAliasAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBREV_RESET) {
 
@@ -47,11 +50,14 @@ class KotlinIntroduceTypeAliasAction : BaseAction(ACTION_NAME, SAVE_POSITION or 
 
     override fun actionPerformed(evt: ActionEvent, target: JTextComponent) {
         val doc = target.document as? StyledDocument ?: return
-        val caretOffset = target.caretPosition
+        val selectionStart = target.selectionStart
+        val selectionRange = TextRange(selectionStart, target.selectionEnd)
+            .takeIf { !it.isEmpty }
+        val triggerOffset = selectionRange?.startOffset ?: target.caretPosition
 
         runCatching {
-            val result = resolveOutcome(doc, caretOffset) ?: return@runCatching
-            val refactoring = KotlinIntroduceTypeAliasRefactoring(doc, caretOffset)
+            val result = resolveOutcome(doc, triggerOffset, selectionRange) ?: return@runCatching
+            val refactoring = KotlinIntroduceTypeAliasRefactoring(doc, triggerOffset, selectionRange)
             UI.openRefactoringUI(
                 KotlinIntroduceTypeAliasUI(result, refactoring),
                 TopComponent.getRegistry().activated,
@@ -67,7 +73,11 @@ class KotlinIntroduceTypeAliasAction : BaseAction(ACTION_NAME, SAVE_POSITION or 
      *
      * @return [KaIntroduceTypeAliasResult] if applicable, `null` otherwise
      */
-    private fun resolveOutcome(doc: StyledDocument, caretOffset: Int): KaIntroduceTypeAliasResult? {
+    private fun resolveOutcome(
+        doc: StyledDocument,
+        caretOffset: Int,
+        selectionRange: TextRange?,
+    ): KaIntroduceTypeAliasResult? {
         val fo = ProjectUtils.getFileObjectForDocument(doc) ?: return null
         val project = ProjectUtils.getKotlinProjectForFileObject(fo)
             ?: ProjectUtils.getValidProject()
@@ -75,7 +85,7 @@ class KotlinIntroduceTypeAliasAction : BaseAction(ACTION_NAME, SAVE_POSITION or 
         return runCatching {
             val session = KotlinAnalysisAPISession.getSession(project)
             val ktFile = session.getKtFileForPath(fo.path) ?: return@runCatching null
-            val computer = KaIntroduceTypeAliasComputer(ktFile, caretOffset)
+            val computer = KaIntroduceTypeAliasComputer(ktFile, caretOffset, selectionRange)
             when (val outcome = computer.compute()) {
                 is KaIntroduceTypeAliasComputer.Outcome.Ready -> outcome.result
                 else -> null

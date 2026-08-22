@@ -17,6 +17,7 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.refactoring
 
+import com.intellij.openapi.util.TextRange
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.KaIntroduceTypeAliasComputer
 import io.github.nbplugins.kotlin.refactoring.KaIntroduceTypeAliasResult
@@ -302,6 +303,206 @@ class KaIntroduceTypeAliasTest : KotlinTestCase("KaIntroduceTypeAliasTest", "int
                 "Expected ≥2 'String' type references in simpleType fixture, got ${result.occurrenceRanges.size}",
                 result.occurrenceRanges.size >= 2,
             )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * A complete type selection must be passed to the computer from its start offset while retaining
+     * its bounds. The selection means the concrete `List<String>`, not its generic constructor.
+     */
+    fun testGenericType_completeSelectionExtractsConcreteAlias() {
+        val triple = prepareWithRealSession("genericSubstitutions")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping complete-selection test")
+                return
+            }
+        val (_, ktFile, tmpDir) = triple
+        try {
+            val source = ktFile.text
+            val selectionStart = source.indexOf("List<String>")
+            assertTrue("Expected List<String> in the generic fixture", selectionStart >= 0)
+            val selectionEnd = selectionStart + "List<String>".length
+
+            val outcome = KaIntroduceTypeAliasComputer(
+                ktFile,
+                selectionStart,
+                TextRange(selectionStart, selectionEnd),
+            ).compute()
+            assertTrue("Expected Ready for selected List<String>, got $outcome", outcome is KaIntroduceTypeAliasComputer.Outcome.Ready)
+            val result = (outcome as KaIntroduceTypeAliasComputer.Outcome.Ready).result
+
+            assertEquals("Expected the complete concrete alias body", "List<String>", result.aliasTypeText)
+            assertEquals("A complete selected type must have no alias parameters", emptyList<String>(), result.typeParameterNames)
+            assertEquals(
+                "Only identical List<String> occurrences should be replaced",
+                listOf("StringList", "StringList"),
+                result.occurrenceReplacements.map { it.replacementText },
+            )
+
+            val endOutcome = KaIntroduceTypeAliasComputer(ktFile, selectionEnd).compute()
+            assertTrue("Exclusive selection end should not resolve to the preceding type, got $endOutcome", endOutcome is KaIntroduceTypeAliasComputer.Outcome.NotApplicable)
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /** Selecting only `List` extracts its type constructor and preserves each occurrence's arguments. */
+    fun testGenericType_constructorSelectionExtractsParameterAndSubstitutesOccurrences() {
+        val triple = prepareWithRealSession("genericSubstitutions")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping constructor-selection test")
+                return
+            }
+        val (_, ktFile, tmpDir) = triple
+        try {
+            val constructorStart = ktFile.text.indexOf("List<String>")
+            assertTrue("Expected List<String> in the generic fixture", constructorStart >= 0)
+            val outcome = KaIntroduceTypeAliasComputer(
+                ktFile,
+                constructorStart,
+                TextRange(constructorStart, constructorStart + "List".length),
+            ).compute()
+            assertTrue("Expected Ready for selected List constructor, got $outcome", outcome is KaIntroduceTypeAliasComputer.Outcome.Ready)
+            val result = (outcome as KaIntroduceTypeAliasComputer.Outcome.Ready).result
+
+            assertEquals("Expected the generic alias body", "List<T>", result.aliasTypeText)
+            assertEquals("Expected one extracted type parameter", listOf("T"), result.typeParameterNames)
+            assertEquals(
+                "Expected structural occurrences to preserve their own type arguments",
+                listOf("StringList<String>", "StringList<String>", "StringList<Int>", "StringList<Int>"),
+                result.occurrenceReplacements.map { it.replacementText },
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /** A caret inside a generic type aliases the complete concrete type unless a constructor is selected. */
+    fun testGenericType_caretExtractsConcreteAlias() {
+        val triple = prepareWithRealSession("genericSubstitutions")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping caret semantics test")
+                return
+            }
+        val (computer, _, tmpDir) = triple
+        try {
+            val outcome = computer.compute()
+            assertTrue("Expected Ready for List<String>, got $outcome", outcome is KaIntroduceTypeAliasComputer.Outcome.Ready)
+            val result = (outcome as KaIntroduceTypeAliasComputer.Outcome.Ready).result
+
+            assertEquals("Expected a concrete alias body at caret", "List<String>", result.aliasTypeText)
+            assertEquals("Expected no extracted type parameters at caret", emptyList<String>(), result.typeParameterNames)
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /** Constructor selection recursively abstracts nested generic leaves. */
+    fun testNestedGenericType_constructorSelectionExtractsNestedParameters() {
+        val triple = prepareWithRealSession("nestedGeneric")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping nested constructor-selection test")
+                return
+            }
+        val (_, ktFile, tmpDir) = triple
+        try {
+            val constructorStart = ktFile.text.indexOf("List<Map<String, Int>>")
+            assertTrue("Expected nested List in fixture", constructorStart >= 0)
+            val outcome = KaIntroduceTypeAliasComputer(
+                ktFile,
+                constructorStart,
+                TextRange(constructorStart, constructorStart + "List".length),
+            ).compute()
+            assertTrue("Expected Ready for selected List constructor, got $outcome", outcome is KaIntroduceTypeAliasComputer.Outcome.Ready)
+            val result = (outcome as KaIntroduceTypeAliasComputer.Outcome.Ready).result
+
+            assertEquals("Expected recursively parameterized alias body", "List<Map<T, U>>", result.aliasTypeText)
+            assertEquals("Expected parameters for both nested leaves", listOf("T", "U"), result.typeParameterNames)
+            assertEquals(
+                "Expected occurrence-specific nested substitutions",
+                listOf(
+                    "StringIntMapList<String, Int>",
+                    "StringIntMapList<String, Int>",
+                    "StringIntMapList<Boolean, Long>",
+                    "StringIntMapList<Boolean, Long>",
+                ),
+                result.occurrenceReplacements.map { it.replacementText },
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /** Constructor selection retains a qualified user-type path while parameterizing every segment. */
+    fun testQualifiedGenericType_constructorSelectionPreservesQualifierStructure() {
+        val triple = prepareWithRealSession("qualifiedGeneric")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping qualified constructor-selection test")
+                return
+            }
+        val (_, ktFile, tmpDir) = triple
+        try {
+            val fullTypeStart = ktFile.text.indexOf("Outer<String>.Inner<Int>")
+            assertTrue("Expected qualified type in fixture", fullTypeStart >= 0)
+            val constructorStart = fullTypeStart + "Outer<String>.".length
+            val outcome = KaIntroduceTypeAliasComputer(
+                ktFile,
+                constructorStart,
+                TextRange(constructorStart, constructorStart + "Inner".length),
+            ).compute()
+            assertTrue("Expected Ready for selected Inner constructor, got $outcome", outcome is KaIntroduceTypeAliasComputer.Outcome.Ready)
+            val result = (outcome as KaIntroduceTypeAliasComputer.Outcome.Ready).result
+
+            assertEquals("Expected parameterized qualified alias body", "Outer<T>.Inner<U>", result.aliasTypeText)
+            assertEquals("Expected parameters from both qualified segments", listOf("T", "U"), result.typeParameterNames)
+            assertEquals(
+                "Expected qualified occurrences to preserve their own arguments",
+                listOf(
+                    "IntInner<String, Int>",
+                    "IntInner<String, Int>",
+                    "IntInner<Boolean, Long>",
+                    "IntInner<Boolean, Long>",
+                ),
+                result.occurrenceReplacements.map { it.replacementText },
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /** A function type parameter cannot leak into a top-level alias declaration. */
+    fun testLocalTypeParameter_withRealSession_returnsError() {
+        val triple = prepareWithRealSession("localTypeParameter")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping local type parameter test")
+                return
+            }
+        val (computer, _, tmpDir) = triple
+        try {
+            val outcome = computer.compute()
+            assertTrue("Expected Error for List<T>, got $outcome", outcome is KaIntroduceTypeAliasComputer.Outcome.Error)
+            val error = (outcome as KaIntroduceTypeAliasComputer.Outcome.Error).error
+            assertTrue("Expected a helpful local type parameter message, got ${error.message}", error.message.orEmpty().contains("local type parameter"))
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /** Star projections cannot be converted into alias type parameters without changing meaning. */
+    fun testStarProjection_withRealSession_returnsError() {
+        val triple = prepareWithRealSession("starProjection")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping star projection test")
+                return
+            }
+        val (computer, _, tmpDir) = triple
+        try {
+            val outcome = computer.compute()
+            assertTrue("Expected Error for List<*>, got $outcome", outcome is KaIntroduceTypeAliasComputer.Outcome.Error)
+            val error = (outcome as KaIntroduceTypeAliasComputer.Outcome.Error).error
+            assertTrue("Expected a helpful star-projection message, got ${error.message}", error.message.orEmpty().contains("star projection"))
         } finally {
             tmpDir.toFile().deleteRecursively()
         }

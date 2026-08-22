@@ -76,7 +76,11 @@ class KotlinIntroduceTypeAliasPlugin(
         val session = KotlinAnalysisAPISession.getSession(nbProject)
         val ktFile = session.getKtFileForPath(fo.path) ?: return null
 
-        val computer = KaIntroduceTypeAliasComputer(ktFile, refactoring.caretOffset)
+        val computer = KaIntroduceTypeAliasComputer(
+            ktFile,
+            refactoring.caretOffset,
+            refactoring.selectionRange,
+        )
         return when (val outcome = computer.compute()) {
             is KaIntroduceTypeAliasComputer.Outcome.NotApplicable -> {
                 KotlinLogger.INSTANCE.logWarning(
@@ -119,8 +123,8 @@ class KotlinIntroduceTypeAliasPlugin(
  *  3. Inserts `[visibility] typealias NAME = TYPE` before the target insertion point.
  *  4. Invalidates the K2 session.
  *
- * The change is applied as **minimal, targeted document edits** (never a whole-document replace),
- * and a caret-restore edit is joined to the atomic undo group so a native Ctrl+Z keeps the caret at
+ * The change is applied as **targeted document edits** (never a whole-document replace), and a
+ * caret-restore edit is joined to the atomic undo group so a native Ctrl+Z keeps the caret at
  * the trigger site. [undoChange] is a snapshot-based fallback for non-editor undo paths.
  *
  * @param declarationFile  the file containing the type reference
@@ -157,7 +161,11 @@ class KotlinIntroduceTypeAliasApplyElement(
                 val session = KotlinAnalysisAPISession.getSession(nbProject2)
                 val ktFile = session.getKtFileForPath(fo.path) ?: return@runCatching
 
-                val computer = KaIntroduceTypeAliasComputer(ktFile, refactoring.caretOffset)
+                val computer = KaIntroduceTypeAliasComputer(
+                    ktFile,
+                    refactoring.caretOffset,
+                    refactoring.selectionRange,
+                )
                 val outcome = computer.compute()
                 val ready = outcome as? KaIntroduceTypeAliasComputer.Outcome.Ready ?: return@runCatching
                 val result = ready.result
@@ -171,29 +179,31 @@ class KotlinIntroduceTypeAliasApplyElement(
                     "public", "" -> ""
                     else -> "${refactoring.visibility} "
                 }
-                val aliasDeclaration = "${visibilityPrefix}typealias $chosenName = ${result.typeText}"
+                val aliasDeclaration = result.renderAliasDeclaration(chosenName, visibilityPrefix)
 
-                // Determine which ranges to replace.
-                val rangesToReplace = if (refactoring.replaceAll) {
-                    result.occurrenceRanges.sortedByDescending { it.startOffset }
+                // Each generic occurrence has its own substituted alias arguments. Preserve that
+                // spelling instead of applying one text replacement to every range.
+                val replacements = (if (refactoring.replaceAll) {
+                    result.occurrenceReplacements
                 } else {
-                    listOf(result.typeRefRange).sortedByDescending { it.startOffset }
-                }
+                    result.occurrenceReplacements.filter { it.range == result.typeRefRange }
+                }).sortedByDescending { it.range.startOffset }
+                    .map { it.range to result.replacementFor(it, chosenName) }
 
                 // Post-replacement view of the text, used only to compute the insertion offset.
                 var replacedText = originalText
-                for (range in rangesToReplace) {
+                for ((range, replacement) in replacements) {
                     replacedText = replacedText.substring(0, range.startOffset) +
-                            chosenName +
+                            replacement +
                             replacedText.substring(range.endOffset)
                 }
 
                 // Compute the adjusted insertion offset after all replacements.
                 fun adjustedOffset(rawOffset: Int): Int {
                     var shift = 0
-                    for (range in rangesToReplace) {
+                    for ((range, replacement) in replacements) {
                         if (range.endOffset <= rawOffset) {
-                            shift += chosenName.length - (range.endOffset - range.startOffset)
+                            shift += replacement.length - (range.endOffset - range.startOffset)
                         }
                     }
                     return rawOffset + shift
@@ -203,13 +213,17 @@ class KotlinIntroduceTypeAliasApplyElement(
                 val lineStart = replacedText.lastIndexOf('\n', insertPos - 1) + 1
                 val insertedText = "$aliasDeclaration\n\n"
 
-                // Apply as minimal, targeted edits and join a caret-restore edit so a native Ctrl+Z
+                // Apply targeted edits and join a caret-restore edit so a native Ctrl+Z
                 // keeps the caret at the trigger site instead of at EOF (see joinCaretRestoreOnUndo).
                 val atomicDoc = doc as? org.netbeans.editor.AtomicLockDocument
                 val caretTargetOnUndo = minOf(refactoring.caretOffset, originalText.length)
                 val body: () -> Unit = {
                     joinCaretRestoreOnUndo(doc, fo, caretTargetOnUndo)
-                    MinimalDocumentEdits.apply(doc, rangesToReplace, chosenName, lineStart, insertedText)
+                    replacements.forEach { (range, replacement) ->
+                        doc.remove(range.startOffset, range.endOffset - range.startOffset)
+                        doc.insertString(range.startOffset, replacement, null)
+                    }
+                    doc.insertString(lineStart, insertedText, null)
                 }
                 if (atomicDoc != null) {
                     atomicDoc.atomicLock()
@@ -222,9 +236,9 @@ class KotlinIntroduceTypeAliasApplyElement(
                 // reference was), not into the inserted declaration. Account for replacements at
                 // lower offsets and for the declaration inserted before it.
                 val primaryStart = result.typeRefRange.startOffset
-                val lowerShift = rangesToReplace
-                    .filter { it.endOffset <= primaryStart }
-                    .sumOf { chosenName.length - (it.endOffset - it.startOffset) }
+                val lowerShift = replacements
+                    .filter { (range, _) -> range.endOffset <= primaryStart }
+                    .sumOf { (range, replacement) -> replacement.length - (range.endOffset - range.startOffset) }
                 val adjustedPrimaryStart = primaryStart + lowerShift
                 val nameOffset = adjustedPrimaryStart +
                         if (lineStart <= adjustedPrimaryStart) insertedText.length else 0

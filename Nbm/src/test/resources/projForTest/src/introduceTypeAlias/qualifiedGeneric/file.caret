@@ -1,0 +1,9 @@
+package introduceTypeAlias.qualifiedGeneric
+
+class Outer<T> {
+    inner class Inner<U>
+}
+
+fun strings(value: <caret>Outer<String>.Inner<Int>): Outer<String>.Inner<Int> = value
+
+fun booleans(value: Outer<Boolean>.Inner<Long>): Outer<Boolean>.Inner<Long> = value

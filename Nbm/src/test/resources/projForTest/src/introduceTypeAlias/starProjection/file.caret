@@ -1,0 +1,3 @@
+package introduceTypeAlias.starProjection
+
+fun any(values: <caret>List<*>): List<*> = values

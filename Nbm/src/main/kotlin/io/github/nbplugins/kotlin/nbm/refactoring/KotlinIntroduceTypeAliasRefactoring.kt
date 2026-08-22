@@ -17,6 +17,7 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.refactoring
 
+import com.intellij.openapi.util.TextRange
 import org.netbeans.modules.refactoring.api.AbstractRefactoring
 import org.openide.util.lookup.Lookups
 import javax.swing.text.StyledDocument
@@ -27,12 +28,14 @@ import javax.swing.text.StyledDocument
  * After the UI dialog is confirmed, [chosenName], [replaceAll], and [visibility] hold the values
  * the user entered.
  *
- * @param doc          the document under the caret when the action was invoked
- * @param caretOffset  caret position within [doc]
+ * @param doc             the document under the caret when the action was invoked
+ * @param caretOffset     trigger position within [doc]
+ * @param selectionRange  non-empty editor selection, when invocation was selection-based
  */
 class KotlinIntroduceTypeAliasRefactoring(
     val doc: StyledDocument,
     val caretOffset: Int,
+    val selectionRange: TextRange? = null,
 ) : AbstractRefactoring(Lookups.fixed(doc)) {
 
     /** Alias name chosen by the user in the dialog. */
