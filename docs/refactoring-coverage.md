@@ -57,7 +57,7 @@ The corresponding record comments above are deliberately machine-readable. `Refa
 | `rename` | Rename | Rename (`Alt+Shift+R`) | Partial | K2 declaration/reference rename and override cascade are covered; file/package/directory renames and IDEA automatic renamers remain. | F7 |
 | `safe-delete` | Safe Delete | Safe Delete (`Alt+Delete`) | Partial | Declaration usage check is available; IDEA supertype, type/value-argument, and Java-bridge cases remain. | F7 |
 | `change-signature` | Change Signature | `Ctrl+F6` | Partial | K2 signature engine handles calls, overrides, constructors, destructuring and operators; every touched document now commits or rolls back through one hunk-preserving transaction, while broader IDEA scenarios remain. | F1 |
-| `inline-variable-property` | Inline property | Inline (`Ctrl+Alt+N`) | Partial | IDEA code inliner backs `val`/property scenarios; broader `var`, receiver, comment and Java cases remain. | F3 |
+| `inline-variable-property` | Inline property | Inline (`Ctrl+Alt+N`) | Partial | IDEA code inliner supports local `val` and a local `var` with one declaration initializer and no later writes, invoked from a declaration or selected usage; a later assignment or increment/decrement is rejected before mutation with its expression identified. Receiver/member/accessor, comment, Java, and broader index-backed cases remain. | F3 |
 | `inline-function` | Inline function | Inline (`Ctrl+Alt+N`) | Partial | K2 engine supports named functions; complex callable-reference, recursion and Java cases need parity tests. | F3 |
 | `extract-function` | Extract Function | `Ctrl+Alt+M` | Partial | Real IDEA generator supports captured parameters, return values, multi-statements and scopes; control-flow, smart-cast, receiver and duplicate matrices remain. | F6 |
 | `introduce-variable` | Introduce Variable | `Ctrl+Alt+V` | Partial | Common expression extraction, duplicate replacement and type/`val`/`var` choices work; advanced contexts remain. | F6 |
@@ -107,6 +107,7 @@ The existing NetBeans tests are the initial executable sample set. They intentio
 | Extract Function with captured locals in top-level scope | `KaExtractFunctionTest` | Exact parity baseline |
 | Change Signature across declaration and separate call site | `KaChangeSignatureTest` | Exact parity baseline |
 | Inline Function from a call site with multiple usages | `KaInlineFunctionTest` | Exact parity baseline |
+| Inline Variable for a write-free local `var`; later assignments/increments rejected | `KaInlineVariableTest` | Portable K2 single-definition baseline; receiver, Java, and index-only write coverage remain incomplete |
 | Move Declaration with external usage retargeting | `KaMoveDeclarationTest` | Exact parity baseline; transactional source/target undo baseline |
 | Copy Declaration into new or existing target | `KaCopyDeclarationTest`, `KotlinRefactoringTransactionTest` | Transactional target creation/replacement and undo baseline |
 | Pull Members Up direct target collision | `KaPullMembersUpComputerTest` | Documented standalone limitation beyond direct collision |

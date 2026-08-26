@@ -1,0 +1,7 @@
+package inlineVariable.varWithAssignment
+
+fun main() {
+    var <caret>value = 42
+    println(value)
+    value = 99
+}
