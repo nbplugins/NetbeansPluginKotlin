@@ -610,8 +610,8 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
       3. `KotlinInlineVariableRefactoring` — `AbstractRefactoring` carrying doc + offset.
       4. `KotlinInlineVariableAction` — `BaseAction("kotlin-inline-variable")`, **Ctrl+Alt+N**;
          registered in `Refactor` menu and `Editors/text/x-kotlin/Actions/` in `layer.xml`.
-    - Caret resolution: works on declaration and on any usage — see *Cursor-on-declaration-or-usage* in E9 strategy above.
-    - Supports `val` first; the same engine generalises to `var` and E9.4 (Inline function).
+    - Caret or a selected identifier resolution works on declaration and any usage — see *Cursor-on-declaration-or-usage* in E9 strategy above.
+    - Supports local `val` and a local `var` with its sole definition in the declaration initializer. A K2-backed standalone-source scan rejects assignments and increment/decrement writes before the IDEA engine is invoked and identifies the conflicting expression; receiver/member/accessor, Java, and index-only write coverage remain outside this adapter's scope.
 
   - **E9.4** — Inline function (Ctrl+Alt+N)
     - IDEA sources: `inline/codeInliner/CodeInliner.kt`,

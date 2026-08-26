@@ -362,6 +362,72 @@ class KaInlineVariableTest : KotlinTestCase("KaInlineVariableTest", "inlineVaria
     }
 
     /**
+     * A mutable local with a declaration initializer and no later write is still a single-definition
+     * value, so it must be eligible for inlining exactly like a `val`.
+     */
+    fun testVarWithoutWrites_readyWithOneRead() {
+        val triple = prepareWithRealSession("varNoWrite")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping mutable-local test")
+                return
+            }
+        val (computer, _, tmpDir) = triple
+        try {
+            val outcome = computer.compute()
+
+            assertTrue(
+                "Expected Ready for a write-free var, got $outcome",
+                outcome is KaInlineVariableComputer.Outcome.Ready,
+            )
+            val result = (outcome as KaInlineVariableComputer.Outcome.Ready).result
+            assertEquals("value", result.declarationName)
+            assertEquals("Expected one read of value", 1, result.usages.values.sumOf { it.size })
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /** A later assignment gives a mutable local more than one definition and must block inlining. */
+    fun testVarWithAssignment_returnsError() {
+        val triple = prepareWithRealSession("varWithAssignment")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping mutable-local test")
+                return
+            }
+        val (computer, _, tmpDir) = triple
+        try {
+            val outcome = computer.compute()
+
+            assertTrue("Expected Error for a var with an assignment, got $outcome", outcome is KaInlineVariableComputer.Outcome.Error)
+            val message = (outcome as KaInlineVariableComputer.Outcome.Error).error.message
+            assertTrue("Expected the conflicting assignment in the error, got $message", message.contains("value = 99"))
+            assertTrue("Expected an explanation about a single definition, got $message", message.contains("single definition"))
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /** An increment is a read-write use and must block inlining of a mutable local. */
+    fun testVarWithIncrement_returnsError() {
+        val triple = prepareWithRealSession("varWithIncrement")
+            ?: run {
+                println("kotlin-stdlib not on test classpath — skipping mutable-local test")
+                return
+            }
+        val (computer, _, tmpDir) = triple
+        try {
+            val outcome = computer.compute()
+
+            assertTrue("Expected Error for a var with an increment, got $outcome", outcome is KaInlineVariableComputer.Outcome.Error)
+            val message = (outcome as KaInlineVariableComputer.Outcome.Error).error.message
+            assertTrue("Expected the conflicting increment in the error, got $message", message.contains("value++"))
+            assertTrue("Expected an explanation about a single definition, got $message", message.contains("single definition"))
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Cursor on an unused `val`: the computer must still return [Outcome.Ready] (the property has
      * an initializer and no getter/setter), but the usages map must be empty.
      */

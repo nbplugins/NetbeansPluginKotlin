@@ -26,11 +26,14 @@ import org.jetbrains.kotlin.idea.k2.refactoring.inline.codeInliner.PropertyUsage
 import org.jetbrains.kotlin.idea.refactoring.inline.AbstractKotlinInlinePropertyProcessor
 import org.jetbrains.kotlin.idea.refactoring.inline.codeInliner.UsageReplacementStrategy
 import org.jetbrains.kotlin.idea.refactoring.inline.createReplacementStrategyForProperty
+import org.jetbrains.kotlin.idea.references.ReadWriteAccessChecker
 import org.jetbrains.kotlin.idea.references.mainReference
+import org.jetbrains.kotlin.psi.KtExpression
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNameReferenceExpression
 import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtReferenceExpression
+import org.jetbrains.kotlin.psi.KtSimpleNameExpression
 import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
 
 /**
@@ -69,14 +72,16 @@ data class KaInlineVariableError(
  * starting the IDEA `BaseRefactoringProcessor` pipeline.
  *
  * Steps performed by [compute]:
- *  1. Locate the [KtProperty] at the cursor (parent walk from `findElementAt(offset)`).
- *  2. Run IDEA's `AbstractKotlinInlinePropertyProcessor.extractInitialization` — returns either
+ *  1. Locate the [KtProperty] at the cursor (K2 reference resolution first, then a parent walk).
+ *  2. For a declaration-initialized `var`, reject any K2-resolved Kotlin write/read-write usage so
+ *     only a single definition can be inlined in the standalone session.
+ *  3. Run IDEA's `AbstractKotlinInlinePropertyProcessor.extractInitialization` — returns either
  *     the initializer expression or an error message (e.g. "property has no initializer").
- *  3. Run IDEA's top-level `createReplacementStrategyForProperty(...)` — this builds the
+ *  4. Run IDEA's top-level `createReplacementStrategyForProperty(...)` — this builds the
  *     `PropertyUsageReplacementStrategy` (which wraps a `CodeInliner`) that knows how to inline
  *     the initializer at any reference site, with proper handling of parentheses, qualified calls,
  *     imports and type arguments.
- *  4. Scan every `KtFile` in [projectKtFiles] for `KtReferenceExpression`s whose `mainReference`
+ *  5. Scan every `KtFile` in [projectKtFiles] for `KtReferenceExpression`s whose `mainReference`
  *     resolves to [property] — these are the usages to inline.
  *
  * The actual PSI mutation (`strategy.createReplacer(usage).invoke()` + `property.delete()`) is
@@ -120,8 +125,8 @@ class KaInlineVariableComputer(
      *     (handles the cursor being on the declaration keyword/name itself).
      *
      * @return [Outcome.NotApplicable] when the cursor is not on a `KtProperty`,
-     *         [Outcome.Error] when the property cannot be inlined (missing initializer, etc.),
-     *         [Outcome.Ready] with the prepared plan otherwise
+     *         [Outcome.Error] when the property cannot be inlined (missing initializer, multiple
+     *         definitions of a mutable local, etc.), [Outcome.Ready] with the prepared plan otherwise
      */
     fun compute(): Outcome {
         val element = cursorKtFile.findElementAt(offset) ?: return Outcome.NotApplicable
@@ -129,6 +134,16 @@ class KaInlineVariableComputer(
             ?: PsiTreeUtil.getParentOfType(element, KtProperty::class.java, false)
             ?: return Outcome.NotApplicable
         val declarationName = property.name ?: return Outcome.NotApplicable
+
+        findWriteUsage(property)?.let { writeExpression ->
+            return Outcome.Error(
+                KaInlineVariableError(
+                    "Cannot inline '$declarationName': '${writeExpression.text}' changes its value, " +
+                        "so it has no single definition to inline.",
+                    declarationName,
+                ),
+            )
+        }
 
         // IDEA's extractInitialization validates the property and returns either the initializer
         // expression or an error (e.g. no initializer, multiple assignments without a dominator).
@@ -174,6 +189,42 @@ class KaInlineVariableComputer(
                 declarationName = declarationName,
             )
         )
+    }
+
+    /**
+     * Finds the first resolved Kotlin write or read-write usage of [property] in the active
+     * standalone session.
+     *
+     * IDEA normally obtains this information through an indexed [com.intellij.psi.search.PsiSearchHelper],
+     * but the standalone session deliberately provides a no-op implementation. Returning the full
+     * access expression, rather than a Boolean, lets the UI explain the exact assignment or
+     * increment that prevents a mutable local from having one definition.
+     */
+    private fun findWriteUsage(property: KtProperty): KtExpression? {
+        val checker = ReadWriteAccessChecker.getInstance(project)
+        for (file in projectKtFiles) {
+            var conflict: KtExpression? = null
+            runCatching {
+                analyze(file) {
+                    file.accept(object : KtTreeVisitorVoid() {
+                        override fun visitSimpleNameExpression(expression: KtSimpleNameExpression) {
+                            if (conflict != null) return
+                            super.visitSimpleNameExpression(expression)
+                            val symbol = runCatching {
+                                expression.mainReference?.resolveToSymbol()
+                            }.getOrNull() ?: return
+                            if (symbol.psi != property) return
+                            val access = checker.readWriteAccessWithFullExpression(expression, true)
+                            if (access.first.isWrite) {
+                                conflict = access.second ?: expression
+                            }
+                        }
+                    })
+                }
+            }
+            conflict?.let { return it }
+        }
+        return null
     }
 
     /**
