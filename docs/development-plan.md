@@ -658,7 +658,8 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
       implicit-package-prefix, module-dependency, internal-member-usage, actual/expect, plus
       helpers). Excluded (out of scope): `K2MoveHandler.kt` (IDE action dispatch), `ui/**` (Swing —
       NB has its own text-field UI), `K2MoveFilesOrDirectoriesRefactoringProcessor.kt` (file/dir
-      moves), `K2ChangePackageDescriptor.kt`/processor (separate feature).
+      moves; F4.1 now ports its Kotlin handler through a lifecycle-free adapter),
+      `K2ChangePackageDescriptor.kt`/processor (separate F4.2 feature).
     - Single-module architecture: this plugin has no multi-module/multiplatform project model
       anywhere (confirmed via dedicated research — every NetBeans project gets one isolated K2
       analysis session). `SingletonModule`/`ModuleUtilCore`/`ModuleType` stubs
@@ -741,6 +742,27 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
     - Source and target mutation is now staged through `KotlinRefactoringTransaction`: a new target
       is removed on any conflict/error, an existing target is restored exactly, and **Refactor → Undo
       Last Refactoring** restores both documents (or removes the target file if the refactoring created it).
+
+  - [x] **F4.1** — Move Kotlin File and Directory (Refactor menu / folder context menu)
+    - Ports the Kotlin-specific `K2MoveFilesHandler` portion of
+      `K2MoveFilesOrDirectoriesRefactoringProcessor.kt` through `KaMoveFileComputer`. The generic
+      IDEA processor is intentionally not invoked: it depends on writable IntelliJ VFS, indexed
+      generic-file search, command/listener lifecycle, and modal UI unavailable in standalone K2.
+    - **Refactor → Move Kotlin File...** selects a destination source root and package. NetBeans owns
+      physical movement through `KotlinRefactoringTransaction`; the K2 adapter updates a package only
+      where source-root-relative package/directory alignment proves it safe, checks portable Kotlin
+      conflicts, and retargets supported Kotlin references.
+    - Transactions now record reversible physical file moves and transaction-owned destination folders;
+      failed writes roll back the path and document snapshots, while **Undo Last Refactoring** restores
+      the original path and text.
+    - Folder-node **Move Kotlin Directory...** recursively moves only Kotlin descendants through one
+      atomic transaction, retaining the selected directory and every nested Kotlin folder below the
+      target package; a single K2 pass uses per-file target packages so inter-file references remain
+      coherent. Non-Kotlin descendants remain at their source paths.
+    - Portable coverage includes matching-package update, package/directory mismatch preservation,
+      K2 semantic adapter execution, physical-move rollback, owned-folder cleanup, and undo. The
+      remaining F4.1 scope is generic non-Kotlin content, Java/comment/text/index-only references,
+      and full IDEA project-model conflict behavior.
 
   - [x] **E9.8** — Change Signature (Ctrl+F6) — PRs #114, #115
     - IDEA sources: `changeSignature/KotlinChangeSignatureUsageSearcher.kt`,

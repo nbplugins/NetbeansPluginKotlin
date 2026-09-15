@@ -54,10 +54,26 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
         return file
     }
 
+    /** Creates an existing file and document beneath [parent]. */
+    private fun Fixture.existingIn(parent: FileObject, name: String, text: String): FileObject {
+        val file = parent.createData(name)
+        documents[file] = DefaultStyledDocument().also { it.insertString(0, text, null) }
+        return file
+    }
+
     /** Reads the in-memory document associated with [file]. */
     private fun Fixture.text(file: FileObject): String {
         val document = documents[file]
         assertNotNull("Expected document for ${file.path}", document)
+        return document!!.getText(0, document.length)
+    }
+
+    /** Finds the retained editor document after a FileObject changed identity through a move. */
+    private fun Fixture.textByPath(file: FileObject): String {
+        val document = documents.entries.firstOrNull { (knownFile, _) ->
+            knownFile.path == file.path || !knownFile.isValid
+        }?.value
+        assertNotNull("Expected retained document for ${file.path}", document)
         return document!!.getText(0, document.length)
     }
 
@@ -80,6 +96,205 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
 
         assertEquals("fun source() = 1\n", fixture.text(source))
         assertEquals("fun target() = 2\n", fixture.text(target))
+    }
+
+    /** Verifies an externally captured pre-mutation snapshot is restored by undo. */
+    fun testCommitAndUndo_restoresProvidedPreMutationSnapshot() {
+        val fixture = fixture()
+        val source = fixture.existing("Source.kt", "package target\n\nfun source() = 1\n")
+        val original = "package source\n\nfun source() = 1\n"
+
+        fixture.transaction.captureExisting(source, original)
+        fixture.transaction.stageText(source, "package target\n\nfun source() = 1\n")
+        fixture.transaction.commit()
+        fixture.transaction.undo()
+
+        assertEquals("undo must restore the snapshot from before K2 PSI mutation", original, fixture.text(source))
+    }
+
+    /** Verifies several directory descendants move and undo together in reverse physical-move order. */
+    fun testCommitAndUndo_restoresEveryMovedDirectoryDescendant() {
+        val fixture = fixture()
+        val sourceFolder = fixture.root.createFolder("feature")
+        val nestedSource = sourceFolder.createFolder("internal")
+        val targetFolder = fixture.root.createFolder("target")
+        val nestedTarget = targetFolder.createFolder("internal")
+        val publicFile = fixture.existingIn(sourceFolder, "Public.kt", "package feature\n\nfun publicApi() = 1\n")
+        val helperFile = fixture.existingIn(nestedSource, "Helper.kt", "package feature.internal\n\nfun helper() = 1\n")
+        val retainedText = sourceFolder.createData("Readme.txt")
+
+        fixture.transaction.moveFile(publicFile, targetFolder)
+        fixture.transaction.moveFile(helperFile, nestedTarget)
+        fixture.transaction.stageText(publicFile, "package target\n\nfun publicApi() = 1\n")
+        fixture.transaction.stageText(helperFile, "package target.internal\n\nfun helper() = 1\n")
+        fixture.transaction.commit()
+
+        assertNotNull(targetFolder.getFileObject("Public.kt"))
+        assertNotNull(nestedTarget.getFileObject("Helper.kt"))
+        assertTrue("non-Kotlin source content must remain untouched", retainedText.isValid)
+        fixture.transaction.undo()
+
+        assertNotNull(sourceFolder.getFileObject("Public.kt"))
+        assertNotNull(nestedSource.getFileObject("Helper.kt"))
+        assertNull(targetFolder.getFileObject("Public.kt"))
+        assertNull(nestedTarget.getFileObject("Helper.kt"))
+        assertTrue("non-Kotlin source content must remain after undo", retainedText.isValid)
+    }
+
+    /** Verifies a physical move is committed and Undo Last Refactoring restores its path and text. */
+    fun testCommitAndUndo_restoresMovedFilePathAndText() {
+        val fixture = fixture()
+        val sourceFolder = fixture.root.createFolder("source")
+        val targetFolder = fixture.root.createFolder("target")
+        val source = fixture.existingIn(sourceFolder, "Moved.kt", "package source\n\nfun moved() = 1\n")
+
+        fixture.transaction.moveFile(source, targetFolder)
+        fixture.transaction.stageText(source, "package target\n\nfun moved() = 1\n")
+        fixture.transaction.commit()
+
+        val moved = targetFolder.getFileObject("Moved.kt")
+        assertNotNull("commit must physically move the file", moved)
+        assertNull("source path must no longer exist", sourceFolder.getFileObject("Moved.kt"))
+        assertEquals("package target\n\nfun moved() = 1\n", fixture.textByPath(moved!!))
+
+        fixture.transaction.undo()
+
+        val restored = sourceFolder.getFileObject("Moved.kt")
+        assertNotNull("undo must restore the original source path", restored)
+        assertNull("undo must remove the moved target path", targetFolder.getFileObject("Moved.kt"))
+        assertEquals("package source\n\nfun moved() = 1\n", fixture.textByPath(restored!!))
+    }
+
+    /** Verifies undo writes the original snapshot through the FileObject returned by the reverse move. */
+    fun testUndo_rewritesSnapshotAtRestoredFilePath() {
+        val root = FileUtil.createMemoryFileSystem().root
+        val sourceFolder = root.createFolder("source")
+        val targetFolder = root.createFolder("target")
+        val source = sourceFolder.createData("Moved.kt")
+        val original = "package source\n\nfun moved() = 1\n"
+        val target = "package target\n\nfun moved() = 1\n"
+        val documents = mutableMapOf<FileObject, StyledDocument>()
+        val persistedTexts = mutableMapOf(source.path to original)
+        val transaction = KotlinRefactoringTransaction(
+            openDocument = { file -> documents.getOrPut(file) { DefaultStyledDocument().also { it.insertString(0, persistedTexts[file.path] ?: "", null) } } },
+            writeDocument = { file, document, text ->
+                if (document.length > 0) document.remove(0, document.length)
+                document.insertString(0, text, null)
+                persistedTexts[file.path] = text
+            },
+            saveDocument = { },
+        )
+
+        transaction.moveFile(source, targetFolder)
+        transaction.captureExisting(source, original)
+        transaction.stageText(source, target)
+        transaction.commit()
+        val moved = targetFolder.getFileObject("Moved.kt") ?: error("Expected moved file")
+        persistedTexts[moved.path] = target
+        transaction.undo()
+
+        val restored = sourceFolder.getFileObject("Moved.kt") ?: error("Expected restored file")
+        assertEquals("undo must persist the snapshot at the restored physical path", original, persistedTexts[restored.path])
+    }
+
+    /** Verifies a later write failure prevents the physical move and restores source text. */
+    fun testCommitFailure_doesNotMoveFileBeforeEveryDocumentIsWritten() {
+        val fixture = fixture(failWriting = { it.nameExt == "Failing.kt" })
+        val sourceFolder = fixture.root.createFolder("source")
+        val targetFolder = fixture.root.createFolder("target")
+        val source = fixture.existingIn(sourceFolder, "Moved.kt", "fun moved() = 1\n")
+        val failing = fixture.existing("Failing.kt", "fun failing() = 1\n")
+
+        fixture.transaction.moveFile(source, targetFolder)
+        fixture.transaction.stageText(source, "fun moved() = 2\n")
+        fixture.transaction.captureExisting(failing)
+        fixture.transaction.stageText(failing, "fun failing() = 2\n")
+
+        try {
+            fixture.transaction.commit()
+            fail("commit must fail when a staged write fails")
+        } catch (_: KotlinRefactoringTransaction.Failure) {
+            // Expected: no physical move occurs until every staged document is writable.
+        }
+
+        val restored = sourceFolder.getFileObject("Moved.kt")
+        assertNotNull("failed document writes must leave the source path intact", restored)
+        assertNull("failed document writes must not create the target path", targetFolder.getFileObject("Moved.kt"))
+        assertEquals("fun moved() = 1\n", fixture.textByPath(restored!!))
+        assertEquals("fun failing() = 1\n", fixture.text(failing))
+    }
+
+    /** Verifies every staged document is written and saved before the source file is moved. */
+    fun testCommit_writesAndSavesEveryDocumentBeforePhysicalMove() {
+        val root = FileUtil.createMemoryFileSystem().root
+        val sourceFolder = root.createFolder("source")
+        val targetFolder = root.createFolder("target")
+        val source = sourceFolder.createData("Moved.kt")
+        val usage = root.createData("Usage.kt")
+        val sourceDocument = DefaultStyledDocument().also { it.insertString(0, "fun moved() = 1\n", null) }
+        val usageDocument = DefaultStyledDocument().also { it.insertString(0, "fun usage() = moved()\n", null) }
+        val documents = mapOf(source to sourceDocument, usage to usageDocument)
+        val savedFiles = mutableListOf<FileObject>()
+        val transaction = KotlinRefactoringTransaction(
+            openDocument = { file -> documents[file] },
+            writeDocument = { _, editableDocument, text ->
+                if (editableDocument.length > 0) editableDocument.remove(0, editableDocument.length)
+                editableDocument.insertString(0, text, null)
+            },
+            saveDocument = { file ->
+                assertNotNull("a moved file must remain at its original path until saves complete", sourceFolder.getFileObject("Moved.kt"))
+                savedFiles += file
+            },
+        )
+
+        transaction.moveFile(source, targetFolder)
+        transaction.stageText(source, "fun moved() = 2\n")
+        transaction.captureExisting(usage)
+        transaction.stageText(usage, "fun usage() = moved()\n")
+        transaction.commit()
+
+        assertEquals("all staged documents must be saved before the move", listOf(source, usage), savedFiles)
+        assertNotNull("commit must still move the file after saving", targetFolder.getFileObject("Moved.kt"))
+    }
+
+    /** Verifies undo saves the moved source before restoring its original path. */
+    fun testUndo_savesMovedSourceBeforePhysicalRestore() {
+        val root = FileUtil.createMemoryFileSystem().root
+        val sourceFolder = root.createFolder("source")
+        val targetFolder = root.createFolder("target")
+        val source = sourceFolder.createData("Moved.kt")
+        val document = DefaultStyledDocument().also { it.insertString(0, "fun moved() = 1\n", null) }
+        var savedMovedSourceBeforeRestore = false
+        val transaction = KotlinRefactoringTransaction(
+            openDocument = { document },
+            writeDocument = { _, editableDocument, text ->
+                if (editableDocument.length > 0) editableDocument.remove(0, editableDocument.length)
+                editableDocument.insertString(0, text, null)
+            },
+            saveDocument = { file ->
+                if (file.parent == targetFolder) {
+                    savedMovedSourceBeforeRestore = sourceFolder.getFileObject("Moved.kt") == null
+                }
+            },
+        )
+
+        transaction.moveFile(source, targetFolder)
+        transaction.stageText(source, "fun moved() = 2\n")
+        transaction.commit()
+        transaction.undo()
+
+        assertTrue("undo must save the moved source before restoring its original path", savedMovedSourceBeforeRestore)
+        assertNotNull("undo must restore the original path", sourceFolder.getFileObject("Moved.kt"))
+    }
+
+    /** Verifies empty destination folders created by the transaction are deleted on rollback. */
+    fun testRollback_deletesTransactionOwnedEmptyFolder() {
+        val fixture = fixture()
+        val destination = fixture.transaction.createFolder(fixture.root, "generated")
+
+        fixture.transaction.rollback()
+
+        assertFalse("rollback must delete an unused transaction-owned folder", destination.isValid())
     }
 
     /** Verifies an owned target file is retained at commit and deleted by undo. */

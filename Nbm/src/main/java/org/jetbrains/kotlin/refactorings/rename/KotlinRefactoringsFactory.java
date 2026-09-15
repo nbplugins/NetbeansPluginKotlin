@@ -38,6 +38,8 @@ import io.github.nbplugins.kotlin.nbm.refactoring.KotlinCopyDeclarationPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinCopyDeclarationRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveDeclarationPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveDeclarationRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveFilePlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveFileRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignaturePlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignatureRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceImportAliasPlugin;
@@ -89,6 +91,7 @@ import org.openide.util.lookup.ServiceProvider;
  *   <li>{@link KotlinIntroduceFunctionalParameterRefactoring} — delegates to {@link KotlinIntroduceFunctionalParameterPlugin}</li>
  *   <li>{@link KotlinCopyDeclarationRefactoring} — delegates to {@link KotlinCopyDeclarationPlugin}</li>
  *   <li>{@link KotlinMoveDeclarationRefactoring} — delegates to {@link KotlinMoveDeclarationPlugin}</li>
+ *   <li>{@link KotlinMoveFileRefactoring} — delegates to {@link KotlinMoveFilePlugin}</li>
  *   <li>{@link KotlinChangeSignatureRefactoring} — delegates to {@link KotlinChangeSignaturePlugin}</li>
  * </ul>
  */
@@ -97,6 +100,12 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
 
     @Override
     public RefactoringPlugin createInstance(AbstractRefactoring refactoring) {
+        // Move Kotlin Directory is invoked from a folder node, so its refactoring source deliberately
+        // contains FileObjects rather than an editor StyledDocument. Recognize its typed carrier
+        // before the legacy editor-document applicability guard below.
+        if (refactoring instanceof KotlinMoveFileRefactoring) {
+            return new KotlinMoveFilePlugin((KotlinMoveFileRefactoring) refactoring);
+        }
         FileObject fo = ProjectUtils.getFileObjectForDocument(
                 refactoring.getRefactoringSource().lookup(StyledDocument.class));
         if (fo == null || !fo.hasExt("kt")) {
