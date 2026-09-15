@@ -20,6 +20,8 @@ import com.intellij.psi.PsiDirectory
 import com.intellij.psi.PsiElement
 import com.intellij.usageView.UsageInfo
 import com.intellij.util.containers.MultiMap
+import org.jetbrains.kotlin.idea.k2.refactoring.move.KotlinMoveUsageSearchService
+import org.jetbrains.kotlin.idea.k2.refactoring.move.MoveImport
 import org.jetbrains.kotlin.idea.k2.refactoring.move.processor.K2MoveFilesHandler
 import org.jetbrains.kotlin.idea.k2.refactoring.move.processor.findMoveFileUsages
 import org.jetbrains.kotlin.idea.k2.refactoring.move.processor.prepareMovedFileForPackage
@@ -96,9 +98,26 @@ class KaMoveFileComputer(
         targetDirectory: PsiDirectory,
         targetPackage: FqName,
         updateReferences: Boolean,
-    ): ApplyOutcome {
+    ): ApplyOutcome = apply(
+        files.associateWith { MoveTarget(targetDirectory, targetPackage) },
+        updateReferences,
+    )
+
+    /**
+     * Applies K2 Move File semantics for sources whose final directories and packages differ.
+     *
+     * The directory Move command supplies one [MoveTarget] per source. K2 usage discovery occurs
+     * before any source is mutated and retargeting receives one aggregate old-to-new map, which is
+     * essential when two moved descendants refer to one another across relative directories.
+     *
+     * @param targets physical source PSI mapped to its final directory and declared package
+     * @param updateReferences whether supported external Kotlin references should be retargeted
+     * @return conflicts without mutation, changed texts with original snapshots, or an error
+     */
+    fun apply(targets: Map<KtFile, MoveTarget>, updateReferences: Boolean): ApplyOutcome {
         return try {
-            require(files.isNotEmpty()) { "Move File requires at least one Kotlin file." }
+            require(targets.isNotEmpty()) { "Move File requires at least one Kotlin file." }
+            val files = targets.keys.toList()
             val handler = K2MoveFilesHandler()
             // ProjectFileIndex and JavaDirectoryService cannot reconstruct the source-root-relative
             // directory of this session's LightVirtualFiles. Calling K2MoveFilesHandler.findUsages()
@@ -115,34 +134,43 @@ class KaMoveFileComputer(
                     file.findMoveFileUsages(
                         searchInCommentsAndStrings = false,
                         searchForText = false,
-                        targetPackage = targetPackage,
+                        targetPackage = targets.getValue(file).targetPackage,
                     )
-                }
+                }.distinct()
             } else {
                 emptyList()
             }
             val conflicts = MultiMap<PsiElement, String>()
-            handler.detectConflicts(conflicts, files.toTypedArray(), usages.toTypedArray(), targetDirectory)
+            files.groupBy { targets.getValue(it).targetDirectory }.forEach { (directory, groupedFiles) ->
+                handler.detectConflicts(conflicts, groupedFiles.toTypedArray(), usages.toTypedArray(), directory)
+            }
             if (!conflicts.isEmpty) {
                 ApplyOutcome.Conflicts(conflicts.values().toList())
             } else {
-                val usageFiles = filesWithUsages(usages)
-                val originalTexts = (files + usageFiles).distinct().mapNotNull { file ->
-                    file.virtualFile?.path?.let { path -> path to file.text }
-                }.toMap()
                 val movedImportTargets = files.flatMap { file ->
                     file.declarations.mapNotNull { declaration ->
                         (declaration as? KtNamedDeclaration)?.name?.let { name ->
-                            MovedImport(file.packageFqName, name)
+                            MoveImport(file.packageFqName, name) to targets.getValue(file).targetPackage
                         }
                     }
-                }
+                }.toMap()
+                // K2 retargeting intentionally excludes import directives because mutating an import
+                // path through bindToElement() destabilizes standalone PSI. Discover direct imports
+                // separately, then rewrite their full directives below with KtPsiFactory.
+                val importOnlyUsageFiles = KotlinMoveUsageSearchService.getInstance()
+                    ?.findImportingFiles(files.first().project, movedImportTargets)
+                    .orEmpty()
+                val usageFiles = (filesWithUsages(usages) + importOnlyUsageFiles).distinct()
+                val originalTexts = (files + usageFiles).distinct().mapNotNull { file ->
+                    file.virtualFile?.path?.let { path -> path to file.text }
+                }.toMap()
                 val oldToNew = linkedMapOf<PsiElement, PsiElement>()
                 val changedFiles = linkedMapOf<String, String>()
                 files.forEach { file ->
+                    val target = targets.getValue(file)
                     handler.prepareMovedFileForPackage(
                         file = file,
-                        targetPackage = targetPackage,
+                        targetPackage = target.targetPackage,
                         rewritePackage = file in eligibleFiles,
                         oldToNewMap = oldToNew,
                     )
@@ -150,7 +178,7 @@ class KaMoveFileComputer(
                 }
                 if (updateReferences) handler.retargetUsages(usages, oldToNew)
                 usageFiles.filterNot { it in files }.forEach { file ->
-                    rewriteMovedImports(file, movedImportTargets, targetPackage)
+                    rewriteMovedImports(file, movedImportTargets)
                     file.virtualFile?.path?.let { path -> changedFiles[path] = file.text }
                 }
                 ApplyOutcome.Success(changedFiles, originalTexts)
@@ -159,6 +187,9 @@ class KaMoveFileComputer(
             ApplyOutcome.Error(error)
         }
     }
+
+    /** A source's physical K2 target directory and final declared package. */
+    data class MoveTarget(val targetDirectory: PsiDirectory, val targetPackage: FqName)
 
     /** Represents the result of applying K2-only Move File semantics. */
     sealed class ApplyOutcome {
@@ -198,21 +229,19 @@ class KaMoveFileComputer(
      * The old-to-new map for a File Move preserves declaration identity, so update the direct import
      * path explicitly after K2 retargeting; code usages remain handled by the upstream K2 engine.
      */
-    private fun rewriteMovedImports(usageFile: KtFile, movedImports: Collection<MovedImport>, targetPackage: FqName) {
+    private fun rewriteMovedImports(usageFile: KtFile, movedImports: Map<MoveImport, FqName>) {
         if (movedImports.isEmpty()) return
         val factory = KtPsiFactory(usageFile.project)
         usageFile.importDirectives.forEach { directive ->
             if (directive.aliasName != null || directive.isAllUnder) return@forEach
             val importedFqName = directive.importedFqName ?: return@forEach
             val importedName = directive.importedName ?: return@forEach
-            if (MovedImport(importedFqName.parent(), importedName.asString()) in movedImports) {
-                directive.replace(factory.createImportDirective(ImportPath(targetPackage.child(importedName), false)))
-            }
+            val targetPackage = movedImports[MoveImport(importedFqName.parent(), importedName.asString())]
+                ?: return@forEach
+            directive.replace(factory.createImportDirective(ImportPath(targetPackage.child(importedName), false)))
         }
     }
 
-    /** Identifies a directly imported top-level declaration before its package PSI is rewritten. */
-    private data class MovedImport(val packageName: FqName, val declarationName: String)
 
     /**
      * Determines whether [packageName]'s segments are the terminal directory segments of [path].

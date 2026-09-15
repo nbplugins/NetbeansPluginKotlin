@@ -229,6 +229,71 @@ class KaMoveFileComputerTest : KotlinTestCase("KaMoveFileComputerTest", "moveFil
         }
     }
 
+    /**
+     * Verifies one K2 pass supports distinct target packages for directory descendants and retargets
+     * imports of declarations from both source files.
+     */
+    fun testApply_realSession_updatesNestedDirectoryTargetsTogether() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Move Directory integration test")
+            return
+        }
+        val temp = Files.createTempDirectory("nbkotlin-move-directory")
+        try {
+            val feature = temp.resolve("source/feature")
+            val internal = feature.resolve("internal")
+            val usageDirectory = temp.resolve("usage")
+            val targetFeature = temp.resolve("target/sample/destination/feature")
+            val targetInternal = targetFeature.resolve("internal")
+            Files.createDirectories(internal)
+            Files.createDirectories(usageDirectory)
+            Files.createDirectories(targetInternal)
+            val publicPath = feature.resolve("Public.kt")
+            val helperPath = internal.resolve("Helper.kt")
+            val usagePath = usageDirectory.resolve("Usage.kt")
+            Files.writeString(publicPath, "package source.feature\n\nfun publicApi() = helper()\n")
+            Files.writeString(helperPath, "package source.feature.internal\n\nfun helper() = 1\n")
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport source.feature.publicApi\nimport source.feature.internal.helper\n\nfun use() = publicApi() + helper()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "move-directory-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temp),
+            )
+            val publicFile = session.getKtFileForPath(publicPath.toString()) ?: error("Could not obtain Public.kt PSI")
+            val helperFile = session.getKtFileForPath(helperPath.toString()) ?: error("Could not obtain Helper.kt PSI")
+            val targetFeaturePsi = KaMoveDeclarationComputer.resolveDirectory(publicFile.project, targetFeature.toString())
+                ?: error("Could not resolve feature target PSI")
+            val targetInternalPsi = KaMoveDeclarationComputer.resolveDirectory(publicFile.project, targetInternal.toString())
+                ?: error("Could not resolve internal target PSI")
+
+            val outcome = KaMoveFileComputer(publicFile).apply(
+                mapOf(
+                    publicFile to KaMoveFileComputer.MoveTarget(
+                        targetFeaturePsi,
+                        org.jetbrains.kotlin.name.FqName("sample.destination.feature"),
+                    ),
+                    helperFile to KaMoveFileComputer.MoveTarget(
+                        targetInternalPsi,
+                        org.jetbrains.kotlin.name.FqName("sample.destination.feature.internal"),
+                    ),
+                ),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected K2 Move Directory success, got $outcome", outcome is KaMoveFileComputer.ApplyOutcome.Success)
+            val success = outcome as KaMoveFileComputer.ApplyOutcome.Success
+            assertTrue(success.changedFiles[publicPath.toString()]?.contains("package sample.destination.feature") == true)
+            assertTrue(success.changedFiles[helperPath.toString()]?.contains("package sample.destination.feature.internal") == true)
+            assertTrue(success.changedFiles[usagePath.toString()]?.contains("import sample.destination.feature.publicApi") == true)
+            assertTrue(success.changedFiles[usagePath.toString()]?.contains("import sample.destination.feature.internal.helper") == true)
+        } finally {
+            temp.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

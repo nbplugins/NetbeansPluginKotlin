@@ -18,7 +18,12 @@ package org.jetbrains.kotlin.idea.k2.refactoring.move
 
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.psi.PsiReference
+import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
+
+/** Identifies a top-level declaration's original direct-import path. */
+data class MoveImport(val packageName: FqName, val declarationName: String)
 
 /**
  * Application service: finds every reference to [declaration] across the whole NetBeans project.
@@ -33,6 +38,15 @@ import org.jetbrains.kotlin.psi.KtNamedDeclaration
  */
 interface KotlinMoveUsageSearchService {
     fun findUsages(declaration: KtNamedDeclaration): List<PsiReference>
+
+    /**
+     * Finds session files that directly import one of [movedImports]' old declaration paths.
+     *
+     * @param project IntelliJ project whose standalone K2 session supplies candidate files
+     * @param movedImports old package/name pairs mapped to their final package
+     * @return Kotlin files whose import directives require explicit non-semantic replacement
+     */
+    fun findImportingFiles(project: com.intellij.openapi.project.Project, movedImports: Map<MoveImport, FqName>): List<KtFile> = emptyList()
 
     companion object {
         fun getInstance(): KotlinMoveUsageSearchService? =

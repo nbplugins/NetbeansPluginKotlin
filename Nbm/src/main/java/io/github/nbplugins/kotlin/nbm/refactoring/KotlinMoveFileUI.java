@@ -52,6 +52,7 @@ public class KotlinMoveFileUI implements RefactoringUI {
     private final KaMoveFileResult initialResult;
     private final KotlinMoveFileRefactoring refactoring;
     private final KotlinPackageTarget target;
+    private final String initialPackage;
     private MoveFilePanel panel;
 
     /**
@@ -64,20 +65,40 @@ public class KotlinMoveFileUI implements RefactoringUI {
     public KotlinMoveFileUI(KaMoveFileResult initialResult,
                             KotlinMoveFileRefactoring refactoring,
                             KotlinPackageTarget target) {
+        this(initialResult, refactoring, target, initialResult.getPackageName());
+    }
+
+    /**
+     * Creates a Move File or Move Directory UI adapter with an explicit initial package.
+     *
+     * @param initialResult discovered representative Kotlin-file data
+     * @param refactoring mutable carrier that receives selected parameters
+     * @param target available NetBeans source roots and package validator
+     * @param initialPackage package initially shown in the target field
+     */
+    public KotlinMoveFileUI(KaMoveFileResult initialResult,
+                            KotlinMoveFileRefactoring refactoring,
+                            KotlinPackageTarget target,
+                            String initialPackage) {
         this.initialResult = initialResult;
         this.refactoring = refactoring;
         this.target = target;
+        this.initialPackage = initialPackage;
     }
 
     /** @return the user-visible refactoring name. */
     @Override
     public String getName() {
-        return "Move Kotlin File";
+        return refactoring.getSelection().isDirectory() ? "Move Kotlin Directory" : "Move Kotlin File";
     }
 
-    /** @return concise user-visible description of the file being moved. */
+    /** @return concise user-visible description of the selected file or directory. */
     @Override
     public String getDescription() {
+        if (refactoring.getSelection().isDirectory()) {
+            return "Move " + refactoring.getSelection().getSourceFiles().size() + " Kotlin files from directory '"
+                    + refactoring.getSelection().getDisplayName() + "' to another package";
+        }
         return "Move Kotlin file '" + initialResult.getFileName() + "' to another package";
     }
 
@@ -97,9 +118,13 @@ public class KotlinMoveFileUI implements RefactoringUI {
     public CustomRefactoringPanel getPanel(ChangeListener parent) {
         if (panel == null) {
             panel = new MoveFilePanel(
-                    initialResult.getFileName(),
-                    initialResult.getPackageName(),
+                    refactoring.getSelection().isDirectory()
+                            ? refactoring.getSelection().getDisplayName() + " ("
+                                    + refactoring.getSelection().getSourceFiles().size() + " Kotlin files)"
+                            : initialResult.getFileName(),
+                    initialPackage,
                     initialResult.getPackageMayBeUpdated(),
+                    refactoring.getSelection().isDirectory(),
                     target.getRoots(),
                     target.getDefaultRootPath(),
                     parent
@@ -169,6 +194,8 @@ public class KotlinMoveFileUI implements RefactoringUI {
          * @param fileName displayed source file name
          * @param sourcePackage initially selected package
          * @param mayUpdatePackage whether automatic package rewriting is available
+         * @param directorySelection whether the selected directory name is retained below the target
+         *                           package
          * @param roots selectable destination source roots
          * @param defaultRoot source root containing the current file, if available
          * @param changeListener listener notified when values change
@@ -176,6 +203,7 @@ public class KotlinMoveFileUI implements RefactoringUI {
         MoveFilePanel(String fileName,
                       String sourcePackage,
                       boolean mayUpdatePackage,
+                      boolean directorySelection,
                       List<KotlinPackageTargetRoot> roots,
                       String defaultRoot,
                       ChangeListener changeListener) {
@@ -203,7 +231,7 @@ public class KotlinMoveFileUI implements RefactoringUI {
             field.gridwidth = GridBagConstraints.REMAINDER;
             field.insets = new Insets(2, 0, 2, 0);
 
-            form.add(new JLabel("Kotlin file:"), label);
+            form.add(new JLabel(directorySelection ? "Kotlin directory:" : "Kotlin file:"), label);
             form.add(new JLabel(fileName), field);
             JLabel rootLabel = new JLabel("Target source root:");
             rootLabel.setLabelFor(rootField);
@@ -215,6 +243,10 @@ public class KotlinMoveFileUI implements RefactoringUI {
             form.add(packageField, field);
             form.add(new JLabel(""), label);
             form.add(updateReferences, field);
+            if (directorySelection) {
+                form.add(new JLabel(""), label);
+                form.add(new JLabel("The selected directory name and nested folders are retained below the target package."), field);
+            }
             if (!mayUpdatePackage) {
                 form.add(new JLabel(""), label);
                 form.add(new JLabel("Package differs from its current directory and will be preserved."), field);

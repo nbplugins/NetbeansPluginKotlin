@@ -100,6 +100,12 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
 
     @Override
     public RefactoringPlugin createInstance(AbstractRefactoring refactoring) {
+        // Move Kotlin Directory is invoked from a folder node, so its refactoring source deliberately
+        // contains FileObjects rather than an editor StyledDocument. Recognize its typed carrier
+        // before the legacy editor-document applicability guard below.
+        if (refactoring instanceof KotlinMoveFileRefactoring) {
+            return new KotlinMoveFilePlugin((KotlinMoveFileRefactoring) refactoring);
+        }
         FileObject fo = ProjectUtils.getFileObjectForDocument(
                 refactoring.getRefactoringSource().lookup(StyledDocument.class));
         if (fo == null || !fo.hasExt("kt")) {
@@ -155,9 +161,6 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         }
         if (refactoring instanceof KotlinMoveDeclarationRefactoring) {
             return new KotlinMoveDeclarationPlugin((KotlinMoveDeclarationRefactoring) refactoring);
-        }
-        if (refactoring instanceof KotlinMoveFileRefactoring) {
-            return new KotlinMoveFilePlugin((KotlinMoveFileRefactoring) refactoring);
         }
         if (refactoring instanceof KotlinChangeSignatureRefactoring) {
             return new KotlinChangeSignaturePlugin((KotlinChangeSignatureRefactoring) refactoring);

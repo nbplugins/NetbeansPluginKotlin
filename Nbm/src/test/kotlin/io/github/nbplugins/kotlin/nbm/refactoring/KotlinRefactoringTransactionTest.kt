@@ -112,6 +112,35 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
         assertEquals("undo must restore the snapshot from before K2 PSI mutation", original, fixture.text(source))
     }
 
+    /** Verifies several directory descendants move and undo together in reverse physical-move order. */
+    fun testCommitAndUndo_restoresEveryMovedDirectoryDescendant() {
+        val fixture = fixture()
+        val sourceFolder = fixture.root.createFolder("feature")
+        val nestedSource = sourceFolder.createFolder("internal")
+        val targetFolder = fixture.root.createFolder("target")
+        val nestedTarget = targetFolder.createFolder("internal")
+        val publicFile = fixture.existingIn(sourceFolder, "Public.kt", "package feature\n\nfun publicApi() = 1\n")
+        val helperFile = fixture.existingIn(nestedSource, "Helper.kt", "package feature.internal\n\nfun helper() = 1\n")
+        val retainedText = sourceFolder.createData("Readme.txt")
+
+        fixture.transaction.moveFile(publicFile, targetFolder)
+        fixture.transaction.moveFile(helperFile, nestedTarget)
+        fixture.transaction.stageText(publicFile, "package target\n\nfun publicApi() = 1\n")
+        fixture.transaction.stageText(helperFile, "package target.internal\n\nfun helper() = 1\n")
+        fixture.transaction.commit()
+
+        assertNotNull(targetFolder.getFileObject("Public.kt"))
+        assertNotNull(nestedTarget.getFileObject("Helper.kt"))
+        assertTrue("non-Kotlin source content must remain untouched", retainedText.isValid)
+        fixture.transaction.undo()
+
+        assertNotNull(sourceFolder.getFileObject("Public.kt"))
+        assertNotNull(nestedSource.getFileObject("Helper.kt"))
+        assertNull(targetFolder.getFileObject("Public.kt"))
+        assertNull(nestedTarget.getFileObject("Helper.kt"))
+        assertTrue("non-Kotlin source content must remain after undo", retainedText.isValid)
+    }
+
     /** Verifies a physical move is committed and Undo Last Refactoring restores its path and text. */
     fun testCommitAndUndo_restoresMovedFilePathAndText() {
         val fixture = fixture()

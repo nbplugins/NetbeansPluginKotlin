@@ -104,12 +104,41 @@
 
 **Ожидаемый результат:** при ошибке операция прекращается корректно; исходный файл, его package declaration и ранее существующие целевые файлы не остаются в частично изменённом состоянии.
 
+## 10. Перемещение каталога Kotlin
+
+1. Создайте каталог `sample/source/feature` с файлами `Public.kt` и `internal/Helper.kt`:
+   ```kotlin
+   // Public.kt
+   package sample.source.feature
+
+   fun publicApi() = helper()
+
+   // internal/Helper.kt
+   package sample.source.feature.internal
+
+   fun helper() = 1
+   ```
+2. Добавьте рядом не-Kotlin файл `sample/source/feature/README.txt`.
+3. В дереве Projects или Files щёлкните правой кнопкой по каталогу `feature` и выберите
+   **Move Kotlin Directory...**.
+4. Выберите source root, укажите пакет `sample.target`, оставьте обновление Kotlin-ссылок включённым
+   и выполните рефакторинг.
+
+**Ожидаемый результат:**
+
+- `Public.kt` перемещён в `sample/target/feature` и имеет `package sample.target.feature`;
+- `Helper.kt` перемещён в `sample/target/feature/internal` и имеет
+  `package sample.target.feature.internal`;
+- ссылки и импорты Kotlin на оба объявления обновлены;
+- `README.txt` остаётся по исходному пути `sample/source/feature/README.txt`;
+- **Undo Last Refactoring** возвращает оба Kotlin-файла, их package directives и ссылки, не удаляя
+  исходный каталог с `README.txt`.
+
 ## Неподдерживаемые сценарии
 
 Следующие сценарии не входят в F4.1 и не являются критериями приёмки:
 
-- запуск Move Kotlin File из контекстного меню узла файла или каталога;
-- рекурсивное перемещение каталогов;
+- запуск Move Kotlin File из контекстного меню узла файла (для одного файла используйте команду в редакторе);
 - перемещение не-Kotlin файлов;
 - обновление Java usages;
 - обновление упоминаний в комментариях, строках и произвольном тексте;

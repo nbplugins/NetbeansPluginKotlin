@@ -49,10 +49,11 @@ class KotlinMoveFileAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBREV_RES
             val project = ProjectUtils.getKotlinProjectForFileObject(source)
                 ?: ProjectUtils.getValidProject()
                 ?: return@runCatching
+            val selection = KotlinMoveSourceSelection.from(source) ?: return@runCatching
             val result = resolveOutcome(project, source.path) ?: return@runCatching
-            val refactoring = KotlinMoveFileRefactoring(document)
+            val refactoring = KotlinMoveFileRefactoring(selection)
             UI.openRefactoringUI(
-                KotlinMoveFileUI(result, refactoring, KotlinPackageTarget(project, source)),
+                KotlinMoveFileUI(result, refactoring, KotlinPackageTarget(project, selection.representativeFile)),
                 TopComponent.getRegistry().activated,
             )
         }.onFailure { error ->

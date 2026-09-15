@@ -743,7 +743,7 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
       is removed on any conflict/error, an existing target is restored exactly, and **Refactor → Undo
       Last Refactoring** restores both documents (or removes the target file if the refactoring created it).
 
-  - [x] **F4.1** — Move Kotlin File (Refactor menu; directory action remains the next F4.1 increment)
+  - [x] **F4.1** — Move Kotlin File and Directory (Refactor menu / folder context menu)
     - Ports the Kotlin-specific `K2MoveFilesHandler` portion of
       `K2MoveFilesOrDirectoriesRefactoringProcessor.kt` through `KaMoveFileComputer`. The generic
       IDEA processor is intentionally not invoked: it depends on writable IntelliJ VFS, indexed
@@ -755,11 +755,14 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
     - Transactions now record reversible physical file moves and transaction-owned destination folders;
       failed writes roll back the path and document snapshots, while **Undo Last Refactoring** restores
       the original path and text.
+    - Folder-node **Move Kotlin Directory...** recursively moves only Kotlin descendants through one
+      atomic transaction, retaining the selected directory and every nested Kotlin folder below the
+      target package; a single K2 pass uses per-file target packages so inter-file references remain
+      coherent. Non-Kotlin descendants remain at their source paths.
     - Portable coverage includes matching-package update, package/directory mismatch preservation,
       K2 semantic adapter execution, physical-move rollback, owned-folder cleanup, and undo. The
-      remaining F4.1 scope is directory/file-node invocation, recursive Kotlin-directory moves,
-      generic non-Kotlin content, Java/comment/text/index-only references, and full IDEA project-model
-      conflict behavior.
+      remaining F4.1 scope is generic non-Kotlin content, Java/comment/text/index-only references,
+      and full IDEA project-model conflict behavior.
 
   - [x] **E9.8** — Change Signature (Ctrl+F6) — PRs #114, #115
     - IDEA sources: `changeSignature/KotlinChangeSignatureUsageSearcher.kt`,

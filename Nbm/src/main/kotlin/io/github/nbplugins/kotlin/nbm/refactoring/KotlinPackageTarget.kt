@@ -89,6 +89,17 @@ class KotlinPackageTarget(private val project: Project, private val sourceFile: 
     fun isValidPackage(packageName: String): Boolean = packageName.isBlank() ||
         packageName.split('.').all { segment -> IDENTIFIER.matches(segment) }
 
+    /**
+     * Returns [folder]'s dotted path relative to its containing source root.
+     *
+     * @param folder source-root descendant for which to calculate an initial target package
+     * @return the source-root-relative package, or an empty string when no root contains [folder]
+     */
+    fun packageForFolder(folder: FileObject): String = roots.firstNotNullOfOrNull { root ->
+        val relative = relativePath(root.folder, folder) ?: return@firstNotNullOfOrNull null
+        relative.split('/').filter(String::isNotEmpty).joinToString(".")
+    }.orEmpty()
+
     /** @return whether [file] is located at or beneath this target's source root. */
     private fun contains(root: FileObject): Boolean = sourceFile.toURI().let { sourceUri ->
         root.toURI().let { rootUri -> sourceUri.toString().startsWith(rootUri.toString()) }
@@ -111,6 +122,17 @@ class KotlinPackageTarget(private val project: Project, private val sourceFile: 
         .mapNotNull { relativePath -> project.projectDirectory.getFileObject(relativePath) }
         .filter(FileObject::isFolder)
         .map(::KotlinSourceGroup)
+
+    /** Returns the source-root-relative path to [folder], or `null` when it is outside [root]. */
+    private fun relativePath(root: FileObject, folder: FileObject): String? {
+        val rootPath = root.path.trimEnd('/')
+        val folderPath = folder.path
+        return when {
+            folderPath == rootPath -> ""
+            folderPath.startsWith("$rootPath/") -> folderPath.removePrefix("$rootPath/")
+            else -> null
+        }
+    }
 
     /** Returns the selected root object, retaining selection by path rather than UI object identity. */
     private fun rootFolder(path: String?): FileObject? = path?.let { selected ->

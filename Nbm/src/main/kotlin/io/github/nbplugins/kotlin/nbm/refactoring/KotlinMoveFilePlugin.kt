@@ -38,19 +38,20 @@ import org.openide.util.lookup.Lookups
 import javax.swing.text.Position.Bias
 
 /**
- * Bridges NetBeans Move Kotlin File UI to the standalone K2 Move File semantic adapter.
+ * Bridges NetBeans Move Kotlin File and Move Kotlin Directory UI to the standalone K2 semantic
+ * adapter.
  *
  * NetBeans owns destination creation, physical movement, document persistence, rollback, and undo.
  * The ported K2 handler supplies eligible package rewriting, Kotlin conflict detection, and
  * retargeting of supported external Kotlin references.
  *
- * @param refactoring carrier containing the destination selected in the Move File UI
+ * @param refactoring carrier containing selected Kotlin sources and the destination selected in UI
  */
 class KotlinMoveFilePlugin(
     private val refactoring: KotlinMoveFileRefactoring,
 ) : ProgressProviderAdapter(), RefactoringPlugin {
 
-    /** @return no preliminary problem; validation happens while preparing the physical destination. */
+    /** @return no preliminary problem; source validation happens while preparing the operation. */
     override fun preCheck(): Problem? = null
 
     /** @return no fast problem; the UI validates the package before this point. */
@@ -63,39 +64,52 @@ class KotlinMoveFilePlugin(
     override fun cancelRequest() = Unit
 
     /**
-     * Adds one source preview element and one atomic apply element for the current Kotlin file.
+     * Adds a preview element for every selected Kotlin source and one atomic apply element.
      *
      * @param bag NetBeans bag populated with preview and mutation elements
-     * @return a fatal problem when the selected source cannot be analyzed, otherwise `null`
+     * @return a fatal problem when a source cannot be analyzed, otherwise `null`
      */
     override fun prepare(bag: RefactoringElementsBag): Problem? {
-        val source = ProjectUtils.getFileObjectForDocument(refactoring.document) ?: return null
-        val project = ProjectUtils.getKotlinProjectForFileObject(source) ?: return null
-        val file = KotlinAnalysisAPISession.getSession(project).getKtFileForPath(source.path) ?: return null
-        return when (val outcome = KaMoveFileComputer(file).compute()) {
-            is KaMoveFileComputer.Outcome.NotApplicable -> Problem(true, "The selected Kotlin file has no physical path.")
-            is KaMoveFileComputer.Outcome.Error -> Problem(true, outcome.error.message ?: "Move Kotlin File analysis failed.")
-            is KaMoveFileComputer.Outcome.Ready -> {
-                bag.add(
-                    refactoring,
-                    KotlinFindUsagesResultElement(OffsetRange(0, file.textLength), source),
-                )
-                bag.add(refactoring, KotlinMoveFileApplyElement(source, project, refactoring))
-                null
+        KotlinLogger.INSTANCE.logInfo("KotlinMoveFilePlugin.prepare: plugin created")
+        val selection = refactoring.selection
+        val sourceProject = ProjectUtils.getKotlinProjectForFileObject(selection.representativeFile)
+            ?: ProjectUtils.getValidProject()
+            ?: return Problem(true, "Move Kotlin File could not find the source project.")
+        KotlinLogger.INSTANCE.logInfo(
+            "KotlinMoveFilePlugin.prepare: ${selection.sourceFiles.size} Kotlin source(s), " +
+                "project=${sourceProject.projectDirectory.path}",
+        )
+        val session = KotlinAnalysisAPISession.getSession(sourceProject)
+        val sources = selection.sourceFiles.map { source ->
+            session.getKtFileForPath(source.path)
+                ?: return Problem(true, "Move Kotlin File could not resolve ${source.nameExt}.")
+        }
+        val problem = sources.firstNotNullOfOrNull { file ->
+            when (val outcome = KaMoveFileComputer(file).compute()) {
+                is KaMoveFileComputer.Outcome.NotApplicable -> Problem(true, "The selected Kotlin file has no physical path.")
+                is KaMoveFileComputer.Outcome.Error -> Problem(true, outcome.error.message ?: "Move Kotlin File analysis failed.")
+                is KaMoveFileComputer.Outcome.Ready -> null
             }
         }
+        if (problem != null) return problem
+        sources.zip(selection.sourceFiles).forEach { (file, source) ->
+            bag.add(refactoring, KotlinFindUsagesResultElement(OffsetRange(0, file.textLength), source))
+        }
+        bag.add(refactoring, KotlinMoveFileApplyElement(selection, sourceProject, refactoring))
+        return null
     }
 }
 
 /**
- * Performs one atomic Kotlin file move and retains the transaction for Undo Last Refactoring.
+ * Performs one atomic Kotlin file or directory move and retains the transaction for Undo Last
+ * Refactoring.
  *
- * @param sourceFile source file selected by the editor action
- * @param project NetBeans project owning the source file
+ * @param selection Kotlin sources selected by the editor or directory-node action
+ * @param project NetBeans project owning the selected sources
  * @param refactoring destination and search parameters
  */
 class KotlinMoveFileApplyElement(
-    private val sourceFile: FileObject,
+    private val selection: KotlinMoveSourceSelection,
     private val project: org.netbeans.api.project.Project,
     private val refactoring: KotlinMoveFileRefactoring,
 ) : SimpleRefactoringElementImplementation() {
@@ -104,20 +118,20 @@ class KotlinMoveFileApplyElement(
     private var transaction: KotlinRefactoringTransaction? = null
 
     /** @return user-visible preview text. */
-    override fun getText(): String = "Move Kotlin file"
+    override fun getText(): String = if (selection.isDirectory) "Move Kotlin directory" else "Move Kotlin file"
 
     /** @return user-visible preview text. */
     override fun getDisplayText(): String = getText()
 
-    /** @return source file lookup. */
-    override fun getLookup(): Lookup = Lookups.fixed(sourceFile)
+    /** @return selected representative file lookup. */
+    override fun getLookup(): Lookup = Lookups.fixed(selection.representativeFile)
 
-    /** @return original source file for NetBeans preview placement. */
-    override fun getParentFile(): FileObject = sourceFile
+    /** @return representative source file for NetBeans preview placement. */
+    override fun getParentFile(): FileObject = selection.representativeFile
 
     /** @return source position bounds, when the editor support is available. */
     override fun getPosition(): PositionBounds? = try {
-        val support = org.openide.loaders.DataObject.find(sourceFile)
+        val support = org.openide.loaders.DataObject.find(selection.representativeFile)
             .lookup.lookup(CloneableEditorSupport::class.java) ?: return null
         PositionBounds(
             support.createPositionRef(0, Bias.Forward),
@@ -128,18 +142,14 @@ class KotlinMoveFileApplyElement(
     }
 
     /**
-     * Runs K2 semantics first, then atomically moves the physical file and persists every changed
-     * Kotlin document. Any failure rolls paths, documents, owned destination folders, and created
-     * files back to their original state.
-     *
-     * @return no value; failures are logged and the transaction is rolled back
+     * Runs K2 semantics first, then atomically moves every physical Kotlin file and persists every
+     * changed Kotlin document. Any failure rolls paths, documents, owned destination folders, and
+     * created files back to their original state.
      */
     override fun performChange() {
         var pending: KotlinRefactoringTransaction? = null
         runCatching {
-            val activeSource = ProjectUtils.getFileObjectForDocument(refactoring.document) ?: sourceFile
-            val sourceProject = ProjectUtils.getKotlinProjectForFileObject(activeSource) ?: project
-            val packageTarget = KotlinPackageTarget(sourceProject, activeSource)
+            val packageTarget = KotlinPackageTarget(project, selection.representativeFile)
             val targetRoot = packageTarget.roots.firstOrNull { it.path == refactoring.targetRootPath }
                 ?: packageTarget.roots.firstOrNull { it.path == packageTarget.defaultRootPath }
                 ?: error("Move Kotlin File could not find a destination source root.")
@@ -148,45 +158,33 @@ class KotlinMoveFileApplyElement(
 
             val current = KotlinRefactoringTransaction()
             pending = current
-            val targetFolder = createTargetFolder(current, targetRoot.folder, targetPackage)
-            check(targetFolder != activeSource.parent) { "Kotlin file is already in the selected destination folder." }
-            check(targetFolder.getFileObject(activeSource.name, activeSource.ext) == null) {
-                "Target already contains ${activeSource.nameExt}."
+            val sourceByPath = selection.sourceFiles.associateBy(FileObject::getPath)
+            val targetFolders = selection.sourceFiles.associateWith { source ->
+                val packageSegments = targetPackage.split('.').filter(String::isNotEmpty) +
+                    selection.targetRelativeFolderSegments(source)
+                createTargetFolder(current, targetRoot.folder, packageSegments)
             }
+            validatePhysicalTargets(selection.sourceFiles, targetFolders)
 
-            val session = KotlinAnalysisAPISession.getSession(sourceProject)
-            val sourceKtFile = session.getKtFileForPath(activeSource.path)
-                ?: error("Move Kotlin File could not resolve writable source PSI.")
-            // The session's disk-backed PSI is required only for target metadata/conflicts. Its
-            // VFS cannot create or move files; NetBeans performs that separately in the transaction.
-            val targetDirectory = KaMoveDeclarationComputer.resolveDirectory(sourceKtFile.project, targetFolder.path)
-                ?: error("Move Kotlin File could not resolve destination PSI directory.")
-            val outcome = KaMoveFileComputer(sourceKtFile).apply(
-                files = listOf(sourceKtFile),
-                targetDirectory = targetDirectory,
-                targetPackage = FqName(targetPackage),
-                updateReferences = refactoring.updateReferences,
-            )
-            when (outcome) {
-                is KaMoveFileComputer.ApplyOutcome.Conflicts -> {
-                    throw IllegalStateException(outcome.messages.joinToString("\n"))
-                }
+            val session = KotlinAnalysisAPISession.getSession(project)
+            val ktTargets = selection.sourceFiles.associate { source ->
+                val sourceKtFile = session.getKtFileForPath(source.path)
+                    ?: error("Move Kotlin File could not resolve writable source PSI: ${source.nameExt}.")
+                val targetFolder = targetFolders.getValue(source)
+                val targetDirectory = KaMoveDeclarationComputer.resolveDirectory(sourceKtFile.project, targetFolder.path)
+                    ?: error("Move Kotlin File could not resolve destination PSI directory: ${targetFolder.path}.")
+                val finalPackage = targetPackageFor(source, targetPackage)
+                sourceKtFile to KaMoveFileComputer.MoveTarget(targetDirectory, FqName(finalPackage))
+            }
+            when (val outcome = KaMoveFileComputer(ktTargets.keys.first()).apply(ktTargets, refactoring.updateReferences)) {
+                is KaMoveFileComputer.ApplyOutcome.Conflicts -> throw IllegalStateException(outcome.messages.joinToString("\n"))
                 is KaMoveFileComputer.ApplyOutcome.Error -> throw outcome.error
                 is KaMoveFileComputer.ApplyOutcome.Success -> {
-                    current.moveFile(activeSource, targetFolder)
+                    selection.sourceFiles.forEach { source -> current.moveFile(source, targetFolders.getValue(source)) }
                     outcome.changedFiles.forEach { (path, text) ->
-                        val file = if (path == activeSource.path) {
-                            activeSource
-                        } else {
-                            FileUtil.toFileObject(FileUtil.normalizeFile(java.io.File(path)))
-                                ?: error("Move Kotlin File could not resolve changed file $path.")
-                        }
-                        val originalText = outcome.originalTexts[path]
-                        KotlinLogger.INSTANCE.logInfo(
-                            "KotlinMoveFileApplyElement.performChange: staging path=$path, " +
-                                "original=${describeText(originalText)}, final=${describeText(text)}"
-                        )
-                        current.captureExisting(file, originalText)
+                        val file = sourceByPath[path] ?: FileUtil.toFileObject(FileUtil.normalizeFile(java.io.File(path)))
+                            ?: error("Move Kotlin File could not resolve changed file $path.")
+                        current.captureExisting(file, outcome.originalTexts[path])
                         current.stageText(file, text)
                     }
                     current.commit()
@@ -203,7 +201,7 @@ class KotlinMoveFileApplyElement(
         KotlinAnalysisAPISession.invalidate(project)
     }
 
-    /** Restores the original source path and text through the transaction retained after commit. */
+    /** Restores original source paths and texts through the transaction retained after commit. */
     override fun undoChange() {
         runCatching {
             val current = transaction
@@ -221,16 +219,32 @@ class KotlinMoveFileApplyElement(
         }
     }
 
-    /** Produces bounded, one-line diagnostic text without logging full source contents. */
-    private fun describeText(text: String?): String =
-        if (text == null) "missing" else "length=${text.length}, head=${text.take(160).replace("\n", "\\n")}"
+    /** Rejects same-directory, duplicate-path, and pre-existing-target moves before K2 mutates PSI. */
+    private fun validatePhysicalTargets(
+        sources: List<FileObject>,
+        targets: Map<FileObject, FileObject>,
+    ) {
+        val targetPaths = mutableSetOf<String>()
+        sources.forEach { source ->
+            val target = targets.getValue(source)
+            check(target != source.parent) { "${source.nameExt} is already in the selected destination folder." }
+            val path = "${target.path}/${source.nameExt}"
+            check(targetPaths.add(path)) { "Several selected Kotlin files would move to $path." }
+            val existing = target.getFileObject(source.name, source.ext)
+            check(existing == null || existing == source) { "Target already contains ${source.nameExt}." }
+        }
+    }
+
+    /** Computes one source's final package, retaining a selected directory's nested hierarchy. */
+    private fun targetPackageFor(source: FileObject, basePackage: String): String {
+        val segments = basePackage.split('.').filter(String::isNotEmpty) + selection.targetRelativeFolderSegments(source)
+        return segments.joinToString(".")
+    }
 
     /** Creates only destination package folders that this transaction can safely delete on undo. */
     private fun createTargetFolder(
         transaction: KotlinRefactoringTransaction,
         root: FileObject,
-        packageName: String,
-    ): FileObject = packageName.split('.').filter(String::isNotEmpty).fold(root) { parent, segment ->
-        transaction.createFolder(parent, segment)
-    }
+        segments: List<String>,
+    ): FileObject = segments.fold(root) { parent, segment -> transaction.createFolder(parent, segment) }
 }

@@ -21,7 +21,10 @@ import com.intellij.psi.util.PsiTreeUtil
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.idea.k2.refactoring.move.KotlinMoveUsageSearchService
+import org.jetbrains.kotlin.idea.k2.refactoring.move.MoveImport
 import org.jetbrains.kotlin.idea.references.KtReference
+import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
@@ -77,5 +80,40 @@ class KotlinMoveUsageSearchServiceImpl : KotlinMoveUsageSearchService {
             }
         }
         return references
+    }
+
+    /**
+     * Finds Kotlin files that directly import a moved top-level declaration.
+     *
+     * Import directives are intentionally absent from [findUsages] because K2 semantic rebinding
+     * cannot safely replace an import-path segment in standalone PSI. The caller replaces whole
+     * directives after semantic retargeting instead.
+     *
+     * @param project IntelliJ project owning the standalone K2 session
+     * @param movedImports original package/name keys mapped to final packages
+     * @return session files with a direct non-aliased import that needs rewriting
+     */
+    override fun findImportingFiles(
+        project: com.intellij.openapi.project.Project,
+        movedImports: Map<MoveImport, FqName>,
+    ): List<KtFile> {
+        if (movedImports.isEmpty()) return emptyList()
+        val session = KotlinAnalysisAPISession.forProject(project) ?: return emptyList()
+        val candidates = session.fileMap.values.mapNotNull { lightFile ->
+            val file = session.getKtFileForPath(lightFile.path) ?: return@mapNotNull null
+            file.takeIf { candidate ->
+                candidate.importDirectives.any { directive ->
+                    directive.aliasName == null && !directive.isAllUnder && directive.importedFqName?.let { imported ->
+                        MoveImport(imported.parent(), imported.shortName().asString()) in movedImports
+                    } == true
+                }
+            }
+        }
+        if (candidates.isNotEmpty()) {
+            KotlinLogger.INSTANCE.logInfo(
+                "KotlinMoveUsageSearchServiceImpl: found ${candidates.size} import-only Move File usage(s)",
+            )
+        }
+        return candidates
     }
 }

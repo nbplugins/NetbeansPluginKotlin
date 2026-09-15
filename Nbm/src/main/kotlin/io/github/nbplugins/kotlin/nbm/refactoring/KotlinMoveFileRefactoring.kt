@@ -18,19 +18,18 @@ package io.github.nbplugins.kotlin.nbm.refactoring
 
 import org.netbeans.modules.refactoring.api.AbstractRefactoring
 import org.openide.util.lookup.Lookups
-import javax.swing.text.StyledDocument
 
 /**
- * Carries parameters for Kotlin Move File and Directory refactoring.
+ * Carries selected Kotlin sources and destination parameters for Move File and Move Directory.
  *
- * The editor action seeds this carrier with the selected Kotlin source file. A directory invocation
- * expands its Kotlin descendants into [sourceFiles] before the refactoring framework runs.
+ * The editor action creates a single-file [selection]. The folder-node action creates a recursive
+ * Kotlin-only selection; both variants run through one refactoring lifecycle and transaction.
  *
- * @param document document associated with the action invocation
+ * @param selection physical Kotlin sources selected for movement
  */
 class KotlinMoveFileRefactoring(
-    val document: StyledDocument,
-) : AbstractRefactoring(Lookups.fixed(document)) {
+    val selection: KotlinMoveSourceSelection,
+) : AbstractRefactoring(Lookups.fixed(*selection.sourceFiles.toTypedArray())) {
 
     /** Source-root path selected in the destination UI. */
     var targetRootPath: String = ""
