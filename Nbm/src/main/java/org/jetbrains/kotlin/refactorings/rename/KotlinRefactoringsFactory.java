@@ -40,6 +40,8 @@ import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveDeclarationPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveDeclarationRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveFilePlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveFileRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangePackagePlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangePackageRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignaturePlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignatureRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceImportAliasPlugin;
@@ -92,6 +94,7 @@ import org.openide.util.lookup.ServiceProvider;
  *   <li>{@link KotlinCopyDeclarationRefactoring} — delegates to {@link KotlinCopyDeclarationPlugin}</li>
  *   <li>{@link KotlinMoveDeclarationRefactoring} — delegates to {@link KotlinMoveDeclarationPlugin}</li>
  *   <li>{@link KotlinMoveFileRefactoring} — delegates to {@link KotlinMoveFilePlugin}</li>
+ *   <li>{@link KotlinChangePackageRefactoring} — delegates to {@link KotlinChangePackagePlugin}</li>
  *   <li>{@link KotlinChangeSignatureRefactoring} — delegates to {@link KotlinChangeSignaturePlugin}</li>
  * </ul>
  */
@@ -105,6 +108,9 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         // before the legacy editor-document applicability guard below.
         if (refactoring instanceof KotlinMoveFileRefactoring) {
             return new KotlinMoveFilePlugin((KotlinMoveFileRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinChangePackageRefactoring) {
+            return new KotlinChangePackagePlugin((KotlinChangePackageRefactoring) refactoring);
         }
         FileObject fo = ProjectUtils.getFileObjectForDocument(
                 refactoring.getRefactoringSource().lookup(StyledDocument.class));
