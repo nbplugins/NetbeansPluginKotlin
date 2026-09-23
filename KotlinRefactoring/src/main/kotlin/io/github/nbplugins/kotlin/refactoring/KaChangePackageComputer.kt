@@ -22,7 +22,6 @@ import org.jetbrains.kotlin.idea.k2.refactoring.move.KotlinMoveUsageSearchServic
 import org.jetbrains.kotlin.idea.k2.refactoring.move.MoveImport
 import org.jetbrains.kotlin.idea.k2.refactoring.move.descriptor.K2ChangePackageDescriptor
 import org.jetbrains.kotlin.idea.k2.refactoring.move.processor.K2ChangePackageRefactoringProcessor
-import org.jetbrains.kotlin.idea.k2.refactoring.move.processor.findMoveFileUsages
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
@@ -68,56 +67,10 @@ class KaChangePackageComputer(
     fun apply(targets: Map<KtFile, FqName>, updateReferences: Boolean): ApplyOutcome {
         return try {
             require(targets.isNotEmpty()) { "Change Package requires at least one Kotlin file." }
-        val files = targets.keys.toList()
-        require(files.all { it.virtualFile?.path != null }) { "Change Package requires physical Kotlin files." }
+            val files = targets.keys.toList()
+            require(files.all { it.virtualFile?.path != null }) { "Change Package requires physical Kotlin files." }
 
-        val usages = if (updateReferences) {
-            files.flatMap { file ->
-                file.findMoveFileUsages(
-                    searchInCommentsAndStrings = false,
-                    searchForText = false,
-                    targetPackage = targets.getValue(file),
-                )
-            }.distinct()
-        } else {
-            emptyList()
-        }
-        val conflicts = targets.entries
-            .groupBy({ it.value }, { it.key })
-            .values
-            .flatMap { groupedFiles ->
-                K2ChangePackageRefactoringProcessor(
-                    K2ChangePackageDescriptor(
-                        project = ktFile.project,
-                        files = groupedFiles.toSet(),
-                        target = targets.getValue(groupedFiles.first()),
-                        searchForText = false,
-                        searchInComments = false,
-                    ),
-                ).findConflicts(usages.filterIsInstance<MoveRenameUsageInfo>()).values()
-            }
-        if (conflicts.isNotEmpty()) return ApplyOutcome.Conflicts(conflicts.distinct())
-
-        val movedImports = files.flatMap { file ->
-            file.declarations.mapNotNull { declaration ->
-                (declaration as? KtNamedDeclaration)?.name?.let { name ->
-                    MoveImport(file.packageFqName, name) to targets.getValue(file)
-                }
-            }
-        }.toMap()
-        val importOnlyUsageFiles = if (updateReferences) {
-            KotlinMoveUsageSearchService.getInstance()
-                ?.findImportingFiles(ktFile.project, movedImports)
-                .orEmpty()
-        } else {
-            emptyList()
-        }
-        val usageFiles = (filesWithUsages(usages) + importOnlyUsageFiles).distinct()
-        val originalTexts = (files + usageFiles).distinct().mapNotNull { file ->
-            file.virtualFile?.path?.let { path -> path to file.text }
-        }.toMap()
-
-        val processors = targets.entries.groupBy({ it.value }, { it.key }).map { (targetPackage, groupedFiles) ->
+            val processors = targets.entries.groupBy({ it.value }, { it.key }).map { (targetPackage, groupedFiles) ->
             K2ChangePackageRefactoringProcessor(
                 K2ChangePackageDescriptor(
                     project = ktFile.project,
@@ -128,19 +81,96 @@ class KaChangePackageComputer(
                 ),
             )
         }
+        // Use the copied upstream Change Package processor rather than the F4.1 Move File helper:
+        // its findUsages() marks whole-file internal references. That is what forces a same-package,
+        // no-import usage in another source file to gain an import after its declaration changes package.
+        val usages = if (updateReferences) processors.flatMap { it.findUsages().asIterable() }.distinct() else emptyList()
+        val conflicts = processors.flatMap { processor ->
+            processor.findConflicts(usages.filterIsInstance<MoveRenameUsageInfo>()).values()
+        }
+        if (conflicts.isNotEmpty()) return ApplyOutcome.Conflicts(conflicts.distinct())
+
+        val movedImports = files.flatMap { file ->
+            file.declarations.mapNotNull { declaration ->
+                (declaration as? KtNamedDeclaration)?.name?.let { name ->
+                    MoveImport(file.packageFqName, name) to targets.getValue(file)
+                }
+            }
+        }.toMap()
+        val samePackageImportUpdates = if (updateReferences) {
+            findSamePackageImportUpdates(files, targets)
+        } else {
+            emptyMap()
+        }
+        val importOnlyUsageFiles = if (updateReferences) {
+            KotlinMoveUsageSearchService.getInstance()
+                ?.findImportingFiles(ktFile.project, movedImports)
+                .orEmpty()
+        } else {
+            emptyList()
+        }
+        val usageFiles = (filesWithUsages(usages) + importOnlyUsageFiles + samePackageImportUpdates.keys).distinct()
+        val originalTexts = (files + usageFiles).distinct().mapNotNull { file ->
+            file.virtualFile?.path?.let { path -> path to file.text }
+        }.toMap()
         val oldToNew = linkedMapOf<com.intellij.psi.PsiElement, com.intellij.psi.PsiElement>()
         processors.forEach { processor -> processor.prepareRefactoring(oldToNew) }
         if (updateReferences) processors.first().retargetUsages(usages, oldToNew)
 
-        val changedFiles = linkedMapOf<String, String>()
-        files.forEach { file -> file.virtualFile?.path?.let { changedFiles[it] = file.text } }
-        usageFiles.filterNot { it in files }.forEach { file ->
-            rewriteMovedImports(file, movedImports)
-            file.virtualFile?.path?.let { changedFiles[it] = file.text }
-        }
+            val changedFiles = linkedMapOf<String, String>()
+            files.forEach { file -> file.virtualFile?.path?.let { changedFiles[it] = file.text } }
+            usageFiles.filterNot { it in files }.forEach { file ->
+                rewriteMovedImports(file, movedImports)
+                addSamePackageImports(file, samePackageImportUpdates[file].orEmpty())
+                file.virtualFile?.path?.let { changedFiles[it] = file.text }
+            }
             ApplyOutcome.Success(changedFiles, originalTexts)
         } catch (error: Throwable) {
             ApplyOutcome.Error(error)
+        }
+    }
+
+    /**
+     * Finds old-package simple references that will lose their implicit package visibility.
+     *
+     * The standalone K2 retargeter excludes these whole-file internal usages, so identify them
+     * before changing directives and later add only the imports required to preserve binding.
+     */
+    private fun findSamePackageImportUpdates(
+        movedFiles: Collection<KtFile>,
+        targets: Map<KtFile, FqName>,
+    ): Map<KtFile, Set<FqName>> {
+        val movedDeclarations = movedFiles.flatMap { file ->
+            file.declarations.filterIsInstance<KtNamedDeclaration>().mapNotNull { declaration ->
+                declaration.name?.let { name -> declaration to targets.getValue(file).child(org.jetbrains.kotlin.name.Name.identifier(name)) }
+            }
+        }.toMap()
+        if (movedDeclarations.isEmpty()) return emptyMap()
+        val session = KotlinMoveUsageSearchService.getInstance() ?: return emptyMap()
+        val updates = linkedMapOf<KtFile, MutableSet<FqName>>()
+        movedDeclarations.forEach { (declaration, targetFqName) ->
+            session.findUsages(declaration).forEach { reference ->
+                val file = reference.element?.containingFile as? KtFile ?: return@forEach
+                if (file in movedFiles || file.packageFqName != declaration.containingKtFile.packageFqName) return@forEach
+                updates.getOrPut(file, ::linkedSetOf) += targetFqName
+            }
+        }
+        return updates
+    }
+
+    /** Adds imports for former same-package declarations that no longer resolve implicitly. */
+    private fun addSamePackageImports(usageFile: KtFile, imports: Set<FqName>) {
+        if (imports.isEmpty()) return
+        val factory = KtPsiFactory(usageFile.project)
+        imports.forEach { imported ->
+            if (usageFile.importDirectives.any { it.importedFqName == imported }) return@forEach
+            val directive = factory.createImportDirective(ImportPath(imported, false))
+            val importList = usageFile.importList
+            if (importList != null) {
+                importList.add(directive)
+            } else {
+                usageFile.addAfter(directive, usageFile.packageDirective)
+            }
         }
     }
 

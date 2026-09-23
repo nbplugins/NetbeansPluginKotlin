@@ -17,6 +17,8 @@
 package io.github.nbplugins.kotlin.nbm.refactoring
 
 import org.netbeans.junit.NbTestCase
+import java.nio.file.Files
+import java.nio.file.Path
 
 /** Unit tests for [KotlinChangePackageDirectoryAction]. */
 class KotlinChangePackageDirectoryActionTest : NbTestCase("KotlinChangePackageDirectoryActionTest") {
@@ -28,6 +30,33 @@ class KotlinChangePackageDirectoryActionTest : NbTestCase("KotlinChangePackageDi
             TestAction().isAsynchronous(),
         )
     }
+
+    /** Verifies the directory action has exactly one folder-context layer registration. */
+    fun testLayer_registersFolderActionWithoutGlobalMenuDuplicate() {
+        val layer = repositoryRoot().resolve("Nbm/src/main/resources/org/jetbrains/kotlin/layer.xml")
+        val contents = Files.readString(layer)
+        val actionName = "KotlinChangePackageDirectoryAction.shadow"
+
+        assertEquals("Folder context action must have exactly one dedicated layer shadow", 1, contents.countOccurrences(actionName))
+        assertTrue("Folder context action must be registered in Loaders/folder/any/Actions", contents.contains("<folder name=\"folder\">"))
+    }
+
+    /** Finds the checkout root from the NBM module's Surefire working directory. */
+    private fun repositoryRoot(): Path {
+        var candidate: Path? = Path.of("").toAbsolutePath()
+        while (candidate != null) {
+            if (Files.isRegularFile(candidate.resolve("pom.xml")) && Files.isDirectory(candidate.resolve("Nbm"))) {
+                return candidate
+            }
+            candidate = candidate.parent
+        }
+        fail("Could not locate repository root from ${Path.of("").toAbsolutePath()}")
+        error("unreachable")
+    }
+
+    /** Counts non-overlapping literal [needle] occurrences in this source text. */
+    private fun String.countOccurrences(needle: String): Int =
+        split(needle).size - 1
 
     /** Exposes NodeAction's protected dispatcher contract for this focused test. */
     private class TestAction : KotlinChangePackageDirectoryAction() {

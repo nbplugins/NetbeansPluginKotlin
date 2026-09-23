@@ -104,6 +104,49 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies a caller in the old package receives an explicit reference after its declaration moves.
+     *
+     * Before Change Package's upstream whole-file usage discovery was used, this no-import call was
+     * invisible to the adapter: it remained a stale simple name in the old package.
+     */
+    fun testApply_realSession_retargetsSamePackageReferenceWithoutImport() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-same-package")
+        try {
+            val oldPackageDirectory = temporaryRoot.resolve("old/source")
+            Files.createDirectories(oldPackageDirectory)
+            val sourcePath = oldPackageDirectory.resolve("Moved.kt")
+            val callerPath = oldPackageDirectory.resolve("Caller.kt")
+            Files.writeString(sourcePath, "package old.source\n\nfun moved() = 1\n")
+            Files.writeString(callerPath, "package old.source\n\nfun use() = moved()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-same-package-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("new.changed")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertTrue(success.changedFiles[sourcePath.toString()]?.contains("package new.changed") == true)
+            assertTrue(
+                "A same-package caller must import the declaration's new package, got ${success.changedFiles[callerPath.toString()]}",
+                success.changedFiles[callerPath.toString()]?.contains("import new.changed.moved") == true,
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Verifies recursive-style per-file packages retarget imports for every selected source together. */
     fun testApply_realSession_supportsDistinctDescendantPackages() {
         val stdlib = findStdlibJar() ?: run {

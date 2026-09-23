@@ -161,10 +161,6 @@
                 <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageAction.instance"/>
                 <attr name="position" intvalue="267"/>
             </file>
-            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageDirectoryAction.shadow">
-                <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageDirectoryAction.instance"/>
-                <attr name="position" intvalue="268"/>
-            </file>
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangeSignatureAction.shadow">
                 <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangeSignatureAction.instance"/>
                 <attr name="position" intvalue="270"/>
