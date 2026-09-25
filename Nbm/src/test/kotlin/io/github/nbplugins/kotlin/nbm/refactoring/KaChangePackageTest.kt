@@ -138,9 +138,15 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
             assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
             val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
             assertTrue(success.changedFiles[sourcePath.toString()]?.contains("package new.changed") == true)
-            assertTrue(
-                "A same-package caller must import the declaration's new package, got ${success.changedFiles[callerPath.toString()]}",
-                success.changedFiles[callerPath.toString()]?.contains("import new.changed.moved") == true,
+            assertEquals(
+                "A same-package caller without existing imports needs a separated import section",
+                "package old.source\n\nimport new.changed.moved\n\nfun use() = moved()\n",
+                success.changedFiles[callerPath.toString()],
+            )
+            assertEquals(
+                "Every generated import change needs an exact pre-refactoring snapshot for Undo Last Refactoring",
+                "package old.source\n\nfun use() = moved()\n",
+                success.originalTexts[callerPath.toString()],
             )
         } finally {
             temporaryRoot.toFile().deleteRecursively()

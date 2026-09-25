@@ -112,6 +112,25 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
         assertEquals("undo must restore the snapshot from before K2 PSI mutation", original, fixture.text(source))
     }
 
+    /** Verifies undo removes an import that Change Package added to a same-package caller. */
+    fun testCommitAndUndo_removesGeneratedSamePackageImport() {
+        val fixture = fixture()
+        val moved = fixture.existing("Moved.kt", "package new.target\n\nfun moved() = 1\n")
+        val caller = fixture.existing("Caller.kt", "package old.source\n\nimport new.target.moved\n\nfun use() = moved()\n")
+        val originalMoved = "package old.source\n\nfun moved() = 1\n"
+        val originalCaller = "package old.source\n\nfun use() = moved()\n"
+
+        fixture.transaction.captureExisting(moved, originalMoved)
+        fixture.transaction.captureExisting(caller, originalCaller)
+        fixture.transaction.stageText(moved, "package new.target\n\nfun moved() = 1\n")
+        fixture.transaction.stageText(caller, "package old.source\n\nimport new.target.moved\n\nfun use() = moved()\n")
+        fixture.transaction.commit()
+        fixture.transaction.undo()
+
+        assertEquals("package source must be restored", originalMoved, fixture.text(moved))
+        assertEquals("undo must remove the generated import exactly", originalCaller, fixture.text(caller))
+    }
+
     /** Verifies several directory descendants move and undo together in reverse physical-move order. */
     fun testCommitAndUndo_restoresEveryMovedDirectoryDescendant() {
         val fixture = fixture()

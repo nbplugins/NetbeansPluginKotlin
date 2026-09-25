@@ -125,7 +125,9 @@ class KotlinChangePackageApplyElement(
                     outcome.changedFiles.forEach { (path, text) ->
                         val file = sourceByPath[path] ?: FileUtil.toFileObject(FileUtil.normalizeFile(java.io.File(path)))
                             ?: error("Change Kotlin Package could not resolve changed file $path.")
-                        current.captureExisting(file, outcome.originalTexts[path])
+                        val originalText = outcome.originalTexts[path]
+                            ?: error("Change Kotlin Package has no original text snapshot for $path.")
+                        current.captureExisting(file, originalText)
                         current.stageText(file, text)
                     }
                     current.commit()
@@ -141,7 +143,19 @@ class KotlinChangePackageApplyElement(
 
     /** Restores all original package directives and usage texts. */
     override fun undoChange() {
-        runCatching { transaction?.undo(); transaction = null; KotlinAnalysisAPISession.invalidate(project) }
-            .onFailure { error -> KotlinLogger.INSTANCE.logException("KotlinChangePackageApplyElement.undoChange failed", error) }
+        runCatching {
+            val current = transaction
+            if (current == null) {
+                KotlinLogger.INSTANCE.logWarning("KotlinChangePackageApplyElement.undoChange: no retained transaction")
+            } else {
+                KotlinLogger.INSTANCE.logInfo("KotlinChangePackageApplyElement.undoChange: restoring retained transaction")
+                current.undo()
+                transaction = null
+                KotlinLogger.INSTANCE.logInfo("KotlinChangePackageApplyElement.undoChange: transaction restored")
+            }
+            KotlinAnalysisAPISession.invalidate(project)
+        }.onFailure { error ->
+            KotlinLogger.INSTANCE.logException("KotlinChangePackageApplyElement.undoChange failed", error)
+        }
     }
 }
