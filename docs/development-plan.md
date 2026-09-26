@@ -764,6 +764,21 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
       remaining F4.1 scope is generic non-Kotlin content, Java/comment/text/index-only references,
       and full IDEA project-model conflict behavior.
 
+  - [x] **F4.2** — Change Kotlin Package (Refactor menu / folder context menu)
+    - Ports real upstream `K2ChangePackageDescriptor` and
+      `K2ChangePackageRefactoringProcessor` sources from `kotlin.refactorings.move.k2`. The copied
+      processor is patched only to remove IDEA's `BaseRefactoringProcessor` command/progress/dialog/
+      listener lifecycle; its K2 usage discovery, conflict collection, package-directive rewrite,
+      declaration mapping, and retargeting sequence remain the semantic engine.
+    - **Refactor → Change Kotlin Package...** changes the active Kotlin file's package without
+      moving it. A folder-node invocation recursively changes only Kotlin descendants; direct
+      children use the entered package while nested descendants append their relative folder paths.
+      The selected folder's name is not added because its physical path remains unchanged.
+    - Supported Kotlin code references and direct non-aliased imports update atomically through
+      `KotlinRefactoringTransaction`; **Undo Last Refactoring** restores every source and usage
+      document. Java/comment/text/index-only references, full IDEA project-model conflicts, and
+      arbitrary multi-selection remain outside the standalone scope.
+
   - [x] **E9.8** — Change Signature (Ctrl+F6) — PRs #114, #115
     - IDEA sources: `changeSignature/KotlinChangeSignatureUsageSearcher.kt`,
       `changeSignature/KotlinChangeInfo.kt`, `changeSignature/KotlinChangeInfoBase.kt`,

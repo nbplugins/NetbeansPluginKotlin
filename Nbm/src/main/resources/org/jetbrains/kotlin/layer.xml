@@ -120,6 +120,13 @@
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveDirectoryAction.instance">
                 <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveDirectoryAction"/>
             </file>
+            <!-- Global Change Kotlin Package refactoring actions (F4.2). -->
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageAction.instance">
+                <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangePackageAction"/>
+            </file>
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageDirectoryAction.instance">
+                <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangePackageDirectoryAction"/>
+            </file>
             <!-- Global Change Signature refactoring action (Refactor menu + Ctrl+F6; E9.8). -->
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangeSignatureAction.instance">
                 <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignatureAction"/>
@@ -149,6 +156,10 @@
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveDirectoryAction.shadow">
                 <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveDirectoryAction.instance"/>
                 <attr name="position" intvalue="266"/>
+            </file>
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageAction.shadow">
+                <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageAction.instance"/>
+                <attr name="position" intvalue="267"/>
             </file>
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangeSignatureAction.shadow">
                 <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangeSignatureAction.instance"/>
@@ -314,6 +325,17 @@
     </folder>
     
     <folder name="Loaders">
+        <!-- Folder actions are manually registered because annotation processing is disabled. -->
+        <folder name="folder">
+            <folder name="any">
+                <folder name="Actions">
+                    <file name="KotlinChangePackageDirectoryAction.shadow">
+                        <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageDirectoryAction.instance"/>
+                        <attr name="position" intvalue="1010"/>
+                    </file>
+                </folder>
+            </folder>
+        </folder>
         <folder name="text">
             <folder name="x-kotlin">
                 <folder name="Factories">
@@ -644,6 +666,10 @@
                         <!-- Move Kotlin File (F4.1): custom Kotlin action (Refactor menu only). -->
                         <file name="kotlin-move-file.instance">
                             <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveFileAction"/>
+                        </file>
+                        <!-- Change Kotlin Package (F4.2): custom Kotlin action. -->
+                        <file name="kotlin-change-package.instance">
+                            <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangePackageAction"/>
                         </file>
                         <!-- Change Signature (E9.8, Ctrl+F6): custom Kotlin action. -->
                         <file name="kotlin-change-signature.instance">
