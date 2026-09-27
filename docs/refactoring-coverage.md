@@ -13,7 +13,7 @@ netbeans=<path>; test=<path>; milestone=<F0-F8>
 <!-- refactoring-coverage: id=change-signature; status=partial; idea=submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src/org/jetbrains/kotlin/idea/k2/refactoring/changeSignature/KotlinChangeSignatureProcessor.kt; netbeans=KotlinRefactoring/src/main/kotlin/io/github/nbplugins/kotlin/refactoring/KaChangeSignatureComputer.kt; test=Nbm/src/test/kotlin/io/github/nbplugins/kotlin/nbm/refactoring/KaChangeSignatureTest.kt; milestone=F1 -->
 <!-- refactoring-coverage: id=inline-variable-property; status=partial; idea=submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src/org/jetbrains/kotlin/idea/k2/refactoring/inline/KotlinInlinePropertyProcessor.kt; netbeans=KotlinRefactoring/src/main/kotlin/io/github/nbplugins/kotlin/refactoring/KaInlineVariableComputer.kt; test=Nbm/src/test/kotlin/io/github/nbplugins/kotlin/nbm/refactoring/KaInlineVariableTest.kt; milestone=F3 -->
 <!-- refactoring-coverage: id=inline-function; status=partial; idea=submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src/org/jetbrains/kotlin/idea/k2/refactoring/inline/KotlinInlineFunctionProcessor.kt; netbeans=KotlinRefactoring/src/main/kotlin/io/github/nbplugins/kotlin/refactoring/KaInlineFunctionComputer.kt; test=Nbm/src/test/kotlin/io/github/nbplugins/kotlin/nbm/refactoring/KaInlineFunctionTest.kt; milestone=F3 -->
-<!-- refactoring-coverage: id=inline-type-alias; status=absent; idea=submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src/org/jetbrains/kotlin/idea/k2/refactoring/inline/KotlinInlineTypeAliasProcessor.kt; netbeans=none; test=none; milestone=F5 -->
+<!-- refactoring-coverage: id=inline-type-alias; status=partial; idea=submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src/org/jetbrains/kotlin/idea/k2/refactoring/inline/KotlinInlineTypeAliasProcessor.kt; netbeans=KotlinRefactoring/src/main/kotlin/io/github/nbplugins/kotlin/refactoring/KaInlineTypeAliasComputer.kt; test=Nbm/src/test/kotlin/io/github/nbplugins/kotlin/nbm/refactoring/KaInlineTypeAliasTest.kt; milestone=F5 -->
 <!-- refactoring-coverage: id=inline-anonymous-function; status=absent; idea=submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src/org/jetbrains/kotlin/idea/k2/refactoring/inline/KotlinInlineAnonymousFunctionProcessor.kt; netbeans=none; test=none; milestone=F5 -->
 <!-- refactoring-coverage: id=extract-function; status=partial; idea=submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src/org/jetbrains/kotlin/idea/k2/refactoring/introduce/extractionEngine/Generator.kt; netbeans=KotlinRefactoring/src/main/kotlin/io/github/nbplugins/kotlin/refactoring/KaExtractFunctionComputer.kt; test=Nbm/src/test/kotlin/io/github/nbplugins/kotlin/nbm/refactoring/KaExtractFunctionTest.kt; milestone=F6 -->
 <!-- refactoring-coverage: id=introduce-variable; status=partial; idea=submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src/org/jetbrains/kotlin/idea/k2/refactoring/introduce/introduceVariable/K2IntroduceVariableHandler.kt; netbeans=KotlinRefactoring/src/main/kotlin/io/github/nbplugins/kotlin/refactoring/KaIntroduceVariableComputer.kt; test=Nbm/src/test/kotlin/io/github/nbplugins/kotlin/nbm/refactoring/KaIntroduceVariableTest.kt; milestone=F6 -->
@@ -48,7 +48,7 @@ The corresponding record comments above are deliberately machine-readable. `Refa
 | **Absent** | IDEA exposes the Kotlin refactoring family but the NetBeans plugin has no corresponding command. |
 | **Not applicable** | IDEA-only integration which is not a Kotlin refactoring target for this plugin. No such rows are currently tracked. |
 
-**Baseline counts:** 0 complete, 20 partial, 4 absent, 24 total.
+**Baseline counts:** 0 complete, 21 partial, 3 absent, 24 total.
 
 ## Current NetBeans refactorings
 
@@ -59,6 +59,7 @@ The corresponding record comments above are deliberately machine-readable. `Refa
 | `change-signature` | Change Signature | `Ctrl+F6` | Partial | K2 signature engine handles calls, overrides, constructors, destructuring and operators; every touched document now commits or rolls back through one hunk-preserving transaction, while broader IDEA scenarios remain. | F1 |
 | `inline-variable-property` | Inline property | Inline (`Ctrl+Alt+N`) | Partial | IDEA code inliner supports local `val` and a local `var` with one declaration initializer and no later writes, invoked from a declaration or selected usage; a later assignment or increment/decrement is rejected before mutation with its expression identified. Receiver/member/accessor, comment, Java, and broader index-backed cases remain. | F3 |
 | `inline-function` | Inline function | Inline (`Ctrl+Alt+N`) | Partial | K2 engine supports named functions; complex callable-reference, recursion and Java cases need parity tests. | F3 |
+| `inline-type-alias` | Inline Type Alias | Inline (`Ctrl+Alt+N`) | Partial | IDEA K2 type-alias replacement expands Kotlin source aliases from a declaration or usage; the dialog supports all occurrences, this occurrence, and keeping the declaration, while Java/non-code/index-only references remain unavailable. | F5 |
 | `extract-function` | Extract Function | `Ctrl+Alt+M` | Partial | Real IDEA generator supports captured parameters, return values, multi-statements and scopes; control-flow, smart-cast, receiver and duplicate matrices remain. | F6 |
 | `introduce-variable` | Introduce Variable | `Ctrl+Alt+V` | Partial | Common expression extraction, duplicate replacement and type/`val`/`var` choices work; advanced contexts remain. | F6 |
 | `introduce-constant` | Introduce Constant | `Ctrl+Alt+C` | Partial | Compile-time constants and top-level/companion targets work; broader IDEA contexts remain. | F6 |
@@ -79,7 +80,6 @@ The corresponding record comments above are deliberately machine-readable. `Refa
 
 | ID | IDEA family | Why absent | Target |
 |---|---|---|---|
-| `inline-type-alias` | Inline Type Alias | The K2 processor is not compiled or adapted to NetBeans. | F5 |
 | `inline-anonymous-function` | Inline Anonymous Function/Lambda | The K2 processor is not compiled or adapted to NetBeans. | F5 |
 | `move-nested-member-method` | Move nested class/member/method | Requires receiver/visibility/hierarchy conflict support. | F4 |
 | `rename-file-package-directory` | Rename file/package/directory | Requires NetBeans filesystem refactoring integration and Kotlin-aware update rules. | F7 |
@@ -108,6 +108,7 @@ The existing NetBeans tests are the initial executable sample set. They intentio
 | Change Signature across declaration and separate call site | `KaChangeSignatureTest` | Exact parity baseline |
 | Inline Function from a call site with multiple usages | `KaInlineFunctionTest` | Exact parity baseline |
 | Inline Variable for a write-free local `var`; later assignments/increments rejected | `KaInlineVariableTest` | Portable K2 single-definition baseline; receiver, Java, and index-only write coverage remain incomplete |
+| Inline Type Alias from a declaration or a selected usage | `KaInlineTypeAliasTest` | IDEA K2 type substitution baseline; Java/non-code/index-only references remain incomplete |
 | Move Declaration with external usage retargeting | `KaMoveDeclarationTest` | Exact parity baseline; transactional source/target undo baseline |
 | Copy Declaration into new or existing target | `KaCopyDeclarationTest`, `KotlinRefactoringTransactionTest` | Transactional target creation/replacement and undo baseline |
 | Pull Members Up direct target collision | `KaPullMembersUpComputerTest` | Documented standalone limitation beyond direct collision |

@@ -20,6 +20,7 @@ import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtProperty
+import org.jetbrains.kotlin.psi.KtTypeAlias
 import org.netbeans.junit.NbTestCase
 import java.nio.file.Files
 import java.nio.file.Path
@@ -152,6 +153,36 @@ class KotlinInlineVariableActionTest : NbTestCase("KotlinInlineVariableActionTes
 
             assertTrue("Expected a function target, got $target", target is KtNamedFunction)
             assertEquals("greet", (target as KtNamedFunction).name)
+        }
+    }
+
+    /** A type-alias declaration remains a valid unified Inline target. */
+    fun testTypeAliasDeclaration_resolvesTypeAlias() {
+        val source = """
+            typealias Name = String
+
+            fun greet(name: Name) = name
+        """.trimIndent()
+        withKtFile(source) { ktFile ->
+            val target = KotlinInlineVariableAction().resolveTargetAt(ktFile, source.indexOf("Name ="))
+
+            assertTrue("Expected a type alias target, got $target", target is KtTypeAlias)
+            assertEquals("Name", (target as KtTypeAlias).name)
+        }
+    }
+
+    /** A type-alias usage must resolve back to its type-alias declaration. */
+    fun testTypeAliasUsage_resolvesTypeAlias() {
+        val source = """
+            typealias Name = String
+
+            fun greet(name: Name) = name
+        """.trimIndent()
+        withKtFile(source) { ktFile ->
+            val target = KotlinInlineVariableAction().resolveTargetAt(ktFile, source.lastIndexOf("Name"))
+
+            assertTrue("Expected a type alias target, got $target", target is KtTypeAlias)
+            assertEquals("Name", (target as KtTypeAlias).name)
         }
     }
 

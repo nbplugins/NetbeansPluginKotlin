@@ -1003,6 +1003,17 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
 
   **E9 is complete.**
 
+  - [x] **F5.1** — Inline Type Alias (Ctrl+Alt+N)
+    - Reuses IDEA K2's `TypeAliasUsageReplacementStrategy` and compiled
+      `KotlinInlineTypeAliasProcessor`; NetBeans deliberately owns the dialog, preview, transaction,
+      and undo instead of invoking IDEA's processor lifecycle.
+    - The unified Inline action resolves a type-alias declaration or usage; its NetBeans panel supports
+      all occurrences, the invocation occurrence only, and retaining the declaration. K2-generated
+      type substitutions/import changes are committed through `KotlinRefactoringTransaction` so Undo
+      Last Refactoring restores every touched Kotlin document.
+    - Portable standalone scope is Kotlin source files registered in the active session; Java, non-code,
+      and project-index-only references remain unavailable.
+
 - **E10** — J2K (Java→Kotlin): reimplement using `j2k/new` from `submodules/IntellijCommunity`
   or binary artifact once published; wire up stubbed `Java2KotlinConverter` (stubbed since D2)
   and re-enable `J2KTest`

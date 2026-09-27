@@ -32,6 +32,8 @@ import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineFunctionPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineFunctionRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariablePlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariableRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineTypeAliasPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineTypeAliasRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceConstantPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceConstantRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinCopyDeclarationPlugin;
@@ -83,6 +85,7 @@ import org.openide.util.lookup.ServiceProvider;
  *   <li>{@link SafeDeleteRefactoring} — delegates to {@link KotlinSafeDeletePlugin}</li>
  *   <li>{@link KotlinInlineVariableRefactoring} — delegates to {@link KotlinInlineVariablePlugin}</li>
  *   <li>{@link KotlinInlineFunctionRefactoring} — delegates to {@link KotlinInlineFunctionPlugin}</li>
+ *   <li>{@link KotlinInlineTypeAliasRefactoring} — delegates to {@link KotlinInlineTypeAliasPlugin}</li>
  *   <li>{@link KotlinIntroduceVariableRefactoring} — delegates to {@link KotlinIntroduceVariablePlugin}</li>
  *   <li>{@link KotlinExtractFunctionRefactoring} — delegates to {@link KotlinExtractFunctionPlugin}</li>
  *   <li>{@link KotlinIntroduceConstantRefactoring} — delegates to {@link KotlinIntroduceConstantPlugin}</li>
@@ -131,6 +134,9 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         }
         if (refactoring instanceof KotlinInlineFunctionRefactoring) {
             return new KotlinInlineFunctionPlugin((KotlinInlineFunctionRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinInlineTypeAliasRefactoring) {
+            return new KotlinInlineTypeAliasPlugin((KotlinInlineTypeAliasRefactoring) refactoring);
         }
         if (refactoring instanceof KotlinIntroduceVariableRefactoring) {
             return new KotlinIntroduceVariablePlugin((KotlinIntroduceVariableRefactoring) refactoring);
