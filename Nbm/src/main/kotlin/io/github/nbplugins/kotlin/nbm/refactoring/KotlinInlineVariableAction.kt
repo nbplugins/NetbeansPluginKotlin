@@ -25,6 +25,7 @@ import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtNameReferenceExpression
 import org.jetbrains.kotlin.psi.KtProperty
+import org.jetbrains.kotlin.psi.KtTypeAlias
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
 import com.intellij.psi.PsiElement
@@ -37,12 +38,13 @@ import javax.swing.text.JTextComponent
 import javax.swing.text.StyledDocument
 
 /**
- * Editor action for **Ctrl+Alt+N** — "Inline" for Kotlin `fun` declarations and `val`/`var` properties.
+ * Editor action for **Ctrl+Alt+N** — "Inline" for Kotlin functions, properties, and type aliases.
  *
  * Registered under action name [ACTION_NAME] in `layer.xml` for `text/x-kotlin`.
  * Dispatches to the function or variable inline UI based on what is under the cursor:
  *  - [KtNamedFunction] → [KotlinInlineFunctionUI] + [KotlinInlineFunctionRefactoring]
  *  - [KtProperty]      → [KotlinInlineVariableUI] + [KotlinInlineVariableRefactoring]
+ *  - [KtTypeAlias]     → [KotlinInlineTypeAliasUI] + [KotlinInlineTypeAliasRefactoring]
  *
  * The action does **no validation** on its own — the plugin's `prepare()` validates and surfaces
  * a fatal `Problem` if the symbol cannot be inlined. This keeps the action thin and lets the
@@ -76,6 +78,10 @@ class KotlinInlineVariableAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBR
                     KotlinInlineVariableUI(targetDeclaration.name.orEmpty(), KotlinInlineVariableRefactoring(doc, targetOffset)),
                     TopComponent.getRegistry().activated,
                 )
+                is KtTypeAlias -> UI.openRefactoringUI(
+                    KotlinInlineTypeAliasUI(targetDeclaration.name.orEmpty(), KotlinInlineTypeAliasRefactoring(doc, targetOffset)),
+                    TopComponent.getRegistry().activated,
+                )
                 null -> return@runCatching
             }
         }.onFailure { e ->
@@ -87,13 +93,13 @@ class KotlinInlineVariableAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBR
      * Resolves the directly selected inline declaration.
      *
      * A reference resolves through K2 to its declaration; a declaration-position caret uses the
-     * directly selected property/function token. Unlike the former function-first lookup, this
-     * never treats an arbitrary child of an enclosing function as the function itself.
+     * directly selected property/function/type-alias token. Unlike the former function-first lookup,
+     * this never treats an arbitrary child of an enclosing function as the function itself.
      *
      * @param doc            Kotlin editor document containing the selection
      * @param selectionStart first selected offset, or the caret offset when empty
      * @param selectionEnd   offset immediately after the selection, or [selectionStart] when empty
-     * @return the target property/function, or `null` when the selection has no inline target
+     * @return the target property/function/type alias, or `null` when the selection has no inline target
      */
     private fun resolveTargetAt(
         doc: StyledDocument,
@@ -116,7 +122,7 @@ class KotlinInlineVariableAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBR
         resolveTargetAt(ktFile, offset, offset)
 
     /**
-     * Resolves the property/function covered by a caret or selection in a session-managed Kotlin file.
+     * Resolves the property/function/type alias covered by a caret or selection in a session-managed Kotlin file.
      *
      * @param selectionStart first selected offset, or the caret offset for an empty selection
      * @param selectionEnd offset immediately after the selection, or [selectionStart] when empty
@@ -135,7 +141,9 @@ class KotlinInlineVariableAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBR
         for (offset in offsets) {
             val element = ktFile.findElementAt(offset) ?: continue
             resolveReferenceTarget(element)?.let { return it }
-            ((element.parent as? KtProperty) ?: (element.parent as? KtNamedFunction))?.let { return it }
+            ((element.parent as? KtProperty)
+                ?: (element.parent as? KtNamedFunction)
+                ?: (element.parent as? KtTypeAlias))?.let { return it }
         }
         return null
     }
@@ -148,7 +156,7 @@ class KotlinInlineVariableAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBR
             analyze(reference) {
                 reference.mainReference?.resolveToSymbol()?.psi as? KtNamedDeclaration
             }
-        }.getOrNull()?.takeIf { it is KtProperty || it is KtNamedFunction }
+        }.getOrNull()?.takeIf { it is KtProperty || it is KtNamedFunction || it is KtTypeAlias }
     }
 
     companion object {

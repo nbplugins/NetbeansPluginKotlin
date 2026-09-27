@@ -54,10 +54,10 @@ class RefactoringCoverageBaselineTest : NbTestCase("RefactoringCoverageBaselineT
             }
         }
 
-        val totals = "**Baseline counts:** 0 complete, 20 partial, 4 absent, 24 total."
+        val totals = "**Baseline counts:** 0 complete, 21 partial, 3 absent, 24 total."
         assertTrue("Visible baseline totals must match the records", Files.readString(matrix).contains(totals))
-        assertEquals(20, records.count { it.status == "partial" })
-        assertEquals(4, records.count { it.status == "absent" })
+        assertEquals(21, records.count { it.status == "partial" })
+        assertEquals(3, records.count { it.status == "absent" })
     }
 
     /** Finds the checkout root from Surefire's module working directory. */

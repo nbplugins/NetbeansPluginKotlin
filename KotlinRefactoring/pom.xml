@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.249-SNAPSHOT</version>
+    <version>0.11.250-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
@@ -279,6 +279,7 @@
                   <includes>
                     <include>org/jetbrains/kotlin/idea/k2/refactoring/inline/KotlinInlinePropertyProcessor.kt</include>
                     <include>org/jetbrains/kotlin/idea/k2/refactoring/inline/KotlinInlineFunctionProcessor.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/refactoring/inline/KotlinInlineTypeAliasProcessor.kt</include>
                     <include>org/jetbrains/kotlin/idea/k2/refactoring/inline/KotlinInlineAnonymousFunctionProcessor.kt</include>
                     <include>org/jetbrains/kotlin/idea/k2/refactoring/inline/codeInliner/**</include>
                     <include>org/jetbrains/kotlin/idea/k2/refactoring/util/**</include>
