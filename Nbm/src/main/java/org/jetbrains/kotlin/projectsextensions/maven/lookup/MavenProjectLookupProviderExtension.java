@@ -35,7 +35,8 @@ public class MavenProjectLookupProviderExtension implements LookupProvider {
         Project project = lkp.lookup(Project.class);
         
         return Lookups.fixed(new KotlinPrivilegedTemplates(),
-                new MavenProjectOpenedHook(project)
+                new MavenProjectOpenedHook(project),
+                new io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectSources(project)
         );
     }
 

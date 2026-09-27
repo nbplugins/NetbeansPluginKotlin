@@ -39,8 +39,9 @@ public class J2SEProjectLookupProviderExtension implements LookupProvider {
         
         return Lookups.fixed(
                 new KotlinPrivilegedTemplates(),
-                new J2SEExtendedClassPathProvider(j2seProject), 
-                new J2SEProjectOpenedHook(j2seProject)
+                new J2SEExtendedClassPathProvider(j2seProject),
+                new J2SEProjectOpenedHook(j2seProject),
+                new io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectSources(j2seProject)
         );
     }
 

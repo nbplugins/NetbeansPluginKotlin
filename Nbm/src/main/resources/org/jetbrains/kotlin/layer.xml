@@ -269,15 +269,34 @@
             <folder name="Lookup">
                 <file name="org.jetbrains.kotlin.projectsextensions.j2se.lookup.J2SEProjectLookupProviderExtension.instance"/>
             </folder>
+            <folder name="Nodes">
+                <file name="org-netbeans-modules-java-api-common-project-ui-JavaSourceNodeFactory.instance_hidden"/>
+                <file name="io-github-nbplugins-kotlin-nbm-projectsextensions-KotlinJ2SEProjectNodeFactory.instance">
+                    <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinJ2SEProjectNodeFactory"/>
+                    <attr name="position" intvalue="200"/>
+                </file>
+            </folder>
         </folder>
         <folder name="org-netbeans-modules-maven">
             <folder name="Lookup">
                 <file name="org.jetbrains.kotlin.projectsextensions.maven.lookup.MavenProjectLookupProviderExtension.instance"/>
             </folder>
+            <folder name="Nodes">
+                <file name="io-github-nbplugins-kotlin-nbm-projectsextensions-KotlinProjectNodeFactory.instance">
+                    <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectNodeFactory"/>
+                    <attr name="position" intvalue="105"/>
+                </file>
+            </folder>
         </folder>
         <folder name="org.netbeans.gradle.project">
             <folder name="Lookup">
                 <file name="org.jetbrains.kotlin.projectsextensions.gradle.lookup.GradleProjectLookupProviderExtension.instance"/>
+            </folder>
+            <folder name="Nodes">
+                <file name="io-github-nbplugins-kotlin-nbm-projectsextensions-KotlinLegacyGradleProjectNodeFactory.instance">
+                    <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinLegacyGradleProjectNodeFactory"/>
+                    <attr name="position" intvalue="105"/>
+                </file>
             </folder>
         </folder>
         <!-- Apache NetBeans's built-in Gradle module (bundled since NB 12+) uses a different
@@ -286,6 +305,16 @@
         <folder name="org-netbeans-modules-gradle">
             <folder name="Lookup">
                 <file name="org.jetbrains.kotlin.projectsextensions.gradle.lookup.GradleProjectLookupProviderExtension.instance"/>
+            </folder>
+            <folder name="Nodes">
+                <!-- The Gradle Java module deliberately merges its java and kotlin source groups.
+                     Replace that factory with a split Java/Kotlin presentation while leaving all
+                     resource and generated-source factories intact. -->
+                <file name="org-netbeans-modules-gradle-java-nodes-SourcesNodeFactory.instance_hidden"/>
+                <file name="io-github-nbplugins-kotlin-nbm-projectsextensions-KotlinGradleProjectNodeFactory.instance">
+                    <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinGradleProjectNodeFactory"/>
+                    <attr name="position" intvalue="100"/>
+                </file>
             </folder>
         </folder>
         <!-- Kotlin Formatter category in Project Properties — registered manually because
