@@ -34,6 +34,8 @@ import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariablePlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineVariableRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineTypeAliasPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineTypeAliasRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineAnonymousFunctionPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinInlineAnonymousFunctionRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceConstantPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceConstantRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinCopyDeclarationPlugin;
@@ -86,6 +88,7 @@ import org.openide.util.lookup.ServiceProvider;
  *   <li>{@link KotlinInlineVariableRefactoring} — delegates to {@link KotlinInlineVariablePlugin}</li>
  *   <li>{@link KotlinInlineFunctionRefactoring} — delegates to {@link KotlinInlineFunctionPlugin}</li>
  *   <li>{@link KotlinInlineTypeAliasRefactoring} — delegates to {@link KotlinInlineTypeAliasPlugin}</li>
+ *   <li>{@link KotlinInlineAnonymousFunctionRefactoring} — delegates to {@link KotlinInlineAnonymousFunctionPlugin}</li>
  *   <li>{@link KotlinIntroduceVariableRefactoring} — delegates to {@link KotlinIntroduceVariablePlugin}</li>
  *   <li>{@link KotlinExtractFunctionRefactoring} — delegates to {@link KotlinExtractFunctionPlugin}</li>
  *   <li>{@link KotlinIntroduceConstantRefactoring} — delegates to {@link KotlinIntroduceConstantPlugin}</li>
@@ -137,6 +140,9 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         }
         if (refactoring instanceof KotlinInlineTypeAliasRefactoring) {
             return new KotlinInlineTypeAliasPlugin((KotlinInlineTypeAliasRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinInlineAnonymousFunctionRefactoring) {
+            return new KotlinInlineAnonymousFunctionPlugin((KotlinInlineAnonymousFunctionRefactoring) refactoring);
         }
         if (refactoring instanceof KotlinIntroduceVariableRefactoring) {
             return new KotlinIntroduceVariablePlugin((KotlinIntroduceVariableRefactoring) refactoring);

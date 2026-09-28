@@ -22,10 +22,13 @@ import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.log.KotlinLogger
+import org.jetbrains.kotlin.psi.KtFunction
+import org.jetbrains.kotlin.psi.KtFunctionLiteral
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtNameReferenceExpression
 import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtTypeAlias
+import org.jetbrains.kotlin.psi.KtDeclaration
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
 import com.intellij.psi.PsiElement
@@ -38,13 +41,15 @@ import javax.swing.text.JTextComponent
 import javax.swing.text.StyledDocument
 
 /**
- * Editor action for **Ctrl+Alt+N** — "Inline" for Kotlin functions, properties, and type aliases.
+ * Editor action for **Ctrl+Alt+N** — "Inline" for Kotlin functions, properties, type aliases, and immediate lambdas.
  *
  * Registered under action name [ACTION_NAME] in `layer.xml` for `text/x-kotlin`.
  * Dispatches to the function or variable inline UI based on what is under the cursor:
  *  - [KtNamedFunction] → [KotlinInlineFunctionUI] + [KotlinInlineFunctionRefactoring]
  *  - [KtProperty]      → [KotlinInlineVariableUI] + [KotlinInlineVariableRefactoring]
  *  - [KtTypeAlias]     → [KotlinInlineTypeAliasUI] + [KotlinInlineTypeAliasRefactoring]
+ *  - [KtFunctionLiteral] / unnamed [KtNamedFunction] → [KotlinInlineAnonymousFunctionUI] +
+ *    [KotlinInlineAnonymousFunctionRefactoring]
  *
  * The action does **no validation** on its own — the plugin's `prepare()` validates and surfaces
  * a fatal `Problem` if the symbol cannot be inlined. This keeps the action thin and lets the
@@ -82,6 +87,10 @@ class KotlinInlineVariableAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBR
                     KotlinInlineTypeAliasUI(targetDeclaration.name.orEmpty(), KotlinInlineTypeAliasRefactoring(doc, targetOffset)),
                     TopComponent.getRegistry().activated,
                 )
+                is KtFunction -> UI.openRefactoringUI(
+                    KotlinInlineAnonymousFunctionUI(KotlinInlineAnonymousFunctionRefactoring(doc, targetOffset)),
+                    TopComponent.getRegistry().activated,
+                )
                 null -> return@runCatching
             }
         }.onFailure { e ->
@@ -105,7 +114,7 @@ class KotlinInlineVariableAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBR
         doc: StyledDocument,
         selectionStart: Int,
         selectionEnd: Int,
-    ): KtNamedDeclaration? {
+    ): KtDeclaration? {
         val fo = ProjectUtils.getFileObjectForDocument(doc) ?: return null
         val project = ProjectUtils.getKotlinProjectForFileObject(fo)
             ?: ProjectUtils.getValidProject()
@@ -118,11 +127,11 @@ class KotlinInlineVariableAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBR
     }
 
     /** Resolves a direct caret target from a session-managed Kotlin file. */
-    internal fun resolveTargetAt(ktFile: KtFile, offset: Int): KtNamedDeclaration? =
+    internal fun resolveTargetAt(ktFile: KtFile, offset: Int): KtDeclaration? =
         resolveTargetAt(ktFile, offset, offset)
 
     /**
-     * Resolves the property/function/type alias covered by a caret or selection in a session-managed Kotlin file.
+     * Resolves the property, named function, type alias, lambda, or anonymous function covered by a caret or selection.
      *
      * @param selectionStart first selected offset, or the caret offset for an empty selection
      * @param selectionEnd offset immediately after the selection, or [selectionStart] when empty
@@ -132,7 +141,7 @@ class KotlinInlineVariableAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBR
         ktFile: KtFile,
         selectionStart: Int,
         selectionEnd: Int,
-    ): KtNamedDeclaration? {
+    ): KtDeclaration? {
         val offsets = if (selectionStart < selectionEnd) {
             intArrayOf(selectionStart, selectionEnd - 1)
         } else {
@@ -143,7 +152,10 @@ class KotlinInlineVariableAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBR
             resolveReferenceTarget(element)?.let { return it }
             ((element.parent as? KtProperty)
                 ?: (element.parent as? KtNamedFunction)
-                ?: (element.parent as? KtTypeAlias))?.let { return it }
+                ?: (element.parent as? KtTypeAlias)
+                ?: PsiTreeUtil.getParentOfType(element, KtFunctionLiteral::class.java, false)
+                ?: PsiTreeUtil.getParentOfType(element, KtNamedFunction::class.java, false)
+                    ?.takeIf { it.nameIdentifier == null })?.let { return it }
         }
         return null
     }

@@ -1014,6 +1014,17 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
     - Portable standalone scope is Kotlin source files registered in the active session; Java, non-code,
       and project-index-only references remain unavailable.
 
+  - [x] **F5.2** — Inline Anonymous Function / Lambda (Ctrl+Alt+N)
+    - Reuses IDEA K2's `KotlinInlineAnonymousFunctionProcessor` for immediate-call recognition,
+      `LambdaToAnonymousFunctionUtil` for K2-derived lambda signatures, and `CodeInliner` for the
+      final substitution. NetBeans owns the UI, preview, transaction, and undo.
+    - Standalone K2 needs a fresh session after IDEA converts a lambda to an anonymous `fun`: the
+      new PSI otherwise has no FIR mapping. The adapter commits only the final text through
+      `KotlinRefactoringTransaction`, so no intermediate source is persisted and Undo Last
+      Refactoring restores the original document.
+    - Supports immediately invoked Kotlin lambdas and anonymous functions. Non-invoked functions,
+      Java/non-code/index-only references, and wider IDEA invocation/project-index cases remain unavailable.
+
 - **E10** — J2K (Java→Kotlin): reimplement using `j2k/new` from `submodules/IntellijCommunity`
   or binary artifact once published; wire up stubbed `Java2KotlinConverter` (stubbed since D2)
   and re-enable `J2KTest`

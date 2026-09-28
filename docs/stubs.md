@@ -67,6 +67,13 @@ JVM linkage without pulling in the rest of the IDEA refactoring runtime.
 | `UsageViewDescriptor` | `Nbm/src/main/java/com/intellij/usageView/` | Compile-only | Interface required by `BaseRefactoringProcessor.createUsageViewDescriptor()` abstract method signature |
 | `MoveRenameUsageInfo` | `Nbm/src/main/java/com/intellij/refactoring/util/` | Runtime (shadows `analysis:253`) | Superclass of the Copy Declaration engine's `K2MoveRenameUsageInfo` (E9.19). The real platform ctor calls `PsiDocumentManager.getDocument` and asserts `refEnd <= document.getTextLength()`; the standalone MockProject keeps no live document for mutated PSI, so this stub provides the same ABI (3-arg + 6-arg ctors, `getReferencedElement()`) with **no document access**. `KotlinRefactoring` still compiles against the real `analysis:253` class; this shadows it at runtime because `Nbm` classes load first. |
 
+**Inline Anonymous Function/Lambda (F5.2)** requires no new class or service stub. IDEA's
+`KotlinInlineAnonymousFunctionProcessor` converts a lambda into fresh anonymous-function PSI and
+then immediately analyses it. A standalone K2 session cannot map that newly inserted PSI to FIR in
+the same session (`FirDeclaration ... fir is null`), so the NetBeans adapter uses the existing IDEA
+`LambdaToAnonymousFunctionUtil` for conversion, refreshes the standalone session, then invokes the
+existing IDEA `CodeInliner`. Only final text is committed through `KotlinRefactoringTransaction`.
+
 ### Copy Declaration engine port (added for E9.19)
 
 The Copy Declaration multi-declaration path reuses IDEA's real retargeting engine
