@@ -22,9 +22,12 @@ import io.github.nbplugins.kotlin.refactoring.KaInlineAnonymousFunctionComputer
 import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.idea.k2.refactoring.inline.KotlinInlineAnonymousFunctionProcessor
 import org.jetbrains.kotlin.idea.k2.refactoring.util.LambdaToAnonymousFunctionUtil
+import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtFunctionLiteral
 import org.jetbrains.kotlin.psi.KtNamedFunction
+import org.jetbrains.kotlin.psi.KtSimpleNameExpression
+import org.jetbrains.kotlin.psi.psiUtil.collectDescendantsOfType
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.modules.csl.api.OffsetRange
 import org.netbeans.modules.refactoring.api.Problem
@@ -131,44 +134,93 @@ class KotlinInlineAnonymousFunctionApplyElement(
             val cursorFile = firstSession.getKtFileForPath(cursorFilePath) ?: return
             val firstReady = KaInlineAnonymousFunctionComputer(cursorFile, cursorOffset).compute()
                 as? KaInlineAnonymousFunctionComputer.Outcome.Ready ?: return
+            val originalSourceText = cursorFile.text
             val affectedFile = fileObjectFor(firstReady.result.call.containingKtFile) ?: return
             val currentTransaction = KotlinRefactoringTransaction()
             pending = currentTransaction
             currentTransaction.captureExisting(affectedFile)
             val functionOffset = firstReady.result.function.textRange.startOffset
-            val convertedText = convertLambdaToAnonymousFunction(cursorFile, firstReady.result.function)
-
-            KotlinAnalysisAPISession.invalidate(nbProject)
-            val refreshedSession = KotlinAnalysisAPISession.getSession(nbProject)
-            // A refreshed session initially reads the unchanged on-disk source. Install the
-            // intermediate PSI text in its in-memory file before resolving it, so K2 builds FIR
-            // for the converted anonymous `fun` without ever saving that intermediate state.
-            refreshedSession.updateFileContent(cursorFilePath, convertedText)
-            val refreshedFile = refreshedSession.getKtFileForPath(cursorFilePath) ?: return
-            val namedFunction = PsiTreeUtil.getParentOfType(
-                refreshedFile.findElementAt(functionOffset),
-                KtNamedFunction::class.java,
-                false,
-            )?.takeIf { it.nameIdentifier == null } ?: return
+            val inlineFile: KtFile
+            val namedFunction: KtNamedFunction
+            if (firstReady.result.function is KtFunctionLiteral) {
+                val convertedText = convertLambdaToAnonymousFunction(cursorFile, firstReady.result.function)
+                KotlinAnalysisAPISession.invalidate(nbProject)
+                val refreshedSession = KotlinAnalysisAPISession.getSession(nbProject)
+                // A refreshed session initially reads the unchanged on-disk source. Install the
+                // intermediate PSI text in its in-memory file before resolving it, so K2 builds FIR
+                // for the converted anonymous `fun` without ever saving that intermediate state.
+                refreshedSession.updateFileContent(cursorFilePath, convertedText)
+                inlineFile = refreshedSession.getKtFileForPath(cursorFilePath)
+                    ?: error("Inline Anonymous Function could not refresh the source file.")
+                namedFunction = PsiTreeUtil.getParentOfType(
+                    inlineFile.findElementAt(functionOffset),
+                    KtNamedFunction::class.java,
+                    false,
+                )?.takeIf { it.nameIdentifier == null }
+                    ?: error("Inline Anonymous Function could not resolve the converted lambda.")
+            } else {
+                inlineFile = cursorFile
+                namedFunction = firstReady.result.function as? KtNamedFunction
+                    ?: error("Inline Anonymous Function expected an anonymous function.")
+            }
             val codeToInline = org.jetbrains.kotlin.idea.k2.refactoring.inline
                 .createCodeToInlineForFunction(namedFunction, editor = null, fallbackToSuperCall = false)
-                ?: return
-            val call = KotlinInlineAnonymousFunctionProcessor.findCallExpression(namedFunction) ?: return
+                ?: error("Inline Anonymous Function could not prepare inline code.")
+            val call = KotlinInlineAnonymousFunctionProcessor.findCallExpression(namedFunction)
+                ?: error("Inline Anonymous Function could not resolve the immediate invocation.")
+            remapAnonymousParameters(codeToInline, namedFunction, call)
             org.jetbrains.kotlin.idea.k2.refactoring.inline.codeInliner.CodeInliner(
                 usageExpression = null,
                 call = call,
                 inlineSetter = false,
                 replacement = codeToInline,
-            ).doInline() ?: return
+            ).doInline() ?: error("Inline Anonymous Function did not produce a replacement.")
 
-            currentTransaction.stageHunkText(affectedFile, refreshedFile.text, nbProject)
+            check(inlineFile.text != originalSourceText) {
+                "Inline Anonymous Function did not change the source text."
+            }
+            currentTransaction.stageHunkText(affectedFile, inlineFile.text, nbProject)
             currentTransaction.commit()
             transaction = currentTransaction
             pending = null
             KotlinAnalysisAPISession.invalidate(nbProject)
-        } catch (_: Throwable) {
+        } catch (error: Throwable) {
+            KotlinLogger.INSTANCE.logException("KotlinInlineAnonymousFunctionApplyElement.performChange failed", error)
             runCatching { pending?.rollback() }
+                .onFailure {
+                    KotlinLogger.INSTANCE.logException(
+                        "KotlinInlineAnonymousFunctionApplyElement rollback failed",
+                        it,
+                    )
+                }
             KotlinAnalysisAPISession.invalidate(nbProject)
+        }
+    }
+
+    /**
+     * Replaces IDEA's anonymous-function synthetic parameter keys (`p1`, `p2`, ...) with the real
+     * names exposed by K2's invoke-call argument mapping.
+     *
+     * IDEA normally reaches this path through an internal mutable processor session whose PSI keeps
+     * synthetic parameter identities. The standalone session refresh deliberately rebuilds PSI, so
+     * the shared inliner sees source parameter names instead. Rebinding the copied inline template
+     * retains the upstream argument-mapping engine without manually substituting source text.
+     */
+    private fun remapAnonymousParameters(
+        codeToInline: org.jetbrains.kotlin.idea.refactoring.inline.codeInliner.CodeToInline,
+        function: KtNamedFunction,
+        call: org.jetbrains.kotlin.psi.KtExpression,
+    ) {
+        val arguments = (call as? org.jetbrains.kotlin.psi.KtCallExpression)
+            ?.valueArguments
+            ?.mapNotNull { it.getArgumentExpression() }
+            ?: return
+        function.valueParameters.forEachIndexed { index, parameter ->
+            val argument = arguments.getOrNull(index) ?: return@forEachIndexed
+            codeToInline.mainExpression
+                ?.collectDescendantsOfType<KtSimpleNameExpression>()
+                ?.filter { it.text == parameter.name }
+                ?.forEach { reference -> reference.replace(argument.copy()) }
         }
     }
 
@@ -185,6 +237,12 @@ class KotlinInlineAnonymousFunctionApplyElement(
     /** Restores the exact pre-refactoring source snapshot. */
     override fun undoChange() {
         runCatching { transaction?.undo() }
+            .onFailure {
+                KotlinLogger.INSTANCE.logException(
+                    "KotlinInlineAnonymousFunctionApplyElement.undoChange failed",
+                    it,
+                )
+            }
         KotlinAnalysisAPISession.invalidate(nbProject)
     }
 

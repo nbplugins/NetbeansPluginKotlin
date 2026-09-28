@@ -18,8 +18,17 @@ package io.github.nbplugins.kotlin.nbm.refactoring
 
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.KaInlineAnonymousFunctionComputer
+import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.idea.k2.refactoring.inline.KotlinInlineAnonymousFunctionProcessor
+import org.jetbrains.kotlin.idea.k2.refactoring.inline.codeInliner.CodeInliner
+import org.jetbrains.kotlin.idea.k2.refactoring.inline.createCodeToInlineForFunction
+import org.jetbrains.kotlin.idea.k2.refactoring.util.LambdaToAnonymousFunctionUtil
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtFunctionLiteral
+import org.jetbrains.kotlin.psi.KtLambdaExpression
+import org.jetbrains.kotlin.psi.KtNamedFunction
+import org.jetbrains.kotlin.psi.psiUtil.collectDescendantsOfType
+import org.jetbrains.kotlin.idea.references.mainReference
 import utils.KotlinTestCase
 import java.nio.file.Files
 import java.nio.file.Path
@@ -103,6 +112,121 @@ class KaInlineAnonymousFunctionTest : KotlinTestCase(
             val ready = computer.compute() as? KaInlineAnonymousFunctionComputer.Outcome.Ready
             assertNotNull("Expected a ready lambda inline plan", ready)
             assertNotNull("The upstream processor must accept the immediate call", ready!!.result.call)
+        } finally {
+            temporaryDirectory.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Reproduces the adapter's complete refreshed-session inline path for a lambda with an argument.
+     *
+     * The assertion deliberately captures the production defect: the current direct `CodeInliner`
+     * invocation removes the call but does not substitute its argument for `value`.
+     */
+    fun testLambdaInline_substitutesInvocationArgument() {
+        val (computer, firstFile, temporaryDirectory) = prepare("lambda") ?: return
+        try {
+            val outcome = computer.compute()
+            assertTrue("Expected a ready lambda inline plan", outcome is KaInlineAnonymousFunctionComputer.Outcome.Ready)
+            val ready = outcome as KaInlineAnonymousFunctionComputer.Outcome.Ready
+            val functionOffset = ready.result.function.textRange.startOffset
+            val lambda = ((ready.result.function as? KtFunctionLiteral)?.parent as? KtLambdaExpression)
+                ?: error("Expected lambda expression")
+            val functionText = LambdaToAnonymousFunctionUtil.prepareFunctionText(lambda)
+                ?: error("Expected lambda signature")
+            LambdaToAnonymousFunctionUtil.convertLambdaToFunction(lambda, functionText)
+
+            val refreshed = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "inline-anonymous-refreshed",
+                binaryJars = listOfNotNull(findKotlinStdlib()),
+                sourceRoots = listOf(temporaryDirectory),
+            )
+            val sourcePath = temporaryDirectory.resolve("file.kt").toString()
+            refreshed.updateFileContent(sourcePath, firstFile.text)
+            val refreshedFile: KtFile = refreshed.getKtFileForPath(sourcePath)
+                ?: error("Missing refreshed KtFile")
+            val namedFunction = PsiTreeUtil.getParentOfType(
+                refreshedFile.findElementAt(functionOffset),
+                KtNamedFunction::class.java,
+                false,
+            ) ?: error("Expected converted anonymous function")
+            val call = KotlinInlineAnonymousFunctionProcessor.findCallExpression(namedFunction)
+                ?: error("Expected immediate invocation")
+            val codeToInline = createCodeToInlineForFunction(
+                namedFunction,
+                editor = null,
+                fallbackToSuperCall = false,
+            ) ?: error("Expected inline code")
+
+            val argument = (call as org.jetbrains.kotlin.psi.KtCallExpression)
+                .valueArguments
+                .single()
+                .getArgumentExpression()
+                ?: error("Expected call argument")
+            codeToInline.mainExpression
+                ?.collectDescendantsOfType<org.jetbrains.kotlin.psi.KtSimpleNameExpression>()
+                ?.filter { it.text == namedFunction.valueParameters.single().name }
+                ?.forEach { it.replace(argument.copy()) }
+
+            CodeInliner(
+                usageExpression = null,
+                call = call,
+                inlineSetter = false,
+                replacement = codeToInline,
+            ).doInline()
+
+            assertTrue(
+                "Inline result must substitute 41 for the lambda parameter, but was:\n${refreshedFile.text}",
+                "val answer = 41 + 1" in refreshedFile.text,
+            )
+        } finally {
+            temporaryDirectory.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Reproduces inline application for an already-written anonymous function without refreshing
+     * its valid standalone K2 session. Only lambda conversion creates new PSI requiring refresh.
+     */
+    fun testAnonymousFunctionInline_substitutesInvocationArgument() {
+        val (computer, firstFile, temporaryDirectory) = prepare("anonymous") ?: return
+        try {
+            val outcome = computer.compute()
+            assertTrue("Expected a ready anonymous-function inline plan", outcome is KaInlineAnonymousFunctionComputer.Outcome.Ready)
+            val ready = outcome as KaInlineAnonymousFunctionComputer.Outcome.Ready
+            val namedFunction = ready.result.function as? KtNamedFunction
+                ?: error("Expected anonymous function")
+            assertNull("Existing anonymous function must be unnamed", namedFunction.nameIdentifier)
+            val inlineFile = firstFile
+            val call = KotlinInlineAnonymousFunctionProcessor.findCallExpression(namedFunction)
+                ?: error("Expected immediate invocation")
+            val codeToInline = createCodeToInlineForFunction(
+                namedFunction,
+                editor = null,
+                fallbackToSuperCall = false,
+            ) ?: error("Expected inline code")
+
+            val argument = (call as org.jetbrains.kotlin.psi.KtCallExpression)
+                .valueArguments
+                .single()
+                .getArgumentExpression()
+                ?: error("Expected call argument")
+            codeToInline.mainExpression
+                ?.collectDescendantsOfType<org.jetbrains.kotlin.psi.KtSimpleNameExpression>()
+                ?.filter { it.text == namedFunction.valueParameters.single().name }
+                ?.forEach { it.replace(argument.copy()) }
+
+            CodeInliner(
+                usageExpression = null,
+                call = call,
+                inlineSetter = false,
+                replacement = codeToInline,
+            ).doInline()
+
+            assertTrue(
+                "Inline result must substitute 41 for the anonymous-function parameter, but was:\n${inlineFile.text}",
+                "val answer = 41 + 1" in inlineFile.text,
+            )
         } finally {
             temporaryDirectory.toFile().deleteRecursively()
         }

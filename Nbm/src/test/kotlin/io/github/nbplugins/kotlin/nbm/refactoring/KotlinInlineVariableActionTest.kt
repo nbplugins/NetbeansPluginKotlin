@@ -173,6 +173,27 @@ class KotlinInlineVariableActionTest : NbTestCase("KotlinInlineVariableActionTes
         }
     }
 
+    /** An unnamed function expression must be routed to the anonymous-function Inline adapter. */
+    fun testImmediatelyInvokedAnonymousFunction_routesToAnonymousInline() {
+        val source = """
+            fun main() {
+                val answer = (fun(value: Int): Int = value + 1)(41)
+                println(answer)
+            }
+        """.trimIndent()
+        withKtFile(source) { ktFile ->
+            val offset = source.indexOf("value: Int")
+            val target = KotlinInlineVariableAction().resolveTargetAt(ktFile, offset)
+
+            assertTrue("Expected an anonymous function target, got $target", target is KtNamedFunction)
+            assertNull("Expected an unnamed anonymous function", (target as KtNamedFunction).nameIdentifier)
+            assertEquals(
+                KotlinInlineVariableAction.InlineTargetKind.ANONYMOUS_FUNCTION,
+                KotlinInlineVariableAction().inlineTargetKind(target),
+            )
+        }
+    }
+
     /** A type-alias declaration remains a valid unified Inline target. */
     fun testTypeAliasDeclaration_resolvesTypeAlias() {
         val source = """

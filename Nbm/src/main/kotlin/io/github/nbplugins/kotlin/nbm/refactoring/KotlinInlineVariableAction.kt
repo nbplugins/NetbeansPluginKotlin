@@ -75,10 +75,22 @@ class KotlinInlineVariableAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBR
 
         runCatching {
             when (val targetDeclaration = resolveTargetAt(doc, selectionStart, selectionEnd)) {
-                is KtNamedFunction -> UI.openRefactoringUI(
-                    KotlinInlineFunctionUI(targetDeclaration.name.orEmpty(), KotlinInlineFunctionRefactoring(doc, targetOffset)),
-                    TopComponent.getRegistry().activated,
-                )
+                is KtNamedFunction -> if (inlineTargetKind(targetDeclaration) == InlineTargetKind.ANONYMOUS_FUNCTION) {
+                    UI.openRefactoringUI(
+                        KotlinInlineAnonymousFunctionUI(
+                            KotlinInlineAnonymousFunctionRefactoring(doc, targetOffset),
+                        ),
+                        TopComponent.getRegistry().activated,
+                    )
+                } else {
+                    UI.openRefactoringUI(
+                        KotlinInlineFunctionUI(
+                            targetDeclaration.name.orEmpty(),
+                            KotlinInlineFunctionRefactoring(doc, targetOffset),
+                        ),
+                        TopComponent.getRegistry().activated,
+                    )
+                }
                 is KtProperty -> UI.openRefactoringUI(
                     KotlinInlineVariableUI(targetDeclaration.name.orEmpty(), KotlinInlineVariableRefactoring(doc, targetOffset)),
                     TopComponent.getRegistry().activated,
@@ -158,6 +170,24 @@ class KotlinInlineVariableAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBR
                     ?.takeIf { it.nameIdentifier == null })?.let { return it }
         }
         return null
+    }
+
+    /**
+     * Distinguishes a declaration from an anonymous `fun` expression before selecting an Inline UI.
+     *
+     * @param function function PSI selected by the user
+     * @return the corresponding Inline action category
+     */
+    internal fun inlineTargetKind(function: KtNamedFunction): InlineTargetKind =
+        if (function.nameIdentifier == null) InlineTargetKind.ANONYMOUS_FUNCTION else InlineTargetKind.NAMED_FUNCTION
+
+    /** Categories of [KtNamedFunction] supported by the unified Inline action. */
+    internal enum class InlineTargetKind {
+        /** An unnamed `fun` expression requiring the anonymous-function adapter. */
+        ANONYMOUS_FUNCTION,
+
+        /** A named declaration requiring the regular Inline Function adapter. */
+        NAMED_FUNCTION,
     }
 
     /** Resolves a direct Kotlin reference and retains only declarations supported by Inline. */
