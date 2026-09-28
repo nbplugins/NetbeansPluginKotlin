@@ -18,6 +18,7 @@ package io.github.nbplugins.kotlin.nbm.refactoring
 
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtFunctionLiteral
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtTypeAlias
@@ -153,6 +154,43 @@ class KotlinInlineVariableActionTest : NbTestCase("KotlinInlineVariableActionTes
 
             assertTrue("Expected a function target, got $target", target is KtNamedFunction)
             assertEquals("greet", (target as KtNamedFunction).name)
+        }
+    }
+
+    /** An immediately invoked lambda is routed to the anonymous-function Inline adapter. */
+    fun testImmediatelyInvokedLambda_resolvesFunctionLiteral() {
+        val source = """
+            fun main() {
+                val answer = ({ value: Int -> value + 1 })(41)
+                println(answer)
+            }
+        """.trimIndent()
+        withKtFile(source) { ktFile ->
+            val offset = source.indexOf("value: Int")
+            val target = KotlinInlineVariableAction().resolveTargetAt(ktFile, offset)
+
+            assertTrue("Expected a lambda target, got $target", target is KtFunctionLiteral)
+        }
+    }
+
+    /** An unnamed function expression must be routed to the anonymous-function Inline adapter. */
+    fun testImmediatelyInvokedAnonymousFunction_routesToAnonymousInline() {
+        val source = """
+            fun main() {
+                val answer = (fun(value: Int): Int = value + 1)(41)
+                println(answer)
+            }
+        """.trimIndent()
+        withKtFile(source) { ktFile ->
+            val offset = source.indexOf("value: Int")
+            val target = KotlinInlineVariableAction().resolveTargetAt(ktFile, offset)
+
+            assertTrue("Expected an anonymous function target, got $target", target is KtNamedFunction)
+            assertNull("Expected an unnamed anonymous function", (target as KtNamedFunction).nameIdentifier)
+            assertEquals(
+                KotlinInlineVariableAction.InlineTargetKind.ANONYMOUS_FUNCTION,
+                KotlinInlineVariableAction().inlineTargetKind(target),
+            )
         }
     }
 
