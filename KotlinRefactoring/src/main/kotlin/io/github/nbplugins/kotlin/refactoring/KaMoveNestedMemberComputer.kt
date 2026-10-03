@@ -18,6 +18,7 @@ package io.github.nbplugins.kotlin.refactoring
 
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiWhiteSpace
 import org.jetbrains.kotlin.idea.k2.refactoring.move.KotlinMoveUsageSearchService
 import org.jetbrains.kotlin.idea.k2.refactoring.move.processor.usages.K2MoveRenameUsageInfo
 import org.jetbrains.kotlin.idea.references.KtReference
@@ -28,6 +29,7 @@ import org.jetbrains.kotlin.psi.KtNamedDeclaration
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtObjectDeclaration
 import org.jetbrains.kotlin.psi.KtProperty
+import org.jetbrains.kotlin.psi.KtPsiFactory
 import org.jetbrains.kotlin.psi.psiUtil.collectDescendantsOfType
 import org.jetbrains.kotlin.psi.psiUtil.getNonStrictParentOfType
 import org.jetbrains.kotlin.psi.psiUtil.getStrictParentOfType
@@ -63,6 +65,10 @@ class KaMoveNestedMemberComputer(
             val requiresCompanionTarget: Boolean,
             /** Source file path, used by transaction-backed persistence. */
             val sourceFilePath: String,
+            /** Kotlin package containing the source declaration. */
+            val sourcePackageName: String,
+            /** Top-level-to-owner source class/object path used to expand the target tree. */
+            val sourceContainerPath: List<String>,
         ) : Outcome
 
         /** An unexpected PSI or K2 failure occurred. */
@@ -75,8 +81,12 @@ class KaMoveNestedMemberComputer(
         val filePath: String,
         /** Stable offset inside [filePath] used to resolve the target immediately before apply. */
         val offset: Int,
-        /** Readable type label shown by the passive NetBeans view. */
+        /** Readable simple type label shown by the passive NetBeans view. */
         val presentation: String,
+        /** Kotlin package containing the target, empty for the default package. */
+        val packageName: String,
+        /** Top-level-to-leaf Kotlin class/object path used to build the passive target tree. */
+        val containerPath: List<String>,
         /** Whether the move destination is this target's companion object. */
         val requiresCompanionTarget: Boolean,
     )
@@ -126,11 +136,18 @@ class KaMoveNestedMemberComputer(
     fun compute(): Outcome = runCatching {
         val declaration = findDeclaration() ?: return Outcome.NotApplicable
         val kind = supportedKind(declaration) ?: return Outcome.NotApplicable
+        val owner = declaration.getStrictParentOfType<KtClassOrObject>() ?: return Outcome.NotApplicable
         Outcome.Ready(
             declarationRange = declaration.textRange,
             declarationName = declaration.name ?: return Outcome.NotApplicable,
             requiresCompanionTarget = kind == Kind.COMPANION_MEMBER,
             sourceFilePath = declaration.containingKtFile.virtualFile?.path.orEmpty(),
+            sourcePackageName = declaration.containingKtFile.packageFqName.asString(),
+            sourceContainerPath = owner.parentsWithSelf
+                .filterIsInstance<KtClassOrObject>()
+                .mapNotNull(KtClassOrObject::getName)
+                .toList()
+                .asReversed(),
         )
     }.getOrElse(Outcome::Error)
 
@@ -148,6 +165,7 @@ class KaMoveNestedMemberComputer(
         val kind = supportedKind(declaration) ?: return emptyList()
         val owner = declaration.getStrictParentOfType<KtClassOrObject>() ?: return emptyList()
         val excludedOwners = buildList {
+            add(declaration)
             add(owner)
             declaration.getStrictParentOfType<KtObjectDeclaration>()
                 ?.getStrictParentOfType<KtClassOrObject>()
@@ -157,13 +175,29 @@ class KaMoveNestedMemberComputer(
             candidateFile.collectDescendantsOfType<KtClassOrObject>()
                 .asSequence()
                 .filter { target ->
-                    target.name != null && target.body != null &&
+                    target.name != null &&
                         (target.containingKtFile.virtualFile?.path to target.textOffset) !in excludedOwners
                 }
-                .filter { target -> kind != Kind.COMPANION_MEMBER || target.companionObjects.singleOrNull() != null }
+                .filter { target ->
+                    when (kind) {
+                        Kind.NESTED_CLASS -> true
+                        Kind.COMPANION_MEMBER -> target.companionObjects.singleOrNull() != null
+                    }
+                }
                 .mapNotNull { target ->
                     target.containingKtFile.virtualFile?.path?.let { path ->
-                        TargetCandidate(path, target.textOffset, target.name!!, kind == Kind.COMPANION_MEMBER)
+                        TargetCandidate(
+                            filePath = path,
+                            offset = target.textOffset,
+                            presentation = target.name!!,
+                            packageName = target.containingKtFile.packageFqName.asString(),
+                            containerPath = target.parentsWithSelf
+                                .filterIsInstance<KtClassOrObject>()
+                                .mapNotNull(KtClassOrObject::getName)
+                                .toList()
+                                .asReversed(),
+                            requiresCompanionTarget = kind == Kind.COMPANION_MEMBER,
+                        )
                     }
                 }
                 .toList()
@@ -214,22 +248,31 @@ class KaMoveNestedMemberComputer(
 
         K2MoveRenameUsageInfo.markInternalUsages(declaration, declaration)
         val targetContainer = targetContainer(declaration, target) ?: return Apply.NotApplicable
-        // A KtClassOrObject accepts an arbitrary PsiElement through PsiElement.add(), which puts
-        // the standalone copy in JavaDummyHolder. Adding through the Kotlin class body preserves the
-        // target KtFile context required by K2MoveRenameUsageInfo.
         val sourceFile = declaration.containingKtFile
-        val targetBody = targetContainer.body ?: return Apply.NotApplicable
+        val psiFactory = KtPsiFactory(targetContainer.project)
+        val targetBody = targetContainer.body ?: run {
+            targetContainer.add(psiFactory.createWhiteSpace(" "))
+            targetContainer.add(psiFactory.createEmptyClassBody()) as? org.jetbrains.kotlin.psi.KtClassBody
+                ?: return Apply.NotApplicable
+        }
         val declarationName = declaration.name ?: return Apply.NotApplicable
-        targetBody.add(declaration.copy())
-        // PsiElement.add() returns the raw inserted element in this standalone implementation. Read
-        // the declaration back from the target class body so K2 only sees an element attached to a
-        // real KtFile rather than the transient Java dummy holder.
+        val targetRightBrace = targetBody.rBrace ?: return Apply.NotApplicable
+        if (targetBody.declarations.isEmpty()) targetBody.addBefore(psiFactory.createNewLine(), targetRightBrace)
+        // `KtClassBody.add()` accepts an arbitrary PSI element in standalone mode and can attach it
+        // to JavaDummyHolder instead of the Kotlin body. Anchoring immediately before the real `}`
+        // keeps the copy inside the destination KtFile and gives K2 a stable parent chain.
+        val inserted = targetBody.addBefore(declaration.copy(), targetRightBrace) as? KtNamedDeclaration
+            ?: return Apply.NotApplicable
+        targetBody.addAfter(psiFactory.createNewLine(), inserted)
         val copied = targetBody.declarations.filterIsInstance<KtNamedDeclaration>()
-            .lastOrNull { it.name == declarationName } ?: return Apply.NotApplicable
+            .lastOrNull { it === inserted || it.name == declarationName }
+            ?: return Apply.NotApplicable
         val oldToNew = declaration.collectDescendantsOfType<KtNamedDeclaration>()
             .zip(copied.collectDescendantsOfType<KtNamedDeclaration>())
             .toMap(mutableMapOf<PsiElement, PsiElement>().apply { put(declaration, copied) })
+        val sourceBody = declaration.getStrictParentOfType<KtClassOrObject>()?.body
         declaration.delete()
+        normalizeEmptyBody(sourceBody)
         K2MoveRenameUsageInfo.retargetUsages(usageInfos, oldToNew)
 
         val changed = (listOf(sourceFile, targetFile) + usageFiles)
@@ -238,6 +281,14 @@ class KaMoveNestedMemberComputer(
             .toMap()
         Apply.Success(changed, sourceFile.text, targetFile.text)
     }.getOrElse(Apply::Error)
+
+    /** Restores one well-formed newline before an empty source body's closing brace. */
+    private fun normalizeEmptyBody(body: org.jetbrains.kotlin.psi.KtClassBody?) {
+        if (body == null || body.declarations.isNotEmpty()) return
+        val whitespace = body.rBrace?.prevSibling as? PsiWhiteSpace ?: return
+        if (whitespace.text == "\n") return
+        whitespace.replace(KtPsiFactory(body.project).createWhiteSpace("\n"))
+    }
 
     /** Resolves a declaration directly at the caret; usage-site invocation is deliberately excluded. */
     private fun findDeclaration(): KtNamedDeclaration? = sequenceOf(caretOffset, caretOffset + 1)

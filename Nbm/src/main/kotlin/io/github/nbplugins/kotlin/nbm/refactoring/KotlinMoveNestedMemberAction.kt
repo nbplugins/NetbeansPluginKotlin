@@ -44,7 +44,11 @@ class KotlinMoveNestedMemberAction : BaseAction(ACTION_NAME, SAVE_POSITION or AB
             val project = ProjectUtils.getKotlinProjectForFileObject(source)
                 ?: ProjectUtils.getValidProject()
                 ?: error("Move Nested Member could not resolve the Kotlin project.")
+            // Target discovery scans the session's immutable source-root snapshot. Rebuild it now so
+            // Kotlin files created or saved since the previous editor analysis are selectable.
+            KotlinAnalysisAPISession.invalidate(project)
             val session = KotlinAnalysisAPISession.getSession(project)
+            session.updateFileContent(source.path, document.getText(0, document.length))
             val sourcePsi = session.getKtFileForPath(source.path)
                 ?: error("Move Nested Member could not resolve the Kotlin source file.")
             val computer = KaMoveNestedMemberComputer(sourcePsi, target.caretPosition)

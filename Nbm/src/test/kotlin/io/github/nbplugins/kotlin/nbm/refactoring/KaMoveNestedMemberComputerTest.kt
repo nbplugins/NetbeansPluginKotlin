@@ -41,7 +41,12 @@ class KaMoveNestedMemberComputerTest : KotlinTestCase("KaMoveNestedMemberCompute
             assertTrue("Expected successful nested-class move, got $result", result is KaMoveNestedMemberComputer.Apply.Success)
             result as KaMoveNestedMemberComputer.Apply.Success
             assertFalse("Source must no longer contain moved nested class:\n${result.sourceText}", result.sourceText.contains("class Nested"))
-            assertTrue("Target must contain moved nested class:\n${result.targetText}", result.targetText.contains("class Nested"))
+            assertTrue("Source closing brace must remain on its own line:\n${result.sourceText}", result.sourceText.contains("class Source {\n}"))
+            assertTrue(
+                "Target must contain the moved class inside its body:\n${result.targetText}",
+                result.targetText.indexOf("class Target {") < result.targetText.indexOf("class Nested") &&
+                    result.targetText.indexOf("class Nested") < result.targetText.lastIndexOf("}"),
+            )
         } finally {
             fixture.directory.toFile().deleteRecursively()
         }
@@ -58,10 +63,52 @@ class KaMoveNestedMemberComputerTest : KotlinTestCase("KaMoveNestedMemberCompute
 
             assertEquals(1, targets.size)
             assertEquals("Target", targets.single().presentation)
+            assertEquals("nestedmove", targets.single().packageName)
+            assertEquals(listOf("Target"), targets.single().containerPath)
             assertEquals(fixture.targetFile.virtualFile?.path, targets.single().filePath)
             assertEquals(fixture.target.textOffset, targets.single().offset)
         } finally {
             fixture.directory.toFile().deleteRecursively()
+        }
+    }
+
+    /** Discovers and populates a bodyless top-level target declared in the same Kotlin file. */
+    fun testMove_nestedClass_populatesBodylessTargetInSameFile() {
+        val stdlib = findKotlinStdlib() ?: return
+        val directory = Files.createTempDirectory("nbkotlin-move-nested-member-bodyless-target")
+        val sourcePath = directory.resolve("Source.kt")
+        Files.writeString(
+            sourcePath,
+            "package nestedmove\n\nclass Source {\n    class Nested(val value: Int)\n}\n\nclass Target\n",
+        )
+        try {
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "move-nested-member-bodyless-target",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(directory),
+            )
+            val file = session.getKtFileForPath(sourcePath.toString()) ?: return
+            val source = file.declarations.filterIsInstance<KtClass>().single { it.name == "Source" }
+            val target = file.declarations.filterIsInstance<KtClass>().single { it.name == "Target" }
+            val computer = KaMoveNestedMemberComputer(
+                file,
+                source.collectDescendantsOfType<KtNamedDeclaration>().first { it.name == "Nested" }.textOffset,
+            )
+
+            val candidates = computer.discoverTargets(listOf(file))
+            assertEquals(listOf("Target"), candidates.map { it.presentation })
+
+            val result = computer.move(file, target.textOffset)
+            assertTrue("Expected successful move to a bodyless target, got $result", result is KaMoveNestedMemberComputer.Apply.Success)
+            result as KaMoveNestedMemberComputer.Apply.Success
+            assertTrue("Target must gain a body:\n${result.targetText}", result.targetText.contains("class Target {"))
+            assertTrue(
+                "Moved class must be inside Target's body:\n${result.targetText}",
+                result.targetText.indexOf("class Target {") < result.targetText.indexOf("class Nested") &&
+                    result.targetText.indexOf("class Nested") < result.targetText.lastIndexOf("}"),
+            )
+        } finally {
+            directory.toFile().deleteRecursively()
         }
     }
 

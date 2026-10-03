@@ -137,7 +137,7 @@ private class KotlinMoveNestedMemberApplyElement(
                         val changed = fileObject(path)
                             ?: error("Move Nested Member could not resolve changed file $path.")
                         current.captureExisting(changed)
-                        current.stageText(changed, text)
+                        current.stageHunkText(changed, text, project)
                     }
                     current.commit()
                     transaction = current

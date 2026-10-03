@@ -548,12 +548,6 @@
                                 <attr name="position" intvalue="1200"/>
                             </file>
                         </folder>
-                        <!-- Move Nested Member editor action (F4.3). The global registration places it in
-                             Refactor; this MIME-specific shadow makes it available from a Kotlin editor popup. -->
-                        <file name="KotlinMoveNestedMemberAction.shadow">
-                            <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveNestedMemberAction.instance"/>
-                            <attr name="position" intvalue="1390"/>
-                        </file>
                         <!-- Find Usages directly in editor right-click menu (mirrors Editors/text/x-java/Popup
                              registration added by refactoring-api for Java; that module only registers for x-java) -->
                         <file name="WhereUsedAction.shadow">
