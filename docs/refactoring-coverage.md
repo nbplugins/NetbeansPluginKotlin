@@ -30,7 +30,7 @@ netbeans=<path>; test=<path>; milestone=<F0-F8>
 <!-- refactoring-coverage: id=push-members-down; status=partial; idea=submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.k2/src/org/jetbrains/kotlin/idea/k2/refactoring/pushDown/K2PushDownProcessor.kt; netbeans=KotlinRefactoring/src/main/kotlin/io/github/nbplugins/kotlin/refactoring/KaPushMembersDownComputer.kt; test=Nbm/src/test/kotlin/io/github/nbplugins/kotlin/nbm/refactoring/KaPushMembersDownComputerTest.kt; milestone=F2 -->
 <!-- refactoring-coverage: id=move-file; status=partial; idea=submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.move.k2/src/org/jetbrains/kotlin/idea/k2/refactoring/move/processor/K2MoveFilesOrDirectoriesRefactoringProcessor.kt; netbeans=KotlinRefactoring/src/main/kotlin/io/github/nbplugins/kotlin/refactoring/KaMoveFileComputer.kt; test=Nbm/src/test/kotlin/io/github/nbplugins/kotlin/nbm/refactoring/KaMoveFileComputerTest.kt; milestone=F4 -->
 <!-- refactoring-coverage: id=change-package; status=partial; idea=submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.move.k2/src/org/jetbrains/kotlin/idea/k2/refactoring/move/processor/K2ChangePackageRefactoringProcessor.kt; netbeans=KotlinRefactoring/src/main/kotlin/io/github/nbplugins/kotlin/refactoring/KaChangePackageComputer.kt; test=Nbm/src/test/kotlin/io/github/nbplugins/kotlin/nbm/refactoring/KaChangePackageTest.kt; milestone=F4 -->
-<!-- refactoring-coverage: id=move-nested-member-method; status=absent; idea=submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.common/src/org/jetbrains/kotlin/idea/refactoring/move/MoveKotlinMemberHandler.kt; netbeans=none; test=none; milestone=F4 -->
+<!-- refactoring-coverage: id=move-nested-member-method; status=partial; idea=submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.common/src/org/jetbrains/kotlin/idea/refactoring/move/MoveKotlinMemberHandler.kt; netbeans=Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/refactoring/KotlinMoveNestedMemberPlugin.kt; test=Nbm/src/test/kotlin/io/github/nbplugins/kotlin/nbm/refactoring/KaMoveNestedMemberComputerTest.kt; milestone=F4 -->
 <!-- refactoring-coverage: id=rename-file-package-directory; status=absent; idea=submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.common/src/org/jetbrains/kotlin/idea/refactoring/rename/KotlinRenameRefactoringSupport.kt; netbeans=none; test=none; milestone=F7 -->
 
 ## Purpose and scope
@@ -48,7 +48,7 @@ The corresponding record comments above are deliberately machine-readable. `Refa
 | **Absent** | IDEA exposes the Kotlin refactoring family but the NetBeans plugin has no corresponding command. |
 | **Not applicable** | IDEA-only integration which is not a Kotlin refactoring target for this plugin. No such rows are currently tracked. |
 
-**Baseline counts:** 0 complete, 22 partial, 2 absent, 24 total.
+**Baseline counts:** 0 complete, 23 partial, 1 absent, 24 total.
 
 ## Current NetBeans refactorings
 
@@ -72,6 +72,7 @@ The corresponding record comments above are deliberately machine-readable. `Refa
 | `move-declaration` | Move top-level declaration | Refactor → Move Declaration | Partial | Real K2 move/retargeting engine is used; source/target mutations now roll back atomically and support Undo Last Refactoring, while only top-level declarations are exposed. | F1 |
 | `move-file` | Move Kotlin file/directory | Refactor → Move Kotlin File / folder → Move Kotlin Directory | Partial | Moves one Kotlin file or recursively moves Kotlin descendants of a selected folder to a selectable source root/package, retaining the selected folder and nested hierarchy; matching package directives and supported Kotlin code references are updated, and Undo Last Refactoring restores every original path/text. Generic non-Kotlin content, Java/comment/text/index-only references, and full IDEA filesystem behavior remain. | F4 |
 | `change-package` | Change Package | Refactor → Change Kotlin Package... / folder → Change Kotlin Package... | Partial | Changes the active Kotlin file or recursively selected folder's Kotlin descendants without moving physical paths; nested descendants retain relative package segments below the entered package, supported Kotlin code/direct imports update atomically, and Undo Last Refactoring restores every original text. Java/comment/text/index-only references, full IDEA project-model conflicts, and arbitrary multi-selection remain unavailable. | F4 |
+| `move-nested-member-method` | Move nested class/member/method | Refactor → Move Nested Member... | Partial | Moves a nested named Kotlin class/object to a selected named class/object, or a companion function/property to a selected target with exactly one companion object. Source/target changes commit atomically and support Undo Last Refactoring. Instance members, constructors, enum entries, aliases, Java/non-code/comment/index-only cases, and unvalidated external qualified-use rewrites remain unavailable. | F4 |
 | `copy-declaration` | Copy declaration | Refactor → Copy / F5 | Partial | Top-level copy supports selectable source-root/package targets, internal retargeting, atomic rollback, and Undo Last Refactoring; nested declarations and broader IDEA target workflows remain. | F1 |
 | `extract-interface-superclass` | Extract Interface / Superclass | Refactor menu | Partial | K2 Extract Super engine atomically creates or restores its target together with the source, including Undo Last Refactoring; advanced constructors, generics and full conflicts remain. | F6 |
 | `pull-members-up` | Pull Members Up | `Ctrl+Alt+U` | Partial | Build-wide K2 hierarchy discovery covers Kotlin override chains; visibility, accidental-override, Java and full IDEA-index conflict checks remain. | F2 |
@@ -81,7 +82,6 @@ The corresponding record comments above are deliberately machine-readable. `Refa
 
 | ID | IDEA family | Why absent | Target |
 |---|---|---|---|
-| `move-nested-member-method` | Move nested class/member/method | Requires receiver/visibility/hierarchy conflict support. | F4 |
 | `rename-file-package-directory` | Rename file/package/directory | Requires NetBeans filesystem refactoring integration and Kotlin-aware update rules. | F7 |
 
 ## Cross-cutting milestones

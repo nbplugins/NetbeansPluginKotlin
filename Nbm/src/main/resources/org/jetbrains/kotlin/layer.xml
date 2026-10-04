@@ -111,6 +111,10 @@
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveDeclarationAction.instance">
                 <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveDeclarationAction"/>
             </file>
+            <!-- Global Move Nested Member action (F4.3). -->
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveNestedMemberAction.instance">
+                <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveNestedMemberAction"/>
+            </file>
             <!-- Global Move Kotlin File refactoring action (Refactor menu only; F4.1). -->
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveFileAction.instance">
                 <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveFileAction"/>
@@ -148,6 +152,10 @@
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveDeclarationAction.shadow">
                 <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveDeclarationAction.instance"/>
                 <attr name="position" intvalue="260"/>
+            </file>
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveNestedMemberAction.shadow">
+                <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveNestedMemberAction.instance"/>
+                <attr name="position" intvalue="264"/>
             </file>
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveFileAction.shadow">
                 <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveFileAction.instance"/>
