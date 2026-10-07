@@ -124,6 +124,17 @@
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveDirectoryAction.instance">
                 <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveDirectoryAction"/>
             </file>
+            <!-- Explicit F7 filesystem renames. These do not replace declaration Alt+Shift+R. -->
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinRenameFileAction.instance">
+                <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinRenameFileAction"/>
+            </file>
+            <!-- Tree-node companion for F7 file rename; editor action remains separate. -->
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinRenameFileNodeAction.instance">
+                <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinRenameFileNodeAction"/>
+            </file>
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinRenameDirectoryAction.instance">
+                <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinRenameDirectoryAction"/>
+            </file>
             <!-- Global Change Kotlin Package refactoring actions (F4.2). -->
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageAction.instance">
                 <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangePackageAction"/>
@@ -164,6 +175,14 @@
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveDirectoryAction.shadow">
                 <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinMoveDirectoryAction.instance"/>
                 <attr name="position" intvalue="266"/>
+            </file>
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinRenameFileNodeAction.shadow">
+                <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinRenameFileNodeAction.instance"/>
+                <attr name="position" intvalue="2665"/>
+            </file>
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinRenameDirectoryAction.shadow">
+                <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinRenameDirectoryAction.instance"/>
+                <attr name="position" intvalue="2666"/>
             </file>
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageAction.shadow">
                 <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageAction.instance"/>
@@ -238,19 +257,19 @@
                 <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinInlineVariableAction.instance"/>
                 <attr name="position" intvalue="1400"/>
             </file>
-            <!-- Undo/Redo moved to bottom of menu (IDEA order: below Inline).
-                 Separator at 1550 separates Inline from Undo/Redo. -->
+            <!-- Undo/Redo remain at the menu bottom after every Kotlin refactoring command.
+                 The 3000+ range leaves room for later commands without moving them again. -->
             <file name="separator-before-undo-redo.instance">
                 <attr name="instanceClass" stringvalue="javax.swing.JSeparator"/>
-                <attr name="position" intvalue="1550"/>
+                <attr name="position" intvalue="3000"/>
             </file>
             <file name="org-jetbrains-kotlin-refactorings-KotlinRefactoringUndoAction.shadow">
                 <attr name="originalFile" stringvalue="Actions/Refactoring/org-jetbrains-kotlin-refactorings-KotlinRefactoringUndoAction.instance"/>
-                <attr name="position" intvalue="1600"/>
+                <attr name="position" intvalue="3100"/>
             </file>
             <file name="org-jetbrains-kotlin-refactorings-KotlinRefactoringRedoAction.shadow">
                 <attr name="originalFile" stringvalue="Actions/Refactoring/org-jetbrains-kotlin-refactorings-KotlinRefactoringRedoAction.instance"/>
-                <attr name="position" intvalue="1700"/>
+                <attr name="position" intvalue="3200"/>
             </file>
         </folder>
     </folder>
@@ -362,17 +381,6 @@
     </folder>
     
     <folder name="Loaders">
-        <!-- Folder actions are manually registered because annotation processing is disabled. -->
-        <folder name="folder">
-            <folder name="any">
-                <folder name="Actions">
-                    <file name="KotlinChangePackageDirectoryAction.shadow">
-                        <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageDirectoryAction.instance"/>
-                        <attr name="position" intvalue="1010"/>
-                    </file>
-                </folder>
-            </folder>
-        </folder>
         <folder name="text">
             <folder name="x-kotlin">
                 <folder name="Factories">
@@ -404,10 +412,13 @@
                         <attr name="originalFile" stringvalue="Actions/Refactoring/org-netbeans-modules-refactoring-api-ui-WhereUsedAction.instance"/>
                         <attr name="position" intvalue="1900"/>
                     </file>
+                    <!-- Refactor must be an action in this loader's context-menu folder. A sibling
+                         registration is ignored when NetBeans builds a file-node popup. -->
+                    <file name="RefactoringAll.shadow">
+                        <attr name="originalFile" stringvalue="Actions/Refactoring/RefactoringAll.instance"/>
+                        <attr name="position" intvalue="1901"/>
+                    </file>
                 </folder>
-                <file name="RefactoringAll.instance">
-                    <attr name="instanceCreate" methodvalue="org.netbeans.modules.refactoring.api.ui.RefactoringActionsFactory.popupSubmenuAction"/>
-                </file>
             </folder>
         </folder>
     </folder>
@@ -703,6 +714,10 @@
                         <!-- Move Kotlin File (F4.1): custom Kotlin action (Refactor menu only). -->
                         <file name="kotlin-move-file.instance">
                             <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveFileAction"/>
+                        </file>
+                        <!-- Explicit physical Kotlin file rename (F7); declaration Rename remains separate. -->
+                        <file name="kotlin-rename-file.instance">
+                            <attr name="instanceCreate" newvalue="io.github.nbplugins.kotlin.nbm.refactoring.KotlinRenameFileAction"/>
                         </file>
                         <!-- Change Kotlin Package (F4.2): custom Kotlin action. -->
                         <file name="kotlin-change-package.instance">

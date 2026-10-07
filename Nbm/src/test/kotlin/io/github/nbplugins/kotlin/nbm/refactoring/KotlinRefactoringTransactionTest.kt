@@ -490,6 +490,91 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
         assertEquals("fun source() = 1\n", fixture.text(source))
     }
 
+    /** Verifies a same-folder Kotlin file rename participates in commit and undo. */
+    fun testCommitAndUndo_restoresRenamedFilePath() {
+        val fixture = fixture()
+        val source = fixture.existing("Before.kt", "fun renamed() = 1\n")
+
+        fixture.transaction.renameFile(source, "After", "kt")
+        fixture.transaction.commit()
+
+        assertNull("commit must remove the original file name", fixture.root.getFileObject("Before.kt"))
+        assertNotNull("commit must create the requested target name", fixture.root.getFileObject("After.kt"))
+        fixture.transaction.undo()
+
+        assertNotNull("undo must restore the original file name", fixture.root.getFileObject("Before.kt"))
+        assertNull("undo must remove the target file name", fixture.root.getFileObject("After.kt"))
+    }
+
+    /** Verifies file rename rejects an existing sibling before mutating the source. */
+    fun testRenameFile_rejectsExistingTarget() {
+        val fixture = fixture()
+        val source = fixture.existing("Before.kt", "fun before() = 1\n")
+        fixture.existing("Taken.kt", "fun taken() = 1\n")
+
+        try {
+            fixture.transaction.renameFile(source, "Taken", "kt")
+            fail("rename must reject an occupied sibling name")
+        } catch (_: IllegalStateException) {
+            // Expected: collision validation happens before commit.
+        }
+        assertTrue("source must remain valid after collision rejection", source.isValid)
+        assertNotNull("source must remain at its original path", fixture.root.getFileObject("Before.kt"))
+    }
+
+    /** Verifies an early folder rename is restored when the later transaction commit fails. */
+    fun testRollback_restoresFolderRenamedBeforeSemanticWrites() {
+        val fixture = fixture(failWriting = { it.nameExt == "Source.kt" })
+        val folder = fixture.root.createFolder("before")
+        val source = fixture.existingIn(folder, "Source.kt", "fun source() = 1\n")
+
+        fixture.transaction.renameFolder(folder, "after")
+        fixture.transaction.applyFolderRenamesNow()
+        val renamed = fixture.root.getFileObject("after/Source.kt") ?: error("Expected renamed source")
+        fixture.transaction.captureExisting(renamed)
+        fixture.transaction.stageText(renamed, "fun source() = 2\n")
+
+        try {
+            fixture.transaction.commit()
+            fail("commit must fail when the staged semantic write fails")
+        } catch (_: KotlinRefactoringTransaction.Failure) {
+            // Expected: rollback restores the physical source directory.
+        }
+        assertNotNull("rollback must restore the original folder", fixture.root.getFileObject("before/Source.kt"))
+        assertNull("rollback must remove the early renamed folder", fixture.root.getFileObject("after"))
+        assertTrue("the original FileObject remains valid after restoration", source.isValid)
+        assertEquals("rollback must restore the original file path", "before/Source.kt", source.path)
+    }
+
+    /** Verifies a folder rename preserves descendants and restores their physical paths on undo. */
+    fun testCommitAndUndo_restoresRenamedFolderAndDescendantText() {
+        val fixture = fixture()
+        val sourceFolder = fixture.root.createFolder("before")
+        val nested = sourceFolder.createFolder("nested")
+        val originalText = "package before.nested\n\nfun source() = 1\n"
+        val source = fixture.existingIn(nested, "Source.kt", originalText)
+        val readme = sourceFolder.createData("Readme.txt")
+
+        fixture.transaction.renameFolder(sourceFolder, "after")
+        fixture.transaction.captureExisting(source)
+        fixture.transaction.commit()
+
+        val renamedFolder = fixture.root.getFileObject("after")
+        val renamedSource = renamedFolder?.getFileObject("nested/Source.kt")
+        assertNotNull("commit must rename the selected folder", renamedFolder)
+        assertNotNull("commit must retain Kotlin descendants", renamedSource)
+        assertNotNull("commit must retain non-Kotlin descendants", renamedFolder?.getFileObject("Readme.txt"))
+        assertEquals("physical directory rename must not rewrite the package directive", originalText, fixture.textByPath(renamedSource!!))
+
+        fixture.transaction.undo()
+
+        val restored = fixture.root.getFileObject("before/nested/Source.kt")
+        assertNotNull("undo must restore the original folder path", restored)
+        assertNull("undo must remove the renamed folder", fixture.root.getFileObject("after"))
+        assertTrue("undo must preserve non-Kotlin descendants", readme.isValid)
+        assertEquals("undo must retain the original package directive", originalText, fixture.textByPath(restored!!))
+    }
+
     /** Applies the same descending minimal-hunk sequence used by multi-file refactorings. */
     private fun applyHunks(document: StyledDocument, originalText: String, finalText: String) {
         TextRangeDiff.computeHunks(originalText, finalText)

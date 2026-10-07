@@ -61,14 +61,26 @@ internal class KotlinRefactoringTransaction internal constructor(
         val originalName: String,
         val originalExtension: String,
         val targetParent: FileObject,
+        val targetName: String,
+        val targetExtension: String,
         var movedFile: FileObject? = null,
+    )
+
+    private data class FolderRenameEntry(
+        val originalFolder: FileObject,
+        val originalParent: FileObject,
+        val originalName: String,
+        val targetName: String,
+        var renamedFolder: FileObject? = null,
     )
 
     private val entries = linkedMapOf<FileObject, Entry>()
     private val moves = mutableListOf<MoveEntry>()
+    private val folderRenames = mutableListOf<FolderRenameEntry>()
     private val ownedFolders = mutableListOf<FileObject>()
     private var committed = false
     private var movesApplied = false
+    private var folderRenamesApplied = false
     private var restoring = false
 
     /**
@@ -86,7 +98,47 @@ internal class KotlinRefactoringTransaction internal constructor(
             "Target file already exists: ${targetParent.path}/${file.nameExt}"
         }
         captureExisting(file)
-        moves += MoveEntry(file, originalParent, file.name, file.ext, targetParent)
+        moves += MoveEntry(
+            originalFile = file,
+            originalParent = originalParent,
+            originalName = file.name,
+            originalExtension = file.ext,
+            targetParent = targetParent,
+            targetName = file.name,
+            targetExtension = file.ext,
+        )
+    }
+
+    /**
+     * Records an in-place physical file rename to apply after staged documents are saved.
+     *
+     * @param file existing source file to rename
+     * @param name target basename without extension
+     * @param extension target extension without the leading dot
+     */
+    fun renameFile(file: FileObject, name: String, extension: String = file.ext) {
+        check(file.isValid && !file.isFolder) { "Cannot rename invalid or folder file ${file.path}" }
+        check(name.isNotBlank()) { "Target file name must not be blank." }
+        val parent = file.parent ?: error("Cannot rename root file ${file.path}")
+        val existing = parent.getFileObject(name, extension)
+        check(existing == null || existing == file) { "Target file already exists: ${parent.path}/$name.$extension" }
+        captureExisting(file)
+        moves += MoveEntry(file, parent, file.name, file.ext, parent, name, extension)
+    }
+
+    /**
+     * Records an in-place folder rename to apply after every staged document is saved.
+     *
+     * @param folder selected physical folder whose descendants must remain intact
+     * @param name target simple folder name
+     */
+    fun renameFolder(folder: FileObject, name: String) {
+        check(folder.isValid && folder.isFolder) { "Cannot rename invalid or non-folder path ${folder.path}" }
+        check(name.isNotBlank()) { "Target folder name must not be blank." }
+        val parent = folder.parent ?: error("Cannot rename root folder ${folder.path}")
+        val existing = parent.getFileObject(name)
+        check(existing == null || existing == folder) { "Target folder already exists: ${parent.path}/$name" }
+        folderRenames += FolderRenameEntry(folder, parent, folder.name, name)
     }
 
     /**
@@ -228,10 +280,12 @@ internal class KotlinRefactoringTransaction internal constructor(
                     throw Failure(entry.file, error)
                 }
             }
-            // NetBeans retains a FileLock for every modified editor document until it is saved.
-            // Persist every staged document before FileObject.move() attempts to acquire its lock.
-            stagedEntries.forEach { entry -> saveDocument(entry.file) }
+            // NetBeans retains a FileLock for every opened editor document until it is saved.
+            // Capture-only entries participate in a physical move too, so save every transaction
+            // document rather than only staged edits before FileObject.move() acquires its lock.
+            entries.values.forEach { entry -> saveDocument(entry.file) }
             applyMoves()
+            applyFolderRenames()
             committed = true
         } catch (error: Throwable) {
             rollback()
@@ -248,17 +302,17 @@ internal class KotlinRefactoringTransaction internal constructor(
     /** Reverts a successfully committed refactoring using its original snapshots and paths. */
     fun undo() = restoreOriginalState()
 
-    /** Applies all registered physical moves after every document has been validated. */
+    /** Applies all registered physical file moves and renames after every document has been saved. */
     private fun applyMoves() {
         moves.forEach { move ->
             val file = move.movedFile ?: move.originalFile
             check(file.isValid) { "Move source is invalid: ${move.originalFile.path}" }
-            check(move.targetParent.getFileObject(move.originalName, move.originalExtension) == null) {
-                "Move target already exists: ${move.targetParent.path}/${move.originalFile.nameExt}"
+            check(move.targetParent.getFileObject(move.targetName, move.targetExtension) == null) {
+                "Move target already exists: ${move.targetParent.path}/${move.targetName}.${move.targetExtension}"
             }
             try {
                 file.lock().use { lock ->
-                    move.movedFile = file.move(lock, move.targetParent, move.originalName, move.originalExtension)
+                    move.movedFile = file.move(lock, move.targetParent, move.targetName, move.targetExtension)
                 }
                 // FileObject identity changes across a NetBeans move, but the editor document is
                 // intentionally retained. Re-key the snapshot so staged writes and later undo use
@@ -268,6 +322,35 @@ internal class KotlinRefactoringTransaction internal constructor(
                 movesApplied = true
             } catch (error: Throwable) {
                 throw Failure(file, error)
+            }
+        }
+    }
+
+    /**
+     * Applies registered physical folder renames before K2 resolves final target PSI directories.
+     *
+     * Directory renames require the final physical target to exist before the ported IDEA K2 move
+     * handler can perform conflict discovery. The caller must still invoke [commit] afterwards so
+     * staged semantic document changes and Undo Last Refactoring remain part of this transaction.
+     */
+    fun applyFolderRenamesNow() = applyFolderRenames()
+
+    /** Renames selected folders only after staged descendant documents have been saved. */
+    private fun applyFolderRenames() {
+        folderRenames.forEach { rename ->
+            if (rename.renamedFolder != null) return@forEach
+            val folder = rename.originalFolder
+            check(folder.isValid) { "Folder rename source is invalid: ${rename.originalFolder.path}" }
+            check(rename.originalParent.getFileObject(rename.targetName) == null) {
+                "Folder rename target already exists: ${rename.originalParent.path}/${rename.targetName}"
+            }
+            try {
+                folder.lock().use { lock -> folder.rename(lock, rename.targetName, "") }
+                rename.renamedFolder = rename.originalParent.getFileObject(rename.targetName)
+                    ?: error("Folder rename did not produce ${rename.originalParent.path}/${rename.targetName}")
+                folderRenamesApplied = true
+            } catch (error: Throwable) {
+                throw Failure(folder, error)
             }
         }
     }
@@ -303,6 +386,10 @@ internal class KotlinRefactoringTransaction internal constructor(
         }
         reverseMoves().onFailure { error ->
             KotlinLogger.INSTANCE.logException("KotlinRefactoringTransaction.reverseMoves failed", error)
+            if (failure == null) failure = error
+        }
+        reverseFolderRenames().onFailure { error ->
+            KotlinLogger.INSTANCE.logException("KotlinRefactoringTransaction.reverseFolderRenames failed", error)
             if (failure == null) failure = error
         }
         // FileObject.move() may replace the on-disk content from its own filesystem state after the
@@ -366,6 +453,22 @@ internal class KotlinRefactoringTransaction internal constructor(
             )
         }
         movesApplied = false
+    }
+
+    /** Restores renamed folders before source snapshots are written through their original paths. */
+    private fun reverseFolderRenames(): Result<Unit> = runCatching {
+        if (!folderRenamesApplied) return@runCatching
+        folderRenames.asReversed().forEach { rename ->
+            val folder = rename.renamedFolder ?: return@forEach
+            if (!folder.isValid) return@forEach
+            check(rename.originalParent.getFileObject(rename.originalName) == null) {
+                "Cannot restore renamed folder because original path is occupied: ${rename.originalParent.path}/${rename.originalName}"
+            }
+            folder.lock().use { lock -> folder.rename(lock, rename.originalName, "") }
+            rename.renamedFolder = rename.originalParent.getFileObject(rename.originalName)
+                ?: error("Folder restore did not produce ${rename.originalParent.path}/${rename.originalName}")
+        }
+        folderRenamesApplied = false
     }
 
     /** Produces bounded, one-line diagnostic text without logging full source contents. */

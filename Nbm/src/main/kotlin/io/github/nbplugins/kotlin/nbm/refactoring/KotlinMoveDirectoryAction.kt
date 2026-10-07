@@ -24,9 +24,9 @@ import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.modules.refactoring.spi.ui.UI
 import org.openide.awt.ActionID
 import org.openide.awt.ActionRegistration
-import org.openide.loaders.DataObject
 import org.openide.nodes.Node
 import org.openide.util.HelpCtx
+import org.openide.util.RequestProcessor
 import org.openide.util.actions.NodeAction
 import org.openide.windows.TopComponent
 
@@ -54,22 +54,24 @@ open class KotlinMoveDirectoryAction : NodeAction() {
      */
     override fun performAction(nodes: Array<Node>) {
         val folder = selectedFolder(nodes) ?: return
-        val selection = KotlinMoveSourceSelection.from(folder) ?: return
-        runCatching {
-            val project = ProjectUtils.getKotlinProjectForFileObject(selection.representativeFile)
-                ?: ProjectUtils.getValidProject()
-                ?: return@runCatching
-            val file = KotlinAnalysisAPISession.getSession(project).getKtFileForPath(selection.representativeFile.path)
-                ?: return@runCatching
-            val result = (KaMoveFileComputer(file).compute() as? KaMoveFileComputer.Outcome.Ready)?.result
-                ?: return@runCatching
-            val refactoring = KotlinMoveFileRefactoring(selection)
-            val target = KotlinPackageTarget(project, selection.representativeFile)
-            openRefactoringUi(
-                KotlinMoveFileUI(result, refactoring, target, target.packageForFolder(folder.parent ?: folder)),
-            )
-        }.onFailure { error ->
-            KotlinLogger.INSTANCE.logException("KotlinMoveDirectoryAction failed", error)
+        REQUEST_PROCESSOR.post {
+            val selection = KotlinMoveSourceSelection.from(folder) ?: return@post
+            runCatching {
+                val project = ProjectUtils.getKotlinProjectForFileObject(selection.representativeFile)
+                    ?: ProjectUtils.getValidProject()
+                    ?: return@runCatching
+                val file = KotlinAnalysisAPISession.getSession(project).getKtFileForPath(selection.representativeFile.path)
+                    ?: return@runCatching
+                val result = (KaMoveFileComputer(file).compute() as? KaMoveFileComputer.Outcome.Ready)?.result
+                    ?: return@runCatching
+                val refactoring = KotlinMoveFileRefactoring(selection)
+                val target = KotlinPackageTarget(project, selection.representativeFile)
+                openRefactoringUi(
+                    KotlinMoveFileUI(result, refactoring, target, target.packageForFolder(folder.parent ?: folder)),
+                )
+            }.onFailure { error ->
+                KotlinLogger.INSTANCE.logException("KotlinMoveDirectoryAction failed", error)
+            }
         }
     }
 
@@ -95,16 +97,20 @@ open class KotlinMoveDirectoryAction : NodeAction() {
         ?.let(KotlinMoveSourceSelection::from)
         ?.isDirectory == true
 
+    /** Declares the legacy action dispatcher contract; UI work is explicitly marshalled to EDT. */
+    override fun asynchronous(): Boolean = false
+
     /** @return no dedicated help page. */
     override fun getHelpCtx(): HelpCtx = HelpCtx.DEFAULT_HELP
 
     /** @return stable action name used by the manual layer registration. */
     override fun getName(): String = "Move Kotlin Directory"
 
-    /** Resolves exactly one folder node's physical file object. */
-    private fun selectedFolder(nodes: Array<Node>): org.openide.filesystems.FileObject? {
-        if (nodes.size != 1) return null
-        val dataObject = nodes.single().lookup.lookup(DataObject::class.java) ?: return null
-        return dataObject.primaryFile.takeIf { it.isValid && it.isFolder }
+    /** Resolves exactly one physical or package-tree folder node. */
+    private fun selectedFolder(nodes: Array<Node>) = KotlinFolderNodeSelection.resolve(nodes)
+
+    private companion object {
+        /** Worker used for source discovery and K2 preparation before the Swing UI is shown. */
+        val REQUEST_PROCESSOR = RequestProcessor(KotlinMoveDirectoryAction::class.java.name, 1)
     }
 }
