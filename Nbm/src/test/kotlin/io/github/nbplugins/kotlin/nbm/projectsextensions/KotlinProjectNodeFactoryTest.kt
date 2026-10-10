@@ -18,14 +18,17 @@
 package io.github.nbplugins.kotlin.nbm.projectsextensions
 
 import java.beans.PropertyChangeListener
+import javax.swing.Action
 import javax.swing.Icon
 import javax.swing.event.ChangeListener
 import org.netbeans.api.project.Project
 import org.netbeans.api.project.SourceGroup
 import org.netbeans.api.project.Sources
 import org.netbeans.junit.NbTestCase
+import org.netbeans.spi.java.project.support.ui.PackageView
 import org.openide.filesystems.FileObject
 import org.openide.filesystems.FileUtil
+import org.openide.loaders.DataFolder
 import org.openide.util.Lookup
 import org.openide.util.lookup.Lookups
 
@@ -67,6 +70,30 @@ class KotlinProjectNodeFactoryTest : NbTestCase("KotlinProjectNodeFactoryTest") 
                 KotlinProjectSourceGroups.KOTLIN_TEST_SOURCE_PACKAGES
             ),
             groups.map(SourceGroup::getDisplayName)
+        )
+    }
+
+    /** Verifies the bare PackageView source root retains the folder context used for diagnostics. */
+    fun testPackageViewRoot_exposesDataFolderAndFixedRootActions() {
+        clearWorkDir()
+        val root = FileUtil.toFileObject(workDir)
+        val kotlinRoot = FileUtil.createFolder(root, "src/main/kotlin")
+        val sourceGroup = TestSourceGroup(kotlinRoot, KotlinProjectSourceGroups.KOTLIN_SOURCE_PACKAGES)
+
+        val node = PackageView.createPackageView(sourceGroup)
+        val actions = node.getActions(false)
+
+        assertNotNull(
+            "A package-view root must expose its backing folder through its lookup",
+            node.lookup.lookup(DataFolder::class.java),
+        )
+        assertTrue(
+            "The baseline PackageView root must provide actions to log and compare",
+            actions.isNotEmpty(),
+        )
+        assertFalse(
+            "The baseline PackageView root must not synthesize a Refactor submenu itself",
+            actions.any { action -> action?.getValue(Action.NAME) == "Refactor" },
         )
     }
 

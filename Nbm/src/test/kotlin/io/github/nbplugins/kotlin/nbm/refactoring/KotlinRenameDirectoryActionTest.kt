@@ -16,6 +16,8 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.refactoring
 
+import java.nio.file.Files
+import java.nio.file.Path
 import org.netbeans.junit.NbTestCase
 
 /** Unit tests for [KotlinRenameDirectoryAction]. */
@@ -27,6 +29,44 @@ class KotlinRenameDirectoryActionTest : NbTestCase("KotlinRenameDirectoryActionT
             "The directory action must declare its dispatcher contract to NetBeans",
             TestAction().isAsynchronous(),
         )
+    }
+
+    /** Verifies the diagnostic examines the two package actions' actual popup registrations. */
+    fun testLayer_distinguishesEditorAndDirectoryPackageActionRegistrations() {
+        val layer = repositoryRoot().resolve("Nbm/src/main/resources/org/jetbrains/kotlin/layer.xml")
+        val contents = Files.readString(layer)
+
+        assertTrue(
+            "The editor package action must be present in Menu/Refactoring for diagnostic comparison",
+            contents.contains("io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageAction.shadow"),
+        )
+        assertFalse(
+            "The directory package action must not be reported as a Menu/Refactoring registration",
+            contents.contains("io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageDirectoryAction.shadow"),
+        )
+        assertTrue(
+            "The directory package action must remain globally registered for the Refactor submenu",
+            contents.contains("io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageDirectoryAction.instance"),
+        )
+        val provider = "org-jetbrains-kotlin-refactorings-rename-KotlinActionsImplementationProvider.instance"
+        val providerStart = contents.indexOf("<file name=\"$provider\">")
+        val providerEnd = contents.indexOf("</file>", providerStart)
+        assertTrue("The existing Kotlin rename provider must remain registered", providerStart >= 0)
+        assertTrue("The Kotlin rename provider must precede Java's generic position-100 provider",
+            contents.substring(providerStart, providerEnd).contains("intvalue=\"99\""))
+    }
+
+    /** Finds the checkout root from the NBM module's Surefire working directory. */
+    private fun repositoryRoot(): Path {
+        var candidate: Path? = Path.of("").toAbsolutePath()
+        while (candidate != null) {
+            if (Files.isRegularFile(candidate.resolve("pom.xml")) && Files.isDirectory(candidate.resolve("Nbm"))) {
+                return candidate
+            }
+            candidate = candidate.parent
+        }
+        fail("Could not locate repository root from ${Path.of("").toAbsolutePath()}")
+        error("unreachable")
     }
 
     /** Exposes NodeAction's protected dispatcher contract for this focused test. */

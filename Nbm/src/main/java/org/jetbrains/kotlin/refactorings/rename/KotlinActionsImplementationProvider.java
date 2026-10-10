@@ -21,6 +21,11 @@ package org.jetbrains.kotlin.refactorings.rename;
 
 import com.intellij.psi.PsiElement;
 import io.github.nbplugins.kotlin.nbm.navigation.KotlinWhereUsedRefactoringUI;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinFilesystemRenameUI;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveSourceSelection;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinProjectFolderRenameSelection;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinRenameDirectoryRefactoring;
+import java.awt.EventQueue;
 import javax.swing.JEditorPane;
 import javax.swing.text.StyledDocument;
 import org.jetbrains.kotlin.builder.KotlinPsiManager;
@@ -29,6 +34,7 @@ import org.jetbrains.kotlin.utils.ProjectUtils;
 import org.netbeans.modules.refactoring.api.RenameRefactoring;
 import org.netbeans.modules.refactoring.api.SafeDeleteRefactoring;
 import org.netbeans.modules.refactoring.api.WhereUsedQuery;
+import org.netbeans.modules.refactoring.api.ui.ExplorerContext;
 import org.netbeans.modules.refactoring.spi.ui.ActionsImplementationProvider;
 import org.netbeans.modules.refactoring.spi.ui.UI;
 import org.openide.cookies.EditorCookie;
@@ -45,25 +51,33 @@ import org.openide.windows.TopComponent;
  * annotation processing is disabled by {@code -proc:none} and {@code @ServiceProvider} alone
  * does not generate {@code META-INF/services} entries in this mixed Kotlin+Java build.
  */
-@org.openide.util.lookup.ServiceProvider(service = ActionsImplementationProvider.class, position = 400)
+@org.openide.util.lookup.ServiceProvider(service = ActionsImplementationProvider.class, position = 99)
 public class KotlinActionsImplementationProvider extends ActionsImplementationProvider {
 
+    /**
+     * Returns whether the context is an eligible Kotlin package folder or an open Kotlin editor.
+     *
+     * @param lookup lookup supplied by the Refactor action
+     * @return {@code true} when this provider owns the Rename operation
+     */
     @Override
     public boolean canRename(Lookup lookup) {
-        EditorCookie ec = lookup.lookup(EditorCookie.class);
-        if (ec == null) {
-            return false;
-        }
-        StyledDocument doc = ec.getDocument();
-        if (doc == null) {
-            return false;
-        }
-        FileObject fo = ProjectUtils.getFileObjectForDocument(doc);
-        return fo != null && fo.hasExt("kt");
+        return KotlinProjectFolderRenameSelection.INSTANCE.resolve(lookup) != null || canRenameEditor(lookup);
     }
 
+    /**
+     * Opens physical directory rename for Kotlin package folders or symbol rename for Kotlin editors.
+     *
+     * @param lookup lookup supplied by the Refactor action
+     */
     @Override
     public void doRename(Lookup lookup) {
+        KotlinMoveSourceSelection folderSelection = KotlinProjectFolderRenameSelection.INSTANCE.resolve(lookup);
+        if (folderSelection != null) {
+            openDirectoryRename(lookup, folderSelection);
+            return;
+        }
+
         EditorCookie ec = lookup.lookup(EditorCookie.class);
         JEditorPane pane = ec.getOpenedPanes()[0];
         // Use selection start so that renaming a fully-selected word positions inside the word,
@@ -78,6 +92,47 @@ public class KotlinActionsImplementationProvider extends ActionsImplementationPr
         UI.openRefactoringUI(
                 new KotlinRenameRefactoringUI(psi, new RenameRefactoring(Lookups.fixed(psi, doc, caretPosition))),
                 TopComponent.getRegistry().getActivated());
+    }
+
+    /**
+     * Tests the pre-existing declaration-rename editor context without involving folder selection.
+     *
+     * @param lookup lookup supplied by NetBeans
+     * @return whether the lookup identifies an open Kotlin document
+     */
+    private boolean canRenameEditor(Lookup lookup) {
+        EditorCookie ec = lookup.lookup(EditorCookie.class);
+        if (ec == null) {
+            return false;
+        }
+        StyledDocument doc = ec.getDocument();
+        if (doc == null) {
+            return false;
+        }
+        FileObject fo = ProjectUtils.getFileObjectForDocument(doc);
+        return fo != null && fo.hasExt("kt");
+    }
+
+    /**
+     * Opens the existing physical directory-rename lifecycle on the event-dispatch thread.
+     *
+     * @param lookup lookup that may contain an inline Explorer rename request
+     * @param selection eligible Kotlin package directory and its Kotlin descendants
+     */
+    private void openDirectoryRename(Lookup lookup, KotlinMoveSourceSelection selection) {
+        FileObject directory = selection.getSelectedDirectory();
+        if (directory == null) {
+            return;
+        }
+        ExplorerContext explorerContext = lookup.lookup(ExplorerContext.class);
+        String requestedName = explorerContext == null ? null : explorerContext.getNewName();
+        String initialName = KotlinProjectFolderRenameSelection.INSTANCE.initialName(directory, requestedName);
+        EventQueue.invokeLater(() -> UI.openRefactoringUI(
+                new KotlinFilesystemRenameUI(
+                        new KotlinRenameDirectoryRefactoring(directory, initialName, selection),
+                        true,
+                        directory.getName()),
+                TopComponent.getRegistry().getActivated()));
     }
 
     /**

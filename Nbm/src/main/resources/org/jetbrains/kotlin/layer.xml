@@ -32,10 +32,12 @@
             <attr name="instanceOf" stringvalue="org.netbeans.modules.refactoring.spi.RefactoringPluginFactory"/>
             <attr name="position" intvalue="100"/>
         </file>
+        <!-- This precedes Java's generic position-100 rename provider: NetBeans dispatches to the
+             first provider whose canRename context predicate returns true. -->
         <file name="org-jetbrains-kotlin-refactorings-rename-KotlinActionsImplementationProvider.instance">
             <attr name="instanceClass" stringvalue="org.jetbrains.kotlin.refactorings.rename.KotlinActionsImplementationProvider"/>
             <attr name="instanceOf" stringvalue="org.netbeans.modules.refactoring.spi.ui.ActionsImplementationProvider"/>
-            <attr name="position" intvalue="400"/>
+            <attr name="position" intvalue="99"/>
         </file>
     </folder>
 
