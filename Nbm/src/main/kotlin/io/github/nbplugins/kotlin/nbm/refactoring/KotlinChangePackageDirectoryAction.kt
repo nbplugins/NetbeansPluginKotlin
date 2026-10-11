@@ -39,10 +39,6 @@ open class KotlinChangePackageDirectoryAction : NodeAction() {
     init {
         putValue(NAME, "Change Kotlin Package...")
         putValue(SHORT_DESCRIPTION, "Change Package of Kotlin Files in Directory")
-        KotlinLogger.INSTANCE.logInfo(
-            "KotlinChangePackageDirectoryAction: constructed instance=${System.identityHashCode(this)} " +
-                "thread=${Thread.currentThread().name}",
-        )
     }
 
     /**
@@ -51,37 +47,13 @@ open class KotlinChangePackageDirectoryAction : NodeAction() {
      * @param nodes folder node supplied by NetBeans
      */
     override fun performAction(nodes: Array<Node>) {
-        KotlinLogger.INSTANCE.logInfo(
-            "KotlinChangePackageDirectoryAction: invoked instance=${System.identityHashCode(this)} " +
-                "with ${nodes.size} selected node(s) thread=${Thread.currentThread().name}",
-        )
-        val folder = selectedFolder(nodes)
-        if (folder == null) {
-            KotlinLogger.INSTANCE.logInfo(
-                "KotlinChangePackageDirectoryAction: aborted because no valid folder node was selected",
-            )
-            return
-        }
-        KotlinLogger.INSTANCE.logInfo(
-            "KotlinChangePackageDirectoryAction: selected folder ${folder.path}",
-        )
-        val selection = KotlinChangePackageSourceSelection.from(folder)
-        if (selection == null) {
-            KotlinLogger.INSTANCE.logInfo(
-                "KotlinChangePackageDirectoryAction: aborted because the folder has no Kotlin descendants",
-            )
-            return
-        }
-        KotlinLogger.INSTANCE.logInfo(
-            "KotlinChangePackageDirectoryAction: resolved ${selection.sourceFiles.size} Kotlin source file(s)",
-        )
+        val folder = selectedFolder(nodes) ?: return
+        val selection = KotlinChangePackageSourceSelection.from(folder) ?: return
         runCatching {
             val project = ProjectUtils.getKotlinProjectForFileObject(selection.representativeFile)
                 ?: ProjectUtils.getValidProject()
                 ?: error("Change Kotlin Package could not resolve the Kotlin project.")
-            KotlinLogger.INSTANCE.logInfo("KotlinChangePackageDirectoryAction: Kotlin project resolved")
             val packageTarget = KotlinPackageTarget(project, selection.representativeFile)
-            KotlinLogger.INSTANCE.logInfo("KotlinChangePackageDirectoryAction: scheduling refactoring UI")
             openRefactoringUi(
                 KotlinChangePackageUI(
                     KotlinChangePackageRefactoring(selection),
@@ -98,10 +70,8 @@ open class KotlinChangePackageDirectoryAction : NodeAction() {
      * @param ui prepared UI whose display must run on the Event Dispatch Thread
      */
     internal fun openRefactoringUi(ui: KotlinChangePackageUI) {
-        KotlinLogger.INSTANCE.logInfo("KotlinChangePackageDirectoryAction: scheduling refactoring UI on EDT")
         EventQueue.invokeLater {
             runCatching {
-                KotlinLogger.INSTANCE.logInfo("KotlinChangePackageDirectoryAction: opening refactoring UI on EDT")
                 UI.openRefactoringUI(ui, TopComponent.getRegistry().activated)
             }.onFailure { error -> KotlinLogger.INSTANCE.logException("KotlinChangePackageDirectoryAction UI opening failed", error) }
         }

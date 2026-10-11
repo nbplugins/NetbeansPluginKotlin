@@ -153,6 +153,56 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies Change Package retains a rebound qualified call when standalone FIR cannot shorten a
+     * range that also contains a local declaration.
+     */
+    fun testApply_realSession_keepsQualifiedReferenceWhenLocalDeclarationPreventsShortening() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-local-shortener")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("source")
+            val usageDirectory = temporaryRoot.resolve("usage")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(usageDirectory)
+            val sourcePath = sourceDirectory.resolve("Moved.kt")
+            val usagePath = usageDirectory.resolve("Usage.kt")
+            Files.writeString(sourcePath, "package old.source\n\nfun moved() = 1\n")
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.source.moved\n\nfun use(): Int {\n" +
+                    "    fun local() = moved()\n" +
+                    "    return local()\n" +
+                    "}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-local-shortener-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("new.changed")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertTrue(success.changedFiles[sourcePath.toString()]?.contains("package new.changed") == true)
+            val usageText = success.changedFiles[usagePath.toString()] ?: error("Usage.kt was not changed")
+            assertTrue("Retargeted local call must retain a valid reference", usageText.contains("new.changed.moved()") || usageText.contains("moved()"))
+            assertFalse("Internal root-resolution prefix must never reach source text", usageText.contains("<root>"))
+            assertTrue("Change Package must not move the declaration file", Files.isRegularFile(sourcePath))
+            assertTrue("Change Package must not move the usage file", Files.isRegularFile(usagePath))
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Verifies recursive-style per-file packages retarget imports for every selected source together. */
     fun testApply_realSession_supportsDistinctDescendantPackages() {
         val stdlib = findStdlibJar() ?: run {

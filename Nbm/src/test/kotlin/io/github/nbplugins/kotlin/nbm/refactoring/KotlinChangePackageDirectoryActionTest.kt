@@ -45,8 +45,24 @@ class KotlinChangePackageDirectoryActionTest : NbTestCase("KotlinChangePackageDi
             contents.contains("<file name=\"KotlinRenameDirectoryAction.shadow\">"),
         )
         assertTrue(
-            "Change Package must remain globally available to RefactoringAll",
+            "Change Package directory action must remain globally available to RefactoringAll",
             contents.contains("KotlinChangePackageDirectoryAction.instance"),
+        )
+        assertTrue(
+            "Change Package editor action must remain registered for editor contexts",
+            contents.contains("KotlinChangePackageAction.instance"),
+        )
+        assertPositions(
+            contents,
+            "Folder Refactor menu must route Change Package to its node action",
+            "io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageDirectoryAction.shadow",
+            267,
+            "io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangeSignatureAction.shadow",
+            270,
+        )
+        assertFalse(
+            "Folder Refactor menu must not route Change Package through the editor action",
+            contents.contains("<file name=\"io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageAction.shadow\">"),
         )
         assertTrue(
             "Rename Directory must remain globally available to RefactoringAll",

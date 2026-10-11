@@ -33,25 +33,6 @@ class KotlinChangePackageAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBRE
         putValue(NAME, "Change Kotlin Package...")
         putValue(SHORT_DESCRIPTION, "Change Kotlin File Package Without Moving It")
         putValue(POPUP_MENU_TEXT, "Change Kotlin Package...")
-        KotlinLogger.INSTANCE.logInfo(
-            "KotlinChangePackageAction: constructed instance=${System.identityHashCode(this)} " +
-                "action=$ACTION_NAME thread=${Thread.currentThread().name}",
-        )
-    }
-
-    /**
-     * Records that the final NetBeans BaseAction dispatcher accepted an editor target before it
-     * updates editor state and invokes this action's Kotlin-specific callback.
-     *
-     * @param target editor component that passed BaseAction's target/document guard
-     */
-    override fun updateComponent(target: JTextComponent) {
-        KotlinLogger.INSTANCE.logInfo(
-            "KotlinChangePackageAction: BaseAction dispatch passed target guard " +
-                "instance=${System.identityHashCode(this)} target=${target.javaClass.name} " +
-                "document=${target.document.javaClass.name} thread=${Thread.currentThread().name}",
-        )
-        super.updateComponent(target)
     }
 
     /**
@@ -61,34 +42,13 @@ class KotlinChangePackageAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBRE
      * @param target active editor component
      */
     override fun actionPerformed(evt: ActionEvent, target: JTextComponent) {
-        KotlinLogger.INSTANCE.logInfo(
-            "KotlinChangePackageAction: invoked instance=${System.identityHashCode(this)} " +
-                "command=${evt.actionCommand} thread=${Thread.currentThread().name}",
-        )
-        val document = target.document as? StyledDocument
-        if (document == null) {
-            KotlinLogger.INSTANCE.logInfo("KotlinChangePackageAction: aborted because the editor document is not styled")
-            return
-        }
+        val document = target.document as? StyledDocument ?: return
         runCatching {
-            val source = ProjectUtils.getFileObjectForDocument(document)
-            if (source == null) {
-                KotlinLogger.INSTANCE.logInfo("KotlinChangePackageAction: aborted because the editor document has no file object")
-                return@runCatching
-            }
+            val source = ProjectUtils.getFileObjectForDocument(document) ?: return@runCatching
             val project = ProjectUtils.getKotlinProjectForFileObject(source) ?: ProjectUtils.getValidProject()
-            if (project == null) {
-                KotlinLogger.INSTANCE.logInfo("KotlinChangePackageAction: aborted because no Kotlin project was resolved")
-                return@runCatching
-            }
-            val selection = KotlinChangePackageSourceSelection.from(source)
-            if (selection == null) {
-                KotlinLogger.INSTANCE.logInfo("KotlinChangePackageAction: aborted because the file is not a Kotlin package source")
-                return@runCatching
-            }
+                ?: return@runCatching
+            val selection = KotlinChangePackageSourceSelection.from(source) ?: return@runCatching
             val packageTarget = KotlinPackageTarget(project, source)
-            KotlinLogger.INSTANCE.logInfo("KotlinChangePackageAction: context resolved")
-            KotlinLogger.INSTANCE.logInfo("KotlinChangePackageAction: opening refactoring UI")
             UI.openRefactoringUI(
                 KotlinChangePackageUI(KotlinChangePackageRefactoring(selection), packageTarget, packageTarget.defaultPackage),
                 TopComponent.getRegistry().activated,

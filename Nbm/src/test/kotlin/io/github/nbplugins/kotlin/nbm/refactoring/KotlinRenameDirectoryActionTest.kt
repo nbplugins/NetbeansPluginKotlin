@@ -31,18 +31,18 @@ class KotlinRenameDirectoryActionTest : NbTestCase("KotlinRenameDirectoryActionT
         )
     }
 
-    /** Verifies the diagnostic examines the two package actions' actual popup registrations. */
-    fun testLayer_distinguishesEditorAndDirectoryPackageActionRegistrations() {
+    /** Verifies the Refactor menu routes a package node through the node-aware package action. */
+    fun testLayer_routesPackageNodeActionThroughRefactorMenu() {
         val layer = repositoryRoot().resolve("Nbm/src/main/resources/org/jetbrains/kotlin/layer.xml")
         val contents = Files.readString(layer)
 
         assertTrue(
-            "The editor package action must be present in Menu/Refactoring for diagnostic comparison",
-            contents.contains("io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageAction.shadow"),
+            "The directory package action must be present in Menu/Refactoring for a package-node selection",
+            contents.contains("io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageDirectoryAction.shadow"),
         )
         assertFalse(
-            "The directory package action must not be reported as a Menu/Refactoring registration",
-            contents.contains("io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageDirectoryAction.shadow"),
+            "The editor-only package action must not be a Refactor-menu shadow",
+            contents.contains("<file name=\"io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageAction.shadow\">"),
         )
         assertTrue(
             "The directory package action must remain globally registered for the Refactor submenu",

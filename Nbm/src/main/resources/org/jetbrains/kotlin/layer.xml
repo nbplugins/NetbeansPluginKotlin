@@ -186,8 +186,10 @@
                 <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinRenameDirectoryAction.instance"/>
                 <attr name="position" intvalue="2666"/>
             </file>
-            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageAction.shadow">
-                <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageAction.instance"/>
+            <!-- The Refactor submenu receives a package folder node, so route this entry through
+                 the node-aware directory action. The editor action remains separately registered. -->
+            <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageDirectoryAction.shadow">
+                <attr name="originalFile" stringvalue="Actions/Refactoring/io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageDirectoryAction.instance"/>
                 <attr name="position" intvalue="267"/>
             </file>
             <file name="io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangeSignatureAction.shadow">
