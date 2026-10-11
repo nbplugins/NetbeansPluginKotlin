@@ -45,8 +45,7 @@ class KotlinChangePackageAction : BaseAction(ACTION_NAME, SAVE_POSITION or ABBRE
         val document = target.document as? StyledDocument ?: return
         runCatching {
             val source = ProjectUtils.getFileObjectForDocument(document) ?: return@runCatching
-            val project = ProjectUtils.getKotlinProjectForFileObject(source)
-                ?: ProjectUtils.getValidProject()
+            val project = ProjectUtils.getKotlinProjectForFileObject(source) ?: ProjectUtils.getValidProject()
                 ?: return@runCatching
             val selection = KotlinChangePackageSourceSelection.from(source) ?: return@runCatching
             val packageTarget = KotlinPackageTarget(project, source)

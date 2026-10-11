@@ -22,7 +22,6 @@ import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.modules.refactoring.spi.ui.UI
 import org.openide.awt.ActionID
 import org.openide.awt.ActionRegistration
-import org.openide.loaders.DataObject
 import org.openide.nodes.Node
 import org.openide.util.HelpCtx
 import org.openide.util.actions.NodeAction
@@ -53,7 +52,7 @@ open class KotlinChangePackageDirectoryAction : NodeAction() {
         runCatching {
             val project = ProjectUtils.getKotlinProjectForFileObject(selection.representativeFile)
                 ?: ProjectUtils.getValidProject()
-                ?: return@runCatching
+                ?: error("Change Kotlin Package could not resolve the Kotlin project.")
             val packageTarget = KotlinPackageTarget(project, selection.representativeFile)
             openRefactoringUi(
                 KotlinChangePackageUI(
@@ -72,8 +71,9 @@ open class KotlinChangePackageDirectoryAction : NodeAction() {
      */
     internal fun openRefactoringUi(ui: KotlinChangePackageUI) {
         EventQueue.invokeLater {
-            runCatching { UI.openRefactoringUI(ui, TopComponent.getRegistry().activated) }
-                .onFailure { error -> KotlinLogger.INSTANCE.logException("KotlinChangePackageDirectoryAction UI opening failed", error) }
+            runCatching {
+                UI.openRefactoringUI(ui, TopComponent.getRegistry().activated)
+            }.onFailure { error -> KotlinLogger.INSTANCE.logException("KotlinChangePackageDirectoryAction UI opening failed", error) }
         }
     }
 
@@ -82,16 +82,16 @@ open class KotlinChangePackageDirectoryAction : NodeAction() {
         ?.let(KotlinChangePackageSourceSelection::from)
         ?.isDirectory == true
 
+    /** Allows selection and project preparation to run off the Event Dispatch Thread. */
+    override fun asynchronous(): Boolean = true
+
     /** @return NetBeans default help context. */
     override fun getHelpCtx(): HelpCtx = HelpCtx.DEFAULT_HELP
 
     /** @return stable action name used by the manual layer registration. */
     override fun getName(): String = "Change Kotlin Package"
 
-    /** Resolves exactly one physical folder from NetBeans' selected node. */
-    private fun selectedFolder(nodes: Array<Node>): org.openide.filesystems.FileObject? {
-        if (nodes.size != 1) return null
-        val dataObject = nodes.single().lookup.lookup(DataObject::class.java) ?: return null
-        return dataObject.primaryFile.takeIf { it.isValid && it.isFolder }
-    }
+    /** Resolves exactly one physical or package-tree folder node. */
+    private fun selectedFolder(nodes: Array<Node>) = KotlinFolderNodeSelection.resolve(nodes)
+
 }

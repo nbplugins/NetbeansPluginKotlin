@@ -21,10 +21,10 @@ import org.netbeans.junit.NbTestCase
 /** Unit tests for [KotlinMoveDirectoryAction]. */
 class KotlinMoveDirectoryActionTest : NbTestCase("KotlinMoveDirectoryActionTest") {
 
-    /** Verifies source discovery remains asynchronous while the action explicitly marshals UI later. */
-    fun testAsynchronous_allowsBackgroundSourceDiscovery() {
-        assertTrue(
-            "K2 source discovery may run in NetBeans' RequestProcessor before UI is marshalled to EDT",
+    /** Verifies the legacy NodeAction dispatcher contract is explicitly synchronous. */
+    fun testAsynchronous_isExplicitlyFalse() {
+        assertFalse(
+            "The directory action must declare its dispatcher contract to NetBeans",
             TestAction().isAsynchronous(),
         )
     }

@@ -118,9 +118,16 @@ class KotlinChangePackageApplyElement(
             val current = KotlinRefactoringTransaction()
             pending = current
             when (val outcome = KaChangePackageComputer(targets.keys.first()).apply(targets, refactoring.updateReferences)) {
-                is KaChangePackageComputer.ApplyOutcome.Conflicts ->
+                is KaChangePackageComputer.ApplyOutcome.Conflicts -> {
                     throw IllegalStateException(outcome.messages.joinToString("\n"))
-                is KaChangePackageComputer.ApplyOutcome.Error -> throw outcome.error
+                }
+                is KaChangePackageComputer.ApplyOutcome.Error -> {
+                    KotlinLogger.INSTANCE.logException(
+                        "KotlinChangePackageApplyElement.performChange: semantic analysis failed before transaction commit",
+                        outcome.error,
+                    )
+                    throw outcome.error
+                }
                 is KaChangePackageComputer.ApplyOutcome.Success -> {
                     outcome.changedFiles.forEach { (path, text) ->
                         val file = sourceByPath[path] ?: FileUtil.toFileObject(FileUtil.normalizeFile(java.io.File(path)))
@@ -145,13 +152,9 @@ class KotlinChangePackageApplyElement(
     override fun undoChange() {
         runCatching {
             val current = transaction
-            if (current == null) {
-                KotlinLogger.INSTANCE.logWarning("KotlinChangePackageApplyElement.undoChange: no retained transaction")
-            } else {
-                KotlinLogger.INSTANCE.logInfo("KotlinChangePackageApplyElement.undoChange: restoring retained transaction")
+            if (current != null) {
                 current.undo()
                 transaction = null
-                KotlinLogger.INSTANCE.logInfo("KotlinChangePackageApplyElement.undoChange: transaction restored")
             }
             KotlinAnalysisAPISession.invalidate(project)
         }.onFailure { error ->

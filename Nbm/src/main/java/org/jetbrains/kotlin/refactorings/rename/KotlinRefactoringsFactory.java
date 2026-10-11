@@ -46,6 +46,10 @@ import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveNestedMemberPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveNestedMemberRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveFilePlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveFileRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinRenameFilePlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinRenameFileRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinRenameDirectoryPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinRenameDirectoryRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangePackagePlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangePackageRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignaturePlugin;
@@ -117,6 +121,12 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         // before the legacy editor-document applicability guard below.
         if (refactoring instanceof KotlinMoveFileRefactoring) {
             return new KotlinMoveFilePlugin((KotlinMoveFileRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinRenameFileRefactoring) {
+            return new KotlinRenameFilePlugin((KotlinRenameFileRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinRenameDirectoryRefactoring) {
+            return new KotlinRenameDirectoryPlugin((KotlinRenameDirectoryRefactoring) refactoring);
         }
         if (refactoring instanceof KotlinChangePackageRefactoring) {
             return new KotlinChangePackagePlugin((KotlinChangePackageRefactoring) refactoring);
