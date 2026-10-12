@@ -816,6 +816,14 @@
             <attr name="displayName" bundlevalue="org.jetbrains.kotlin.Bundle#Templates/Kotlin"/>
             <attr name="position" intvalue="890"/>
             <attr name="SystemFileSystem.localizingBundle" stringvalue="org.jetbrains.kotlin.Bundle"/>
+            <file name="Package">
+                <attr boolvalue="true" name="template"/>
+                <attr intvalue="50" name="position"/>
+                <attr bundlevalue="org.jetbrains.kotlin.Bundle#Templates/Kotlin/Package" name="displayName"/>
+                <attr name="iconBase" stringvalue="org/jetbrains/kotlin/kt.png"/>
+                <attr name="instantiatingIterator" newvalue="org.jetbrains.kotlin.file.templates.KtPackageWizardIterator"/>
+                <attr boolvalue="true" name="requireProject"/>
+            </file>
             <file name="class.kt" url="nbresloc:/org/jetbrains/kotlin/file/templates/class.kt">
                 <attr boolvalue="true" name="template"/>
                 <attr intvalue="100" name="position"/>

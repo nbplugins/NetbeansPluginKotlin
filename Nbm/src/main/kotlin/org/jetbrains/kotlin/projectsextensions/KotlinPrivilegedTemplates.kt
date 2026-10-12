@@ -27,6 +27,7 @@ import org.netbeans.spi.project.ui.PrivilegedTemplates
 class KotlinPrivilegedTemplates : PrivilegedTemplates {
     
     override fun getPrivilegedTemplates() = arrayOf(
+            "Templates/Kotlin/Package",
             "Templates/Kotlin/class.kt",
             "Templates/Kotlin/interface.kt",
             "Templates/Kotlin/dataClass.kt",

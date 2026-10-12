@@ -26,7 +26,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -35,7 +35,9 @@ import javax.swing.JComponent;
 import javax.swing.event.ChangeListener;
 import org.jetbrains.kotlin.file.templates.packagechooser.PackageChooser;
 import org.jetbrains.kotlin.file.templates.packagechooser.TargetChooserPanel;
+import org.jetbrains.kotlin.file.templates.packagechooser.Type;
 import org.jetbrains.kotlin.project.KotlinSourceGroup;
+import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectSourceGroups;
 import org.netbeans.api.java.project.JavaProjectConstants;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ProjectUtils;
@@ -54,9 +56,26 @@ import org.openide.util.HelpCtx;
 public abstract class KtDefaultWizardIterator implements WizardDescriptor.InstantiatingIterator<WizardDescriptor> {
 
     private final String type;
+    private final Type targetType;
 
+    /**
+     * Creates a wizard that generates a Kotlin file.
+     *
+     * @param type display name for the generated Kotlin file type
+     */
     public KtDefaultWizardIterator(String type) {
+        this(type, Type.FILE);
+    }
+
+    /**
+     * Creates a wizard that generates the specified {@code targetType}.
+     *
+     * @param type display name for the generated object type
+     * @param targetType object type created by this wizard
+     */
+    protected KtDefaultWizardIterator(String type, Type targetType) {
         this.type = type;
+        this.targetType = targetType;
     }
 
     private int index;
@@ -87,12 +106,67 @@ public abstract class KtDefaultWizardIterator implements WizardDescriptor.Instan
         return result;
     }
 
+    /**
+     * Returns source groups available to the Kotlin package wizard.
+     *
+     * <p>NetBeans exposes both ordinary source and test roots through
+     * {@link JavaProjectConstants#SOURCES_TYPE_JAVA}; dedicated Kotlin groups
+     * are appended so the wizard can also target the separated Kotlin trees.
+     *
+     * @param project project whose source roots are offered by the package wizard
+     * @return de-duplicated standard and Kotlin source groups
+     */
+    public static List<SourceGroup> kotlinPackageSourceGroups(Project project) {
+        Sources sources = ProjectUtils.getSources(project);
+        List<SourceGroup> kotlinGroups = new ArrayList<>();
+        List<SourceGroup> result = new ArrayList<>();
+        if (sources != null) {
+            result.addAll(Arrays.asList(sources.getSourceGroups(JavaProjectConstants.SOURCES_TYPE_JAVA)));
+            kotlinGroups.addAll(Arrays.asList(sources.getSourceGroups(KotlinProjectSourceGroups.KOTLIN_SOURCE_TYPE)));
+            kotlinGroups.addAll(Arrays.asList(sources.getSourceGroups(KotlinProjectSourceGroups.KOTLIN_TEST_SOURCE_TYPE)));
+        }
+        if (kotlinGroups.isEmpty()) {
+            kotlinGroups.addAll(kotlinSourceGroups(project));
+        }
+        result.addAll(kotlinGroups);
+        Map<String, SourceGroup> distinctGroups = new LinkedHashMap<>();
+        for (SourceGroup group : result) {
+            distinctGroups.putIfAbsent(group.getRootFolder().getPath(), group);
+        }
+        return new ArrayList<>(distinctGroups.values());
+    }
+
+    /**
+     * Creates the directory hierarchy that represents a Kotlin package.
+     *
+     * @param root selected Kotlin source root
+     * @param packageName validated dotted package name
+     * @return the package directory
+     * @throws IOException if the folder hierarchy cannot be created
+     */
+    public static FileObject createPackageFolder(FileObject root, String packageName) throws IOException {
+        FileObject folder = root;
+        for (String segment : packageName.split("\\.")) {
+            FileObject child = folder.getFileObject(segment);
+            if (child == null) {
+                folder = folder.createFolder(segment);
+            } else if (child.isFolder()) {
+                folder = child;
+            } else {
+                throw new IOException("Package path is blocked by file: " + child.getPath());
+            }
+        }
+        return folder;
+    }
+
     private List<WizardDescriptor.Panel<WizardDescriptor>> getPanels() {
         if (panels == null) {
             Project project = Templates.getProject(wizard);
             SourceGroup[] groups;
-            
-            if (project == null) {
+
+            if (targetType == Type.PACKAGE && project != null) {
+                groups = kotlinPackageSourceGroups(project).toArray(new SourceGroup[0]);
+            } else if (project == null) {
                 List<SourceGroup> sourceGroups = Lists.newArrayList();
 
                 for (Project proj : OpenProjects.getDefault().getOpenProjects()) {
@@ -114,7 +188,8 @@ public abstract class KtDefaultWizardIterator implements WizardDescriptor.Instan
                 sourceGroups.addAll(kotlinSourceGroups(project));
                 groups = sourceGroups.toArray(new SourceGroup[0]);
             }
-            packageChooserPanel = PackageChooser.createPackageChooser(project, groups, new KtWizardPanel(), type + " name");
+            packageChooserPanel = PackageChooser.createPackageChooser(
+                    project, groups, targetType == Type.PACKAGE ? null : new KtWizardPanel(), targetType, type);
             
             panels = new ArrayList<>();
             panels.add(packageChooserPanel);
@@ -159,6 +234,13 @@ public abstract class KtDefaultWizardIterator implements WizardDescriptor.Instan
                         packageName,
                         dir == null ? "null" : dir.getPath()
                 });
+
+        if (targetType == Type.PACKAGE) {
+            FileObject createdFolder = createPackageFolder(dir, targetName);
+            LOG.log(java.util.logging.Level.INFO,
+                    "KtDefaultWizardIterator.instantiate: created package={0}", createdFolder.getPath());
+            return Collections.singleton(DataObject.find(createdFolder));
+        }
 
         FileObject createdFile;
         try {
