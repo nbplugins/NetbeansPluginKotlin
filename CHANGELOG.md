@@ -1,4 +1,4 @@
-# 0.11
+# 0.11.54 (2026-10-12)
 
 - Added **New → Kotlin Package** for **Source Packages**, **Test Packages**, **Kotlin Source Packages**, and **Kotlin Test Packages**, creating the requested nested package hierarchy exclusively beneath the selected source or test root in Maven, Gradle, and Ant/J2SE projects.
 - Fixed Kotlin package nodes under **Kotlin Source Packages** and **Kotlin Test Packages** retaining the standard **Refactor** submenu in the Projects window, so Rename opens **Rename Kotlin Package Directory...** for a non-empty Kotlin package; Java, resource, generated, empty, and non-Kotlin folders retain their existing handling, while package-tree headings are unchanged.
