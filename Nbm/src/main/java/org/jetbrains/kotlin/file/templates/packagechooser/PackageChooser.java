@@ -28,12 +28,22 @@ public class PackageChooser {
     
     public static String pack = null;
     
-    public static TargetChooserPanel createPackageChooser(Project project, SourceGroup[] folders, 
-        WizardDescriptor.Panel<WizardDescriptor> bottomPanel, String type) {
+    /**
+     * Creates a target chooser for the supplied source groups.
+     *
+     * @param project project that owns the source groups
+     * @param folders source groups offered by the chooser
+     * @param bottomPanel optional panel shown below the target chooser
+     * @param type object type created by the wizard
+     * @param displayName human-readable name of the created object
+     * @return configured target chooser panel
+     */
+    public static TargetChooserPanel createPackageChooser(Project project, SourceGroup[] folders,
+        WizardDescriptor.Panel<WizardDescriptor> bottomPanel, Type type, String displayName) {
         if (folders.length == 0) {
             throw new IllegalArgumentException("No folders selected");
         }
-        return new TargetChooserPanel(project, folders, bottomPanel, Type.FILE, false, type);
+        return new TargetChooserPanel(project, folders, bottomPanel, type, false, displayName);
     }
     
 }
