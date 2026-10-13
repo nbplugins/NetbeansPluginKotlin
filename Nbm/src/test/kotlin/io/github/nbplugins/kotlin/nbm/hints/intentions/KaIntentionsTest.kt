@@ -16,7 +16,18 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.hints.intentions
 
+import com.intellij.psi.PsiElement
 import io.github.nbplugins.kotlin.nbm.hints.KaIntentionTestBase
+import org.jetbrains.kotlin.idea.codeInsight.inspections.shared.RemoveEmptyParenthesesFromLambdaCallInspection
+import org.jetbrains.kotlin.idea.codeinsight.api.applicable.inspections.KotlinApplicableInspectionBase
+import org.jetbrains.kotlin.idea.codeinsight.api.applicable.intentions.KotlinApplicableModCommandAction
+import org.jetbrains.kotlin.idea.k2.codeinsight.inspections.ReplaceContainsInspection
+import org.jetbrains.kotlin.idea.k2.codeinsight.inspections.ReplaceGetOrSetInspection
+import org.jetbrains.kotlin.idea.k2.codeinsight.inspections.expressions.ReplaceCallWithBinaryOperatorInspection
+import org.jetbrains.kotlin.idea.k2.codeinsight.intentions.ReplaceCallWithUnaryOperatorIntention
+import org.jetbrains.kotlin.idea.k2.codeinsight.intentions.ReplaceInvokeIntention
+import org.jetbrains.kotlin.psi.KtElement
+import java.lang.reflect.ParameterizedType
 
 /**
  * Integration tests for K2 [io.github.nbplugins.kotlin.nbm.hints.KaApplicableIntention] subclasses.
@@ -320,5 +331,143 @@ class KaIntentionsTest : KaIntentionTestBase("KaIntentions test", "intentions") 
     /** K2 path for "Make internal". */
     fun testKaChangeVisibilityToInternal() = doTest("kaChangeVisibilityToInternal") { doc, kaKtFile, psi ->
         KaChangeVisibilityToInternalIntention(doc, kaKtFile, psi)
+    }
+
+    // ── F8 — Structural conversions (compiled IDEA sources) ─────────────────
+    //
+    // These adapt IDEA's own K2 inspections and intentions, compiled verbatim from
+    // submodules/IntellijCommunity by the KotlinCodeInsightImpl module. Unlike the
+    // hand-written intentions above, the element passed to the adapter must be the exact
+    // type the IDEA action targets, so it is found by walking up from the caret leaf.
+
+    /** F8: `a.plus(b)` -> `a + b` (IDEA ReplaceCallWithBinaryOperatorInspection). */
+    fun testKaReplaceCallWithBinaryOperator() = doTestInspection("kaReplaceCallWithBinaryOperator") {
+        ReplaceCallWithBinaryOperatorInspection()
+    }
+
+    /** F8: `a.get(i)` -> `a[i]` (IDEA ReplaceGetOrSetInspection). */
+    fun testKaReplaceGetOrSet() = doTestInspection("kaReplaceGetOrSet") {
+        ReplaceGetOrSetInspection()
+    }
+
+    /** F8: `a.contains(b)` -> `b in a` (IDEA ReplaceContainsInspection). */
+    fun testKaReplaceContains() = doTestInspection("kaReplaceContains") {
+        ReplaceContainsInspection()
+    }
+
+    /** F8: `f() {}` -> `f {}` (IDEA RemoveEmptyParenthesesFromLambdaCallInspection). */
+    fun testKaRemoveEmptyParenthesesFromLambdaCall() =
+        doTestInspection("kaRemoveEmptyParenthesesFromLambdaCall") {
+            RemoveEmptyParenthesesFromLambdaCallInspection()
+        }
+
+    /** F8: `a.invoke(b)` -> `a(b)` (IDEA ReplaceInvokeIntention). */
+    fun testKaReplaceInvoke() = doTestIntention("kaReplaceInvoke") { ReplaceInvokeIntention() }
+
+    /** F8: `a.not()` -> `!a` (IDEA ReplaceCallWithUnaryOperatorIntention). */
+    fun testKaReplaceCallWithUnaryOperator() =
+        doTestIntention("kaReplaceCallWithUnaryOperator") { ReplaceCallWithUnaryOperatorIntention() }
+
+    /**
+     * Runs an IDEA [KotlinApplicableInspectionBase] test through [KaIdeaInspectionHint].
+     *
+     * The caret leaf is walked up to the exact element type the inspection declares, because
+     * [KotlinApplicableInspectionBase] is typed on that element.
+     *
+     * @param fileName fixture name without extension
+     * @param factory creates the inspection under test
+     */
+    private fun <E : KtElement, C : Any> doTestInspection(
+        fileName: String,
+        factory: () -> KotlinApplicableInspectionBase<E, C>,
+    ) = doTest(fileName) { doc, kaKtFile, psi ->
+        val inspection = factory()
+        @Suppress("UNCHECKED_CAST")
+        KaIdeaInspectionHint(
+            inspection,
+            doc,
+            kaKtFile,
+            psi.targetElement(factoryElementClass(inspection)) as E
+        )
+    }
+
+    /**
+     * Runs an IDEA [KotlinApplicableModCommandAction] test through [KaIdeaIntentionHint].
+     *
+     * @param fileName fixture name without extension
+     * @param factory creates the intention under test
+     */
+    private fun <E : KtElement> doTestIntention(
+        fileName: String,
+        factory: () -> KotlinApplicableModCommandAction<E, *>,
+    ) = doTest(fileName) { doc, kaKtFile, psi ->
+        val intention = factory()
+        @Suppress("UNCHECKED_CAST")
+        KaIdeaIntentionHint(
+            intention,
+            doc,
+            kaKtFile,
+            psi.targetElement(factoryElementClass(intention)) as E
+        )
+    }
+
+    /**
+     * Returns the [KtElement] class an IDEA action targets.
+     *
+     * Both applicable-inspection and applicable-intention bases expose their element type
+     * through the generic supertype's type argument; that is read here so the test does not
+     * have to restate it per fixture.
+     */
+    private fun factoryElementClass(action: Any): Class<out KtElement> {
+        var cls: Class<*>? = action.javaClass
+        while (cls != null) {
+            val supertype = cls.genericSuperclass
+            if (supertype is ParameterizedType) {
+                val argument = supertype.actualTypeArguments.firstOrNull()
+                if (argument is Class<*> && KtElement::class.java.isAssignableFrom(argument)) {
+                    @Suppress("UNCHECKED_CAST")
+                    return argument as Class<out KtElement>
+                }
+            }
+            cls = cls.superclass
+        }
+        error("Cannot determine target element class for ${action.javaClass}")
+    }
+
+    /** Walks up from [this] until an element of [type] is found. */
+    private fun PsiElement.ancestorOfType(type: Class<*>): KtElement {
+        var current: PsiElement? = this
+        while (current != null) {
+            if (type.isInstance(current)) {
+                return current as KtElement
+            }
+            current = current.parent
+        }
+        error("No ${type.simpleName} ancestor of ${text}")
+    }
+
+    /**
+     * Finds the element of [type] the caret refers to, searching both up and sideways.
+     *
+     * Most fixtures put the caret inside the target element, so an ancestor walk suffices.
+     * The `removeEmptyParenthesesFromLambdaCall` fixture is the exception: its caret sits
+     * just after `)` — outside the [org.jetbrains.kotlin.psi.KtValueArgumentList] the
+     * inspection targets — so the preceding leaf is walked up to instead.
+     */
+    private fun PsiElement.targetElement(type: Class<*>): KtElement {
+        ancestorOrNull(type)?.let { return it }
+        val previous = com.intellij.psi.util.PsiTreeUtil.prevLeaf(this)
+        return previous?.ancestorOrNull(type)
+            ?: error("No ${type.simpleName} near ${text}")
+    }
+
+    /** Walks up from [this] returning the first element of [type], or null. */
+    private fun PsiElement.ancestorOrNull(type: Class<*>): KtElement? {
+        var current: PsiElement? = this
+        while (current != null) {
+            if (type.isInstance(current)) return current as KtElement
+            current = current.parent
+        }
+        return null
     }
 }

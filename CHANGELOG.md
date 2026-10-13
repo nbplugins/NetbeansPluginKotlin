@@ -1,3 +1,4 @@
+- Added structural conversion hints for Kotlin: with the caret on an operator or convention-named call you can now convert `a.plus(b)` to `a + b`, `a.get(i)`/`a.set(i, v)` to `a[i]`/`a[i] = v`, `a.contains(b)` to `b in a`, `a.invoke(b)` to `a(b)`, `a.not()`/`a.unaryPlus()` to `!a`/`+a`, and `f() {}` to `f {}` directly from the hint popup.
 # 0.11.54 (2026-10-12)
 
 - Added **New → Kotlin Package** for **Source Packages**, **Test Packages**, **Kotlin Source Packages**, and **Kotlin Test Packages**, creating the requested nested package hierarchy exclusively beneath the selected source or test root in Maven, Gradle, and Ant/J2SE projects.

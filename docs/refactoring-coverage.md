@@ -32,6 +32,12 @@ netbeans=<path>; test=<path>; milestone=<F0-F8>
 <!-- refactoring-coverage: id=change-package; status=partial; idea=submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.move.k2/src/org/jetbrains/kotlin/idea/k2/refactoring/move/processor/K2ChangePackageRefactoringProcessor.kt; netbeans=KotlinRefactoring/src/main/kotlin/io/github/nbplugins/kotlin/refactoring/KaChangePackageComputer.kt; test=Nbm/src/test/kotlin/io/github/nbplugins/kotlin/nbm/refactoring/KaChangePackageTest.kt; milestone=F4 -->
 <!-- refactoring-coverage: id=move-nested-member-method; status=partial; idea=submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.common/src/org/jetbrains/kotlin/idea/refactoring/move/MoveKotlinMemberHandler.kt; netbeans=Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/refactoring/KotlinMoveNestedMemberPlugin.kt; test=Nbm/src/test/kotlin/io/github/nbplugins/kotlin/nbm/refactoring/KaMoveNestedMemberComputerTest.kt; milestone=F4 -->
 <!-- refactoring-coverage: id=rename-file-package-directory; status=partial; idea=submodules/IntellijCommunity/plugins/kotlin/refactorings/kotlin.refactorings.common/src/org/jetbrains/kotlin/idea/refactoring/rename/KotlinRenameRefactoringSupport.kt; netbeans=Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/refactoring/KotlinRenamePlugin.kt; test=Nbm/src/test/kotlin/io/github/nbplugins/kotlin/nbm/refactoring/KotlinRefactoringTransactionTest.kt; milestone=F7 -->
+<!-- refactoring-coverage: id=call-to-binary-operator; status=partial; idea=submodules/IntellijCommunity/plugins/kotlin/code-insight/inspections-k2/src/org/jetbrains/kotlin/idea/k2/codeinsight/inspections/expressions/ReplaceCallWithBinaryOperatorInspection.kt; netbeans=Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/hints/intentions/KaStructuralConversionHints.kt; test=Nbm/src/test/kotlin/io/github/nbplugins/kotlin/nbm/hints/intentions/KaIntentionsTest.kt; milestone=F8 -->
+<!-- refactoring-coverage: id=get-or-set-to-indexing; status=partial; idea=submodules/IntellijCommunity/plugins/kotlin/code-insight/inspections-k2/src/org/jetbrains/kotlin/idea/k2/codeinsight/inspections/ReplaceGetOrSetInspection.kt; netbeans=Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/hints/intentions/KaStructuralConversionHints.kt; test=Nbm/src/test/kotlin/io/github/nbplugins/kotlin/nbm/hints/intentions/KaIntentionsTest.kt; milestone=F8 -->
+<!-- refactoring-coverage: id=contains-to-in-operator; status=partial; idea=submodules/IntellijCommunity/plugins/kotlin/code-insight/inspections-k2/src/org/jetbrains/kotlin/idea/k2/codeinsight/inspections/ReplaceContainsInspection.kt; netbeans=Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/hints/intentions/KaStructuralConversionHints.kt; test=Nbm/src/test/kotlin/io/github/nbplugins/kotlin/nbm/hints/intentions/KaIntentionsTest.kt; milestone=F8 -->
+<!-- refactoring-coverage: id=invoke-to-direct-call; status=partial; idea=submodules/IntellijCommunity/plugins/kotlin/code-insight/intentions-k2/src/org/jetbrains/kotlin/idea/k2/codeinsight/intentions/ReplaceInvokeIntention.kt; netbeans=Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/hints/intentions/KaStructuralConversionHints.kt; test=Nbm/src/test/kotlin/io/github/nbplugins/kotlin/nbm/hints/intentions/KaIntentionsTest.kt; milestone=F8 -->
+<!-- refactoring-coverage: id=call-to-unary-operator; status=partial; idea=submodules/IntellijCommunity/plugins/kotlin/code-insight/intentions-k2/src/org/jetbrains/kotlin/idea/k2/codeinsight/intentions/ReplaceCallWithUnaryOperatorIntention.kt; netbeans=Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/hints/intentions/KaStructuralConversionHints.kt; test=Nbm/src/test/kotlin/io/github/nbplugins/kotlin/nbm/hints/intentions/KaIntentionsTest.kt; milestone=F8 -->
+<!-- refactoring-coverage: id=remove-empty-lambda-parentheses; status=partial; idea=submodules/IntellijCommunity/plugins/kotlin/code-insight/inspections-shared/src/org/jetbrains/kotlin/idea/codeInsight/inspections/shared/RemoveEmptyParenthesesFromLambdaCallInspection.kt; netbeans=Nbm/src/main/kotlin/io/github/nbplugins/kotlin/nbm/hints/intentions/KaStructuralConversionHints.kt; test=Nbm/src/test/kotlin/io/github/nbplugins/kotlin/nbm/hints/intentions/KaIntentionsTest.kt; milestone=F8 -->
 
 ## Purpose and scope
 
@@ -48,7 +54,7 @@ The corresponding record comments above are deliberately machine-readable. `Refa
 | **Absent** | IDEA exposes the Kotlin refactoring family but the NetBeans plugin has no corresponding command. |
 | **Not applicable** | IDEA-only integration which is not a Kotlin refactoring target for this plugin. No such rows are currently tracked. |
 
-**Baseline counts:** 0 complete, 24 partial, 0 absent, 24 total.
+**Baseline counts:** 0 complete, 30 partial, 0 absent, 30 total.
 
 ## Current NetBeans refactorings
 
@@ -91,7 +97,31 @@ The corresponding record comments above are deliberately machine-readable. `Refa
 | **F5** | Inline Type Alias and Inline Anonymous Function. |
 | **F6** | Advanced Extract/Introduce and Extract Super parity. |
 | **F7** | Full Rename/Safe Delete filesystem, automatic-renamer and Java-bridge coverage. |
-| **F8** | Structural conversions such as lambda/reference and operator/function conversions. |
+| **F8** | Structural conversions such as lambda/reference and operator/function conversions. Delivered by compiling the IDEA K2 inspections/intentions for the operator/function conversions into the `KotlinCodeInsightImpl` reactor module and driving them from the caret hint provider; see *Structural conversions* below. |
+
+## Structural conversions (F8)
+
+IDEA implements the operator/function conversions as K2 **inspections** and **intentions**. The
+`KotlinCodeInsightImpl` reactor module copies their sources out of `submodules/IntellijCommunity`
+via `maven-resources-plugin` and compiles them unchanged (only `internal` → public visibility is
+patched, so the NetBeans layer can construct them). `KaIdeaIntentionHint` / `KaIdeaInspectionHint`
+in `Nbm` drive them through reflection, reusing the `KaModCommandFix` PSI→document sync, and
+`KaStructuralConversionHints` attaches each action to the PSI element the caret refers to.
+
+| Conversion | IDEA K2 source | NetBeans adapter | Test |
+|---|---|---|---|
+| `a.plus(b)` → `a + b` | `code-insight/inspections-k2/.../expressions/ReplaceCallWithBinaryOperatorInspection.kt` | `KaIdeaInspectionHint` via `KaStructuralConversionHints` | `KaIntentionsTest` |
+| `a.get(i)` / `a.set(i, v)` → `a[i]` / `a[i] = v` | `code-insight/inspections-k2/.../ReplaceGetOrSetInspection.kt` | `KaIdeaInspectionHint` via `KaStructuralConversionHints` | `KaIntentionsTest` |
+| `a.contains(b)` → `b in a` | `code-insight/inspections-k2/.../ReplaceContainsInspection.kt` | `KaIdeaInspectionHint` via `KaStructuralConversionHints` | `KaIntentionsTest` |
+| `a.invoke(b)` → `a(b)` | `code-insight/intentions-k2/.../ReplaceInvokeIntention.kt` | `KaIdeaIntentionHint` via `KaStructuralConversionHints` | `KaIntentionsTest` |
+| `a.not()` / `a.unaryPlus()` → `!a` / `+a` | `code-insight/intentions-k2/.../ReplaceCallWithUnaryOperatorIntention.kt` | `KaIdeaIntentionHint` via `KaStructuralConversionHints` | `KaIntentionsTest` |
+| `f() {}` → `f {}` | `code-insight/inspections-shared/.../RemoveEmptyParenthesesFromLambdaCallInspection.kt` | `KaIdeaInspectionHint` via `KaStructuralConversionHints` | `KaIntentionsTest` |
+
+The reverse directions (`a + b` → `a.plus(b)` as `KaOperatorToFunctionIntention`, and
+lambda → callable reference as `KaConvertLambdaToReferenceIntention`) were already hand-written
+before F8 and are **kept**: the IDEA counterparts (`OperatorToFunctionIntention`,
+`ConvertLambdaToReferenceIntention`) pull in a much larger slice of `code-insight` than these six
+conversions need, so replacing them is out of F8 scope.
 
 ## Representative compatibility baseline
 
@@ -111,5 +141,6 @@ The existing NetBeans tests are the initial executable sample set. They intentio
 | Push Members Down into direct subclasses | `KaPushMembersDownComputerTest` | Build-wide Kotlin hierarchy baseline; advanced conflict scan remains incomplete |
 | Standalone K2 override/super-method bridge | `KotlinStandaloneHierarchySearchTest` | Build-wide Kotlin hierarchy baseline; Java and full IDEA-index coverage remain incomplete |
 | Introduce Type Alias on generic type text | `KaIntroduceTypeAliasTest` | Documented deviation: no generic type-parameter extraction |
+| Operator/function structural conversions driven from a caret hint | `KaIntentionsTest` | Exact parity baseline for the six IDEA K2 conversions; the reverse `a + b` → `a.plus(b)` and lambda → reference directions remain hand-written |
 
 When a future port changes a row from Partial to Complete, it must add or strengthen the relevant compatibility fixture before changing this matrix status.

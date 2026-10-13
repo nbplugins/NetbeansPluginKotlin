@@ -100,6 +100,7 @@ import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChangeVisibilityToPubli
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChangeVisibilityToPrivateIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChangeVisibilityToProtectedIntention
 import io.github.nbplugins.kotlin.nbm.hints.intentions.KaChangeVisibilityToInternalIntention
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaStructuralConversionHints
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.hints.KotlinRuleContext
 import org.jetbrains.kotlin.hints.KotlinRule
@@ -202,7 +203,9 @@ class KotlinHintsProvider : HintsProvider {
                 KaChangeVisibilityToPublicIntention(doc, kaKtFile, psi),
                 KaChangeVisibilityToPrivateIntention(doc, kaKtFile, psi),
                 KaChangeVisibilityToProtectedIntention(doc, kaKtFile, psi),
-                KaChangeVisibilityToInternalIntention(doc, kaKtFile, psi)
+                KaChangeVisibilityToInternalIntention(doc, kaKtFile, psi),
+                // Group F8 — Structural conversions (compiled IDEA inspections/intentions)
+                *KaStructuralConversionHints.hints(doc, kaKtFile, psi).toTypedArray()
             ).filter { it.isApplicable(psi.textRange.startOffset) }
         }
 
