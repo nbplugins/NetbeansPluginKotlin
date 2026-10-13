@@ -1,0 +1,318 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.github.nbplugins</groupId>
+    <artifactId>netbeans-plugin-kotlin</artifactId>
+    <version>0.11.284-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+  <artifactId>netbeans-plugin-kotlin-code-insight-impl</artifactId>
+  <packaging>jar</packaging>
+  <name>Netbeans Plugin Kotlin Code Insight Impl</name>
+  <description>
+    Structural-conversion inspections and intentions compiled from
+    submodules/IntellijCommunity (code-insight/inspections-k2,
+    code-insight/intentions-k2, code-insight/inspections-shared).
+    These are the IDEA implementations of operator/function conversions
+    (a + b &lt;-&gt; a.plus(b), a[i] &lt;-&gt; a.get(i), a in b &lt;-&gt; b.contains(a),
+    f {} &lt;-&gt; f() {}) consumed by the NetBeans adapter layer in the Nbm module.
+  </description>
+
+  <build>
+    <!--
+      Sources are copied from submodule directories into
+      target/generated-sources/code-insight/ so that gmavenplus patches can modify
+      copies without dirtying the git submodule, and kotlin-maven-plugin compiles
+      from one sourceDirectory.
+    -->
+    <sourceDirectory>${project.build.directory}/generated-sources/code-insight</sourceDirectory>
+
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <executions>
+
+          <!-- code-insight/inspections-k2: K2 inspection implementations -->
+          <execution>
+            <id>copy-inspections-k2</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/code-insight</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/inspections-k2/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/k2/codeinsight/inspections/expressions/ReplaceCallWithBinaryOperatorInspection.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/codeinsight/inspections/ReplaceGetOrSetInspection.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/codeinsight/inspections/ReplaceContainsInspection.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- code-insight/intentions-k2: K2 intention implementations -->
+          <execution>
+            <id>copy-intentions-k2</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/code-insight</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/intentions-k2/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/k2/codeinsight/intentions/ReplaceInvokeIntention.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/codeinsight/intentions/ReplaceCallWithUnaryOperatorIntention.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- code-insight/inspections-shared: inspection implementations shared by K1/K2 -->
+          <execution>
+            <id>copy-inspections-shared</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/code-insight</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/inspections-shared/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeInsight/inspections/shared/RemoveEmptyParenthesesFromLambdaCallInspection.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- Local standalone classes for this module -->
+          <execution>
+            <id>copy-local-code-insight</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/code-insight</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/src/main/kotlin</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+        </executions>
+      </plugin>
+
+      <!--
+        Patch API drift between the IDEA sources and this standalone container.
+        Each patch is guarded: a missing target only logs a warning.
+      -->
+      <plugin>
+        <groupId>org.codehaus.gmavenplus</groupId>
+        <artifactId>gmavenplus-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>patch-code-insight-impl</id>
+            <phase>generate-sources</phase>
+            <goals><goal>execute</goal></goals>
+            <configuration>
+              <scripts>
+                <script><![CDATA[
+import java.nio.file.*
+
+def srcDir = new File(project.build.directory, 'generated-sources/code-insight')
+
+// Several IDEA inspections are declared `internal` (Kotlin module-private). The NetBeans
+// adapter layer lives in the Nbm module, which is a different Kotlin module, so the
+// Kotlin compiler rejects referencing them. Kotlin `internal` is a compile-time-only
+// restriction — the bytecode is already public — so widening the declaration here is
+// the minimal change that keeps the implementation byte-identical.
+def visibilityPatches = [
+  'org/jetbrains/kotlin/idea/k2/codeinsight/inspections/ReplaceGetOrSetInspection.kt',
+  'org/jetbrains/kotlin/idea/k2/codeinsight/inspections/expressions/ReplaceCallWithBinaryOperatorInspection.kt',
+  'org/jetbrains/kotlin/idea/codeInsight/inspections/shared/RemoveEmptyParenthesesFromLambdaCallInspection.kt',
+]
+
+visibilityPatches.each { path ->
+  def f = new File(srcDir, path)
+  if (!f.exists()) { log.warn("patch target not found: ${path}"); return }
+  def text = f.text
+  if (!text.contains('internal class ')) { log.warn("no 'internal class' in ${path}"); return }
+  f.text = text.replace('internal class ', 'class ')
+  log.info("Patched ${path}: widened internal -> public")
+}
+                ]]></script>
+              </scripts>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-maven-plugin</artifactId>
+        <configuration>
+          <languageVersion>${kotlin.runtime.languageVersion}</languageVersion>
+          <apiVersion>${kotlin.runtime.languageVersion}</apiVersion>
+          <jvmTarget>17</jvmTarget>
+          <args>
+            <arg>-Xskip-metadata-version-check</arg>
+            <arg>-Xcontext-parameters</arg>
+            <arg>-opt-in=kotlin.ExperimentalContextParameters</arg>
+            <arg>-opt-in=kotlin.RequiresOptIn</arg>
+            <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaExperimentalApi</arg>
+            <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaIdeApi</arg>
+            <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaContextParameterApi</arg>
+          </args>
+          <sourceDirs>
+            <sourceDir>${project.build.directory}/generated-sources/code-insight</sourceDir>
+          </sourceDirs>
+        </configuration>
+        <executions>
+          <execution>
+            <id>compile</id>
+            <phase>process-sources</phase>
+            <goals><goal>compile</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <compilerArgument>-proc:none</compilerArgument>
+        </configuration>
+        <executions>
+          <execution>
+            <id>default-compile</id>
+            <phase>compile</phase>
+            <goals><goal>compile</goal></goals>
+            <configuration>
+              <sourceDirs>
+                <sourceDir>${project.build.directory}/generated-sources/code-insight</sourceDir>
+              </sourceDirs>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <dependencies>
+    <!-- IntelliJ platform: PsiElement, Project, codeInspection, modcommand API -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>analysis</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>extensions</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core-impl</artifactId>
+      <version>193.7288.26</version>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <!-- Kotlin PSI and compiler internals -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-compiler-ir-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-compiler-common-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <!-- Analysis API: KaSession, resolveToCall, KaNamedFunctionSymbol -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-impl-base-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <!-- java-psi: PsiClassOwner — supertype of KtFile -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.java</groupId>
+      <artifactId>java-psi</artifactId>
+      <version>${intellij.platform.253.version}</version>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <!-- KotlinFixesImpl: KotlinApplicableInspectionBase, KotlinModCommandQuickFix,
+         KotlinApplicableModCommandAction, ApplicabilityRange, ApplicableRangesProvider -->
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-fixes-impl</artifactId>
+    </dependency>
+
+    <!-- KotlinIntentionUtils: KotlinBundle, KotlinPsiUtils (callExpression,
+         appendSemicolonBeforeLambdaContainingElement) -->
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-intention-utils</artifactId>
+    </dependency>
+
+    <!-- KotlinRefactoring: OperatorToFunctionConverter, ReplaceGetOrSetInspectionUtils,
+         RemoveEmptyParenthesesFromLambdaCallUtils, allOverriddenSymbolsWithSelf -->
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.jetbrains</groupId>
+      <artifactId>annotations</artifactId>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+</project>

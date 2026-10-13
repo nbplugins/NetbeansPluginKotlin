@@ -1,0 +1,8 @@
+package intentions
+
+fun kaReplaceGetOrSet(): Int {
+    class Test
+    operator fun Test.get(i: Int): Int = 0
+    val test = Test()
+    return test.get(0)
+}

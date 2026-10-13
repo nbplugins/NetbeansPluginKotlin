@@ -1056,6 +1056,29 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
     - Supports immediately invoked Kotlin lambdas and anonymous functions. Non-invoked functions,
       Java/non-code/index-only references, and wider IDEA invocation/project-index cases remain unavailable.
 
+  - [x] **F8** — Structural conversions (operator/function conversions)
+    - Compiles the six IDEA K2 sources for the operator/function conversions into the new
+      `KotlinCodeInsightImpl` reactor module: `ReplaceCallWithBinaryOperatorInspection`,
+      `ReplaceGetOrSetInspection`, `ReplaceContainsInspection` (inspections-k2),
+      `ReplaceInvokeIntention`, `ReplaceCallWithUnaryOperatorIntention` (intentions-k2), and
+      `RemoveEmptyParenthesesFromLambdaCallInspection` (inspections-shared). The sources are copied
+      from `submodules/IntellijCommunity` by `maven-resources-plugin` and compiled unchanged; the
+      only patch is widening the three `internal class` inspections so the NetBeans layer can
+      construct them.
+    - `KotlinFixesImpl` was extended with the remaining `code-insight/api` applicable framework
+      (`KotlinApplicableInspectionBase`, `KotlinModCommandQuickFix`, `KotlinApplicableModCommandAction`,
+      `ApplicabilityRange`, `ApplicableRangesProvider`, `ContextProvider`) so those sources have
+      something to compile against.
+    - `KaIdeaIntentionHint` and `KaIdeaInspectionHint` drive the compiled actions by reflection
+      (their `getElementContext`/`createQuickFix`/`invoke`/`applyFix` are `protected`), reusing
+      `KaModCommandFix`'s `NoOpModPsiUpdater` and PSI→document sync. `KaStructuralConversionHints`
+      attaches each action to the PSI element the caret refers to, and
+      `KotlinHintsProvider.listOfK2Intentions` registers them alongside the hand-written hints.
+    - Covers `a.plus(b)` → `a + b`, `a.get(i)`/`a.set(i, v)` → `a[i]`/`a[i] = v`, `a.contains(b)` →
+      `b in a`, `a.invoke(b)` → `a(b)`, `a.not()`/`a.unaryPlus()` → `!a`/`+a`, and `f() {}` → `f {}`.
+      The reverse directions (`KaOperatorToFunctionIntention`, `KaConvertLambdaToReferenceIntention`)
+      stay hand-written: their IDEA counterparts drag in a much larger slice of `code-insight`.
+
 - **E10** — J2K (Java→Kotlin): reimplement using `j2k/new` from `submodules/IntellijCommunity`
   or binary artifact once published; wire up stubbed `Java2KotlinConverter` (stubbed since D2)
   and re-enable `J2KTest`

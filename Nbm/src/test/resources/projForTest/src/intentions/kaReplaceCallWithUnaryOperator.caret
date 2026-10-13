@@ -1,0 +1,8 @@
+package intentions
+
+fun kaReplaceCallWithUnaryOperator() {
+    class Test
+    operator fun Test.not(): Test = Test()
+    val test = Test()
+    test.n<caret>ot()
+}

@@ -39,7 +39,7 @@ class RefactoringCoverageBaselineTest : NbTestCase("RefactoringCoverageBaselineT
         val records = Files.readAllLines(matrix)
             .mapNotNull(::parseRecord)
         assertEquals("Every coverage ID must occur exactly once", records.size, records.map { it.id }.toSet().size)
-        assertEquals("F0 baseline row count", 24, records.size)
+        assertEquals("F0 baseline row count", 30, records.size)
 
         records.forEach { record ->
             assertTrue("Unknown status for ${record.id}: ${record.status}", record.status in STATUSES)
@@ -54,9 +54,9 @@ class RefactoringCoverageBaselineTest : NbTestCase("RefactoringCoverageBaselineT
             }
         }
 
-        val totals = "**Baseline counts:** 0 complete, 24 partial, 0 absent, 24 total."
+        val totals = "**Baseline counts:** 0 complete, 30 partial, 0 absent, 30 total."
         assertTrue("Visible baseline totals must match the records", Files.readString(matrix).contains(totals))
-        assertEquals(24, records.count { it.status == "partial" })
+        assertEquals(30, records.count { it.status == "partial" })
         assertEquals(0, records.count { it.status == "absent" })
     }
 

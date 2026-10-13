@@ -1,0 +1,5 @@
+package intentions
+
+fun kaRemoveEmptyParenthesesFromLambdaCall() {
+    listOf(1).forEach()<caret> { }
+}

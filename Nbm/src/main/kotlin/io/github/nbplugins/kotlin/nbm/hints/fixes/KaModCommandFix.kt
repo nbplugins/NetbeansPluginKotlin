@@ -4,11 +4,13 @@ package io.github.nbplugins.kotlin.nbm.hints.fixes
 
 import com.intellij.modcommand.ActionContext
 import com.intellij.modcommand.ModPsiUpdater
+import com.intellij.modcommand.PsiBasedModCommandAction
 import com.intellij.modcommand.PsiUpdateModCommandAction
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
 import io.github.nbplugins.kotlin.nbm.diagnostics.KaDiagnosticError
 import io.github.nbplugins.kotlin.nbm.hints.atomicChange
+import io.github.nbplugins.kotlin.nbm.hints.intentions.KaIdeaReflection
 import org.jetbrains.kotlin.hints.KotlinRule
 import org.jetbrains.kotlin.language.Priorities
 import org.jetbrains.kotlin.psi.KtFile
@@ -74,34 +76,37 @@ class KaModCommandFix<E : PsiElement>(
             TextRange.EMPTY_RANGE,
             element
         )
-        syncMutation(kaKtFile, doc) { callProtectedInvoke(ctx, NoOpModPsiUpdater) }
-    }
-
-    /**
-     * Calls `invoke(ActionContext, E, ModPsiUpdater)` on [ideaFix] via reflection.
-     *
-     * In era 253 the IntelliJ fixes extend [PsiUpdateModCommandAction] whose `invoke` is
-     * `protected abstract` — not directly callable from outside the hierarchy. Reflection
-     * is required. We walk the class hierarchy looking for the first non-bridge, non-synthetic
-     * `invoke` with three parameters; the concrete override in each fix subclass is found first.
-     */
-    private fun callProtectedInvoke(ctx: ActionContext, updater: ModPsiUpdater) {
-        var cls: Class<*>? = ideaFix.javaClass
-        while (cls != null) {
-            val m = cls.declaredMethods.firstOrNull { m ->
-                m.name == "invoke" && m.parameterCount == 3 && !m.isSynthetic && !m.isBridge
-            }
-            if (m != null) {
-                m.isAccessible = true
-                m.invoke(ideaFix, ctx, element, updater)
-                return
-            }
-            cls = cls.superclass
-        }
-        error("Cannot find invoke(ActionContext, E, ModPsiUpdater) on ${ideaFix.javaClass}")
+        syncMutation(kaKtFile, doc) { callInvoke(ideaFix, ctx, element, NoOpModPsiUpdater) }
     }
 
     companion object {
+        /**
+         * Invokes the `invoke(ActionContext, E, ModPsiUpdater)` method of [action] via reflection.
+         *
+         * In era 253 the IntelliJ fixes extend [PsiUpdateModCommandAction] whose `invoke` is
+         * `protected abstract` — not directly callable from outside the hierarchy, so
+         * [KaIdeaReflection] walks the class hierarchy for the first non-bridge, non-synthetic
+         * three-parameter `invoke`; the concrete override in each fix subclass is found first.
+         *
+         * The parameter is [PsiBasedModCommandAction] rather than [PsiUpdateModCommandAction]
+         * because the Kotlin plugin's own `KotlinPsiUpdateModCommandAction` — the base of the
+         * compiled IDEA intentions — derives directly from the former.
+         *
+         * @param action the action whose `invoke` should run
+         * @param ctx the action context to pass
+         * @param element the target PSI element
+         * @param updater the updater to pass
+         */
+        @JvmStatic
+        fun <E : PsiElement> callInvoke(
+            action: PsiBasedModCommandAction<E>,
+            ctx: ActionContext,
+            element: E,
+            updater: ModPsiUpdater,
+        ) {
+            KaIdeaReflection.callOrFail(action, "invoke", 3, ctx, element, updater)
+        }
+
         /**
          * Applies [mutate] as a PSI mutation and syncs the result to [doc].
          *
