@@ -23,6 +23,7 @@ import org.jetbrains.kotlin.idea.k2.refactoring.move.KotlinMoveUsageSearchServic
 import org.jetbrains.kotlin.idea.k2.refactoring.move.processor.usages.K2MoveRenameUsageInfo
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.idea.references.KtSimpleNameReference
+import org.jetbrains.kotlin.psi.KtClass
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
@@ -176,7 +177,8 @@ class KaMoveNestedMemberComputer(
                 .asSequence()
                 .filter { target ->
                     target.name != null &&
-                        (target.containingKtFile.virtualFile?.path to target.textOffset) !in excludedOwners
+                        (target.containingKtFile.virtualFile?.path to target.textOffset) !in excludedOwners &&
+                        !isDescendantTarget(declaration, target)
                 }
                 .filter { target ->
                     when (kind) {
@@ -299,13 +301,19 @@ class KaMoveNestedMemberComputer(
 
     /** Identifies only relocations whose receiver/qualification change is safe in standalone K2. */
     private fun supportedKind(declaration: KtNamedDeclaration): Kind? = when (declaration) {
-        is KtClassOrObject -> declaration.takeIf { it.getStrictParentOfType<KtClassOrObject>() != null }
-            ?.let { Kind.NESTED_CLASS }
+        is KtClassOrObject -> declaration.takeIf {
+            it.getStrictParentOfType<KtClassOrObject>() != null &&
+                (it !is KtClass || !it.isInner())
+        }?.let { Kind.NESTED_CLASS }
         is KtNamedFunction, is KtProperty -> declaration.takeIf {
             it.getStrictParentOfType<KtObjectDeclaration>()?.isCompanion() == true
         }?.let { Kind.COMPANION_MEMBER }
         else -> null
     }
+
+    /** Returns whether [target] is nested in [declaration] and would be deleted with it. */
+    private fun isDescendantTarget(declaration: KtNamedDeclaration, target: KtClassOrObject): Boolean =
+        com.intellij.psi.util.PsiTreeUtil.isAncestor(declaration, target, false)
 
     /** Locates the named class/object chosen by the NetBeans target-selection controller. */
     private fun resolveTarget(targetFile: KtFile, targetOffset: Int): KtClassOrObject? =
@@ -318,6 +326,9 @@ class KaMoveNestedMemberComputer(
             ?: return listOf("Move source owner is unavailable.")
         val messages = mutableListOf<String>()
         if (sourceOwner == target) messages += "The target class already owns ${declaration.name}."
+        if (isDescendantTarget(declaration, target)) {
+            messages += "The target cannot be inside the declaration being moved."
+        }
         if (kind == Kind.COMPANION_MEMBER && target.companionObjects.singleOrNull() == null) {
             messages += "Target ${target.name ?: "class"} must declare exactly one companion object."
         }

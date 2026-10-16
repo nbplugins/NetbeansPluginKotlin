@@ -39,6 +39,7 @@ import org.netbeans.modules.refactoring.spi.ui.ActionsImplementationProvider;
 import org.netbeans.modules.refactoring.spi.ui.UI;
 import org.openide.cookies.EditorCookie;
 import org.openide.filesystems.FileObject;
+import org.openide.loaders.DataObject;
 import org.openide.util.Lookup;
 import org.openide.util.lookup.Lookups;
 import org.openide.windows.TopComponent;
@@ -55,18 +56,20 @@ import org.openide.windows.TopComponent;
 public class KotlinActionsImplementationProvider extends ActionsImplementationProvider {
 
     /**
-     * Returns whether the context is an eligible Kotlin package folder or an open Kotlin editor.
+     * Returns whether the context is an eligible Kotlin package folder, physical Kotlin file, or open Kotlin editor.
      *
      * @param lookup lookup supplied by the Refactor action
      * @return {@code true} when this provider owns the Rename operation
      */
     @Override
     public boolean canRename(Lookup lookup) {
-        return KotlinProjectFolderRenameSelection.INSTANCE.resolve(lookup) != null || canRenameEditor(lookup);
+        return KotlinProjectFolderRenameSelection.INSTANCE.resolve(lookup) != null
+                || selectedKotlinFile(lookup) != null
+                || canRenameEditor(lookup);
     }
 
     /**
-     * Opens physical directory rename for Kotlin package folders or symbol rename for Kotlin editors.
+     * Opens physical file/directory rename for a project-tree selection or symbol rename for an editor selection.
      *
      * @param lookup lookup supplied by the Refactor action
      */
@@ -78,7 +81,16 @@ public class KotlinActionsImplementationProvider extends ActionsImplementationPr
             return;
         }
 
+        FileObject file = selectedKotlinFile(lookup);
+        if (file != null) {
+            openFileRename(file);
+            return;
+        }
+
         EditorCookie ec = lookup.lookup(EditorCookie.class);
+        if (ec == null || ec.getOpenedPanes() == null || ec.getOpenedPanes().length == 0) {
+            return;
+        }
         JEditorPane pane = ec.getOpenedPanes()[0];
         // Use selection start so that renaming a fully-selected word positions inside the word,
         // not past it. When no selection, getSelectionStart() == getCaretPosition().
@@ -92,6 +104,31 @@ public class KotlinActionsImplementationProvider extends ActionsImplementationPr
         UI.openRefactoringUI(
                 new KotlinRenameRefactoringUI(psi, new RenameRefactoring(Lookups.fixed(psi, doc, caretPosition))),
                 TopComponent.getRegistry().getActivated());
+    }
+
+    /** Opens the explicit filesystem rename UI for one Kotlin file selected in a project tree. */
+    private void openFileRename(FileObject file) {
+        EventQueue.invokeLater(() -> UI.openRefactoringUI(
+                new KotlinFilesystemRenameUI(
+                        new io.github.nbplugins.kotlin.nbm.refactoring.KotlinRenameFileRefactoring(file, file.getName()),
+                        false,
+                        file.getNameExt()),
+                TopComponent.getRegistry().getActivated()));
+    }
+
+    /**
+     * Resolves one physical Kotlin source file from a file-node lookup without requiring an editor.
+     *
+     * @param lookup lookup supplied by NetBeans
+     * @return selected valid Kotlin file, or {@code null} for folders and unrelated selections
+     */
+    private FileObject selectedKotlinFile(Lookup lookup) {
+        FileObject file = lookup.lookup(FileObject.class);
+        if (file == null) {
+            DataObject dataObject = lookup.lookup(DataObject.class);
+            file = dataObject == null ? null : dataObject.getPrimaryFile();
+        }
+        return file != null && file.isValid() && !file.isFolder() && file.hasExt("kt") ? file : null;
     }
 
     /**

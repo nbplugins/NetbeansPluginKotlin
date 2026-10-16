@@ -48,7 +48,7 @@ class KotlinMoveNestedMemberAction : BaseAction(ACTION_NAME, SAVE_POSITION or AB
             // Kotlin files created or saved since the previous editor analysis are selectable.
             KotlinAnalysisAPISession.invalidate(project)
             val session = KotlinAnalysisAPISession.getSession(project)
-            session.updateFileContent(source.path, document.getText(0, document.length))
+            session.synchronizeOpenDocuments()
             val sourcePsi = session.getKtFileForPath(source.path)
                 ?: error("Move Nested Member could not resolve the Kotlin source file.")
             val computer = KaMoveNestedMemberComputer(sourcePsi, target.caretPosition)

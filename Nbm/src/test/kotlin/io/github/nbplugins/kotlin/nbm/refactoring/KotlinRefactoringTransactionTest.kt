@@ -506,6 +506,35 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
         assertNull("undo must remove the target file name", fixture.root.getFileObject("After.kt"))
     }
 
+    /** Verifies an exact file rename is a no-op through commit and undo. */
+    fun testRenameFile_sameNameIsNoOp() {
+        val fixture = fixture()
+        val source = fixture.existing("Before.kt", "fun before() = 1\n")
+
+        fixture.transaction.renameFile(source, "Before", "kt")
+        fixture.transaction.commit()
+        fixture.transaction.undo()
+
+        assertNotNull("original file must remain", fixture.root.getFileObject("Before.kt"))
+        assertEquals("fun before() = 1\n", fixture.text(source))
+    }
+
+    /** Verifies a case-only file rename uses the requested spelling and undo restores it. */
+    fun testCommitAndUndo_renamesFileByCaseOnly() {
+        val fixture = fixture()
+        val source = fixture.existing("Before.kt", "fun before() = 1\n")
+
+        fixture.transaction.renameFile(source, "before", "kt")
+        fixture.transaction.commit()
+
+        assertNull("commit must remove original spelling", fixture.root.getFileObject("Before.kt"))
+        assertNotNull("commit must use requested spelling", fixture.root.getFileObject("before.kt"))
+        fixture.transaction.undo()
+
+        assertNotNull("undo must restore original spelling", fixture.root.getFileObject("Before.kt"))
+        assertNull("undo must remove case-only spelling", fixture.root.getFileObject("before.kt"))
+    }
+
     /** Verifies file rename rejects an existing sibling before mutating the source. */
     fun testRenameFile_rejectsExistingTarget() {
         val fixture = fixture()
@@ -544,6 +573,36 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
         assertNull("rollback must remove the early renamed folder", fixture.root.getFileObject("after"))
         assertTrue("the original FileObject remains valid after restoration", source.isValid)
         assertEquals("rollback must restore the original file path", "before/Source.kt", source.path)
+    }
+
+    /** Verifies an exact folder rename is a no-op through commit and undo. */
+    fun testRenameFolder_sameNameIsNoOp() {
+        val fixture = fixture()
+        val folder = fixture.root.createFolder("before")
+        fixture.existingIn(folder, "Source.kt", "fun source() = 1\n")
+
+        fixture.transaction.renameFolder(folder, "before")
+        fixture.transaction.commit()
+        fixture.transaction.undo()
+
+        assertNotNull("original folder must remain", fixture.root.getFileObject("before/Source.kt"))
+    }
+
+    /** Verifies a case-only folder rename preserves descendants and restores original spelling. */
+    fun testCommitAndUndo_renamesFolderByCaseOnly() {
+        val fixture = fixture()
+        val folder = fixture.root.createFolder("Before")
+        fixture.existingIn(folder, "Source.kt", "fun source() = 1\n")
+
+        fixture.transaction.renameFolder(folder, "before")
+        fixture.transaction.commit()
+
+        assertNull("commit must remove original spelling", fixture.root.getFileObject("Before"))
+        assertNotNull("commit must use requested spelling", fixture.root.getFileObject("before/Source.kt"))
+        fixture.transaction.undo()
+
+        assertNotNull("undo must restore original spelling", fixture.root.getFileObject("Before/Source.kt"))
+        assertNull("undo must remove case-only spelling", fixture.root.getFileObject("before"))
     }
 
     /** Verifies a folder rename preserves descendants and restores their physical paths on undo. */

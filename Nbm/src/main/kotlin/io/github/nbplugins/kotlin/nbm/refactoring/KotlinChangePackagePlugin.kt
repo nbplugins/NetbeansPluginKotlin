@@ -28,8 +28,10 @@ import org.netbeans.modules.refactoring.spi.ProgressProviderAdapter
 import org.netbeans.modules.refactoring.spi.RefactoringElementsBag
 import org.netbeans.modules.refactoring.spi.RefactoringPlugin
 import org.netbeans.modules.refactoring.spi.SimpleRefactoringElementImplementation
+import org.openide.cookies.EditorCookie
 import org.openide.filesystems.FileObject
 import org.openide.filesystems.FileUtil
+import org.openide.loaders.DataObject
 import org.openide.text.CloneableEditorSupport
 import org.openide.text.PositionBounds
 import org.openide.util.Lookup
@@ -135,7 +137,7 @@ class KotlinChangePackageApplyElement(
                         val originalText = outcome.originalTexts[path]
                             ?: error("Change Kotlin Package has no original text snapshot for $path.")
                         current.captureExisting(file, originalText)
-                        current.stageText(file, text)
+                        current.stageHunkText(file, text, project, openCaretOffset(file))
                     }
                     current.commit()
                     transaction = current
@@ -147,6 +149,17 @@ class KotlinChangePackageApplyElement(
             .onFailure { error -> KotlinLogger.INSTANCE.logException("KotlinChangePackageApplyElement rollback failed", error) }
         KotlinAnalysisAPISession.invalidate(project)
     }
+
+    /**
+     * Returns the caret offset from an already-open editor for [file] without opening a new editor.
+     *
+     * Native undo must restore each modified open editor independently; unopened files do not have a
+     * user-visible caret and therefore deliberately receive no restoration edit.
+     */
+    private fun openCaretOffset(file: FileObject): Int? = runCatching {
+        val cookie = DataObject.find(file).lookup.lookup(EditorCookie::class.java) ?: return null
+        cookie.openedPanes?.firstOrNull()?.caretPosition
+    }.getOrNull()
 
     /** Restores all original package directives and usage texts. */
     override fun undoChange() {
