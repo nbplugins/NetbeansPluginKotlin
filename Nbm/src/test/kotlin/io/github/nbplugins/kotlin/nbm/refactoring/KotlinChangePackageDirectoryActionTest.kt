@@ -69,12 +69,27 @@ class KotlinChangePackageDirectoryActionTest : NbTestCase("KotlinChangePackageDi
             contents.contains("KotlinRenameDirectoryAction.instance"),
         )
         assertTrue(
-            "Kotlin file nodes must place the Refactor submenu inside their loader Actions folder",
+            "Generic folder nodes must place the Refactor submenu inside their loader Actions folder",
             contents.contains(
-                "<file name=\"RefactoringAll.shadow\">\n" +
+                "<folder name=\"folder\">\n" +
+                    "            <folder name=\"any\">\n" +
+                    "                <folder name=\"Actions\">\n" +
+                    "                    <file name=\"RefactoringAll.shadow\">\n" +
                     "                        <attr name=\"originalFile\" " +
                     "stringvalue=\"Actions/Refactoring/RefactoringAll.instance\"/>",
             ),
+        )
+        assertTrue(
+            "Kotlin file nodes must create the Refactor submenu in their loader Actions folder",
+            contents.contains(
+                "<file name=\"RefactoringAll.instance\">\n" +
+                    "                        <attr name=\"instanceCreate\" " +
+                    "methodvalue=\"org.netbeans.modules.refactoring.api.ui.RefactoringActionsFactory.popupSubmenuAction\"/>",
+            ),
+        )
+        assertTrue(
+            "Kotlin file nodes must hide the ordinary Rename entry instead of showing it beside Refactor",
+            contents.contains("<file name=\"RenameAction.shadow_hidden\"/>"),
         )
         assertTrue(
             "Refactor must register the node-aware F7 action",

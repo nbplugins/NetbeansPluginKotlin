@@ -72,6 +72,25 @@ class KaMoveNestedMemberComputerTest : KotlinTestCase("KaMoveNestedMemberCompute
         }
     }
 
+    /** Excludes every descendant of the declaration from target discovery and direct application. */
+    fun testMove_nestedClass_rejectsDescendantTarget() {
+        val fixture = createFixture(
+            sourceBody = "class Nested { class Descendant }",
+            targetBody = "",
+        ) ?: return
+        try {
+            val descendant = fixture.source.collectDescendantsOfType<KtClass>().single { it.name == "Descendant" }
+            val computer = fixture.computer("Nested")
+
+            assertEquals(listOf("Target"), computer.discoverTargets(listOf(fixture.sourceFile, fixture.targetFile)).map { it.presentation })
+            assertTrue(computer.checkConflicts(fixture.sourceFile, descendant.textOffset) is KaMoveNestedMemberComputer.ConflictCheck.Conflicts)
+            assertTrue(computer.move(fixture.sourceFile, descendant.textOffset) is KaMoveNestedMemberComputer.Apply.Conflicts)
+            assertTrue("Source must remain unchanged", fixture.sourceFile.text.contains("class Descendant"))
+        } finally {
+            fixture.directory.toFile().deleteRecursively()
+        }
+    }
+
     /** Discovers and populates a bodyless top-level target declared in the same Kotlin file. */
     fun testMove_nestedClass_populatesBodylessTargetInSameFile() {
         val stdlib = findKotlinStdlib() ?: return
@@ -208,6 +227,22 @@ class KaMoveNestedMemberComputerTest : KotlinTestCase("KaMoveNestedMemberCompute
         val fixture = createFixture(sourceBody = "fun greet(): String = \"hello\"", targetBody = "") ?: return
         try {
             assertSame(KaMoveNestedMemberComputer.Outcome.NotApplicable, fixture.computer("greet").compute())
+        } finally {
+            fixture.directory.toFile().deleteRecursively()
+        }
+    }
+
+    /** Rejects an inner class because moving it would change its enclosing-instance receiver. */
+    fun testCompute_innerClass_isNotApplicable() {
+        val fixture = createFixture(
+            sourceBody = "inner class Nested { fun outer() = this@Source.toString() }",
+            targetBody = "",
+        ) ?: return
+        try {
+            val computer = fixture.computer("Nested")
+
+            assertSame(KaMoveNestedMemberComputer.Outcome.NotApplicable, computer.compute())
+            assertTrue(computer.discoverTargets(listOf(fixture.sourceFile, fixture.targetFile)).isEmpty())
         } finally {
             fixture.directory.toFile().deleteRecursively()
         }

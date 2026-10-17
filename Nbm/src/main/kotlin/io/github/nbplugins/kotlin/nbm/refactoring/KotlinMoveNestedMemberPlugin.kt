@@ -59,6 +59,7 @@ class KotlinMoveNestedMemberPlugin(
 
         KotlinAnalysisAPISession.invalidate(project)
         val session = KotlinAnalysisAPISession.getSession(project)
+        session.synchronizeOpenDocuments()
         val sourcePsi = session.getKtFileForPath(source.path)
             ?: return Problem(true, "Move Nested Member could not resolve the Kotlin source PSI.")
         val targetPsi = session.getKtFileForPath(target.path)
@@ -117,11 +118,12 @@ private class KotlinMoveNestedMemberApplyElement(
     /** Refreshes K2 PSI, stages every returned final text, and commits them atomically. */
     override fun performChange() {
         var pending: KotlinRefactoringTransaction? = null
-        runCatching {
+        try {
             val request = refactoring.request() ?: error("Move Nested Member target is incomplete.")
             val target = fileObject(request.filePath) ?: error("Move Nested Member could not resolve target file.")
             KotlinAnalysisAPISession.invalidate(project)
             val session = KotlinAnalysisAPISession.getSession(project)
+            session.synchronizeOpenDocuments()
             val sourcePsi = session.getKtFileForPath(sourceFile.path)
                 ?: error("Move Nested Member could not refresh source Kotlin PSI.")
             val targetPsi = session.getKtFileForPath(target.path)
@@ -149,10 +151,18 @@ private class KotlinMoveNestedMemberApplyElement(
                     error("Move Nested Member is no longer applicable.")
                 is KaMoveNestedMemberComputer.Apply.Error -> throw result.error
             }
-        }.onFailure { KotlinLogger.INSTANCE.logException("Move Nested Member apply failed", it) }
-        runCatching { pending?.rollback() }
-            .onFailure { KotlinLogger.INSTANCE.logException("Move Nested Member rollback failed", it) }
-        KotlinAnalysisAPISession.invalidate(project)
+        } catch (error: Throwable) {
+            KotlinLogger.INSTANCE.logException("Move Nested Member apply failed", error)
+            try {
+                pending?.rollback()
+            } catch (rollbackError: Throwable) {
+                error.addSuppressed(rollbackError)
+                KotlinLogger.INSTANCE.logException("Move Nested Member rollback failed", rollbackError)
+            }
+            throw error
+        } finally {
+            KotlinAnalysisAPISession.invalidate(project)
+        }
     }
 
     /** Restores every transaction participant for NetBeans Undo Last Refactoring. */

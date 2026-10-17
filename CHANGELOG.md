@@ -1,3 +1,5 @@
+- Fixed Move Nested Member to preserve unsaved source, target, and usage edits, reject unsafe `inner` and self-descendant targets, and report failed applies; Undo Last Refactoring remains available only after a successful move.
+- Fixed Kotlin file and package-directory renames to show one immediate **Refactor** submenu in the Projects/Files context menu, treat unchanged names as no-ops, preserve requested spelling for case-only renames with Undo Last Refactoring, and retain each open editor caret when a Change Kotlin Package operation is undone.
 - Added structural conversion hints for Kotlin: with the caret on an operator or convention-named call you can now convert `a.plus(b)` to `a + b`, `a.get(i)`/`a.set(i, v)` to `a[i]`/`a[i] = v`, `a.contains(b)` to `b in a`, `a.invoke(b)` to `a(b)`, `a.not()`/`a.unaryPlus()` to `!a`/`+a`, and `f() {}` to `f {}` directly from the hint popup.
 # 0.11.54 (2026-10-12)
 

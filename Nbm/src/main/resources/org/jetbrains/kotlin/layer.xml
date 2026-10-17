@@ -385,6 +385,16 @@
     </folder>
     
     <folder name="Loaders">
+        <folder name="folder">
+            <folder name="any">
+                <folder name="Actions">
+                    <file name="RefactoringAll.shadow">
+                        <attr name="originalFile" stringvalue="Actions/Refactoring/RefactoringAll.instance"/>
+                        <attr name="position" intvalue="1001"/>
+                    </file>
+                </folder>
+            </folder>
+        </folder>
         <folder name="text">
             <folder name="x-kotlin">
                 <folder name="Factories">
@@ -416,10 +426,13 @@
                         <attr name="originalFile" stringvalue="Actions/Refactoring/org-netbeans-modules-refactoring-api-ui-WhereUsedAction.instance"/>
                         <attr name="position" intvalue="1900"/>
                     </file>
-                    <!-- Refactor must be an action in this loader's context-menu folder. A sibling
-                         registration is ignored when NetBeans builds a file-node popup. -->
-                    <file name="RefactoringAll.shadow">
-                        <attr name="originalFile" stringvalue="Actions/Refactoring/RefactoringAll.instance"/>
+                    <!-- The generic Rename entry duplicates Kotlin's explicit filesystem rename in
+                         Refactor, so preserve only the submenu in a Kotlin file node popup. -->
+                    <file name="RenameAction.shadow_hidden"/>
+                    <!-- Refactor is created locally because this Kotlin loader popup needs its own
+                         node-aware submenu presenter, not a shadow of the generic folder entry. -->
+                    <file name="RefactoringAll.instance">
+                        <attr name="instanceCreate" methodvalue="org.netbeans.modules.refactoring.api.ui.RefactoringActionsFactory.popupSubmenuAction"/>
                         <attr name="position" intvalue="1901"/>
                     </file>
                 </folder>
