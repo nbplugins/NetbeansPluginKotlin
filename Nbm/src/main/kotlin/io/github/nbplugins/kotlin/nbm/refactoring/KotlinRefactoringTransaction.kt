@@ -39,6 +39,13 @@ internal class KotlinRefactoringTransaction internal constructor(
     private val openDocument: (FileObject) -> StyledDocument? = ::openEditorDocument,
     private val writeDocument: (FileObject, StyledDocument, String) -> Unit = ::replaceDocumentText,
     private val saveDocument: (FileObject) -> Unit = ::saveEditorDocument,
+    private val moveFileOnDisk: (FileObject, FileObject, String, String) -> FileObject = { file, parent, name, extension ->
+        file.lock().use { lock -> file.move(lock, parent, name, extension) }
+    },
+    private val renameFolderOnDisk: (FileObject, FileObject, String) -> FileObject = { folder, parent, name ->
+        folder.lock().use { lock -> folder.rename(lock, name, "") }
+        parent.getFileObject(name) ?: error("Folder rename did not produce ${parent.path}/$name")
+    },
 ) {
 
     /** Identifies a file whose transaction operation could not be completed. */
@@ -334,11 +341,21 @@ internal class KotlinRefactoringTransaction internal constructor(
         check(existing == null || caseOnly && existing == file) {
             "Move target already exists: ${parent.path}/$name.$extension"
         }
-        if (!caseOnly) return file.lock().use { lock -> file.move(lock, parent, name, extension) }
+        if (!caseOnly) return moveFileOnDisk(file, parent, name, extension)
 
+        val originalParent = file.parent ?: error("Cannot move root file ${file.path}")
+        val originalName = file.name
+        val originalExtension = file.ext
         val temporaryName = temporaryFileName(parent, extension)
-        val temporary = file.lock().use { lock -> file.move(lock, parent, temporaryName, extension) }
-        return temporary.lock().use { lock -> temporary.move(lock, parent, name, extension) }
+        val temporary = moveFileOnDisk(file, parent, temporaryName, extension)
+        try {
+            return moveFileOnDisk(temporary, parent, name, extension)
+        } catch (error: Throwable) {
+            runCatching { moveFileOnDisk(temporary, originalParent, originalName, originalExtension) }
+                .exceptionOrNull()
+                ?.let(error::addSuppressed)
+            throw error
+        }
     }
 
     /** Generates a transaction-private basename that cannot collide with a sibling file. */
@@ -377,17 +394,20 @@ internal class KotlinRefactoringTransaction internal constructor(
         check(existing == null || caseOnly && existing == folder) {
             "Folder rename target already exists: ${parent.path}/$name"
         }
-        if (!caseOnly) {
-            folder.lock().use { lock -> folder.rename(lock, name, "") }
-            return parent.getFileObject(name) ?: error("Folder rename did not produce ${parent.path}/$name")
-        }
+        if (!caseOnly) return renameFolderOnDisk(folder, parent, name)
 
+        val originalParent = folder.parent ?: error("Cannot rename root folder ${folder.path}")
+        val originalName = folder.name
         val temporaryName = temporaryFolderName(parent)
-        folder.lock().use { lock -> folder.rename(lock, temporaryName, "") }
-        val temporary = parent.getFileObject(temporaryName)
-            ?: error("Folder rename did not produce temporary folder ${parent.path}/$temporaryName")
-        temporary.lock().use { lock -> temporary.rename(lock, name, "") }
-        return parent.getFileObject(name) ?: error("Folder rename did not produce ${parent.path}/$name")
+        val temporary = renameFolderOnDisk(folder, parent, temporaryName)
+        try {
+            return renameFolderOnDisk(temporary, parent, name)
+        } catch (error: Throwable) {
+            runCatching { renameFolderOnDisk(temporary, originalParent, originalName) }
+                .exceptionOrNull()
+                ?.let(error::addSuppressed)
+            throw error
+        }
     }
 
     /** Generates a transaction-private folder name that cannot collide with an existing sibling. */

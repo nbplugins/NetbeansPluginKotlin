@@ -81,29 +81,30 @@ public class KotlinActionsImplementationProvider extends ActionsImplementationPr
             return;
         }
 
+        EditorCookie ec = lookup.lookup(EditorCookie.class);
+        if (ec != null && ec.getOpenedPanes() != null && ec.getOpenedPanes().length > 0) {
+            JEditorPane pane = ec.getOpenedPanes()[0];
+            // Use selection start so that renaming a fully-selected word positions inside the word,
+            // not past it. When no selection, getSelectionStart() == getCaretPosition().
+            int caretPosition = pane.getSelectionStart();
+            StyledDocument doc = ec.getDocument();
+            FileObject fo = doc == null ? null : ProjectUtils.getFileObjectForDocument(doc);
+            final KtFile ktFile = fo == null ? null : KotlinPsiManager.INSTANCE.getParsedFile(fo);
+            final PsiElement psi = ktFile == null ? null : ktFile.findElementAt(caretPosition);
+            if (psi != null) {
+                // Do NOT include fo (FileObject) in the lookup — a built-in NetBeans rename plugin
+                // would see it and rename the file on disk instead of renaming the code symbol.
+                UI.openRefactoringUI(
+                        new KotlinRenameRefactoringUI(psi, new RenameRefactoring(Lookups.fixed(psi, doc, caretPosition))),
+                        TopComponent.getRegistry().getActivated());
+                return;
+            }
+        }
+
         FileObject file = selectedKotlinFile(lookup);
         if (file != null) {
             openFileRename(file);
-            return;
         }
-
-        EditorCookie ec = lookup.lookup(EditorCookie.class);
-        if (ec == null || ec.getOpenedPanes() == null || ec.getOpenedPanes().length == 0) {
-            return;
-        }
-        JEditorPane pane = ec.getOpenedPanes()[0];
-        // Use selection start so that renaming a fully-selected word positions inside the word,
-        // not past it. When no selection, getSelectionStart() == getCaretPosition().
-        int caretPosition = pane.getSelectionStart();
-        StyledDocument doc = ec.getDocument();
-        FileObject fo = ProjectUtils.getFileObjectForDocument(doc);
-        final KtFile ktFile = KotlinPsiManager.INSTANCE.getParsedFile(fo);
-        final PsiElement psi = ktFile.findElementAt(caretPosition);
-        // Do NOT include fo (FileObject) in the lookup — a built-in NetBeans rename plugin
-        // would see it and rename the file on disk instead of renaming the code symbol.
-        UI.openRefactoringUI(
-                new KotlinRenameRefactoringUI(psi, new RenameRefactoring(Lookups.fixed(psi, doc, caretPosition))),
-                TopComponent.getRegistry().getActivated());
     }
 
     /** Opens the explicit filesystem rename UI for one Kotlin file selected in a project tree. */

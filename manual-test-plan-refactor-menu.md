@@ -8,7 +8,7 @@
 
 1. Закрыть NetBeans.
 2. Установить NBM:
-   `/home/oleg/my-projects/nbplugins/NetbeansPluginKotlin/Nbm/target/nbm/netbeans-plugin-kotlin-nbm-0.11.287-SNAPSHOT.nbm`
+   `/home/oleg/my-projects/nbplugins/NetbeansPluginKotlin/Nbm/target/nbm/netbeans-plugin-kotlin-nbm-0.11.288-SNAPSHOT.nbm`
 3. Запустить NetBeans и открыть Maven, Gradle или Ant/J2SE проект с Kotlin-файлами.
 4. Убедиться, что Kotlin source root содержит хотя бы один `.kt` файл.
 
@@ -23,6 +23,7 @@
    - **Change Kotlin Package...** — если команда доступна для выбранного файла/контекста;
    - **Undo Last Refactoring** и **Redo Last Refactoring**.
 6. Проверить, что эти команды не появились отдельными пунктами верхнего уровня.
+7. Открыть Kotlin-файл в редакторе, установить курсор на имя декларации и выполнить **Refactor → Rename...** либо `Alt+Shift+R`. Должен открыться диалог переименования символа, а не **Rename Kotlin File...**.
 
 ## 2. Kotlin-папка или пакет
 
@@ -53,6 +54,7 @@
 3. На Kotlin-папке открыть **Refactor → Rename Kotlin Package Directory...**.
 4. Выполнить переименование и проверить изменение каталога и сохранение содержимого.
 5. Проверить **Undo Last Refactoring** для обеих операций.
+6. Для case-only переименований (например, `Before.kt` → `before.kt` и `Before` → `before`) проверить успешное применение и отмену. После операции и отмены рядом с исходными файлами/каталогами не должно оставаться путей с префиксом `.nbkotlin-`.
 
 ## Ожидаемый результат
 
