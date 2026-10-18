@@ -26,6 +26,7 @@ import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveSourceSelection;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinProjectFolderRenameSelection;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinRenameDirectoryRefactoring;
 import java.awt.EventQueue;
+import java.util.Collection;
 import javax.swing.JEditorPane;
 import javax.swing.text.StyledDocument;
 import org.jetbrains.kotlin.builder.KotlinPsiManager;
@@ -40,6 +41,7 @@ import org.netbeans.modules.refactoring.spi.ui.UI;
 import org.openide.cookies.EditorCookie;
 import org.openide.filesystems.FileObject;
 import org.openide.loaders.DataObject;
+import org.openide.nodes.Node;
 import org.openide.util.Lookup;
 import org.openide.util.lookup.Lookups;
 import org.openide.windows.TopComponent;
@@ -63,9 +65,13 @@ public class KotlinActionsImplementationProvider extends ActionsImplementationPr
      */
     @Override
     public boolean canRename(Lookup lookup) {
-        return KotlinProjectFolderRenameSelection.INSTANCE.resolve(lookup) != null
-                || selectedKotlinFile(lookup) != null
-                || canRenameEditor(lookup);
+        if (KotlinProjectFolderRenameSelection.INSTANCE.resolve(lookup) != null) {
+            return true;
+        }
+        if (hasNodeSelection(lookup)) {
+            return selectedKotlinFile(lookup) != null;
+        }
+        return canRenameEditor(lookup);
     }
 
     /**
@@ -78,6 +84,14 @@ public class KotlinActionsImplementationProvider extends ActionsImplementationPr
         KotlinMoveSourceSelection folderSelection = KotlinProjectFolderRenameSelection.INSTANCE.resolve(lookup);
         if (folderSelection != null) {
             openDirectoryRename(lookup, folderSelection);
+            return;
+        }
+
+        if (hasNodeSelection(lookup)) {
+            FileObject file = selectedKotlinFile(lookup);
+            if (file != null) {
+                openFileRename(file);
+            }
             return;
         }
 
@@ -101,10 +115,6 @@ public class KotlinActionsImplementationProvider extends ActionsImplementationPr
             }
         }
 
-        FileObject file = selectedKotlinFile(lookup);
-        if (file != null) {
-            openFileRename(file);
-        }
     }
 
     /** Opens the explicit filesystem rename UI for one Kotlin file selected in a project tree. */
@@ -123,13 +133,31 @@ public class KotlinActionsImplementationProvider extends ActionsImplementationPr
      * @param lookup lookup supplied by NetBeans
      * @return selected valid Kotlin file, or {@code null} for folders and unrelated selections
      */
-    private FileObject selectedKotlinFile(Lookup lookup) {
-        FileObject file = lookup.lookup(FileObject.class);
+    static FileObject selectedKotlinFile(Lookup lookup) {
+        Collection<? extends Node> nodes = lookup.lookupAll(Node.class);
+        if (nodes.size() != 1) {
+            return null;
+        }
+        Lookup nodeLookup = nodes.iterator().next().getLookup();
+        FileObject file = nodeLookup.lookup(FileObject.class);
         if (file == null) {
-            DataObject dataObject = lookup.lookup(DataObject.class);
+            DataObject dataObject = nodeLookup.lookup(DataObject.class);
             file = dataObject == null ? null : dataObject.getPrimaryFile();
         }
         return file != null && file.isValid() && !file.isFolder() && file.hasExt("kt") ? file : null;
+    }
+
+    /**
+     * Returns whether the lookup originated from an Explorer node selection.
+     *
+     * An Explorer selection must not fall back to the active editor because Refactor was invoked
+     * for the selected node, even when that file happens to be open.
+     *
+     * @param lookup lookup supplied by NetBeans
+     * @return {@code true} when one or more nodes are selected
+     */
+    static boolean hasNodeSelection(Lookup lookup) {
+        return !lookup.lookupAll(Node.class).isEmpty();
     }
 
     /**
