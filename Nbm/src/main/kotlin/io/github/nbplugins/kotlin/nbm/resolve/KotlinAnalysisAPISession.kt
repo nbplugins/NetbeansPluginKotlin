@@ -798,6 +798,28 @@ class KotlinAnalysisAPISession private constructor(
      * @param path absolute path of the source file (must be a key in [fileMap])
      * @param text current editor content
      */
+    /**
+     * Synchronizes every already-open NetBeans editor document represented by this session.
+     *
+     * This deliberately uses [org.openide.cookies.EditorCookie.getDocument] rather than opening
+     * documents: a refactoring must preserve unsaved user buffers without loading an entire source root.
+     *
+     * @return `Unit` after every available in-memory source buffer has been installed into the session.
+     */
+    fun synchronizeOpenDocuments() {
+        fileMap.keys.forEach { path ->
+            val file = org.openide.filesystems.FileUtil.toFileObject(
+                org.openide.filesystems.FileUtil.normalizeFile(java.io.File(path)),
+            ) ?: return@forEach
+            val document = runCatching {
+                org.openide.loaders.DataObject.find(file).lookup
+                    .lookup(org.openide.cookies.EditorCookie::class.java)
+                    ?.document
+            }.getOrNull() ?: return@forEach
+            updateFileContent(path, document.getText(0, document.length))
+        }
+    }
+
     fun updateFileContent(path: String, text: String) {
         val lvf = fileMap[path] ?: return
         if (lvf.content.toString() == text) return

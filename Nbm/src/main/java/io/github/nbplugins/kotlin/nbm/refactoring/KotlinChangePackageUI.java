@@ -73,6 +73,11 @@ public final class KotlinChangePackageUI implements RefactoringUI {
     /** @return concise description of the selected file or directory. */
     @Override
     public String getDescription() {
+        String selectedPackage = refactoring.getSelection().getSelectedPackage();
+        if (selectedPackage != null) {
+            return "Change package '" + selectedPackage + "' of "
+                    + refactoring.getSelection().getSourceFiles().size() + " Kotlin files";
+        }
         if (refactoring.getSelection().isDirectory()) {
             return "Change package of " + refactoring.getSelection().getSourceFiles().size()
                     + " Kotlin files in directory '" + refactoring.getSelection().getDisplayName() + "'";
@@ -99,6 +104,7 @@ public final class KotlinChangePackageUI implements RefactoringUI {
                     refactoring.getSelection().getDisplayName(),
                     refactoring.getSelection().getSourceFiles().size(),
                     refactoring.getSelection().isDirectory(),
+                    refactoring.getSelection().getSelectedPackage(),
                     initialPackage,
                     parent
             );
@@ -165,11 +171,12 @@ public final class KotlinChangePackageUI implements RefactoringUI {
          * @param name displayed source file or directory name
          * @param sourceCount selected Kotlin file count
          * @param directorySelection whether the selection originated from a directory
+         * @param packageSelection package named by an import directive, or {@code null}
          * @param initialPackage initially displayed package
          * @param changeListener listener notified of UI changes
          */
-        ChangePackagePanel(String name, int sourceCount, boolean directorySelection, String initialPackage,
-                           ChangeListener changeListener) {
+        ChangePackagePanel(String name, int sourceCount, boolean directorySelection, String packageSelection,
+                           String initialPackage, ChangeListener changeListener) {
             packageField = new JTextField(initialPackage, 30);
             updateReferences = new JCheckBox("Update Kotlin references", true);
             updateReferences.setToolTipText("Updates supported Kotlin code references; Java, comments, and text are not searched.");
@@ -183,8 +190,14 @@ public final class KotlinChangePackageUI implements RefactoringUI {
             field.weightx = 1.0;
             field.gridwidth = GridBagConstraints.REMAINDER;
             field.insets = new Insets(2, 0, 2, 0);
-            form.add(new JLabel(directorySelection ? "Kotlin directory:" : "Kotlin file:"), label);
-            form.add(new JLabel(directorySelection ? name + " (" + sourceCount + " Kotlin files)" : name), field);
+            String sourceLabel = packageSelection != null
+                    ? "Kotlin package:"
+                    : directorySelection ? "Kotlin directory:" : "Kotlin file:";
+            String sourceValue = packageSelection != null
+                    ? packageSelection + " (" + sourceCount + " Kotlin files)"
+                    : directorySelection ? name + " (" + sourceCount + " Kotlin files)" : name;
+            form.add(new JLabel(sourceLabel), label);
+            form.add(new JLabel(sourceValue), field);
             JLabel packageLabel = new JLabel("New package:");
             packageLabel.setLabelFor(packageField);
             form.add(packageLabel, label);
@@ -192,7 +205,9 @@ public final class KotlinChangePackageUI implements RefactoringUI {
             form.add(new JLabel(""), label);
             form.add(updateReferences, field);
             form.add(new JLabel(""), label);
-            String note = directorySelection
+            String note = packageSelection != null
+                    ? "Package declarations of these files change in place; physical locations remain unchanged."
+                    : directorySelection
                     ? "Nested Kotlin files retain their relative subfolder hierarchy; physical locations remain unchanged."
                     : "The file's physical location remains unchanged.";
             form.add(new JLabel(note), field);

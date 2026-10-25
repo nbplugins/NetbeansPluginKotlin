@@ -16,6 +16,7 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.refactoring
 
+import io.github.nbplugins.kotlin.nbm.document.TextRangeDiff
 import org.netbeans.junit.NbTestCase
 import org.openide.filesystems.FileObject
 import org.openide.filesystems.FileUtil
@@ -33,6 +34,8 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
     /** Creates a transaction test fixture backed by a NetBeans memory filesystem. */
     private fun fixture(
         failWriting: ((FileObject) -> Boolean)? = null,
+        moveFileOnDisk: ((FileObject, FileObject, String, String) -> FileObject)? = null,
+        renameFolderOnDisk: ((FileObject, FileObject, String) -> FileObject)? = null,
     ): Fixture {
         val root = FileUtil.createMemoryFileSystem().root
         val documents = linkedMapOf<FileObject, StyledDocument>()
@@ -42,6 +45,16 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
                 if (failWriting?.invoke(file) == true) error("Injected write failure for ${file.path}")
                 if (document.length > 0) document.remove(0, document.length)
                 document.insertString(0, text, null)
+            },
+            moveFileOnDisk = moveFileOnDisk ?: { file, parent, name, extension ->
+                file.lock().use { lock -> file.move(lock, parent, name, extension) }
+            },
+            renameFolderOnDisk = renameFolderOnDisk ?: { folder, _, name ->
+                folder.lock().use { lock ->
+                    folder.rename(lock, name, "")
+                    folder.parent.getFileObject(name)
+                        ?: error("Folder rename did not produce ${folder.parent.path}/$name")
+                }
             },
         )
         return Fixture(root, documents, transaction)
@@ -110,6 +123,22 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
         fixture.transaction.undo()
 
         assertEquals("undo must restore the snapshot from before K2 PSI mutation", original, fixture.text(source))
+    }
+
+    /** Verifies hunk staging uses and restores an unsaved leading editor-buffer baseline. */
+    fun testHunkCommitAndUndo_preservesUnsavedLeadingBaseline() {
+        val fixture = fixture()
+        val baseline = "// unsaved leading edit\npackage source\n\nfun source() = 1\n"
+        val source = fixture.existing("Source.kt", baseline)
+        val changed = "// unsaved leading edit\npackage target\n\nfun source() = 1\n"
+
+        fixture.transaction.captureExisting(source)
+        fixture.transaction.stageText(source, changed, ::applyHunks)
+        fixture.transaction.commit()
+
+        assertEquals("the package hunk must be applied after the unsaved leading edit", changed, fixture.text(source))
+        fixture.transaction.undo()
+        assertEquals("undo must restore the exact live baseline", baseline, fixture.text(source))
     }
 
     /** Verifies undo removes an import that Change Package added to a same-package caller. */
@@ -506,6 +535,64 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
         assertNull("undo must remove the target file name", fixture.root.getFileObject("After.kt"))
     }
 
+    /** Verifies an exact file rename is a no-op through commit and undo. */
+    fun testRenameFile_sameNameIsNoOp() {
+        val fixture = fixture()
+        val source = fixture.existing("Before.kt", "fun before() = 1\n")
+
+        fixture.transaction.renameFile(source, "Before", "kt")
+        fixture.transaction.commit()
+        fixture.transaction.undo()
+
+        assertNotNull("original file must remain", fixture.root.getFileObject("Before.kt"))
+        assertEquals("fun before() = 1\n", fixture.text(source))
+    }
+
+    /** Verifies a case-only file rename uses the requested spelling and undo restores it. */
+    fun testCommitAndUndo_renamesFileByCaseOnly() {
+        val fixture = fixture()
+        val source = fixture.existing("Before.kt", "fun before() = 1\n")
+
+        fixture.transaction.renameFile(source, "before", "kt")
+        fixture.transaction.commit()
+
+        assertNull("commit must remove original spelling", fixture.root.getFileObject("Before.kt"))
+        assertNotNull("commit must use requested spelling", fixture.root.getFileObject("before.kt"))
+        fixture.transaction.undo()
+
+        assertNotNull("undo must restore original spelling", fixture.root.getFileObject("Before.kt"))
+        assertNull("undo must remove case-only spelling", fixture.root.getFileObject("before.kt"))
+    }
+
+    /** Verifies a failed final case-only file rename restores the original spelling and removes its temporary path. */
+    fun testCommitFailure_restoresFileAfterSecondCaseOnlyRenameLegFails() {
+        var moveCalls = 0
+        val fixture = fixture(
+            moveFileOnDisk = { file, parent, name, extension ->
+                moveCalls += 1
+                if (moveCalls == 2) error("Injected final case-only file rename failure")
+                file.lock().use { lock -> file.move(lock, parent, name, extension) }
+            },
+        )
+        val source = fixture.existing("Before.kt", "fun before() = 1\n")
+
+        fixture.transaction.renameFile(source, "before", "kt")
+        try {
+            fixture.transaction.commit()
+            fail("commit must fail when the final case-only file rename leg fails")
+        } catch (_: KotlinRefactoringTransaction.Failure) {
+            // Expected: the helper restores its temporary sibling before the transaction rolls back.
+        }
+
+        assertNotNull("failure must restore the original file spelling", fixture.root.getFileObject("Before.kt"))
+        assertNull("failure must not create the requested spelling", fixture.root.getFileObject("before.kt"))
+        assertFalse(
+            "failure must remove the transaction-private temporary file",
+            fixture.root.children.any { it.name.startsWith(".nbkotlin-") },
+        )
+        assertEquals("failure must preserve the original document", "fun before() = 1\n", fixture.textByPath(source))
+    }
+
     /** Verifies file rename rejects an existing sibling before mutating the source. */
     fun testRenameFile_rejectsExistingTarget() {
         val fixture = fixture()
@@ -544,6 +631,69 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
         assertNull("rollback must remove the early renamed folder", fixture.root.getFileObject("after"))
         assertTrue("the original FileObject remains valid after restoration", source.isValid)
         assertEquals("rollback must restore the original file path", "before/Source.kt", source.path)
+    }
+
+    /** Verifies an exact folder rename is a no-op through commit and undo. */
+    fun testRenameFolder_sameNameIsNoOp() {
+        val fixture = fixture()
+        val folder = fixture.root.createFolder("before")
+        fixture.existingIn(folder, "Source.kt", "fun source() = 1\n")
+
+        fixture.transaction.renameFolder(folder, "before")
+        fixture.transaction.commit()
+        fixture.transaction.undo()
+
+        assertNotNull("original folder must remain", fixture.root.getFileObject("before/Source.kt"))
+    }
+
+    /** Verifies a case-only folder rename preserves descendants and restores original spelling. */
+    fun testCommitAndUndo_renamesFolderByCaseOnly() {
+        val fixture = fixture()
+        val folder = fixture.root.createFolder("Before")
+        fixture.existingIn(folder, "Source.kt", "fun source() = 1\n")
+
+        fixture.transaction.renameFolder(folder, "before")
+        fixture.transaction.commit()
+
+        assertNull("commit must remove original spelling", fixture.root.getFileObject("Before"))
+        assertNotNull("commit must use requested spelling", fixture.root.getFileObject("before/Source.kt"))
+        fixture.transaction.undo()
+
+        assertNotNull("undo must restore original spelling", fixture.root.getFileObject("Before/Source.kt"))
+        assertNull("undo must remove case-only spelling", fixture.root.getFileObject("before"))
+    }
+
+    /** Verifies a failed final case-only folder rename restores the original spelling and descendants. */
+    fun testCommitFailure_restoresFolderAfterSecondCaseOnlyRenameLegFails() {
+        var renameCalls = 0
+        val fixture = fixture(
+            renameFolderOnDisk = { folder, _, name ->
+                renameCalls += 1
+                if (renameCalls == 2) error("Injected final case-only folder rename failure")
+                folder.lock().use { lock ->
+                    folder.rename(lock, name, "")
+                    folder.parent.getFileObject(name)
+                        ?: error("Folder rename did not produce ${folder.parent.path}/$name")
+                }
+            },
+        )
+        val folder = fixture.root.createFolder("Before")
+        fixture.existingIn(folder, "Source.kt", "fun source() = 1\n")
+
+        fixture.transaction.renameFolder(folder, "before")
+        try {
+            fixture.transaction.commit()
+            fail("commit must fail when the final case-only folder rename leg fails")
+        } catch (_: KotlinRefactoringTransaction.Failure) {
+            // Expected: the helper restores its temporary sibling before the transaction rolls back.
+        }
+
+        assertNotNull("failure must restore the original folder spelling", fixture.root.getFileObject("Before/Source.kt"))
+        assertNull("failure must not create the requested spelling", fixture.root.getFileObject("before"))
+        assertFalse(
+            "failure must remove the transaction-private temporary folder",
+            fixture.root.children.any { it.name.startsWith(".nbkotlin-") },
+        )
     }
 
     /** Verifies a folder rename preserves descendants and restores their physical paths on undo. */

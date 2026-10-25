@@ -16,6 +16,8 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.refactoring
 
+import io.github.nbplugins.kotlin.nbm.document.TextRangeDiff
+import io.github.nbplugins.kotlin.nbm.reformatting.FormatCaretPolicy
 import io.github.nbplugins.kotlin.nbm.reformatting.format
 import org.netbeans.api.project.Project
 import org.openide.filesystems.FileObject
@@ -31,11 +33,14 @@ import org.openide.text.NbDocument
  * @param file transaction participant to update
  * @param finalText resulting text produced by the K2 refactoring engine
  * @param project Kotlin project whose formatter settings apply to each changed hunk
+ * @param caretOffset pre-refactoring offset to restore after native editor undo, or `null` when the
+ *                    file has no open editor pane
  */
 internal fun KotlinRefactoringTransaction.stageHunkText(
     file: FileObject,
     finalText: String,
     project: Project,
+    caretOffset: Int? = null,
 ) {
     stageText(file, finalText) { document, originalText, targetText ->
         val hunks = TextRangeDiff.computeHunks(originalText, targetText).sortedByDescending { it.oldStart }
@@ -53,10 +58,12 @@ internal fun KotlinRefactoringTransaction.stageHunkText(
                             startOffset = hunk.oldStart,
                             endOffset = formatEnd,
                             proj = project,
+                            caretPolicy = FormatCaretPolicy.PRESERVE,
                         )
                     }
                 }
             }
+            if (hunks.isNotEmpty()) caretOffset?.let { joinCaretRestoreOnUndo(document, file, it) }
         }
     }
 }

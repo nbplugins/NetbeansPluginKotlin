@@ -150,13 +150,47 @@ class KotlinPackageTarget(private val project: Project, private val sourceFile: 
         }
     }
 
-    /** Reads the source package without loading K2 PSI, which keeps dialog construction lightweight. */
-    private fun sourcePackage(): String = runCatching {
-        Regex("^\\s*package\\s+([^\\s;]+)", RegexOption.MULTILINE)
-            .find(sourceFile.asText())?.groupValues?.get(1).orEmpty()
+    /**
+     * Finds Kotlin files that declare [packageName] directly under this project's source roots.
+     *
+     * Package discovery follows the conventional package/directory layout that the NetBeans
+     * package trees use; a file whose declared package differs from its directory is deliberately
+     * ignored because it is not part of that directory's package.
+     *
+     * @param packageName dotted package name
+     * @return declaring Kotlin files in source-root order, or an empty list when absent
+     */
+    fun filesInPackage(packageName: String): List<FileObject> {
+        val normalized = packageName.trim()
+        if (normalized.isEmpty() || !isValidPackage(normalized)) return emptyList()
+        val segments = normalized.split('.').filter(String::isNotEmpty)
+        return roots.flatMap { root ->
+            val folder = packageFolder(root.folder, segments) ?: return@flatMap emptyList()
+            folder.children
+                .filter { child -> child.isValid && !child.isFolder && child.ext == "kt" }
+                .filter { child -> declaredPackage(child) == normalized }
+        }
+    }
+
+    /** Descends [folders] below [root], returning `null` when the package directory is absent. */
+    private fun packageFolder(root: FileObject, folders: List<String>): FileObject? {
+        var current = root
+        for (folder in folders) {
+            current = current.getFileObject(folder) ?: return null
+        }
+        return current
+    }
+
+    /** Reads a file's declared package without loading K2 PSI, which keeps discovery lightweight. */
+    private fun declaredPackage(file: FileObject): String = runCatching {
+        PACKAGE_DIRECTIVE.find(file.asText())?.groupValues?.get(1).orEmpty()
     }.getOrDefault("")
+
+    /** Reads the source package without loading K2 PSI, which keeps dialog construction lightweight. */
+    private fun sourcePackage(): String = declaredPackage(sourceFile)
 
     private companion object {
         val IDENTIFIER = Regex("[A-Za-z_][A-Za-z0-9_]*")
+        val PACKAGE_DIRECTIVE = Regex("^\\s*package\\s+([^\\s;]+)", RegexOption.MULTILINE)
     }
 }

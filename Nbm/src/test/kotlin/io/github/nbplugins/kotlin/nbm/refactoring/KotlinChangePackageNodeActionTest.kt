@@ -17,11 +17,17 @@
 package io.github.nbplugins.kotlin.nbm.refactoring
 
 import org.netbeans.junit.NbTestCase
+import org.openide.filesystems.FileObject
+import org.openide.filesystems.FileUtil
+import org.openide.nodes.AbstractNode
+import org.openide.nodes.Children
+import org.openide.nodes.Node
+import org.openide.util.lookup.Lookups
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** Unit tests for [KotlinChangePackageDirectoryAction]. */
-class KotlinChangePackageDirectoryActionTest : NbTestCase("KotlinChangePackageDirectoryActionTest") {
+/** Unit tests for [KotlinChangePackageNodeAction]. */
+class KotlinChangePackageNodeActionTest : NbTestCase("KotlinChangePackageNodeActionTest") {
 
     /** Verifies source discovery stays on the NodeAction worker before Swing UI is marshalled to EDT. */
     fun testAsynchronous_allowsBackgroundSourceDiscovery() {
@@ -31,6 +37,96 @@ class KotlinChangePackageDirectoryActionTest : NbTestCase("KotlinChangePackageDi
         )
     }
 
+    /**
+     * Verifies the action is enabled inside a Kotlin editor, where the active node is the edited
+     * file rather than a folder.
+     */
+    fun testEnable_acceptsOneKotlinFileNode() {
+        val root = newRoot()
+
+        assertTrue(TestAction().isEnabledFor(node(root.createData("Sample.kt"))))
+    }
+
+    /** Verifies a plain Kotlin file node resolves to that file, not to its parent folder. */
+    fun testSelectedSource_usesKotlinFileNode() {
+        val root = newRoot()
+        val file = root.createData("Sample.kt")
+
+        assertEquals(file, TestAction().selectedSource(arrayOf(node(file))))
+    }
+
+    /** Verifies the folder Refactor entry keeps working for a directory with Kotlin descendants. */
+    fun testEnable_acceptsFolderContainingKotlinSources() {
+        val root = newRoot()
+        val folder = root.createFolder("pkg")
+        folder.createData("Sample.kt")
+
+        assertTrue(TestAction().isEnabledFor(node(folder)))
+    }
+
+    /** Verifies a plain folder node resolves to the folder, keeping the recursive change operation. */
+    fun testSelectedSource_usesFolderNode() {
+        val root = newRoot()
+        val folder = root.createFolder("pkg")
+        folder.createData("Sample.kt")
+
+        assertEquals(folder, TestAction().selectedSource(arrayOf(node(folder))))
+    }
+
+    /** Verifies a folder without Kotlin sources cannot start a Kotlin package change. */
+    fun testEnable_rejectsFolderWithoutKotlinSources() {
+        val root = newRoot()
+        val folder = root.createFolder("pkg")
+        folder.createData("Sample.java")
+
+        assertFalse(TestAction().isEnabledFor(node(folder)))
+    }
+
+    /** Verifies Java files do not offer a Kotlin package change even though they are file nodes. */
+    fun testEnable_rejectsNonKotlinFileNode() {
+        val root = newRoot()
+
+        assertFalse(TestAction().isEnabledFor(node(root.createData("Sample.java"))))
+    }
+
+    /** Verifies multi-selection stays disabled because the UI edits one file or one folder. */
+    fun testEnable_rejectsMultipleNodes() {
+        val root = newRoot()
+
+        assertFalse(
+            TestAction().isEnabledFor(node(root.createData("First.kt")), node(root.createData("Second.kt"))),
+        )
+    }
+
+    /** Verifies a caret on an import directive targets the imported package's sources. */
+    fun testImportTargetAt_resolvesImportedPackage() {
+        val root = newRoot()
+        val widget = root.createData("Widget.kt")
+        val text = "package usage\n\nimport a.b.Widget\n"
+
+        val target = TestAction().importTargetAt(text, text.indexOf("a.b")) { packageName ->
+            if (packageName == "a.b") listOf(widget) else emptyList()
+        }
+
+        assertEquals(KotlinImportPackageTarget.Declared("a.b", listOf(widget)), target)
+    }
+
+    /** Verifies a caret outside an import keeps the ordinary file-package behaviour. */
+    fun testImportTargetAt_ignoresCaretOutsideImport() {
+        val text = "import a.b.Widget\n\nfun use() = 1\n"
+
+        assertNull(TestAction().importTargetAt(text, text.indexOf("use")) { listOf() })
+    }
+
+    /** Verifies an import of a library package is reported instead of changing the file package. */
+    fun testImportTargetAt_reportsLibraryImport() {
+        val text = "import kotlin.collections.List\n"
+
+        val target = TestAction().importTargetAt(text, text.indexOf("List")) { emptyList() }
+
+        assertEquals(KotlinImportPackageTarget.External("kotlin.collections"), target)
+    }
+
     /** Verifies folder actions are discovered only through the shared Refactor submenu. */
     fun testLayer_keepsFolderActionsOutOfTheTopLevelContextMenu() {
         val layer = repositoryRoot().resolve("Nbm/src/main/resources/org/jetbrains/kotlin/layer.xml")
@@ -38,15 +134,15 @@ class KotlinChangePackageDirectoryActionTest : NbTestCase("KotlinChangePackageDi
 
         assertFalse(
             "Change Package must not have a direct folder-context shadow",
-            contents.contains("<file name=\"KotlinChangePackageDirectoryAction.shadow\">"),
+            contents.contains("<file name=\"KotlinChangePackageNodeAction.shadow\">"),
         )
         assertFalse(
             "Rename Directory must not have a direct folder-context shadow",
             contents.contains("<file name=\"KotlinRenameDirectoryAction.shadow\">"),
         )
         assertTrue(
-            "Change Package directory action must remain globally available to RefactoringAll",
-            contents.contains("KotlinChangePackageDirectoryAction.instance"),
+            "Change Package node action must remain globally available to RefactoringAll",
+            contents.contains("KotlinChangePackageNodeAction.instance"),
         )
         assertTrue(
             "Change Package editor action must remain registered for editor contexts",
@@ -54,14 +150,14 @@ class KotlinChangePackageDirectoryActionTest : NbTestCase("KotlinChangePackageDi
         )
         assertPositions(
             contents,
-            "Folder Refactor menu must route Change Package to its node action",
-            "io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageDirectoryAction.shadow",
+            "Refactor menu must route Change Package to its node action",
+            "io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageNodeAction.shadow",
             267,
             "io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangeSignatureAction.shadow",
             270,
         )
         assertFalse(
-            "Folder Refactor menu must not route Change Package through the editor action",
+            "Refactor menu must not route Change Package through the editor action",
             contents.contains("<file name=\"io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageAction.shadow\">"),
         )
         assertTrue(
@@ -69,12 +165,27 @@ class KotlinChangePackageDirectoryActionTest : NbTestCase("KotlinChangePackageDi
             contents.contains("KotlinRenameDirectoryAction.instance"),
         )
         assertTrue(
-            "Kotlin file nodes must place the Refactor submenu inside their loader Actions folder",
+            "Generic folder nodes must place the Refactor submenu inside their loader Actions folder",
             contents.contains(
-                "<file name=\"RefactoringAll.shadow\">\n" +
+                "<folder name=\"folder\">\n" +
+                    "            <folder name=\"any\">\n" +
+                    "                <folder name=\"Actions\">\n" +
+                    "                    <file name=\"RefactoringAll.shadow\">\n" +
                     "                        <attr name=\"originalFile\" " +
                     "stringvalue=\"Actions/Refactoring/RefactoringAll.instance\"/>",
             ),
+        )
+        assertTrue(
+            "Kotlin file nodes must create the Refactor submenu in their loader Actions folder",
+            contents.contains(
+                "<file name=\"RefactoringAll.instance\">\n" +
+                    "                        <attr name=\"instanceCreate\" " +
+                    "methodvalue=\"org.netbeans.modules.refactoring.api.ui.RefactoringActionsFactory.popupSubmenuAction\"/>",
+            ),
+        )
+        assertTrue(
+            "Kotlin file nodes must hide the ordinary Rename entry instead of showing it beside Refactor",
+            contents.contains("<file name=\"RenameAction.shadow_hidden\"/>"),
         )
         assertTrue(
             "Refactor must register the node-aware F7 action",
@@ -148,6 +259,12 @@ class KotlinChangePackageDirectoryActionTest : NbTestCase("KotlinChangePackageDi
         )
     }
 
+    /** Creates an empty in-memory filesystem root so node lookups expose real file objects. */
+    private fun newRoot() = FileUtil.createMemoryFileSystem().root
+
+    /** Wraps a real file object in the node lookup shape NetBeans uses for explorer selections. */
+    private fun node(value: Any): Node = AbstractNode(Children.LEAF, Lookups.singleton(value))
+
     /** Finds the checkout root from the NBM module's Surefire working directory. */
     private fun repositoryRoot(): Path {
         var candidate: Path? = Path.of("").toAbsolutePath()
@@ -161,8 +278,18 @@ class KotlinChangePackageDirectoryActionTest : NbTestCase("KotlinChangePackageDi
         error("unreachable")
     }
 
-    /** Exposes NodeAction's protected dispatcher contract for this focused test. */
-    private class TestAction : KotlinChangePackageDirectoryAction() {
+    /** Exposes NodeAction's protected dispatcher and resolution contracts for this focused test. */
+    private class TestAction : KotlinChangePackageNodeAction() {
         fun isAsynchronous(): Boolean = asynchronous()
+
+        fun isEnabledFor(vararg nodes: Node): Boolean = enable(arrayOf(*nodes))
+
+        fun selectedSource(nodes: Array<Node>) = KotlinChangePackageNodeAction.selectedSource(nodes)
+
+        fun importTargetAt(
+            text: CharSequence,
+            caretOffset: Int,
+            filesInPackage: (String) -> List<FileObject>,
+        ) = KotlinChangePackageNodeAction.importTargetAt(text, caretOffset, filesInPackage)
     }
 }

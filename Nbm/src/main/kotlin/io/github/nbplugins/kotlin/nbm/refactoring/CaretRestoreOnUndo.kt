@@ -63,8 +63,17 @@ internal fun joinCaretRestoreOnUndo(doc: Document, fo: FileObject, caretOffset: 
 internal class CaretRestoreOnUndoEdit(private val restore: () -> Unit) : AbstractUndoableEdit() {
     override fun undo() {
         super.undo()
-        SwingUtilities.invokeLater { SwingUtilities.invokeLater(restore) }
+        restoreAfterEditorUpdate(restore)
     }
+}
+
+/**
+ * Defers [restore] until after NetBeans has completed queued caret handling for an editor update.
+ *
+ * @param restore action that restores editor state on the EDT
+ */
+internal fun restoreAfterEditorUpdate(restore: () -> Unit) {
+    SwingUtilities.invokeLater { SwingUtilities.invokeLater(restore) }
 }
 
 /** Sets the caret of [fo]'s first opened editor pane to [offset], clamped to the document. */

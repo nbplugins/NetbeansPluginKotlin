@@ -21,6 +21,7 @@ import org.openide.cookies.EditorCookie
 import org.openide.filesystems.FileObject
 import org.openide.loaders.DataObject
 import org.openide.text.NbDocument
+import java.util.UUID
 import javax.swing.text.StyledDocument
 
 /**
@@ -38,6 +39,13 @@ internal class KotlinRefactoringTransaction internal constructor(
     private val openDocument: (FileObject) -> StyledDocument? = ::openEditorDocument,
     private val writeDocument: (FileObject, StyledDocument, String) -> Unit = ::replaceDocumentText,
     private val saveDocument: (FileObject) -> Unit = ::saveEditorDocument,
+    private val moveFileOnDisk: (FileObject, FileObject, String, String) -> FileObject = { file, parent, name, extension ->
+        file.lock().use { lock -> file.move(lock, parent, name, extension) }
+    },
+    private val renameFolderOnDisk: (FileObject, FileObject, String) -> FileObject = { folder, parent, name ->
+        folder.lock().use { lock -> folder.rename(lock, name, "") }
+        parent.getFileObject(name) ?: error("Folder rename did not produce ${parent.path}/$name")
+    },
 ) {
 
     /** Identifies a file whose transaction operation could not be completed. */
@@ -120,6 +128,7 @@ internal class KotlinRefactoringTransaction internal constructor(
         check(file.isValid && !file.isFolder) { "Cannot rename invalid or folder file ${file.path}" }
         check(name.isNotBlank()) { "Target file name must not be blank." }
         val parent = file.parent ?: error("Cannot rename root file ${file.path}")
+        if (file.name == name && file.ext == extension) return
         val existing = parent.getFileObject(name, extension)
         check(existing == null || existing == file) { "Target file already exists: ${parent.path}/$name.$extension" }
         captureExisting(file)
@@ -136,6 +145,7 @@ internal class KotlinRefactoringTransaction internal constructor(
         check(folder.isValid && folder.isFolder) { "Cannot rename invalid or non-folder path ${folder.path}" }
         check(name.isNotBlank()) { "Target folder name must not be blank." }
         val parent = folder.parent ?: error("Cannot rename root folder ${folder.path}")
+        if (folder.name == name) return
         val existing = parent.getFileObject(name)
         check(existing == null || existing == folder) { "Target folder already exists: ${parent.path}/$name" }
         folderRenames += FolderRenameEntry(folder, parent, folder.name, name)
@@ -307,24 +317,51 @@ internal class KotlinRefactoringTransaction internal constructor(
         moves.forEach { move ->
             val file = move.movedFile ?: move.originalFile
             check(file.isValid) { "Move source is invalid: ${move.originalFile.path}" }
-            check(move.targetParent.getFileObject(move.targetName, move.targetExtension) == null) {
-                "Move target already exists: ${move.targetParent.path}/${move.targetName}.${move.targetExtension}"
-            }
             try {
-                file.lock().use { lock ->
-                    move.movedFile = file.move(lock, move.targetParent, move.targetName, move.targetExtension)
-                }
+                val moved = moveFileCaseAware(file, move.targetParent, move.targetName, move.targetExtension)
                 // FileObject identity changes across a NetBeans move, but the editor document is
                 // intentionally retained. Re-key the snapshot so staged writes and later undo use
                 // the physical object now located at the destination.
                 val entry = entries.remove(file)
-                if (entry != null) entries[move.movedFile!!] = entry.copy(file = move.movedFile!!)
+                if (entry != null) entries[moved] = entry.copy(file = moved)
+                move.movedFile = moved
                 movesApplied = true
             } catch (error: Throwable) {
                 throw Failure(file, error)
             }
         }
     }
+
+    /** Moves [file] directly unless a same-parent case-only rename needs a temporary sibling. */
+    private fun moveFileCaseAware(file: FileObject, parent: FileObject, name: String, extension: String): FileObject {
+        val caseOnly = file.parent == parent &&
+            file.name.equals(name, ignoreCase = true) && file.ext.equals(extension, ignoreCase = true) &&
+            (file.name != name || file.ext != extension)
+        val existing = parent.getFileObject(name, extension)
+        check(existing == null || caseOnly && existing == file) {
+            "Move target already exists: ${parent.path}/$name.$extension"
+        }
+        if (!caseOnly) return moveFileOnDisk(file, parent, name, extension)
+
+        val originalParent = file.parent ?: error("Cannot move root file ${file.path}")
+        val originalName = file.name
+        val originalExtension = file.ext
+        val temporaryName = temporaryFileName(parent, extension)
+        val temporary = moveFileOnDisk(file, parent, temporaryName, extension)
+        try {
+            return moveFileOnDisk(temporary, parent, name, extension)
+        } catch (error: Throwable) {
+            runCatching { moveFileOnDisk(temporary, originalParent, originalName, originalExtension) }
+                .exceptionOrNull()
+                ?.let(error::addSuppressed)
+            throw error
+        }
+    }
+
+    /** Generates a transaction-private basename that cannot collide with a sibling file. */
+    private fun temporaryFileName(parent: FileObject, extension: String): String = generateSequence {
+        ".nbkotlin-${UUID.randomUUID()}"
+    }.first { parent.getFileObject(it, extension) == null }
 
     /**
      * Applies registered physical folder renames before K2 resolves final target PSI directories.
@@ -341,19 +378,42 @@ internal class KotlinRefactoringTransaction internal constructor(
             if (rename.renamedFolder != null) return@forEach
             val folder = rename.originalFolder
             check(folder.isValid) { "Folder rename source is invalid: ${rename.originalFolder.path}" }
-            check(rename.originalParent.getFileObject(rename.targetName) == null) {
-                "Folder rename target already exists: ${rename.originalParent.path}/${rename.targetName}"
-            }
             try {
-                folder.lock().use { lock -> folder.rename(lock, rename.targetName, "") }
-                rename.renamedFolder = rename.originalParent.getFileObject(rename.targetName)
-                    ?: error("Folder rename did not produce ${rename.originalParent.path}/${rename.targetName}")
+                rename.renamedFolder = renameFolderCaseAware(folder, rename.originalParent, rename.targetName)
                 folderRenamesApplied = true
             } catch (error: Throwable) {
                 throw Failure(folder, error)
             }
         }
     }
+
+    /** Renames [folder] through a temporary sibling when only its spelling case changes. */
+    private fun renameFolderCaseAware(folder: FileObject, parent: FileObject, name: String): FileObject {
+        val caseOnly = folder.parent == parent && folder.name.equals(name, ignoreCase = true) && folder.name != name
+        val existing = parent.getFileObject(name)
+        check(existing == null || caseOnly && existing == folder) {
+            "Folder rename target already exists: ${parent.path}/$name"
+        }
+        if (!caseOnly) return renameFolderOnDisk(folder, parent, name)
+
+        val originalParent = folder.parent ?: error("Cannot rename root folder ${folder.path}")
+        val originalName = folder.name
+        val temporaryName = temporaryFolderName(parent)
+        val temporary = renameFolderOnDisk(folder, parent, temporaryName)
+        try {
+            return renameFolderOnDisk(temporary, parent, name)
+        } catch (error: Throwable) {
+            runCatching { renameFolderOnDisk(temporary, originalParent, originalName) }
+                .exceptionOrNull()
+                ?.let(error::addSuppressed)
+            throw error
+        }
+    }
+
+    /** Generates a transaction-private folder name that cannot collide with an existing sibling. */
+    private fun temporaryFolderName(parent: FileObject): String = generateSequence {
+        ".nbkotlin-${UUID.randomUUID()}"
+    }.first { parent.getFileObject(it) == null }
 
     /** Restores documents before paths, retaining the first cleanup failure. */
     private fun restoreOriginalState() {
@@ -435,21 +495,17 @@ internal class KotlinRefactoringTransaction internal constructor(
         moves.asReversed().forEach { move ->
             val moved = move.movedFile ?: return@forEach
             if (!moved.isValid) return@forEach
-            check(move.originalParent.getFileObject(move.originalName, move.originalExtension) == null) {
-                "Cannot restore moved file because original path is occupied: ${move.originalParent.path}/${move.originalName}.${move.originalExtension}"
-            }
             KotlinLogger.INSTANCE.logInfo(
                 "KotlinRefactoringTransaction.reverseMoves: moving ${moved.path} to ${move.originalParent.path}, " +
                     "document=${entries[moved]?.let { describeDocument(it.document) } ?: "missing"}"
             )
-            moved.lock().use { lock ->
-                move.movedFile = moved.move(lock, move.originalParent, move.originalName, move.originalExtension)
-            }
+            val restored = moveFileCaseAware(moved, move.originalParent, move.originalName, move.originalExtension)
             val entry = entries.remove(moved)
-            if (entry != null) entries[move.movedFile!!] = entry.copy(file = move.movedFile!!)
+            if (entry != null) entries[restored] = entry.copy(file = restored)
+            move.movedFile = restored
             KotlinLogger.INSTANCE.logInfo(
-                "KotlinRefactoringTransaction.reverseMoves: moved to ${move.movedFile!!.path}, " +
-                    "document=${entries[move.movedFile!!]?.let { describeDocument(it.document) } ?: "missing"}"
+                "KotlinRefactoringTransaction.reverseMoves: moved to ${restored.path}, " +
+                    "document=${entries[restored]?.let { describeDocument(it.document) } ?: "missing"}"
             )
         }
         movesApplied = false
@@ -461,12 +517,7 @@ internal class KotlinRefactoringTransaction internal constructor(
         folderRenames.asReversed().forEach { rename ->
             val folder = rename.renamedFolder ?: return@forEach
             if (!folder.isValid) return@forEach
-            check(rename.originalParent.getFileObject(rename.originalName) == null) {
-                "Cannot restore renamed folder because original path is occupied: ${rename.originalParent.path}/${rename.originalName}"
-            }
-            folder.lock().use { lock -> folder.rename(lock, rename.originalName, "") }
-            rename.renamedFolder = rename.originalParent.getFileObject(rename.originalName)
-                ?: error("Folder restore did not produce ${rename.originalParent.path}/${rename.originalName}")
+            rename.renamedFolder = renameFolderCaseAware(folder, rename.originalParent, rename.originalName)
         }
         folderRenamesApplied = false
     }
