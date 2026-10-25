@@ -16,6 +16,8 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.refactoring
 
+import io.github.nbplugins.kotlin.nbm.document.TextRangeDiff
+import io.github.nbplugins.kotlin.nbm.reformatting.FormatCaretPolicy
 import io.github.nbplugins.kotlin.nbm.reformatting.format
 import org.netbeans.api.project.Project
 import org.openide.filesystems.FileObject
@@ -56,6 +58,7 @@ internal fun KotlinRefactoringTransaction.stageHunkText(
                             startOffset = hunk.oldStart,
                             endOffset = formatEnd,
                             proj = project,
+                            caretPolicy = FormatCaretPolicy.PRESERVE,
                         )
                     }
                 }

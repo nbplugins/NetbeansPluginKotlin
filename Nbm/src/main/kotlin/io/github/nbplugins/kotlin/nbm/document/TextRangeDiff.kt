@@ -14,18 +14,14 @@
  * limitations under the License.
  *
  *******************************************************************************/
-package io.github.nbplugins.kotlin.nbm.refactoring
+package io.github.nbplugins.kotlin.nbm.document
 
 /**
- * Diffs two whole-file text snapshots down to the minimal changed region, for refactorings (like
- * Change Signature) whose engine returns a full new file text per touched file rather than precise
- * edit ranges.
+ * Diffs two complete text snapshots into independently applicable minimal changed ranges.
  *
- * Used instead of a whole-document `remove(0, length)` + `insertString(0, newText)` so that (a) the
- * editor's native Undo reverses one small edit and keeps the caret near the edit site, matching
- * [MinimalDocumentEdits]'s rationale, and (b) the post-edit code-style reformat pass only touches
- * the changed region instead of re-flowing (and needlessly diffing against version control) the
- * whole file.
+ * Consumers that receive only whole-text output, such as the K2 refactoring adapter and Kotlin
+ * formatter, use these ranges instead of deleting and reinserting an entire live editor document.
+ * That keeps unchanged editor positions, folds, highlighting, and undo state intact.
  */
 internal object TextRangeDiff {
 

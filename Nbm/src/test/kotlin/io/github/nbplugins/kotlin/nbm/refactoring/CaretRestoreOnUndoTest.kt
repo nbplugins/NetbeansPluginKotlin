@@ -61,6 +61,19 @@ class CaretRestoreOnUndoTest : NbTestCase("CaretRestoreOnUndoTest") {
         assertTrue("restore action must run once the EDT queue drains", called)
     }
 
+    /** Verifies that [restoreAfterEditorUpdate] preserves the shared double-deferral ordering. */
+    fun testRestoreAfterEditorUpdate_invokesRestoreAction_afterDoubleDeferral() {
+        var called = false
+
+        SwingUtilities.invokeAndWait {
+            restoreAfterEditorUpdate { called = true }
+            assertFalse("restore must be deferred, not run synchronously", called)
+        }
+
+        drainEdt()
+        assertTrue("restore action must run once the EDT queue drains", called)
+    }
+
     /**
      * [joinCaretRestoreOnUndo] joins exactly one [CaretRestoreOnUndoEdit] when the document is a
      * [CustomUndoDocument].

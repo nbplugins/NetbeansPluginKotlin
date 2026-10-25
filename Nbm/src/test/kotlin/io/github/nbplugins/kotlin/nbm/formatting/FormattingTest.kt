@@ -27,6 +27,9 @@ import javaproject.JavaProject
 import javax.swing.text.Document
 import io.github.nbplugins.kotlin.nbm.formatting.KotlinFormatterUtils
 import io.github.nbplugins.kotlin.nbm.refactoring.formatExtractSuperText
+import io.github.nbplugins.kotlin.nbm.reformatting.FormatCaretPolicy
+import io.github.nbplugins.kotlin.nbm.reformatting.applyFormatCaretPolicy
+import io.github.nbplugins.kotlin.nbm.reformatting.applyFormattedText
 import org.jetbrains.kotlin.formatting.NetBeansDocumentFormattingModel
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.api.project.Project
@@ -114,6 +117,99 @@ class FormattingTest : KotlinTestCase("Formatting test", "formatting") {
         assertTrue("Expected formatted inheritance clause, got:\n$formattedSource", formattedSource.contains("class Greeter : extractsuper.same.IGreeter {"))
         assertTrue("Expected formatted interface body, got:\n$formattedTarget", formattedTarget.contains("interface IGreeter {"))
         assertTrue("Expected interface member to remain formatted, got:\n$formattedTarget", formattedTarget.contains("fun greet(): String"))
+    }
+
+    /** Verifies default interactive formatting explicitly moves the editor caret. */
+    fun testFormatCaretPolicy_movesToOffsetByDefault() {
+        val doc = javax.swing.text.PlainDocument()
+        var movedTo: Int? = null
+
+        applyFormatCaretPolicy(doc, 23, FormatCaretPolicy.MOVE_TO_OFFSET) { offset -> movedTo = offset }
+
+        assertEquals(23, movedTo)
+    }
+
+    /** Verifies background hunk formatting never requests editor navigation. */
+    fun testFormatCaretPolicy_preservesCaretForBackgroundFormatting() {
+        val doc = javax.swing.text.PlainDocument()
+        var moved = false
+
+        applyFormatCaretPolicy(doc, 7, FormatCaretPolicy.PRESERVE) { moved = true }
+
+        assertFalse("preserve policy must not navigate the editor", moved)
+    }
+
+    /** Verifies formatter output applies only the local changed hunk, not a document reset. */
+    fun testApplyFormattedText_replacesOnlyChangedHunk() {
+        val document = RecordingDocument()
+        val original = "fun main(){\n    println(1)\n}\n"
+        val formatted = "fun main() {\n    println(1)\n}\n"
+        document.insertString(0, original, null)
+        document.events.clear()
+
+        applyFormattedText(document, original, formatted)
+
+        assertEquals(formatted, document.getText(0, document.length))
+        assertFalse("formatting must not remove the complete original document", document.events.contains("remove:0:${original.length}"))
+        assertEquals("only the inserted formatter whitespace should be written", listOf("insert:10:1"), document.events)
+    }
+
+    /** Verifies identical formatter output produces no document mutations. */
+    fun testApplyFormattedText_isNoOpForIdenticalText() {
+        val document = RecordingDocument()
+        val text = "fun main() = Unit\n"
+        document.insertString(0, text, null)
+        document.events.clear()
+
+        applyFormattedText(document, text, text)
+
+        assertEquals(text, document.getText(0, document.length))
+        assertTrue("identical formatter output must make no edits", document.events.isEmpty())
+    }
+
+    /** Verifies multiple independent formatter changes retain untouched text between their hunks. */
+    fun testApplyFormattedText_appliesSeparatedHunks() {
+        val document = RecordingDocument()
+        val original = "fun first(){ }\nval untouched = \"keep\"\nfun second(){ }\n"
+        val formatted = "fun first() { }\nval untouched = \"keep\"\nfun second() { }\n"
+        document.insertString(0, original, null)
+        document.events.clear()
+
+        applyFormattedText(document, original, formatted)
+
+        assertEquals(formatted, document.getText(0, document.length))
+        assertFalse("unchanged middle content must not be removed", document.events.any { it == "remove:${original.indexOf("val untouched")}:${"val untouched = \"keep\"\n".length}" })
+    }
+
+    /**
+     * Verifies a caret tracked below a formatter change keeps its logical text position instead of
+     * being swept to the end of the document by a whole-document replacement.
+     */
+    fun testApplyFormattedText_keepsTrackedPositionBelowChange() {
+        val document = javax.swing.text.PlainDocument()
+        val original = "fun main(){\n    println(1)\n}\n"
+        val formatted = "fun main() {\n    println(1)\n}\n"
+        document.insertString(0, original, null)
+        val caret = document.createPosition(original.length - 2)
+
+        applyFormattedText(document, original, formatted)
+
+        assertEquals("the tracked caret must follow the inserted space", formatted.length - 2, caret.offset)
+    }
+
+    /** Records only direct document mutations so the formatter applier can be tested without an editor pane. */
+    private class RecordingDocument : javax.swing.text.PlainDocument() {
+        val events = mutableListOf<String>()
+
+        override fun remove(offs: Int, len: Int) {
+            events += "remove:$offs:$len"
+            super.remove(offs, len)
+        }
+
+        override fun insertString(offs: Int, str: String?, a: javax.swing.text.AttributeSet?) {
+            events += "insert:$offs:${str?.length ?: 0}"
+            super.insertString(offs, str, a)
+        }
     }
 
     /**

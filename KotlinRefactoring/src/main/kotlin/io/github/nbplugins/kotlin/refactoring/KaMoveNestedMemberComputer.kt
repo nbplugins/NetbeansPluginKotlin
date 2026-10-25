@@ -215,6 +215,7 @@ class KaMoveNestedMemberComputer(
      */
     fun checkConflicts(targetFile: KtFile, targetOffset: Int): ConflictCheck = runCatching {
         val declaration = findDeclaration() ?: return ConflictCheck.NotApplicable
+        supportedKind(declaration) ?: return ConflictCheck.NotApplicable
         val target = resolveTarget(targetFile, targetOffset) ?: return ConflictCheck.NotApplicable
         validationMessages(declaration, target).let { messages ->
             if (messages.isEmpty()) ConflictCheck.Clear else ConflictCheck.Conflicts(messages)
@@ -233,6 +234,7 @@ class KaMoveNestedMemberComputer(
      */
     fun move(targetFile: KtFile, targetOffset: Int): Apply = runCatching {
         val declaration = findDeclaration() ?: return Apply.NotApplicable
+        supportedKind(declaration) ?: return Apply.NotApplicable
         val target = resolveTarget(targetFile, targetOffset) ?: return Apply.NotApplicable
         val messages = validationMessages(declaration, target)
         if (messages.isNotEmpty()) return Apply.Conflicts(messages)
@@ -292,12 +294,19 @@ class KaMoveNestedMemberComputer(
         whitespace.replace(KtPsiFactory(body.project).createWhiteSpace("\n"))
     }
 
-    /** Resolves a declaration directly at the caret; usage-site invocation is deliberately excluded. */
-    private fun findDeclaration(): KtNamedDeclaration? = sequenceOf(caretOffset, caretOffset + 1)
+    /** Resolves the smallest declaration touching the caret without falling back past a rejected child. */
+    private fun findDeclaration(): KtNamedDeclaration? = sequenceOf(caretOffset, caretOffset - 1, caretOffset + 1)
+        .filter { it in 0 until file.textLength }
         .mapNotNull(file::findElementAt)
-        .flatMap { it.parentsWithSelf }
-        .filterIsInstance<KtNamedDeclaration>()
-        .firstOrNull { supportedKind(it) != null }
+        .mapNotNull { element ->
+            element.parentsWithSelf
+                .filterIsInstance<KtNamedDeclaration>()
+                .firstOrNull { declaration ->
+                    declaration is KtClassOrObject || declaration is KtNamedFunction || declaration is KtProperty
+                }
+        }
+        .distinctBy { it.textRange }
+        .minByOrNull { it.textRange.length }
 
     /** Identifies only relocations whose receiver/qualification change is safe in standalone K2. */
     private fun supportedKind(declaration: KtNamedDeclaration): Kind? = when (declaration) {

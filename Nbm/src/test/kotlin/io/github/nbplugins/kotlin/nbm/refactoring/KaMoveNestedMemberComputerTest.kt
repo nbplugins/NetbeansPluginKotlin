@@ -248,6 +248,43 @@ class KaMoveNestedMemberComputerTest : KotlinTestCase("KaMoveNestedMemberCompute
         }
     }
 
+    /**
+     * Rejects an `inner` class at the caret instead of moving its supported enclosing nested class.
+     */
+    fun testInnerClassInsideNestedClass_doesNotFallBackToOuterClass() {
+        val fixture = createFixture(
+            sourceBody = "class Outer { inner class Inner }",
+            targetBody = "",
+        ) ?: return
+        try {
+            val innerNameOffset = fixture.sourceFile.text.indexOf("Inner")
+            val offsets = listOf(
+                fixture.source.collectDescendantsOfType<KtNamedDeclaration>().first { it.name == "Inner" }.textOffset,
+                innerNameOffset - 1,
+                innerNameOffset,
+                innerNameOffset + "Inner".length,
+            )
+
+            offsets.forEach { offset ->
+                val computer = fixture.computerAt(offset)
+                assertSame("caret offset $offset must resolve Inner", KaMoveNestedMemberComputer.Outcome.NotApplicable, computer.compute())
+                assertTrue(computer.discoverTargets(listOf(fixture.sourceFile, fixture.targetFile)).isEmpty())
+                assertSame(
+                    KaMoveNestedMemberComputer.ConflictCheck.NotApplicable,
+                    computer.checkConflicts(fixture.targetFile, fixture.target.textOffset),
+                )
+                assertSame(
+                    KaMoveNestedMemberComputer.Apply.NotApplicable,
+                    computer.move(fixture.targetFile, fixture.target.textOffset),
+                )
+            }
+            assertTrue("Outer must not be moved:\n${fixture.sourceFile.text}", fixture.sourceFile.text.contains("class Outer"))
+            assertTrue("Inner must remain intact:\n${fixture.sourceFile.text}", fixture.sourceFile.text.contains("inner class Inner"))
+        } finally {
+            fixture.directory.toFile().deleteRecursively()
+        }
+    }
+
     /** Creates a standalone K2 project with source, target, and optional external usage files. */
     private fun createFixture(sourceBody: String, targetBody: String, usage: String? = null): Fixture? {
         val stdlib = findKotlinStdlib() ?: return null
@@ -284,9 +321,12 @@ class KaMoveNestedMemberComputerTest : KotlinTestCase("KaMoveNestedMemberCompute
         val target: KtClass,
     ) {
         /** Resolves one source declaration by name into the move computer. */
-        fun computer(memberName: String): KaMoveNestedMemberComputer = KaMoveNestedMemberComputer(
-            sourceFile,
+        fun computer(memberName: String): KaMoveNestedMemberComputer = computerAt(
             source.collectDescendantsOfType<KtNamedDeclaration>().first { it.name == memberName }.textOffset,
         )
+
+        /** Creates a move computer at one concrete editor caret offset. */
+        fun computerAt(caretOffset: Int): KaMoveNestedMemberComputer =
+            KaMoveNestedMemberComputer(sourceFile, caretOffset)
     }
 }

@@ -14,14 +14,14 @@
  * limitations under the License.
  *
  *******************************************************************************/
-package io.github.nbplugins.kotlin.nbm.refactoring
+package io.github.nbplugins.kotlin.nbm.document
 
 import org.netbeans.junit.NbTestCase
 
 /**
- * Unit tests for [TextRangeDiff] — the longest-common-prefix/suffix diff used by
- * [KotlinChangeSignatureApplyElement] to replace and reformat only the changed region of a file
- * instead of the whole document.
+ * Unit tests for [TextRangeDiff] — the minimal-hunk text diff shared by the K2 refactoring adapter
+ * and the Kotlin formatter to replace and reformat only the changed regions of a file instead of
+ * the whole document.
  */
 class TextRangeDiffTest : NbTestCase("TextRangeDiffTest") {
 

@@ -25,7 +25,9 @@ import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtReferenceExpression
+import org.openide.cookies.EditorCookie
 import org.openide.filesystems.FileUtil
+import org.openide.loaders.DataObject
 import utils.KotlinTestCase
 import java.io.File
 import java.nio.file.Files
@@ -206,6 +208,31 @@ class KotlinAnalysisAPISessionTest : KotlinTestCase("K2 Analysis API session", "
             newText, ktFile.text)
         assertNotNull("New declaration must appear in the reparsed PSI",
             ktFile.declarations.find { it.name == "injectedByTest" })
+    }
+
+    /**
+     * Verifies that [KotlinAnalysisAPISession.synchronizeOpenDocuments] installs an unsaved
+     * NetBeans editor document into the matching K2 PSI file.
+     */
+    fun testSynchronizeOpenDocuments_installsDirtyEditorBuffer() {
+        val wrapper = KotlinAnalysisAPISession.getSession(project)
+        val ktFile = wrapper.session.modulesWithFiles.values
+            .flatten()
+            .filterIsInstance<KtFile>()
+            .firstOrNull { it.name == "checkTypeMismatch.kt" }
+        assertNotNull("checkTypeMismatch.kt must be in the K2 session's source module", ktFile)
+        val path = ktFile!!.virtualFile!!.path
+        val file = FileUtil.toFileObject(File(path))
+        assertNotNull("K2 source file must resolve to a NetBeans FileObject", file)
+        val editorCookie = DataObject.find(file!!).lookup.lookup(EditorCookie::class.java)
+        assertNotNull("K2 source file must have an EditorCookie", editorCookie)
+        val document = editorCookie!!.openDocument()
+        val marker = "// unsaved package-change baseline\n"
+        document.insertString(0, marker, null)
+
+        wrapper.synchronizeOpenDocuments()
+
+        assertTrue("K2 PSI must contain the unsaved leading edit", ktFile.text.startsWith(marker))
     }
 
     /**

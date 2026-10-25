@@ -16,6 +16,7 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.refactoring
 
+import io.github.nbplugins.kotlin.nbm.document.TextRangeDiff
 import org.netbeans.junit.NbTestCase
 import org.openide.filesystems.FileObject
 import org.openide.filesystems.FileUtil
@@ -122,6 +123,22 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
         fixture.transaction.undo()
 
         assertEquals("undo must restore the snapshot from before K2 PSI mutation", original, fixture.text(source))
+    }
+
+    /** Verifies hunk staging uses and restores an unsaved leading editor-buffer baseline. */
+    fun testHunkCommitAndUndo_preservesUnsavedLeadingBaseline() {
+        val fixture = fixture()
+        val baseline = "// unsaved leading edit\npackage source\n\nfun source() = 1\n"
+        val source = fixture.existing("Source.kt", baseline)
+        val changed = "// unsaved leading edit\npackage target\n\nfun source() = 1\n"
+
+        fixture.transaction.captureExisting(source)
+        fixture.transaction.stageText(source, changed, ::applyHunks)
+        fixture.transaction.commit()
+
+        assertEquals("the package hunk must be applied after the unsaved leading edit", changed, fixture.text(source))
+        fixture.transaction.undo()
+        assertEquals("undo must restore the exact live baseline", baseline, fixture.text(source))
     }
 
     /** Verifies undo removes an import that Change Package added to a same-package caller. */
