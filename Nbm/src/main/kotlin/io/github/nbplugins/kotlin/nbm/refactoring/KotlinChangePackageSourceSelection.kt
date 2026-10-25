@@ -25,11 +25,14 @@ import org.openide.filesystems.FileObject
  * appended to the user-entered package; only descendant directory segments are retained.
  *
  * @param sourceFiles physical Kotlin sources in deterministic relative-path order
- * @param selectedDirectory selected folder, or `null` for one editor-selected file
+ * @param selectedDirectory selected folder, or `null` for one editor-selected file or package
+ * @param selectedPackage package named by an import directive under the caret, or `null` when the
+ * selection comes from a file or folder node
  */
 class KotlinChangePackageSourceSelection private constructor(
     val sourceFiles: List<FileObject>,
     val selectedDirectory: FileObject?,
+    val selectedPackage: String? = null,
 ) {
     /** @return whether this selection originated from a folder node. */
     val isDirectory: Boolean
@@ -69,6 +72,22 @@ class KotlinChangePackageSourceSelection private constructor(
             }
             val files = collectKotlinFiles(source).sortedBy(FileObject::getPath)
             return files.takeIf(List<FileObject>::isNotEmpty)?.let { KotlinChangePackageSourceSelection(it, source) }
+        }
+
+        /**
+         * Creates a selection from every Kotlin file that declares one package.
+         *
+         * All files receive exactly [packageName]'s replacement, because they already share the
+         * same package and no per-file relative hierarchy applies.
+         *
+         * @param files Kotlin files that declare [packageName]
+         * @param packageName dotted package imported by the directive under the caret
+         * @return the package selection, or `null` when [files] is empty
+         */
+        fun fromPackage(files: List<FileObject>, packageName: String): KotlinChangePackageSourceSelection? {
+            val sources = files.filter { file -> file.isValid && !file.isFolder && file.ext == "kt" }
+            if (sources.isEmpty()) return null
+            return KotlinChangePackageSourceSelection(sources, null, packageName)
         }
 
         /** Recursively finds valid Kotlin files while deliberately leaving all other content alone. */

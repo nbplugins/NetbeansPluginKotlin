@@ -65,6 +65,36 @@ class KotlinChangePackageSourceSelectionTest : NbTestCase("KotlinChangePackageSo
         assertEquals(emptyList<String>(), selection.targetRelativePackageSegments(file))
     }
 
+    /** Verifies an import package selection keeps every declaring file without relative hierarchy. */
+    fun testFromPackage_createsFlatPackageSelection() {
+        val root = FileUtil.createMemoryFileSystem().root
+        val api = root.createData("Api.kt")
+        val helper = root.createData("Helper.kt")
+
+        val selection = KotlinChangePackageSourceSelection.fromPackage(listOf(api, helper), "sample.api")
+            ?: error("Expected Kotlin package selection")
+
+        assertFalse(selection.isDirectory)
+        assertEquals("sample.api", selection.selectedPackage)
+        assertEquals(listOf(api, helper), selection.sourceFiles)
+        assertEquals(emptyList<String>(), selection.targetRelativePackageSegments(api))
+    }
+
+    /** Verifies an empty package selection is rejected instead of creating a no-op refactoring. */
+    fun testFromPackage_rejectsEmptyFileList() {
+        assertNull(KotlinChangePackageSourceSelection.fromPackage(emptyList(), "sample.api"))
+    }
+
+    /** Verifies a plain file or folder selection is not marked as a package selection. */
+    fun testFrom_fileHasNoSelectedPackage() {
+        val root = FileUtil.createMemoryFileSystem().root
+        val file = root.createData("Single.kt")
+
+        val selection = KotlinChangePackageSourceSelection.from(file) ?: error("Expected Kotlin selection")
+
+        assertNull(selection.selectedPackage)
+    }
+
     /** Verifies non-Kotlin files and folders without Kotlin descendants are rejected. */
     fun testFrom_nonKotlinSourceReturnsNull() {
         val root = FileUtil.createMemoryFileSystem().root

@@ -37,16 +37,16 @@ class KotlinRenameDirectoryActionTest : NbTestCase("KotlinRenameDirectoryActionT
         val contents = Files.readString(layer)
 
         assertTrue(
-            "The directory package action must be present in Menu/Refactoring for a package-node selection",
-            contents.contains("io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageDirectoryAction.shadow"),
+            "The node package action must be present in Menu/Refactoring for a package-node selection",
+            contents.contains("io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageNodeAction.shadow"),
         )
         assertFalse(
             "The editor-only package action must not be a Refactor-menu shadow",
             contents.contains("<file name=\"io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageAction.shadow\">"),
         )
         assertTrue(
-            "The directory package action must remain globally registered for the Refactor submenu",
-            contents.contains("io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageDirectoryAction.instance"),
+            "The node package action must remain globally registered for the Refactor submenu",
+            contents.contains("io-github-nbplugins-kotlin-nbm-refactoring-KotlinChangePackageNodeAction.instance"),
         )
         val provider = "org-jetbrains-kotlin-refactorings-rename-KotlinActionsImplementationProvider.instance"
         val providerStart = contents.indexOf("<file name=\"$provider\">")

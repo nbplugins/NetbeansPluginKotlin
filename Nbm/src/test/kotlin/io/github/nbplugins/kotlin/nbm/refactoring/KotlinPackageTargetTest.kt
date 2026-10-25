@@ -44,6 +44,27 @@ class KotlinPackageTargetTest : KotlinTestCase("KotlinPackageTargetTest", "extra
         assertFalse(target.isValidPackage("sample.bad-name"))
     }
 
+    /** Verifies package lookup finds the Kotlin sources that declare a conventional package. */
+    fun testFilesInPackage_findsDeclaringSources() {
+        val source = project.projectDirectory.getFileObject("src/diagnostics/checkNullPointer.kt") ?: return
+        val target = KotlinPackageTarget(project, source)
+
+        val files = target.filesInPackage("diagnostics")
+
+        assertTrue("Expected the importing package sources", files.any { it.nameExt == "checkNullPointer.kt" })
+        assertTrue("All returned files must declare the package", files.all { it.ext == "kt" })
+        assertTrue("A missing package must not resolve", target.filesInPackage("diagnostics.missing").isEmpty())
+    }
+
+    /** Verifies a blank or malformed package name never resolves to a source root. */
+    fun testFilesInPackage_rejectsBlankOrInvalidPackage() {
+        val source = project.projectDirectory.getFileObject("src/diagnostics/checkNullPointer.kt") ?: return
+        val target = KotlinPackageTarget(project, source)
+
+        assertTrue(target.filesInPackage("").isEmpty())
+        assertTrue(target.filesInPackage("diagnostics..broken").isEmpty())
+    }
+
     /** Looks up the source-root object selected by the model. */
     private fun targetRoot(path: String) = KotlinPackageTarget(
         project,
