@@ -45,6 +45,8 @@ This matrix measures **Kotlin-specific refactorings** available in the checked-o
 
 The corresponding record comments above are deliberately machine-readable. `RefactoringCoverageBaselineTest` verifies that every referenced source and test path exists, so the matrix cannot silently drift after a port, rename, or submodule update.
 
+Remaining work to close each row's gap is tracked in [refactoring-backlog.md](refactoring-backlog.md); this matrix remains the status source of truth.
+
 ## Status criteria
 
 | Status | Meaning |
