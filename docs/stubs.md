@@ -192,9 +192,31 @@ These resource files in `Nbm/src/main/resources/` win over bundled JARs via clas
 | `messages/JavaCoreBundle.properties` | Absent from `core:253`; required by `LanguageLevel.<clinit>` at runtime |
 | `messages/JavaErrorMessages.properties` | Absent from `core:253`; required by `LanguageLevel.<clinit>` at runtime |
 
+## Never shadow a bundled class with a partial stub
+
+`KotlinRefactoring` used to declare `com.intellij.psi.impl.source.resolve.JavaResolveUtil`
+(added for E9.7 Move Declaration) with only `isAccessible(...)`. The module classloader let that
+partial copy win over the full era-193 implementation already shipped by
+`netbeans-plugin-kotlin-compiler-cli-base`, so every `substituteResults(PsiJavaCodeReferenceElement,
+JavaResolveResult[])` call inside the bundled K2 engine threw `NoSuchMethodError`. In the IDE this
+surfaced as an empty Navigator panel, missing error highlighting, and a broken unused-import check
+for any Kotlin file whose supertypes reach Java library classes.
+
+The stub is gone: `KotlinRefactoring` now declares
+`netbeans-plugin-kotlin-compiler-cli-base` as a `provided` dependency (compile-time only; the JAR is
+bundled once, by `Nbm`). `BundledClassShadowingTest` fails the build if a `JavaResolveUtil.class`
+entry reappears in the refactoring module and verifies that the runtime class exposes
+`substituteResults`.
+
+Note the precedence trap: in unit tests the plugin's class directory comes first, so a shadow that
+is broken in the packaged `.nbm` can look healthy in tests. A partial stub is not a valid shim
+here — the bundled engine links against the whole original API.
+
 ## Conflict resolution rule
 
 When two versions of the same class come from different JARs:
 **always strip the old version, keep the new one.**
 If new code calls a method absent from the old class, add a stub method in the old class
-(placed in `Nbm/src/main/java/`; the main JAR loads first and overrides `ext/*.jar`).
+(placed in `Nbm/src/main/java/`; the main JAR loads first and overrides `ext/*.jar`) — but only
+when the replacement is complete: a partial shadow of a bundled class breaks the bundled callers
+(see above).

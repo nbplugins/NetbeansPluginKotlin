@@ -43,9 +43,12 @@ import org.openide.filesystems.FileObject
  * [KaClassStructureItem] wrappers whose `getName()` is safe to call from any thread without
  * holding a [org.jetbrains.kotlin.resolve.BindingContext].
  *
- * [getStructureItems] returns `null` when no K2 session is available for the project so that
- * the caller ([org.jetbrains.kotlin.structurescanner.KotlinStructureScanner]) can fall back to
- * the K1 path transparently.
+ * [getStructureItems] returns `null` when no K2 session is available for the project; the caller
+ * ([KotlinStructureScanner]) then shows an empty tree.
+ *
+ * Individual declarations are converted defensively: if K2 resolution fails for one declaration
+ * (for example a defect in the bundled analysis engine), only that declaration degrades to a
+ * PSI-only name instead of emptying the whole tree.
  *
  * This object belongs to the **service/model** layer and must not reference NetBeans UI APIs.
  */
@@ -59,14 +62,14 @@ object KaStructureScanner {
      *
      * @param file the source Kotlin file to scan
      * @param project the owning NetBeans project
-     * @return top-level structure items, or null to signal K1 fallback
+     * @return top-level structure items, or `null` when the K2 session is unavailable
      */
     fun getStructureItems(file: FileObject, project: Project): List<StructureItem>? {
         val session = KotlinAnalysisAPISession.getSession(project) ?: return null
         val kaKtFile = session.getKtFileForPath(file.path) ?: return null
         return runCatching {
             analyze(kaKtFile) {
-                kaKtFile.declarations.mapNotNull { buildItem(it, isLeaf = false, file) }
+                kaKtFile.declarations.mapNotNull { buildItemSafely(it, isLeaf = false, file) }
             }
         }.getOrElse { e ->
             KotlinLogger.INSTANCE.logException("K2 structure scan failed for ${file.path}", e)
@@ -91,6 +94,84 @@ object KaStructureScanner {
     }
 
     /**
+     * Builds an item for [decl], degrading to a PSI-only item when analysis fails.
+     *
+     * K2 resolution of a single declaration can fail for reasons unrelated to the rest of the
+     * file — for example a `NoSuchMethodError` inside the bundled analysis engine when a Java
+     * library supertype is involved. Without this guard one such failure aborts the whole
+     * [analyze] block and leaves the Navigator panel empty, hiding every other declaration.
+     * The failure is logged and the declaration is still shown using PSI data only (name,
+     * parameters, declared type references, supertype names) so the tree stays usable.
+     *
+     * @param decl the PSI declaration to convert
+     * @param isLeaf whether the resulting item should be rendered as a leaf node
+     */
+    private fun KaSession.buildItemSafely(decl: KtDeclaration, isLeaf: Boolean, file: FileObject): StructureItem? =
+        runCatching { buildItem(decl, isLeaf, file) }.getOrElse { e ->
+            KotlinLogger.INSTANCE.logException(
+                "K2 structure item failed for '${decl.name ?: decl}' in ${file.path}; using PSI-only fallback",
+                e
+            )
+            buildPsiOnlyItem(decl, file)
+        }
+
+    /**
+     * Builds an item for [decl] from PSI alone, without touching K2 symbols or types.
+     *
+     * Used as a fallback by [buildItemSafely] when resolving a declaration fails. Nested
+     * declarations are converted recursively with the same PSI-only rules.
+     *
+     * @param decl the PSI declaration to convert
+     */
+    private fun buildPsiOnlyItem(decl: KtDeclaration, file: FileObject): StructureItem? = when (decl) {
+        is KtClassOrObject -> KaClassStructureItem(
+            decl,
+            classDisplayName(decl),
+            decl.declarations.mapNotNull { buildPsiOnlyItem(it, file) },
+            file
+        )
+        is KtNamedFunction -> KaFunctionStructureItem(decl, functionDisplayName(decl, returnType = null), file)
+        is KtProperty -> KaPropertyStructureItem(decl, propertyDisplayName(decl, decl.typeReference?.text), file)
+        else -> null
+    }
+
+    /**
+     * Builds the display name of [fn] from PSI data.
+     *
+     * @param fn the function declaration
+     * @param returnType rendered return type, or `null` to omit it
+     */
+    private fun functionDisplayName(fn: KtNamedFunction, returnType: String?): String {
+        val receiver = fn.receiverTypeReference?.text?.let { "$it." } ?: ""
+        val params = fn.valueParameters.joinToString(prefix = "(", postfix = ")") { it.text }
+        val suffix = returnType?.let { ": $it" } ?: ""
+        return "$receiver${fn.name}$params$suffix"
+    }
+
+    /**
+     * Builds the display name of [prop] from PSI data.
+     *
+     * @param prop the property declaration
+     * @param type declared or rendered type text, or `null` to omit it
+     */
+    private fun propertyDisplayName(prop: KtProperty, type: String?): String {
+        val suffix = type?.let { ": $it" } ?: ""
+        return "${prop.name}$suffix"
+    }
+
+    /**
+     * Builds the display name of [cls] from PSI data.
+     *
+     * @param cls the class or object declaration
+     */
+    private fun classDisplayName(cls: KtClassOrObject): String {
+        val superTypes = cls.superTypeListEntries.let { entries ->
+            if (entries.isNotEmpty()) entries.joinToString(prefix = "::") { it.text } else ""
+        }
+        return "${cls.name}$superTypes"
+    }
+
+    /**
      * Builds a [KaFunctionStructureItem] with the full signature as the display name.
      *
      * The signature includes an optional receiver type, the function name, the value-parameter
@@ -99,15 +180,12 @@ object KaStructureScanner {
      */
     private fun KaSession.buildFunctionItem(fn: KtNamedFunction, @Suppress("UNUSED_PARAMETER") isLeaf: Boolean, file: FileObject): KaFunctionStructureItem {
         val symbol = fn.symbol as? KaNamedFunctionSymbol
-        val receiver = fn.receiverTypeReference?.text?.let { "$it." } ?: ""
-        val params = fn.valueParameters.joinToString(prefix = "(", postfix = ")") { it.text }
-        val returnType = symbol?.returnType
-            ?.takeUnless { it.isUnitType }
-            ?.render(KaTypeRendererForSource.WITH_SHORT_NAMES, Variance.INVARIANT)
-            ?.let { ": $it" }
-            ?: ""
-        val displayName = "$receiver${fn.name}$params$returnType"
-        return KaFunctionStructureItem(fn, displayName, file)
+        val returnType = resolveReturnType("function", fn.name, file) {
+            symbol?.returnType
+                ?.takeUnless { it.isUnitType }
+                ?.render(KaTypeRendererForSource.WITH_SHORT_NAMES, Variance.INVARIANT)
+        }
+        return KaFunctionStructureItem(fn, functionDisplayName(fn, returnType), file)
     }
 
     /**
@@ -117,15 +195,35 @@ object KaStructureScanner {
      * from the [KaPropertySymbol] and rendered via [KaTypeRendererForSource].
      */
     private fun KaSession.buildPropertyItem(prop: KtProperty, @Suppress("UNUSED_PARAMETER") isLeaf: Boolean, file: FileObject): KaPropertyStructureItem {
-        val symbol = prop.symbol as? KaPropertySymbol
-        val type = prop.typeReference?.text?.let { ": $it" }
-            ?: symbol?.returnType
+        val declaredType = prop.typeReference?.text
+        val type = declaredType ?: resolveReturnType("property", prop.name, file) {
+            (prop.symbol as? KaPropertySymbol)?.returnType
                 ?.takeUnless { it.isUnitType }
                 ?.render(KaTypeRendererForSource.WITH_SHORT_NAMES, Variance.INVARIANT)
-                ?.let { ": $it" }
-            ?: ""
-        return KaPropertyStructureItem(prop, "${prop.name}$type", file)
+        }
+        return KaPropertyStructureItem(prop, propertyDisplayName(prop, type), file)
     }
+
+    /**
+     * Evaluates [compute], returning `null` and logging the failure instead of propagating it.
+     *
+     * Type rendering walks into supertypes and library Java classes, which is where defects in
+     * the bundled analysis engine surface. A failure there must not hide the declaration from
+     * the structure view — the name and PSI-declared type are still valid.
+     *
+     * @param kind human-readable declaration kind used in the log message
+     * @param name declaration name used in the log message
+     * @param file file being scanned, used in the log message
+     * @param compute type-rendering computation to evaluate
+     */
+    private fun resolveReturnType(kind: String, name: String?, file: FileObject, compute: () -> String?): String? =
+        runCatching { compute() }.getOrElse { e ->
+            KotlinLogger.INSTANCE.logException(
+                "K2 structure type resolution failed for $kind '${name ?: "?"}' in ${file.path}; omitting type",
+                e
+            )
+            null
+        }
 
     /**
      * Builds a [KaClassStructureItem] with the class name, supertype list, and nested members.
@@ -135,11 +233,7 @@ object KaStructureScanner {
      * [analyze] block.
      */
     private fun KaSession.buildClassItem(cls: KtClassOrObject, @Suppress("UNUSED_PARAMETER") isLeaf: Boolean, file: FileObject): KaClassStructureItem {
-        val superTypes = cls.superTypeListEntries.let { entries ->
-            if (entries.isNotEmpty()) entries.joinToString(prefix = "::") { it.text } else ""
-        }
-        val displayName = "${cls.name}$superTypes"
-        val nested = cls.declarations.mapNotNull { buildItem(it, isLeaf = true, file) }
-        return KaClassStructureItem(cls, displayName, nested, file)
+        val nested = cls.declarations.mapNotNull { buildItemSafely(it, isLeaf = true, file) }
+        return KaClassStructureItem(cls, classDisplayName(cls), nested, file)
     }
 }

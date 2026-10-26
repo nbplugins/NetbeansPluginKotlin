@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.11.294-SNAPSHOT</version>
+    <version>0.11.295-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
@@ -3007,6 +3007,27 @@ if (changeSigUsageProcessorShorten.exists()) {
       <artifactId>netbeans-plugin-kotlin-intention-utils</artifactId>
       <version>${project.version}</version>
       <scope>provided</scope>
+    </dependency>
+
+    <!-- Era-193 IntelliJ classes shaded inside kotlin-compiler:2.3.21 (repacked by the
+         KotlinCompilerCliBase module). Needed at compile time for
+         com.intellij.psi.impl.source.resolve.JavaResolveUtil, which IDEA's K2 move-conflict
+         code calls (visibilityConflict.kt).
+
+         Do NOT reintroduce a local JavaResolveUtil stub: the same class is linked against by the
+         bundled K2 engine (PsiJavaCodeReferenceElementImpl, PsiScopesUtil), which calls the full
+         era-193 API (substituteResults, getContextClass, processJavaModuleExports, ...). A partial
+         stub packaged into this JAR shadows the real implementation at runtime and breaks K2
+         diagnostics and the Navigator panel with NoSuchMethodError.
+
+         Declared last so the era-253 platform JARs above keep precedence for overlapping
+         com.intellij.* classes. -->
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-compiler-cli-base</artifactId>
+      <version>${project.version}</version>
+      <scope>provided</scope>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
   </dependencies>
 </project>
