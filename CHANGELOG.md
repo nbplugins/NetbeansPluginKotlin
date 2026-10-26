@@ -1,4 +1,4 @@
-# 0.11
+# 0.11.59 (2026-10-26)
 
 - Fixed the Navigator panel appearing empty and error highlighting and unused-import hints disappearing in Kotlin files whose classes extend or use Java classes from libraries; a declaration that cannot be analyzed is now still shown from source text instead of emptying the whole Navigator tree.
 - Fixed **Refactor → Change Kotlin Package...** being greyed out while editing a Kotlin file: the same Refactor entry now opens from the active file in the editor and from a Kotlin file selected in the Projects view, as well as from a Kotlin package folder. When the caret is on an `import` directive, the refactoring now changes the imported package's declarations and references instead of the edited file's own package, and reports imported library packages that have no sources in the project.
