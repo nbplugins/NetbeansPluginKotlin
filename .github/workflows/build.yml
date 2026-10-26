@@ -45,6 +45,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           git fetch --prune --tags
           # Release tag on current commit?
           REL_TAG=$(git tag --points-at HEAD | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || true)
@@ -59,11 +60,19 @@ jobs:
             fi
             UPLOAD_URL=$(gh release view "$REL_TAG" --json uploadUrl -q .uploadUrl)
           else
-            POM_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout | sed 's/-.*//')
+            # -N: read the root POM only, so a broken child module cannot mask the version
+            if ! POM_VERSION=$(mvn -N help:evaluate -Dexpression=project.version -q -DforceStdout -Dstyle.color=never | tail -n 1); then
+              echo "::error::mvn help:evaluate failed; check the POM files"
+              exit 1
+            fi
+            if [[ ! "$POM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-SNAPSHOT)?$ ]]; then
+              echo "::error::Unexpected project version: '$POM_VERSION'"
+              exit 1
+            fi
             MM=$(echo "$POM_VERSION" | cut -d. -f1-2)
             MM_ESC="${MM//./\\.}"
-            LAST_REL=$(git tag | grep -E "^${MM_ESC}\.[0-9]+$" | sort -V | tail -1)
-            BASE_TAG=$(git tag | grep -E "^${MM_ESC}$" | sort -V | tail -1 || echo "")
+            LAST_REL=$(git tag | grep -E "^${MM_ESC}\.[0-9]+$" | sort -V | tail -1 || true)
+            BASE_TAG=$(git tag | grep -E "^${MM_ESC}$" | sort -V | tail -1 || true)
             if [[ -n "$LAST_REL" ]]; then
               START=$(echo "$LAST_REL" | cut -d. -f3)
               N=$(git rev-list "${LAST_REL}..HEAD" --count 2>/dev/null || echo "0")
