@@ -1,8 +1,11 @@
+# 0.11
+
 - Fixed the Navigator panel appearing empty and error highlighting and unused-import hints disappearing in Kotlin files whose classes extend or use Java classes from libraries; a declaration that cannot be analyzed is now still shown from source text instead of emptying the whole Navigator tree.
 - Fixed **Refactor → Change Kotlin Package...** being greyed out while editing a Kotlin file: the same Refactor entry now opens from the active file in the editor and from a Kotlin file selected in the Projects view, as well as from a Kotlin package folder. When the caret is on an `import` directive, the refactoring now changes the imported package's declarations and references instead of the edited file's own package, and reports imported library packages that have no sources in the project.
 - Fixed Move Nested Member to preserve unsaved source, target, and usage edits, reject unsafe `inner` and self-descendant targets without falling back to an enclosing declaration, and report failed applies; Undo Last Refactoring remains available only after a successful move.
 - Fixed Kotlin file and package-directory renames to show one immediate **Refactor** submenu in the Projects/Files context menu, treat unchanged names as no-ops, preserve requested spelling for case-only renames with Undo Last Refactoring, retain live Change Kotlin Package buffer contents and each open editor's logical caret while applying or undoing through either Ctrl+Z or **Undo Last Refactoring**, and distinguish a selected open file's physical rename from editor symbol Rename while rejecting multi-file rename requests.
 - Added structural conversion hints for Kotlin: with the caret on an operator or convention-named call you can now convert `a.plus(b)` to `a + b`, `a.get(i)`/`a.set(i, v)` to `a[i]`/`a[i] = v`, `a.contains(b)` to `b in a`, `a.invoke(b)` to `a(b)`, `a.not()`/`a.unaryPlus()` to `!a`/`+a`, and `f() {}` to `f {}` directly from the hint popup.
+
 # 0.11.54 (2026-10-12)
 
 - Added **New → Kotlin Package** for **Source Packages**, **Test Packages**, **Kotlin Source Packages**, and **Kotlin Test Packages**, creating the requested nested package hierarchy exclusively beneath the selected source or test root in Maven, Gradle, and Ant/J2SE projects.
