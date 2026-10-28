@@ -15,6 +15,7 @@
  */
 package io.github.nbplugins.kotlin.nbm.j2k
 
+import com.intellij.formatting.Indent
 import com.intellij.openapi.application.runReadAction
 import com.intellij.openapi.module.SingletonModule
 import com.intellij.psi.PsiJavaFile
@@ -23,6 +24,7 @@ import io.github.nbplugins.kotlin.nbm.formatting.KotlinFormatterUtils
 import io.github.nbplugins.kotlin.nbm.formatting.options.ProjectCodeStyleStorage
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import javax.swing.text.Document
+import org.jetbrains.kotlin.idea.formatter.createSpacingBuilder
 import org.jetbrains.kotlin.j2k.ConverterSettings
 import org.jetbrains.kotlin.j2k.PostProcessingTarget
 import org.jetbrains.kotlin.j2k.k2.K2J2KPostProcessor
@@ -30,6 +32,10 @@ import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.nj2k.NewJ2kWithProgressProcessor
 import org.jetbrains.kotlin.nj2k.NewJavaToKotlinConverter
+import org.jetbrains.kotlin.formatting.KotlinBlock
+import org.jetbrains.kotlin.formatting.KotlinFormatter
+import org.jetbrains.kotlin.formatting.NodeAlignmentStrategy
+import org.jetbrains.kotlin.psi.KtFile
 import org.netbeans.api.project.Project
 import org.netbeans.modules.refactoring.api.RefactoringSession
 import org.openide.DialogDisplayer
@@ -166,22 +172,77 @@ object Java2KotlinConverter {
         }
 
         val kotlinText = withImports(elementResult.text, elementResult.importsToAdd)
-        session.updateFileContent(kotlinFileObject.path, kotlinText)
-        val ktFile = session.getKtFileForPath(kotlinFileObject.path)
-        if (ktFile == null) {
-            cleanup(kotlinFileObject)
-            showError("Could not register $kotlinFileObject in the analysis session.")
-            return null
-        }
+        println("J2KRAW: $kotlinText")
+        // The `.kt` still holds the empty seed on disk, so a NetBeans parser task that runs while
+        // the post-processing works would overwrite the transplanted PSI with empty content — the
+        // confidence of the "Classifier was found in KtFile but was not found in FirFile" failure.
+        session.freezeFileContent(kotlinFileObject.path)
+        try {
+            session.updateFrozenFileContent(kotlinFileObject.path, kotlinText)
+            val ktFile = session.getKtFileForPath(kotlinFileObject.path)
+            if (ktFile == null) {
+                cleanup(kotlinFileObject)
+                showError("Could not register $kotlinFileObject in the analysis session.")
+                return null
+            }
 
-        // Must run off the EDT and without an outer read action: the post-processor issues its
-        // own analysis read actions and applies changes through invokeAndWait.
-        K2J2KPostProcessor().doAdditionalProcessing(
-            PostProcessingTarget.MultipleFilesPostProcessingTarget(listOf(ktFile)),
-            result.converterContext,
-            null,
-        )
-        return formatConvertedText(ktFile.text, kotlinFileObject.nameExt, proj)
+            // Must run off the EDT and without an outer read action: the post-processor issues its
+            // own analysis read actions and applies changes through invokeAndWait.
+            K2J2KPostProcessor().doAdditionalProcessing(
+                PostProcessingTarget.MultipleFilesPostProcessingTarget(listOf(ktFile)),
+                result.converterContext,
+                null,
+            )
+
+            val processedText = ktFile.text
+            if (processedText.isBlank() && kotlinText.isNotBlank()) {
+                // The engine logs post-processing failures instead of propagating them, so an empty
+                // PSI is the only visible symptom. Report it rather than write an empty Kotlin file.
+                cleanup(kotlinFileObject)
+                showError("The J2K engine lost the converted source of ${javaFileObject.name}.")
+                return null
+            }
+            return reformatConvertedFile(ktFile, proj)
+        } finally {
+            session.unfreezeFileContent(kotlinFileObject.path)
+        }
+    }
+
+    /**
+     * Re-formats the converted file in place and returns its text.
+     *
+     * The post-processor edits PSI and relies on `CodeStyleManager.reformat` to normalise
+     * whitespace afterwards; in the standalone session that call is a no-op, so the printed text
+     * keeps tokens glued together (for example `@get:JsonIgnorevar`). Formatting the *live* PSI —
+     * whose leaves are still separate — lets the formatter insert the missing whitespace, which a
+     * text-based pass cannot do once the tokens have been printed as one identifier.
+     *
+     * @param ktFile the post-processed converted file
+     * @param proj project whose Kotlin code-style settings apply
+     * @return the formatted Kotlin text
+     */
+    private fun reformatConvertedFile(ktFile: KtFile, proj: Project): String {
+        val settings = ProjectCodeStyleStorage.getSettings(proj)
+        KotlinFormatterUtils.pushSettings(settings)
+        try {
+            val rootBlock = KotlinBlock(
+                ktFile.node,
+                NodeAlignmentStrategy.getNullStrategy(),
+                Indent.getNoneIndent(),
+                null,
+                settings,
+                createSpacingBuilder(
+                    settings,
+                    KotlinFormatter.KotlinSpacingBuilderUtilImpl.INSTANCE,
+                ),
+            )
+            return KotlinFormatterUtils.reformatAll(ktFile, rootBlock, settings, ktFile.text)
+        } catch (t: Throwable) {
+            KotlinLogger.INSTANCE.logException("J2K: reformatting the converted PSI failed", t)
+            return formatConvertedText(ktFile.text, ktFile.name, proj)
+        } finally {
+            KotlinFormatterUtils.popSettings()
+        }
     }
 
     /**

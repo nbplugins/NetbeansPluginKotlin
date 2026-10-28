@@ -98,7 +98,7 @@ class NullableNotNullManagerImplTest : KotlinTestCase("NullableNotNullManagerImp
         assertEquals(Nullability.NULLABLE, NullableNotNullManager.getNullability(target))
     }
 
-    /** A `@Nonnull` method reports `NOT_NULL`. */
+    /** A `@NotNull` method reports `NOT_NULL`. */
     fun testNotNullAnnotation() {
         val target = method("alwaysNotNull")
 

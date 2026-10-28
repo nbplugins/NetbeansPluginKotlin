@@ -17,6 +17,7 @@ package io.github.nbplugins.kotlin.nbm.j2k
 
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import java.nio.file.Path
+import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.name.FqName
 import org.openide.filesystems.FileObject
 import org.openide.filesystems.FileUtil
@@ -43,10 +44,30 @@ class Java2KotlinConverterTest : KotlinTestCase("J2K converter test", "j2k") {
      * @param name fixture base name (without extension)
      */
     private fun doTest(name: String) {
+        val actual = convert(name) ?: return
+        val expected = dir.getFileObject("$name.after").asText()
+        assertEquals(
+            "converted text for $name.java",
+            normalize(expected),
+            normalize(actual),
+        )
+    }
+
+    /**
+     * Converts fixture `<name>.java` and returns the produced Kotlin text.
+     *
+     * Skips the test when `kotlin-stdlib` is missing from the local Maven repository: without it
+     * the K2 post-processing cannot analyse the converted file, and the comparison would test
+     * nothing but the unprocessed printer output.
+     *
+     * @param name fixture base name (without extension)
+     * @return the converted Kotlin text, or `null` when the fixture was skipped
+     */
+    private fun convert(name: String): String? {
         val stdlib = findStdlibJarOrNull()
         if (stdlib == null) {
             println("${javaClass.simpleName}: skipping — kotlin-stdlib not found in ~/.m2")
-            return
+            return null
         }
         val javaFileObject = dir.getFileObject("$name.java")
         assertNotNull("fixture $name.java", javaFileObject)
@@ -61,12 +82,7 @@ class Java2KotlinConverterTest : KotlinTestCase("J2K converter test", "j2k") {
                 session, project, javaFileObject, kotlinFileObject,
             )
             assertNotNull("conversion of $name.java produced no text", actual)
-            val expected = dir.getFileObject("$name.after").asText()
-            assertEquals(
-                "converted text for $name.java",
-                normalize(expected),
-                normalize(actual!!),
-            )
+            return actual!!
         } finally {
             kotlinFileObject.delete()
             KotlinAnalysisAPISession.invalidate(project)
@@ -87,6 +103,79 @@ class Java2KotlinConverterTest : KotlinTestCase("J2K converter test", "j2k") {
 
     /** Converts an interface. */
     fun testInterface() = doTest("interface")
+
+    /** Annotations on the class and on a method survive the conversion. */
+    fun testWithAnnotations() {
+        val actual = convert("annotated") ?: return
+        println("=== annotated.kt ===\n$actual\n=== end annotated.kt ===")
+        assertTrue("class annotation lost: $actual", actual.contains("JsonNaming"))
+        assertTrue("method annotation lost: $actual", actual.contains("JsonIgnore"))
+    }
+
+    /** A getter/setter pair becomes a Kotlin property. */
+    fun testProperties() {
+        val actual = convert("properties") ?: return
+        println("=== properties.kt ===\n$actual\n=== end properties.kt ===")
+        assertTrue("property not formed: $actual", actual.contains("var name"))
+    }
+
+    /** The same shapes without annotations isolate the annotation handling. */
+    fun testAbstractWithoutAnnotations() {
+        val actual = convert("abstractNoAnn") ?: return
+        println("=== abstractNoAnn.kt ===\n$actual\n=== end abstractNoAnn.kt ===")
+        assertTrue("property not formed: $actual", actual.contains("primaryKey"))
+    }
+
+    /** Two properties where one has no setter. */
+    fun testTwoGetters() {
+        val actual = convert("twoGetters") ?: return
+        println("=== twoGetters.kt ===\n$actual\n=== end twoGetters.kt ===")
+        assertTrue("property not formed: $actual", actual.contains("ballast"))
+    }
+
+    /** Diagnostic: does the produced setter of `properties.kt` count as redundant when re-parsed? */
+    fun testDiagnoseRedundantSetter() {
+        val actual = convert("properties") ?: return
+        val stdlib = findStdlibJarOrNull() ?: return
+        val kotlinFileObject = FileUtil.createData(dir, "diagnose.kt")
+        val session = KotlinAnalysisAPISession.createWithJars(
+            moduleName = project.projectDirectory.name,
+            binaryJars = listOf(stdlib),
+            sourceRoots = listOf(FileUtil.toFile(dir).toPath()),
+        )
+        try {
+            session.freezeFileContent(kotlinFileObject.path)
+            try {
+                session.updateFrozenFileContent(kotlinFileObject.path, actual)
+                val ktFile = session.getKtFileForPath(kotlinFileObject.path)!!
+                for (klass in ktFile.declarations.filterIsInstance<org.jetbrains.kotlin.psi.KtClass>()) {
+                    for (property in klass.declarations.filterIsInstance<org.jetbrains.kotlin.psi.KtProperty>()) {
+                        for (accessor in listOfNotNull(property.getter, property.setter)) {
+                            val body = accessor.bodyExpression
+                            val statements = (body as? org.jetbrains.kotlin.psi.KtBlockExpression)?.statements
+                            val right = (statements?.singleOrNull() as? org.jetbrains.kotlin.psi.KtBinaryExpression)?.right
+                            val parameter = accessor.parameterList?.parameters?.singleOrNull()
+                            val redundant = statements?.size == 1 &&
+                                right?.mainReference?.resolve() == parameter
+                            println(
+                                "DIAG property=${property.name} accessor=${accessor.text.replace("\n", "\\n")} " +
+                                    "isSetter=${accessor.isSetter} statements=${statements?.size} " +
+                                    "right=${right?.text} rightRef=${right?.mainReference} " +
+                                    "resolved=${right?.mainReference?.resolve()} " +
+                                    "param=$parameter " +
+                                    "redundant=$redundant",
+                            )
+                        }
+                    }
+                }
+            } finally {
+                runCatching { session.unfreezeFileContent(kotlinFileObject.path) }
+            }
+        } finally {
+            runCatching { kotlinFileObject.delete() }
+            KotlinAnalysisAPISession.invalidate(project)
+        }
+    }
 
     /** The import block is inserted after the package directive, sorted. */
     fun testWithImportsAfterPackage() {

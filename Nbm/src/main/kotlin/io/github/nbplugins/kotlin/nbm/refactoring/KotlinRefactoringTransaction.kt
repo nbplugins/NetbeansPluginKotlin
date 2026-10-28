@@ -200,7 +200,8 @@ internal class KotlinRefactoringTransaction internal constructor(
         )
         KotlinLogger.INSTANCE.logInfo(
             "KotlinRefactoringTransaction.captureExisting: path=${file.path}, " +
-                "snapshot=${describeText(snapshot)}, document=${describeText(document.getText(0, document.length))}"
+                "document=${identity(document)}, snapshot=${describeText(snapshot)}, " +
+                "current=${describeDocument(document)}"
         )
         return document
     }
@@ -226,6 +227,10 @@ internal class KotlinRefactoringTransaction internal constructor(
                 writeDocument(file, document, initialText)
             }
             entries[file] = Entry(file, existedBefore = false, originalText = null, document = document)
+            KotlinLogger.INSTANCE.logInfo(
+                "KotlinRefactoringTransaction.createFile: path=${file.path}, " +
+                    "document=${identity(document)}, content=${describeDocument(document)}"
+            )
             return file
         } catch (error: Throwable) {
             runCatching { if (file.isValid) file.delete() }
@@ -298,8 +303,21 @@ internal class KotlinRefactoringTransaction internal constructor(
         try {
             stagedEntries.forEach { entry ->
                 check(entry.file.isValid) { "Target file is invalid: ${entry.file.path}" }
-                check(openDocument(entry.file) === entry.document) {
-                    "Target document changed while preparing transaction: ${entry.file.path}"
+                // NetBeans may hand out a different document instance for the same file when the
+                // editor support was re-created in the meantime (for example because the file was
+                // opened, closed or reloaded during a long-running preparation). Log both sides so
+                // the re-creation can be traced in the IDE log.
+                val currentDocument = openDocument(entry.file)
+                KotlinLogger.INSTANCE.logInfo(
+                    "KotlinRefactoringTransaction.commit: validating path=${entry.file.path}, " +
+                        "capturedDocument=${identity(entry.document)}, " +
+                        "currentDocument=${identity(currentDocument)}, " +
+                        "captured=${describeDocument(entry.document)}, " +
+                        "current=${describeDocumentOrNull(currentDocument)}"
+                )
+                check(currentDocument === entry.document) {
+                    "Target document changed while preparing transaction: ${entry.file.path} " +
+                        "(captured=${identity(entry.document)}, current=${identity(currentDocument)})"
                 }
             }
             // A NetBeans editor document remains attached to its current FileObject. Write all
@@ -617,6 +635,28 @@ internal class KotlinRefactoringTransaction internal constructor(
     /** Produces a bounded description of the live document, including the package-header evidence. */
     private fun describeDocument(document: StyledDocument): String =
         describeText(document.getText(0, document.length))
+
+    /**
+     * Describes [document] the way [describeDocument] does, or reports why it cannot be read.
+     *
+     * Used for a document obtained from NetBeans at commit time: it may be a different instance
+     * than the captured one, or already disposed, and the failure itself is the diagnostic signal.
+     *
+     * @param document the document to describe, or `null` when NetBeans returned none
+     * @return a bounded description, or a marker explaining the absence
+     */
+    private fun describeDocumentOrNull(document: StyledDocument?): String =
+        if (document == null) "null" else runCatching { describeDocument(document) }
+            .getOrElse { "unreadable: $it" }
+
+    /**
+     * Identifies [document] by object identity, for logs that must tell two instances apart.
+     *
+     * @param document the document to identify, or `null`
+     * @return `null` for `null`, otherwise the identity hash code
+     */
+    private fun identity(document: StyledDocument?): String =
+        if (document == null) "null" else System.identityHashCode(document).toString()
 
     /** Obtains a document or fails with a clear transaction error. */
     private fun requireDocument(file: FileObject): StyledDocument =
