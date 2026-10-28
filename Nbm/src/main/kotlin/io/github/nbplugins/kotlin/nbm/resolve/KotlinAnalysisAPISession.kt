@@ -217,6 +217,9 @@ class KotlinAnalysisAPISession private constructor(
 
         installPomModel(session)
         installNoOpPsiSearchHelper(session)
+        installKaModuleProvider(session)
+        installJ2KConverterExtension()
+        installDeepestSuperMethodsSearch()
 
         val tProvider = System.nanoTime()
         installLiveDeclarationProvider(session)
@@ -286,6 +289,27 @@ class KotlinAnalysisAPISession private constructor(
             mock.registerService(com.intellij.psi.search.PsiSearchHelper::class.java, NoOpPsiSearchHelper())
             KotlinLogger.INSTANCE.logInfo("Registered NoOpPsiSearchHelper for project ${project.name}")
         }
+    }
+
+    /**
+     * Replaces the default [KaModuleProvider] with a [StandaloneKaModuleProvider] over this
+     * session's source modules.
+     *
+     * The default provider resolves an element's module through the IDE module manager and the
+     * project/module index, neither of which exists in a standalone session — it returns `null`
+     * or throws. The J2K engine asks for the target module of the element being converted
+     * (`Module.toKaSourceModuleWithElementSourceModuleKindOrProduction`), so without this the
+     * conversion aborts.
+     *
+     * @param session the freshly-built standalone session whose project services are patched
+     */
+    private fun installKaModuleProvider(session: StandaloneAnalysisAPISession) {
+        val project = session.project
+        val mock = project as? com.intellij.mock.MockComponentManager ?: return
+        val key = org.jetbrains.kotlin.analysis.api.projectStructure.KaModuleProvider::class.java
+        mock.picoContainer.unregisterComponent(key.name)
+        mock.registerService(key, StandaloneKaModuleProvider(session))
+        KotlinLogger.INSTANCE.logInfo("Installed StandaloneKaModuleProvider for project ${project.name}")
     }
 
     private fun installLiveDeclarationProvider(session: StandaloneAnalysisAPISession) {
@@ -520,6 +544,56 @@ class KotlinAnalysisAPISession private constructor(
                     org.jetbrains.kotlin.idea.k2.refactoring.pullUp.K2PullUpHelperFactory(),
                 )
                 KotlinLogger.INSTANCE.logInfo("Registered K2PullUpHelperFactory for Kotlin")
+            }
+        }
+
+        /**
+         * Registers the J2K converter extension point and the K2 implementation of it.
+         *
+         * The J2K engine resolves its conversion list and its post-processor through
+         * `J2kConverterExtension.extension(K2)`, which is
+         * `EP_NAME.extensionList.first { it.kind == kind }`. In the IDE the EP is populated from
+         * `plugin.xml`; a standalone session loads no plugin descriptors, so without this the
+         * lookup throws `NoSuchElementException` and the conversion aborts. Both steps are
+         * idempotent — later sessions reuse the already-registered point and instance.
+         */
+        private fun installJ2KConverterExtension() {
+            val area = com.intellij.openapi.application.ApplicationManager.getApplication().extensionArea
+            registerEpIfAbsent(
+                area,
+                "org.jetbrains.kotlin.j2kConverterExtension",
+                "org.jetbrains.kotlin.j2k.J2kConverterExtension",
+                com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE,
+            )
+            val point = area.getExtensionPoint(org.jetbrains.kotlin.j2k.J2kConverterExtension.EP_NAME)
+            if (point.extensionList.none { it.kind == org.jetbrains.kotlin.j2k.J2kConverterExtension.Kind.K2 }) {
+                point.registerExtension(org.jetbrains.kotlin.j2k.k2.K2J2KConverterExtension())
+                KotlinLogger.INSTANCE.logInfo("Registered K2J2KConverterExtension")
+            }
+        }
+
+        /**
+         * Registers the `com.intellij.deepestSuperMethodsSearch` extension point and its
+         * PSI-based executor.
+         *
+         * `java-impl` declares the point in `plugin.xml`, which a standalone session never loads;
+         * without it `PsiMethod.findDeepestSuperMethods()` throws
+         * `IllegalArgumentException: Missing extension point`. The J2K engine calls it on every
+         * method symbol (`deepestFqName`) to recognise `equals`/`hashCode`/`toString` overrides.
+         * Both steps are idempotent.
+         */
+        private fun installDeepestSuperMethodsSearch() {
+            val area = com.intellij.openapi.application.ApplicationManager.getApplication().extensionArea
+            registerEpIfAbsent(
+                area,
+                "com.intellij.deepestSuperMethodsSearch",
+                "com.intellij.util.QueryExecutor",
+                com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE,
+            )
+            val point = area.getExtensionPoint(com.intellij.psi.search.searches.DeepestSuperMethodsSearch.EP_NAME)
+            if (point.extensionList.none { it is PsiDeepestSuperMethodsQueryExecutor }) {
+                point.registerExtension(PsiDeepestSuperMethodsQueryExecutor())
+                KotlinLogger.INSTANCE.logInfo("Registered PsiDeepestSuperMethodsQueryExecutor")
             }
         }
 

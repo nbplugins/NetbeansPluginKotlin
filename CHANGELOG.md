@@ -1,3 +1,5 @@
+- Added Java to Kotlin conversion: **Refactor → Convert to Kotlin** (in the main menu, the Java editor's right-click menu, and the context menu of a Java file in the Projects/Files windows) asks for confirmation, then replaces the Java file with a sibling Kotlin file produced by the IntelliJ IDEA K2 converter (getters/setters become properties, static-only classes become `object`s, inner classes become `inner class`es); the Kotlin file appears only after the conversion succeeds, a failed conversion leaves the Java file untouched, and **Undo Last Refactoring** restores the Java file and removes the Kotlin one in a single step.
+
 # 0.11.59 (2026-10-26)
 
 - Fixed the Navigator panel appearing empty and error highlighting and unused-import hints disappearing in Kotlin files whose classes extend or use Java classes from libraries; a declaration that cannot be analyzed is now still shown from source text instead of emptying the whole Navigator tree.

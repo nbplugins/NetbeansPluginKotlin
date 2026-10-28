@@ -28,12 +28,14 @@ import javax.swing.text.StyledDocument
  * Applies a staged multi-file refactoring change atomically from the user's perspective.
  *
  * Existing files are snapshotted before staging. Files created through [createFile] are owned by the
- * transaction and are therefore deleted by [rollback] and [undo]. Callers are responsible for K2
- * session invalidation after a completed change, rollback, or undo.
+ * transaction and are therefore deleted by [rollback] and [undo]. Files scheduled through
+ * [deleteFile] are deleted at commit and recreated from their snapshot by [rollback] and [undo].
+ * Callers are responsible for K2 session invalidation after a completed change, rollback, or undo.
  *
  * @param openDocument resolves a writable editor document for a file
  * @param writeDocument replaces a document's text; injectable to test rollback deterministically
  * @param saveDocument persists an editor document and releases its NetBeans file lock before a move
+ * @param deleteFileOnDisk removes a file scheduled through [deleteFile]; injectable for tests
  */
 internal class KotlinRefactoringTransaction internal constructor(
     private val openDocument: (FileObject) -> StyledDocument? = ::openEditorDocument,
@@ -46,6 +48,7 @@ internal class KotlinRefactoringTransaction internal constructor(
         folder.lock().use { lock -> folder.rename(lock, name, "") }
         parent.getFileObject(name) ?: error("Folder rename did not produce ${parent.path}/$name")
     },
+    private val deleteFileOnDisk: (FileObject) -> Unit = { file -> file.delete() },
 ) {
 
     /** Identifies a file whose transaction operation could not be completed. */
@@ -82,9 +85,18 @@ internal class KotlinRefactoringTransaction internal constructor(
         var renamedFolder: FileObject? = null,
     )
 
+    private data class DeleteEntry(
+        val originalParent: FileObject,
+        val originalNameExt: String,
+        val originalText: String,
+        var originalFile: FileObject,
+        var deleted: Boolean = false,
+    )
+
     private val entries = linkedMapOf<FileObject, Entry>()
     private val moves = mutableListOf<MoveEntry>()
     private val folderRenames = mutableListOf<FolderRenameEntry>()
+    private val deletions = mutableListOf<DeleteEntry>()
     private val ownedFolders = mutableListOf<FileObject>()
     private var committed = false
     private var movesApplied = false
@@ -222,6 +234,26 @@ internal class KotlinRefactoringTransaction internal constructor(
     }
 
     /**
+     * Schedules [file] for deletion at commit and captures its text for rollback and undo.
+     *
+     * The file is only removed once every staged document has been written and saved, so a failed
+     * commit never loses the original. [rollback] and [undo] recreate the file with the snapshot.
+     * The same file cannot be both modified and deleted by one transaction.
+     *
+     * @param file existing file to delete; must not be a folder
+     */
+    fun deleteFile(file: FileObject) {
+        check(file.isValid) { "Cannot delete invalid file ${file.path}" }
+        check(!file.isFolder) { "Deletion transaction supports files only: ${file.path}" }
+        check(deletions.none { it.originalFile == file }) { "File is already scheduled for deletion: ${file.path}" }
+        check(entries[file] == null) { "Cannot delete a file this transaction also modifies: ${file.path}" }
+        val parent = file.parent ?: error("Cannot delete root file ${file.path}")
+        val document = openDocument(file)
+        val snapshot = document?.getText(0, document.length) ?: file.asText()
+        deletions += DeleteEntry(parent, file.nameExt, snapshot, file)
+    }
+
+    /**
      * Stages the final text for a previously captured or transaction-created [file].
      *
      * @param file transaction participant to change
@@ -296,6 +328,7 @@ internal class KotlinRefactoringTransaction internal constructor(
             entries.values.forEach { entry -> saveDocument(entry.file) }
             applyMoves()
             applyFolderRenames()
+            applyDeletions()
             committed = true
         } catch (error: Throwable) {
             rollback()
@@ -415,6 +448,26 @@ internal class KotlinRefactoringTransaction internal constructor(
         ".nbkotlin-${UUID.randomUUID()}"
     }.first { parent.getFileObject(it) == null }
 
+    /**
+     * Deletes every scheduled file after its document has been saved.
+     *
+     * Runs last so that a failure in a staged write or a physical move still leaves the scheduled
+     * files in place for [rollback] to restore.
+     */
+    private fun applyDeletions() {
+        deletions.forEach { deletion ->
+            if (deletion.deleted) return@forEach
+            val file = deletion.originalFile
+            check(file.isValid) { "Deletion target is invalid: ${file.path}" }
+            try {
+                deleteFileOnDisk(file)
+                deletion.deleted = true
+            } catch (error: Throwable) {
+                throw Failure(file, error)
+            }
+        }
+    }
+
     /** Restores documents before paths, retaining the first cleanup failure. */
     private fun restoreOriginalState() {
         if (restoring) return
@@ -452,6 +505,10 @@ internal class KotlinRefactoringTransaction internal constructor(
             KotlinLogger.INSTANCE.logException("KotlinRefactoringTransaction.reverseFolderRenames failed", error)
             if (failure == null) failure = error
         }
+        restoreDeletions().onFailure { error ->
+            KotlinLogger.INSTANCE.logException("KotlinRefactoringTransaction.restoreDeletions failed", error)
+            if (failure == null) failure = error
+        }
         // FileObject.move() may replace the on-disk content from its own filesystem state after the
         // pre-move editor save. Reapply each original snapshot through the FileObject at its final
         // restored path so Undo persists the package directive, not merely the retained document.
@@ -486,7 +543,10 @@ internal class KotlinRefactoringTransaction internal constructor(
         }
         committed = false
         restoring = false
-        failure?.let { throw Failure(entries.values.firstOrNull()?.file ?: moves.first().originalFile, it) }
+        val failedFile = entries.values.firstOrNull()?.file
+            ?: moves.firstOrNull()?.originalFile
+            ?: deletions.firstOrNull()?.originalFile
+        failure?.let { throw Failure(failedFile ?: error("Refactoring transaction has no participant"), it) }
     }
 
     /** Moves each successfully moved file back to its original parent and name. */
@@ -520,6 +580,34 @@ internal class KotlinRefactoringTransaction internal constructor(
             rename.renamedFolder = renameFolderCaseAware(folder, rename.originalParent, rename.originalName)
         }
         folderRenamesApplied = false
+    }
+
+    /**
+     * Recreates every file deleted at commit from its captured snapshot.
+     *
+     * Runs after folder renames are reversed so the file reappears at its original path, and before
+     * the owned-folder cleanup, which would otherwise find a recreated file in the way. The snapshot
+     * is persisted first because a freshly created file is empty and an editor document opened
+     * afterwards loads exactly that content; when a document is already open it is updated too, so
+     * a later save cannot overwrite the file with an empty buffer.
+     */
+    private fun restoreDeletions(): Result<Unit> = runCatching {
+        deletions.asReversed().forEach { deletion ->
+            if (!deletion.deleted) return@forEach
+            val existing = deletion.originalParent.getFileObject(deletion.originalNameExt)
+            if (existing != null) {
+                check(!existing.isFolder) { "Cannot restore ${existing.path}: a folder took its place." }
+            }
+            val restored = existing ?: deletion.originalParent.createData(deletion.originalNameExt)
+            restored.getOutputStream().use { it.write(deletion.originalText.toByteArray(Charsets.UTF_8)) }
+            val document = runCatching { openDocument(restored) }.getOrNull()
+            if (document != null && document.getText(0, document.length) != deletion.originalText) {
+                writeDocument(restored, document, deletion.originalText)
+                saveDocument(restored)
+            }
+            deletion.originalFile = restored
+            deletion.deleted = false
+        }
     }
 
     /** Produces bounded, one-line diagnostic text without logging full source contents. */

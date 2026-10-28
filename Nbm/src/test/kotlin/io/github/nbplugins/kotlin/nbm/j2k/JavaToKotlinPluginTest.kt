@@ -1,0 +1,168 @@
+/*******************************************************************************
+ * Copyright 2026 nbplugins contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ *******************************************************************************/
+package io.github.nbplugins.kotlin.nbm.j2k
+
+import org.jetbrains.kotlin.refactorings.rename.KotlinRefactoringsFactory
+import org.netbeans.modules.refactoring.api.Problem
+import org.netbeans.junit.NbTestCase
+import org.openide.filesystems.FileObject
+import org.openide.filesystems.FileUtil
+
+/**
+ * Unit tests for the Convert to Kotlin refactoring carrier and plugin.
+ *
+ * These cover the parameter transport and the guard conditions that reject a conversion before
+ * the J2K engine runs. The end-to-end conversion is verified by [Java2KotlinConverterTest] against
+ * a real K2 session.
+ */
+class JavaToKotlinPluginTest : NbTestCase("JavaToKotlinPluginTest") {
+
+    private lateinit var root: FileObject
+
+    override fun setUp() {
+        super.setUp()
+        root = FileUtil.createMemoryFileSystem().root
+    }
+
+    /** The carrier exposes the Java file through its refactoring source and starts with no error. */
+    fun testRefactoringCarrier_exposesJavaFile() {
+        val java = root.createData("Source.java")
+        val refactoring = JavaToKotlinRefactoring(projectStub(), java)
+
+        assertEquals(
+            "the Java file must be the refactoring source",
+            java,
+            refactoring.refactoringSource.lookup(FileObject::class.java),
+        )
+        assertNull("no failure is recorded before the conversion runs", refactoring.failureMessage)
+    }
+
+    /** A failure message set by the element is readable by the caller after the session finishes. */
+    fun testRefactoringCarrier_recordsFailureMessage() {
+        val java = root.createData("Source.java")
+        val refactoring = JavaToKotlinRefactoring(projectStub(), java)
+
+        refactoring.failureMessage = "boom"
+
+        assertEquals("boom", refactoring.failureMessage)
+    }
+
+    /** A missing Kotlin sibling is accepted, so the conversion is allowed to register its element. */
+    fun testPrepare_acceptsConvertibleFile() {
+        val java = root.createData("Source.java")
+
+        assertNull("a convertible file must not produce a problem", plugin(JavaToKotlinRefactoring(projectStub(), java)).validate())
+    }
+
+    /** An existing sibling `.kt` is a fatal problem, so nothing is ever overwritten. */
+    fun testPrepare_rejectsExistingKotlinFile() {
+        val java = root.createData("Source.java")
+        root.createData("Source.kt")
+        val refactoring = JavaToKotlinRefactoring(projectStub(), java)
+
+        val problem = plugin(refactoring).validate()
+
+        assertNotNull("an existing .kt must be rejected", problem)
+        assertTrue("the problem must be fatal", (problem as Problem).isFatal)
+    }
+
+    /** A deleted or non-file target is rejected instead of being converted. */
+    fun testPrepare_rejectsInvalidTarget() {
+        val folder = root.createFolder("Source.java")
+        val refactoring = JavaToKotlinRefactoring(projectStub(), folder)
+
+        val problem = plugin(refactoring).validate()
+
+        assertNotNull("a folder must be rejected", problem)
+        assertTrue("the problem must be fatal", (problem as Problem).isFatal)
+    }
+
+    /** The lifecycle hooks report no problems and the cancel hook performs no work. */
+    fun testPlugin_lifecycleHooks() {
+        val java = root.createData("Source.java")
+        val plugin = JavaToKotlinPlugin(JavaToKotlinRefactoring(projectStub(), java))
+
+        assertNull(plugin.preCheck())
+        assertNull(plugin.fastCheckParameters())
+        assertNull(plugin.checkParameters())
+        plugin.cancelRequest()
+    }
+
+    /** The element points the undo entry at the Java file and has no editor position. */
+    fun testElement_describesItsChange() {
+        val java = root.createData("Source.java")
+        val element = JavaToKotlinElement(JavaToKotlinRefactoring(projectStub(), java))
+
+        assertEquals("Convert to Kotlin", element.text)
+        assertEquals("Convert to Kotlin", element.displayText)
+        assertEquals("the undo entry must point at the Java file", java, element.parentFile)
+        assertEquals(java, element.lookup.lookup(FileObject::class.java))
+        assertNull("the change spans two files, so it has no single position", element.position)
+    }
+
+    /** The shared plugin factory must dispatch this carrier before its Kotlin-document guard. */
+    fun testFactory_createsPluginForJavaCarrier() {
+        val java = root.createData("Source.java")
+        val refactoring = JavaToKotlinRefactoring(projectStub(), java)
+
+        val plugin = KotlinRefactoringsFactory().createInstance(refactoring)
+
+        assertTrue(
+            "Convert to Kotlin must not be rejected by the editor-document applicability guard",
+            plugin is JavaToKotlinPlugin,
+        )
+    }
+
+    /**
+     * A conversion that cannot reach the analysis session must leave no Kotlin file behind and
+     * must keep the Java original, so a failure is never destructive.
+     */
+    fun testPerformChange_failureKeepsJavaAndRemovesKotlin() {
+        val source = "package demo;\n\nclass Source {}\n"
+        val java = root.createData("Source.java")
+        java.getOutputStream().use { it.write(source.toByteArray(Charsets.UTF_8)) }
+        val refactoring = JavaToKotlinRefactoring(projectStub(), java)
+
+        JavaToKotlinElement(refactoring).performChange()
+
+        assertNotNull("the failure must be reported to the caller", refactoring.failureMessage)
+        assertEquals("the Java original must be intact", source, java.asText())
+        assertNull("no Kotlin file may survive a failed conversion", root.getFileObject("Source.kt"))
+    }
+
+    /**
+     * Wraps [refactoring] in the plugin under test.
+     *
+     * @param refactoring carrier the guard conditions are checked against
+     * @return the plugin instance
+     */
+    private fun plugin(refactoring: JavaToKotlinRefactoring): JavaToKotlinPlugin =
+        JavaToKotlinPlugin(refactoring)
+
+    /**
+     * Returns a project placeholder: the tested code paths never dereference it.
+     *
+     * @return a project stub that fails when a conversion actually runs
+     */
+    private fun projectStub(): org.netbeans.api.project.Project =
+        java.lang.reflect.Proxy.newProxyInstance(
+            javaClass.classLoader,
+            arrayOf(org.netbeans.api.project.Project::class.java),
+        ) { _, _, _ ->
+            throw UnsupportedOperationException("project must not be used by the guard paths")
+        } as org.netbeans.api.project.Project
+}

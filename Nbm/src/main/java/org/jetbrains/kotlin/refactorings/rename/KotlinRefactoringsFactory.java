@@ -67,6 +67,8 @@ import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceTypeAliasRefact
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceVariablePlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinIntroduceVariableRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinSafeDeletePlugin;
+import io.github.nbplugins.kotlin.nbm.j2k.JavaToKotlinPlugin;
+import io.github.nbplugins.kotlin.nbm.j2k.JavaToKotlinRefactoring;
 import javax.swing.text.StyledDocument;
 import org.jetbrains.kotlin.utils.ProjectUtils;
 import org.netbeans.modules.refactoring.api.AbstractRefactoring;
@@ -108,6 +110,7 @@ import org.openide.util.lookup.ServiceProvider;
  *   <li>{@link KotlinMoveNestedMemberRefactoring} — delegates to {@link KotlinMoveNestedMemberPlugin}</li>
  *   <li>{@link KotlinMoveFileRefactoring} — delegates to {@link KotlinMoveFilePlugin}</li>
  *   <li>{@link KotlinChangePackageRefactoring} — delegates to {@link KotlinChangePackagePlugin}</li>
+ *   <li>{@link JavaToKotlinRefactoring} — delegates to {@link JavaToKotlinPlugin}</li>
  *   <li>{@link KotlinChangeSignatureRefactoring} — delegates to {@link KotlinChangeSignaturePlugin}</li>
  * </ul>
  */
@@ -130,6 +133,11 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         }
         if (refactoring instanceof KotlinChangePackageRefactoring) {
             return new KotlinChangePackagePlugin((KotlinChangePackageRefactoring) refactoring);
+        }
+        // Convert to Kotlin starts from a Java source file rather than from a Kotlin editor
+        // document, so recognize its typed carrier before the editor-document guard below.
+        if (refactoring instanceof JavaToKotlinRefactoring) {
+            return new JavaToKotlinPlugin((JavaToKotlinRefactoring) refactoring);
         }
         FileObject fo = ProjectUtils.getFileObjectForDocument(
                 refactoring.getRefactoringSource().lookup(StyledDocument.class));
