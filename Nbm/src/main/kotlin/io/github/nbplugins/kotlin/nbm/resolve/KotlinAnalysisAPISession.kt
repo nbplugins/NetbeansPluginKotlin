@@ -217,6 +217,7 @@ class KotlinAnalysisAPISession private constructor(
 
         installPomModel(session)
         installNoOpPsiSearchHelper(session)
+        installNullableNotNullManager(session)
         installKaModuleProvider(session)
         installJ2KConverterExtension()
         installDeepestSuperMethodsSearch()
@@ -288,6 +289,28 @@ class KotlinAnalysisAPISession private constructor(
         if (project.getService(com.intellij.psi.search.PsiSearchHelper::class.java) == null) {
             mock.registerService(com.intellij.psi.search.PsiSearchHelper::class.java, NoOpPsiSearchHelper())
             KotlinLogger.INSTANCE.logInfo("Registered NoOpPsiSearchHelper for project ${project.name}")
+        }
+    }
+
+    /**
+     * Registers a [NullableNotNullManagerImpl] on the session's project.
+     *
+     * The abstract `NullableNotNullManager` ships inside the repacked `kotlin-compiler` JAR, but
+     * no implementation is published in any bundled platform artifact. Its static helpers
+     * (`getNullability`, `isNullable`, `isNotNull`) resolve the service through
+     * `project.getService(...)`, so without a registered implementation every call failed and the
+     * J2K engine lost annotation-based nullability inference (the failure was swallowed inside
+     * `DataflowResult`'s nullability collection).
+     */
+    private fun installNullableNotNullManager(session: StandaloneAnalysisAPISession) {
+        val project = session.project
+        val mock = project as? com.intellij.mock.MockComponentManager ?: return
+        if (project.getService(com.intellij.codeInsight.NullableNotNullManager::class.java) == null) {
+            mock.registerService(
+                com.intellij.codeInsight.NullableNotNullManager::class.java,
+                com.intellij.codeInsight.NullableNotNullManagerImpl(project),
+            )
+            KotlinLogger.INSTANCE.logInfo("Registered NullableNotNullManagerImpl for project ${project.name}")
         }
     }
 
