@@ -172,7 +172,6 @@ object Java2KotlinConverter {
         }
 
         val kotlinText = withImports(elementResult.text, elementResult.importsToAdd)
-        println("J2KRAW: $kotlinText")
         // The `.kt` still holds the empty seed on disk, so a NetBeans parser task that runs while
         // the post-processing works would overwrite the transplanted PSI with empty content — the
         // confidence of the "Classifier was found in KtFile but was not found in FirFile" failure.

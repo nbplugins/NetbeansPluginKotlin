@@ -995,6 +995,18 @@ class KotlinAnalysisAPISession private constructor(
     }
 
     /**
+     * `true` while at least one file's content is frozen by [freezeFileContent].
+     *
+     * The Java-to-Kotlin converter is the only caller of [freezeFileContent], so this marks a
+     * conversion in progress. [NoOpPomModel] uses it to decide whether a PSI transaction needs the
+     * synchronous analysis-cache drop: inside a conversion the PSI is edited by hand and resolved
+     * again immediately, while an ordinary refactoring must keep its caches until the platform
+     * commits the documents.
+     */
+    val hasFrozenContent: Boolean
+        get() = frozenPaths.isNotEmpty()
+
+    /**
      * Prevents [updateFileContent] from touching [path] until [unfreezeFileContent] is called.
      *
      * Needed when an operation builds PSI for a file by hand and analyses it afterwards: the file

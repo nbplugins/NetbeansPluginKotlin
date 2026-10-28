@@ -299,6 +299,25 @@ class KotlinAnalysisAPISessionTest : KotlinTestCase("K2 Analysis API session", "
     }
 
     /**
+     * Verifies that [KotlinAnalysisAPISession.hasFrozenContent] reflects the freeze state.
+     *
+     * [NoOpPomModel] relies on it to decide whether a PSI transaction belongs to a Java to Kotlin
+     * conversion and therefore needs a synchronous analysis-cache drop.
+     */
+    fun testHasFrozenContent_reflectsFreezeState() {
+        val wrapper = KotlinAnalysisAPISession.getSession(project)
+        assertFalse("nothing is frozen initially", wrapper.hasFrozenContent)
+
+        wrapper.freezeFileContent("/tmp/frozen-state.kt")
+        try {
+            assertTrue("a frozen path must be reported", wrapper.hasFrozenContent)
+        } finally {
+            wrapper.unfreezeFileContent("/tmp/frozen-state.kt")
+        }
+        assertFalse("the state must return to unfrozen", wrapper.hasFrozenContent)
+    }
+
+    /**
      * Verifies that the caller that froze a path can still install its own content through
      * [KotlinAnalysisAPISession.updateFrozenFileContent].
      *

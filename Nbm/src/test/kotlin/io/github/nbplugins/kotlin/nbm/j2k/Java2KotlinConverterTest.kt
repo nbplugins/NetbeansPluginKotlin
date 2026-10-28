@@ -17,7 +17,6 @@ package io.github.nbplugins.kotlin.nbm.j2k
 
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import java.nio.file.Path
-import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.name.FqName
 import org.openide.filesystems.FileObject
 import org.openide.filesystems.FileUtil
@@ -29,8 +28,8 @@ import utils.KotlinTestCase
  * The end-to-end cases run the real IDEA K2 J2K engine over the fixtures in
  * `projForTest/src/j2k` and compare the result with the `.after` companion file. The comparison
  * is whitespace-normalised because the K2 formatter's output need not be byte-identical to the
- * `.after` files, which were produced by the old K1 converter; the structural content (modifiers,
- * `object` vs `class`, property syntax, imports) must match exactly.
+ * checked-in `.after` files; the structural content (modifiers, `object` vs `class`, property
+ * syntax, imports) must match exactly.
  */
 class Java2KotlinConverterTest : KotlinTestCase("J2K converter test", "j2k") {
 
@@ -104,78 +103,24 @@ class Java2KotlinConverterTest : KotlinTestCase("J2K converter test", "j2k") {
     /** Converts an interface. */
     fun testInterface() = doTest("interface")
 
-    /** Annotations on the class and on a method survive the conversion. */
-    fun testWithAnnotations() {
-        val actual = convert("annotated") ?: return
-        println("=== annotated.kt ===\n$actual\n=== end annotated.kt ===")
-        assertTrue("class annotation lost: $actual", actual.contains("JsonNaming"))
-        assertTrue("method annotation lost: $actual", actual.contains("JsonIgnore"))
-    }
+    /**
+     * Annotations on the class survive, and an annotation on a getter moves to the property's
+     * `@get:` use site.
+     */
+    fun testWithAnnotations() = doTest("annotated")
 
     /** A getter/setter pair becomes a Kotlin property. */
-    fun testProperties() {
-        val actual = convert("properties") ?: return
-        println("=== properties.kt ===\n$actual\n=== end properties.kt ===")
-        assertTrue("property not formed: $actual", actual.contains("var name"))
-    }
+    fun testProperties() = doTest("properties")
 
-    /** The same shapes without annotations isolate the annotation handling. */
-    fun testAbstractWithoutAnnotations() {
-        val actual = convert("abstractNoAnn") ?: return
-        println("=== abstractNoAnn.kt ===\n$actual\n=== end abstractNoAnn.kt ===")
-        assertTrue("property not formed: $actual", actual.contains("primaryKey"))
-    }
+    /** An abstract getter becomes an abstract `val`, without annotations in the way. */
+    fun testAbstractWithoutAnnotations() = doTest("abstractNoAnn")
 
-    /** Two properties where one has no setter. */
-    fun testTwoGetters() {
-        val actual = convert("twoGetters") ?: return
-        println("=== twoGetters.kt ===\n$actual\n=== end twoGetters.kt ===")
-        assertTrue("property not formed: $actual", actual.contains("ballast"))
-    }
-
-    /** Diagnostic: does the produced setter of `properties.kt` count as redundant when re-parsed? */
-    fun testDiagnoseRedundantSetter() {
-        val actual = convert("properties") ?: return
-        val stdlib = findStdlibJarOrNull() ?: return
-        val kotlinFileObject = FileUtil.createData(dir, "diagnose.kt")
-        val session = KotlinAnalysisAPISession.createWithJars(
-            moduleName = project.projectDirectory.name,
-            binaryJars = listOf(stdlib),
-            sourceRoots = listOf(FileUtil.toFile(dir).toPath()),
-        )
-        try {
-            session.freezeFileContent(kotlinFileObject.path)
-            try {
-                session.updateFrozenFileContent(kotlinFileObject.path, actual)
-                val ktFile = session.getKtFileForPath(kotlinFileObject.path)!!
-                for (klass in ktFile.declarations.filterIsInstance<org.jetbrains.kotlin.psi.KtClass>()) {
-                    for (property in klass.declarations.filterIsInstance<org.jetbrains.kotlin.psi.KtProperty>()) {
-                        for (accessor in listOfNotNull(property.getter, property.setter)) {
-                            val body = accessor.bodyExpression
-                            val statements = (body as? org.jetbrains.kotlin.psi.KtBlockExpression)?.statements
-                            val right = (statements?.singleOrNull() as? org.jetbrains.kotlin.psi.KtBinaryExpression)?.right
-                            val parameter = accessor.parameterList?.parameters?.singleOrNull()
-                            val redundant = statements?.size == 1 &&
-                                right?.mainReference?.resolve() == parameter
-                            println(
-                                "DIAG property=${property.name} accessor=${accessor.text.replace("\n", "\\n")} " +
-                                    "isSetter=${accessor.isSetter} statements=${statements?.size} " +
-                                    "right=${right?.text} rightRef=${right?.mainReference} " +
-                                    "resolved=${right?.mainReference?.resolve()} " +
-                                    "param=$parameter " +
-                                    "redundant=$redundant",
-                            )
-                        }
-                    }
-                }
-            } finally {
-                runCatching { session.unfreezeFileContent(kotlinFileObject.path) }
-            }
-        } finally {
-            runCatching { kotlinFileObject.delete() }
-            KotlinAnalysisAPISession.invalidate(project)
-        }
-    }
+    /**
+     * A getter whose name differs from the backing field renames the merged property, and the
+     * accessors of the field collapse into it. The duplicate setter left behind by a stale
+     * analysis would show up as a dangling `set` block in the result.
+     */
+    fun testTwoGetters() = doTest("twoGetters")
 
     /** The import block is inserted after the package directive, sorted. */
     fun testWithImportsAfterPackage() {

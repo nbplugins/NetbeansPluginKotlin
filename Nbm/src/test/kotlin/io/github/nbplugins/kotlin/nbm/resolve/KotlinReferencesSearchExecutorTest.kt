@@ -16,6 +16,7 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.resolve
 
+import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.LocalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 import java.nio.file.Path
@@ -88,8 +89,8 @@ class KotlinReferencesSearchExecutorTest : KotlinTestCase("Kotlin references sea
     }
 
     /**
-     * Verifies that a genuinely global scope is not answered: it has no index in a standalone
-     * session, and serving it would need a search over every source file for every query.
+     * Verifies that a global scope is not answered: it has no index in a standalone session, and
+     * serving it would need a search over every source file for every query.
      */
     fun testGlobalScopeIsNotSearched() {
         val topLevelSource = """
@@ -101,7 +102,8 @@ class KotlinReferencesSearchExecutorTest : KotlinTestCase("Kotlin references sea
         """.trimIndent()
         withSource(topLevelSource) { _, ktFile ->
             val property = ktFile.declarations.filterIsInstance<KtProperty>().single()
-            val references = ReferencesSearch.search(property).findAll()
+            val globalScope = GlobalSearchScope.allScope(ktFile.project)
+            val references = ReferencesSearch.search(property, globalScope, true).findAll()
             assertTrue("global search must stay empty: $references", references.isEmpty())
         }
     }
@@ -154,201 +156,48 @@ class KotlinReferencesSearchExecutorTest : KotlinTestCase("Kotlin references sea
      *
      * The J2K post-processing builds new declarations with `KtPsiFactory` and then analyses them;
      * if the analysis kept serving a snapshot of the pre-edit file, every resolution of the new
-     * nodes would come back empty.
+     * nodes would come back empty. The test freezes the file around the edit, exactly as the
+     * converter does: that is the signal [NoOpPomModel] uses to drop the analysis caches after a
+     * transaction.
      */
-    fun testResolvesReferenceCreatedByPsiEdit() = withProperty { _, ktFile, _ ->
-        val ktClass = ktFile.declarations.filterIsInstance<KtClass>().single()
-        val newFunction = KtPsiFactory(ktFile.project)
-            .createFunction("fun g(param: Int): Int { return param }")
-        val added = ktClass.addDeclaration(newFunction) as KtNamedFunction
-        val parameter = added.valueParameters.single()
-        val statement = added.bodyBlockExpression?.statements?.singleOrNull() as? KtReturnExpression
-        val reference = statement?.returnedExpression as? KtNameReferenceExpression
-        assertNotNull("the edited function must contain a return statement", reference)
-        val resolved = reference!!.mainReference?.resolve()
-        println("EDITRESOLVE resolved=$resolved parameter=$parameter")
-        assertEquals("a reference added by PSI edit must resolve", parameter, resolved)
-    }
-
-    /**
-     * Diagnostic: replicates the J2K accessor construction (body moved into a synthetic setter
-     * created by [KtPsiFactory]) and checks whether the moved reference still resolves.
-     */
-    fun testMovedBodyResolution() {
-        val movedSource = """
-            package j2k
-
-            class MovedBody {
-                private var name: String? = null
-
-                fun setName(name: String?) {
-                    this.name = name
-                }
-            }
-        """.trimIndent()
-        withSource(movedSource) { _, ktFile ->
-            val klass = ktFile.declarations.filterIsInstance<KtClass>().single()
-            val property = klass.declarations.filterIsInstance<KtProperty>().single()
-            val function = klass.declarations.filterIsInstance<KtNamedFunction>().single { it.name == "setName" }
-            org.jetbrains.kotlin.analysis.api.analyze(ktFile) { println("MOVED analysis ok") }
-            val body = function.bodyBlockExpression!!
-            val factory = KtPsiFactory(ktFile.project)
-            val synthetic = factory.createProperty("val y get() = 1\n set(name) {\n field = name\n }")
-            val setter = synthetic.setter!!
-            setter.bodyExpression?.replace(body)
-            property.add(factory.createNewLine(1))
-            val attached = property.add(setter) as org.jetbrains.kotlin.psi.KtPropertyAccessor
-            println("MOVED before-delete resolved=${runCatching { (attached.bodyExpression as? KtBlockExpression)?.let { b -> ((b.statements.singleOrNull() as? KtBinaryExpression)?.right)?.mainReference?.resolve() } }}")
-            function.delete()
-            val statements = (attached.bodyExpression as? KtBlockExpression)?.statements
-            println("MOVED statements=${statements?.size} text=${attached.text.replace("\n", " ")}")
-            val binary = statements?.singleOrNull() as? KtBinaryExpression
-            val right = binary?.right as? KtNameReferenceExpression
-            println(
-                "MOVED right=${right?.text} resolved=${runCatching { right?.mainReference?.resolve() }} " +
-                    "param=${attached.parameterList?.parameters?.singleOrNull()}",
-            )
+    fun testResolvesReferenceCreatedByPsiEdit() = withProperty { session, ktFile, _ ->
+        val path = ktFile.virtualFile.path
+        session.freezeFileContent(path)
+        try {
+            val ktClass = ktFile.declarations.filterIsInstance<KtClass>().single()
+            val newFunction = KtPsiFactory(ktFile.project)
+                .createFunction("fun g(param: Int): Int { return param }")
+            val added = ktClass.addDeclaration(newFunction) as KtNamedFunction
+            val parameter = added.valueParameters.single()
+            val statement = added.bodyBlockExpression?.statements?.singleOrNull() as? KtReturnExpression
+            val reference = statement?.returnedExpression as? KtNameReferenceExpression
+            assertNotNull("the edited function must contain a return statement", reference)
+            assertEquals("a reference added by PSI edit must resolve", parameter, reference!!.mainReference?.resolve())
+        } finally {
+            session.unfreezeFileContent(path)
         }
     }
 
     /**
-     * Diagnostic: does resolution work inside a write action, as it must while the J2K
-     * post-processing applies its changes?
+     * Verifies that an edit made *after* the file has already been analysed also invalidates the
+     * analysis — the sequence the J2K post-processing performs on a file it has just converted.
      */
-    fun testResolveInsideWriteAction() {
-        val withSetter = """
-            package j2k
-
-            class WithSetter3 {
-                var name: String? = null
-                    set(value) {
-                        field = value
-                    }
-            }
-        """.trimIndent()
-        withSource(withSetter) { _, ktFile ->
-            val property = ktFile.declarations.filterIsInstance<KtClass>().single()
-                .declarations.filterIsInstance<KtProperty>().single()
-            val setter = property.setter!!
-            val body = setter.bodyExpression as? KtBlockExpression
-            val right = (body?.statements?.singleOrNull() as? KtBinaryExpression)?.right!!
-            val outside = runCatching { right.mainReference?.resolve() }
-            val inside = runCatching {
-                com.intellij.openapi.application.ApplicationManager.getApplication()
-                    .runWriteAction<Any?> { right.mainReference?.resolve() }
-            }
-            println("WRITE outside=$outside inside=$inside")
+    fun testResolveAfterAnalysisThenEdit() = withProperty { session, ktFile, property ->
+        val path = ktFile.virtualFile.path
+        session.freezeFileContent(path)
+        try {
+            org.jetbrains.kotlin.analysis.api.analyze(ktFile) { property.symbol }
+            val ktClass = ktFile.declarations.filterIsInstance<KtClass>().single()
+            val added = ktClass.addDeclaration(
+                KtPsiFactory(ktFile.project).createFunction("fun g2(param: Int): Int { return param }"),
+            ) as KtNamedFunction
+            val parameter = added.valueParameters.single()
+            val right = ((added.bodyBlockExpression?.statements?.singleOrNull() as? KtReturnExpression)
+                ?.returnedExpression) as KtNameReferenceExpression
+            assertEquals("the reference must resolve against the re-analysed file", parameter, right.mainReference?.resolve())
+        } finally {
+            session.unfreezeFileContent(path)
         }
-    }
-
-    /**
-     * Diagnostic: does resolution work on the EDT (where the J2K post-processing applies changes)?
-     */
-    fun testResolveOnEdt() {
-        val withSetter = """
-            package j2k
-
-            class WithSetter5 {
-                var name: String? = null
-                    set(value) {
-                        field = value
-                    }
-            }
-        """.trimIndent()
-        withSource(withSetter) { _, ktFile ->
-            val property = ktFile.declarations.filterIsInstance<KtClass>().single()
-                .declarations.filterIsInstance<KtProperty>().single()
-            val body = property.setter!!.bodyExpression as? KtBlockExpression
-            val right = (body?.statements?.singleOrNull() as? KtBinaryExpression)?.right!!
-            var onEdt: Any? = null
-            var onEdtWithWrite: Any? = null
-            javax.swing.SwingUtilities.invokeAndWait {
-                onEdt = runCatching { right.mainReference?.resolve() }
-                onEdtWithWrite = runCatching {
-                    com.intellij.openapi.application.ApplicationManager.getApplication()
-                        .runWriteAction<Any?> { right.mainReference?.resolve() }
-                }
-            }
-            println("EDT plain=$onEdt write=$onEdtWithWrite")
-        }
-    }
-
-    /**
-     * Diagnostic: resolution inside `forbidAnalysis` on a cold session (no prior analysis).
-     */
-    fun testResolveUnderForbidAnalysisCold() {
-        val withSetter = """
-            package j2k
-
-            class WithSetter4 {
-                var name: String? = null
-                    set(value) {
-                        field = value
-                    }
-            }
-        """.trimIndent()
-        withSource(withSetter) { session, ktFile ->
-            val property = ktFile.declarations.filterIsInstance<KtClass>().single()
-                .declarations.filterIsInstance<KtProperty>().single()
-            val body = property.setter!!.bodyExpression as? KtBlockExpression
-            val right = (body?.statements?.singleOrNull() as? KtBinaryExpression)?.right!!
-            val inside = org.jetbrains.kotlin.analysis.api.permissions.forbidAnalysis("diag") {
-                runCatching { right.mainReference?.resolve() }
-            }
-            println("COLD inside=$inside")
-            val after = runCatching { right.mainReference?.resolve() }
-            println("COLD after=$after")
-            session.invalidateAnalysisCaches("diag")
-            val afterInvalidate = runCatching { right.mainReference?.resolve() }
-            println("COLD afterInvalidate=$afterInvalidate")
-        }
-    }
-
-    /**
-     * Diagnostic: does resolution work while analysis is explicitly forbidden, as the J2K
-     * post-processing does while it applies its changes?
-     */
-    fun testResolveUnderForbidAnalysis() {
-        val withSetter = """
-            package j2k
-
-            class WithSetter2 {
-                var name: String? = null
-                    set(value) {
-                        field = value
-                    }
-            }
-        """.trimIndent()
-        withSource(withSetter) { _, ktFile ->
-            val property = ktFile.declarations.filterIsInstance<KtClass>().single()
-                .declarations.filterIsInstance<KtProperty>().single()
-            val setter = property.setter!!
-            val body = setter.bodyExpression as? KtBlockExpression
-            val right = (body?.statements?.singleOrNull() as? KtBinaryExpression)?.right!!
-            val outside = runCatching { right.mainReference?.resolve() }
-            val inside = org.jetbrains.kotlin.analysis.api.permissions.forbidAnalysis("diag") {
-                runCatching { right.mainReference?.resolve() }
-            }
-            println("FORBID outside=$outside inside=$inside")
-        }
-    }
-
-    /**
-     * Diagnostic: does a reference added after the file has already been analysed still resolve?
-     */
-    fun testResolveAfterAnalysisThenEdit() = withProperty { _, ktFile, property ->
-        org.jetbrains.kotlin.analysis.api.analyze(ktFile) {
-            println("PRE-ANALYSIS name=${property.name} symbol=${property.symbol}")
-        }
-        val ktClass = ktFile.declarations.filterIsInstance<KtClass>().single()
-        val added = ktClass.addDeclaration(
-            KtPsiFactory(ktFile.project).createFunction("fun g2(param: Int): Int { return param }"),
-        ) as KtNamedFunction
-        val parameter = added.valueParameters.single()
-        val right = ((added.bodyBlockExpression?.statements?.singleOrNull() as? KtReturnExpression)
-            ?.returnedExpression) as KtNameReferenceExpression
-        val resolved = runCatching { right.mainReference?.resolve() }
-        println("STALE resolved=$resolved parameter=$parameter")
     }
 
     /**
@@ -372,13 +221,11 @@ class KotlinReferencesSearchExecutorTest : KotlinTestCase("Kotlin references sea
                 .declarations.filterIsInstance<KtProperty>().single()
             val setter = property.setter
             assertNotNull("the setter must be parsed", setter)
-            val parameter = setter!!.valueParameters.single()
+            val parameter = setter!!.parameterList!!.parameters.single()
             val body = setter.bodyExpression as? KtBlockExpression
             val right = (body?.statements?.singleOrNull() as? KtBinaryExpression)?.right
             assertNotNull("the setter body must be `field = value`", right)
-            val resolved = right!!.mainReference?.resolve()
-            println("RESOLVE right=${right.text} resolved=$resolved parameter=$parameter same=${resolved == parameter}")
-            assertEquals("the setter parameter reference must resolve to its parameter", parameter, resolved)
+            assertEquals("the setter parameter reference must resolve to its parameter", parameter, right!!.mainReference?.resolve())
         }
     }
 

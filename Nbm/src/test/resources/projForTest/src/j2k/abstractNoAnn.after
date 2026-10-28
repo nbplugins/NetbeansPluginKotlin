@@ -1,0 +1,7 @@
+package j2k
+
+abstract class AbstractNoAnn {
+    var concreteName: String? = null
+
+    abstract val primaryKey: Array<String?>?
+}
