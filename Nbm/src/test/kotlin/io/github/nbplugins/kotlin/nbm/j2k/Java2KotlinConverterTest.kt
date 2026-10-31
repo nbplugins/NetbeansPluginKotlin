@@ -129,6 +129,25 @@ class Java2KotlinConverterTest : KotlinTestCase("J2K converter test", "j2k") {
         assertEquals("package a.b\n\nimport a.A\nimport z.Z\n\nclass C\n", actual)
     }
 
+    /**
+     * A header comment before the package directive must not hide it.
+     *
+     * The engine keeps the license header above the package; treating the directive as absent
+     * would prepend the imports above the header and produce invalid Kotlin.
+     */
+    fun testWithImportsAfterHeaderComment() {
+        val text = "/*\n * License\n */\npackage a.b\n\nclass C\n"
+        val actual = Java2KotlinConverter.withImports(text, setOf(FqName("a.A")))
+        assertEquals("/*\n * License\n */\npackage a.b\n\nimport a.A\n\nclass C\n", actual)
+    }
+
+    /** A file whose last line is the package directive still gets the imports after it. */
+    fun testWithImportsAfterPackageWithoutTrailingNewline() {
+        val text = "package a.b"
+        val actual = Java2KotlinConverter.withImports(text, setOf(FqName("a.A")))
+        assertEquals("package a.b\n\nimport a.A\n\n", actual)
+    }
+
     /** Without a package directive the import block goes to the very top. */
     fun testWithImportsWithoutPackage() {
         val text = "class C\n"

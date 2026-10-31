@@ -284,7 +284,8 @@ object Java2KotlinConverter {
      * The engine returns the package directive and the declarations in [text] and keeps imports
      * in [imports] separately (its IDE entry point adds them to the physical file afterwards).
      *
-     * @param text the converted file text, possibly starting with a `package` directive
+     * @param text the converted file text, possibly preceded by a header comment and a `package`
+     * directive
      * @param imports fully-qualified names to import
      * @return the file text with an import block inserted after the package directive
      */
@@ -297,15 +298,26 @@ object Java2KotlinConverter {
         val packageLine = PACKAGE_LINE.find(text)
         return if (packageLine != null) {
             val insertAt = packageLine.range.last + 1
-            text.substring(0, insertAt) + "\n" + importBlock + "\n\n" +
-                text.substring(insertAt).trimStart('\n')
+            val head = text.substring(0, insertAt)
+            val rest = text.substring(insertAt).trimStart('\n')
+            // A directive at the end of the file has no line break yet; keep one blank line
+            // between the package and the imports in both cases.
+            val separator = if (head.endsWith("\n")) "\n" else "\n\n"
+            head + separator + importBlock + "\n\n" + rest
         } else {
             importBlock + "\n\n" + text
         }
     }
 
-    /** Matches the package directive line, including its line break. */
-    private val PACKAGE_LINE = Regex("^package[ \\t]+[^\\r\\n]+\\r?\\n")
+    /**
+     * Matches the package directive line, including its line break.
+     *
+     * `(?m)` makes `^` match at every line start, so a license or file header comment before the
+     * directive does not hide it; without that flag the imports were prepended above the package
+     * and produced invalid Kotlin. The trailing line break is optional, so a file whose last line
+     * is the directive is still recognised.
+     */
+    private val PACKAGE_LINE = Regex("(?m)^package[ \\t]+[^\\r\\n]+(?:\\r?\\n|$)")
 
     /**
      * Shows an error dialog without blocking the caller.

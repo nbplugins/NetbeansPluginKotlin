@@ -223,13 +223,22 @@ class JavaToKotlinElement(
         }
     }
 
-    /** Saves [javaFile] so the analysis session reads the text the user currently sees. */
+    /**
+     * Saves [javaFile] so the analysis session reads the text the user currently sees.
+     *
+     * The session discovers its sources from disk, so an unsaved editor buffer would be
+     * converted in its older saved state and then deleted together with the Java original.
+     * A save failure therefore propagates to [performChange]'s failure handler, which aborts the
+     * conversion, instead of being swallowed.
+     *
+     * @param javaFile the Java source that is about to be converted and removed
+     * @throws java.io.IOException when the editor buffer could not be written
+     */
     private fun saveJavaFile(javaFile: FileObject) {
-        runCatching {
-            DataObject.find(javaFile).lookup.lookup(SaveCookie::class.java)?.save()
-        }.onFailure { error ->
-            KotlinLogger.INSTANCE.logException("JavaToKotlinElement: could not save ${javaFile.path}", error)
-        }
+        // A file without a DataObject cannot have an editor buffer attached, so there is nothing
+        // to save; only a failed save of an existing buffer must abort the conversion.
+        val dataObject = runCatching { DataObject.find(javaFile) }.getOrNull() ?: return
+        dataObject.lookup.lookup(SaveCookie::class.java)?.save()
     }
 
     /** Opens [kotlinFile] in the editor so the converted source is visible after conversion. */
