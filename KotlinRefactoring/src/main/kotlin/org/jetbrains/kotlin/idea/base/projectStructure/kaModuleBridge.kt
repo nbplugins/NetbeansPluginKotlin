@@ -26,6 +26,8 @@ import org.jetbrains.kotlin.analysis.api.permissions.KaAllowAnalysisOnEdt
 import org.jetbrains.kotlin.analysis.api.permissions.allowAnalysisFromWriteAction
 import org.jetbrains.kotlin.analysis.api.permissions.allowAnalysisOnEdt
 import org.jetbrains.kotlin.analysis.api.projectStructure.KaModule
+import org.jetbrains.kotlin.analysis.api.projectStructure.KaModuleProvider
+import org.jetbrains.kotlin.analysis.api.projectStructure.KaSourceModule
 import org.jetbrains.kotlin.psi.KtElement
 
 /**
@@ -60,3 +62,19 @@ fun <T : KaModule> PsiElement.getKaModuleOfTypeSafe(project: Project, useSiteMod
 
 fun PsiElement.getKaModule(project: Project, useSiteModule: KaModule?): KaModule =
     kaModuleOf(this) ?: error("Could not resolve KaModule for $this")
+
+/**
+ * Returns the [KaSourceModule] this [Module]'s code belongs to, falling back to the module that
+ * resolved [element].
+ *
+ * IDEA's original asks [KaModuleProvider] for the module of [element] and otherwise builds a
+ * "production" source module for the [Module]. In the standalone session there is exactly one
+ * source module, so the provider answer is authoritative and the fallback is [kaModuleOf].
+ *
+ * @param element the element whose source module is being asked for.
+ * @return the source module, or `null` when neither lookup succeeds.
+ */
+fun Module.toKaSourceModuleWithElementSourceModuleKindOrProduction(element: PsiElement): KaSourceModule? =
+    runCatching {
+        KaModuleProvider.getInstance(project).getModule(element, null) as? KaSourceModule
+    }.getOrNull() ?: kaModuleOf(element) as? KaSourceModule

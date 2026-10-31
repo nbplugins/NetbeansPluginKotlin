@@ -1,0 +1,503 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.github.nbplugins</groupId>
+    <artifactId>netbeans-plugin-kotlin</artifactId>
+    <version>0.12.12-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+  <artifactId>netbeans-plugin-kotlin-j2k</artifactId>
+  <packaging>jar</packaging>
+  <name>Netbeans Plugin Kotlin J2K</name>
+  <description>
+    Java-to-Kotlin conversion engine compiled from submodules/IntellijCommunity
+    (plugins/kotlin/j2k/shared and plugins/kotlin/j2k/k2), plus the small set of
+    IntelliJ sources it needs and standalone stubs for IDE-only subsystems.
+    Contains no NetBeans APIs: the Nbm module drives it through
+    NewJavaToKotlinConverter and K2J2KPostProcessor.
+  </description>
+
+  <build>
+    <!--
+      Sources are assembled from several submodule directories and the local src/main/kotlin
+      into target/generated-sources/j2k, so gmavenplus patches can modify copies without
+      dirtying the git submodule and kotlin-maven-plugin compiles from one sourceDirectory.
+    -->
+    <sourceDirectory>${project.build.directory}/generated-sources/j2k</sourceDirectory>
+
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <executions>
+
+          <!-- j2k/shared: converter core (Java PSI -> JK tree -> Kotlin text). -->
+          <execution>
+            <id>copy-j2k-shared</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/j2k</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/j2k/shared/src</directory>
+                  <filtering>false</filtering>
+                  <excludes>
+                    <!-- IDE copy/paste entry points: they need PsiShortNamesCache, KotlinEditorOptions,
+                         CopyPastePostProcessor and Swing dialogs, and nothing on the conversion path
+                         uses them. -->
+                    <exclude>org/jetbrains/kotlin/j2k/copyPaste/**</exclude>
+                    <!-- Pulls the whole "configuration" module (KotlinProjectConfigurator,
+                         getAbleToRunConfigurators, withBackgroundProgress). Only the two open
+                         J2kConverterExtension methods referenced it; patch #2 drops them. -->
+                    <exclude>org/jetbrains/kotlin/j2k/J2KKotlinConfigurationHelper.kt</exclude>
+                  </excludes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- j2k/k2: K2 pre-processing, post-processing and the K2 converter extension. -->
+          <execution>
+            <id>copy-j2k-k2</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/j2k</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/j2k/k2/src</directory>
+                  <filtering>false</filtering>
+                  <excludes>
+                    <exclude>org/jetbrains/kotlin/j2k/k2/copyPaste/**</exclude>
+                  </excludes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- Single IDEA sources the converter references but that live outside j2k/. -->
+          <execution>
+            <id>copy-j2k-support-sources</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/j2k</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <!-- DocCommentConverter interface + PsiDocTag.content() -->
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/frontend-independent/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/j2k/DocCommentConverter.kt</include>
+                  </includes>
+                </resource>
+                <!-- PsiFile.commitAndUnblockDocument() -->
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/utils/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/DocumentUtils.kt</include>
+                  </includes>
+                </resource>
+                <!-- KotlinPsiHeuristics.findAnnotation / annotation-replacement helpers,
+                     userDataCached() used by KotlinPsiHeuristics -->
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/base/psi/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/base/psi/KotlinPsiHeuristics.kt</include>
+                    <include>org/jetbrains/kotlin/idea/base/psi/KotlinUserDataUtils.kt</include>
+                    <!-- containingKotlinFileStub, used by KotlinPsiHeuristics -->
+                    <include>org/jetbrains/kotlin/idea/base/psi/KotlinStubUtils.kt</include>
+                  </includes>
+                </resource>
+                <!-- setVisibility() used by K2ConvertGettersAndSettersToPropertyProcessing -->
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/utils/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/utils/visibilityUtil.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- Local standalone stubs and patched replacements. -->
+          <execution>
+            <id>copy-local-sources</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/j2k</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/src/main/kotlin</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- Message bundles (KotlinNJ2KBundle / KotlinJ2KK2Bundle). -->
+          <execution>
+            <id>copy-j2k-messages</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-resources/j2k</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/j2k/shared/resources</directory>
+                  <filtering>false</filtering>
+                </resource>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/j2k/k2/resources</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>add-generated-sources</id>
+            <phase>generate-sources</phase>
+            <goals><goal>add-source</goal></goals>
+            <configuration>
+              <sources>
+                <source>${project.build.directory}/generated-sources/j2k</source>
+              </sources>
+            </configuration>
+          </execution>
+          <execution>
+            <id>add-generated-resources</id>
+            <phase>generate-sources</phase>
+            <goals><goal>add-resource</goal></goals>
+            <configuration>
+              <resources>
+                <resource>
+                  <directory>${project.build.directory}/generated-resources/j2k</directory>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
+        Patches in the copied submodule sources:
+        1. K2J2KPostProcessor: `internal` -> public so the Nbm adapter can drive the post-processing.
+        2. J2kConverterExtension: drop the copy/paste abstract members (their types are not copied)
+           and the two open methods that needed J2KKotlinConfigurationHelper.
+        3. K2J2KConverterExtension: drop the copy/paste overrides that implemented them.
+      -->
+      <plugin>
+        <groupId>org.codehaus.gmavenplus</groupId>
+        <artifactId>gmavenplus-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>patch-j2k-sources</id>
+            <phase>generate-sources</phase>
+            <goals><goal>execute</goal></goals>
+            <configuration>
+              <scripts>
+                <script><![CDATA[
+import java.nio.file.*
+
+def srcDir = new File(project.build.directory, 'generated-sources/j2k')
+
+// 1. K2J2KPostProcessor: internal -> public.
+def postProcessor = new File(srcDir, 'org/jetbrains/kotlin/j2k/k2/K2J2KPostProcessor.kt')
+if (postProcessor.exists()) {
+  def text = postProcessor.text
+  text = text.replace('internal class K2J2KPostProcessor : PostProcessor {',
+                      'class K2J2KPostProcessor : PostProcessor {')
+  postProcessor.text = text
+  log.info("Patched K2J2KPostProcessor.kt: widened to public")
+} else {
+  log.warn("patch target not found: K2J2KPostProcessor.kt")
+}
+
+// 2. J2kConverterExtension: drop copy/paste abstract members and configuration-helper methods.
+def extensionFile = new File(srcDir, 'org/jetbrains/kotlin/j2k/J2kConverterExtension.kt')
+if (extensionFile.exists()) {
+  def text = extensionFile.text
+  text = text.replace('import com.intellij.openapi.editor.Editor\n', '')
+  text = text.replace('import org.jetbrains.kotlin.j2k.copyPaste.ConversionData\n', '')
+  text = text.replace('import org.jetbrains.kotlin.j2k.copyPaste.J2KCopyPasteConverter\n', '')
+  text = text.replace('import org.jetbrains.kotlin.j2k.copyPaste.PlainTextPasteImportResolver\n', '')
+  text = text.replace('import org.jetbrains.kotlin.j2k.copyPaste.TargetData\n', '')
+  text = text.replace('''    open fun doCheckBeforeConversion(project: Project, module: Module): Boolean =
+        J2KKotlinConfigurationHelper.checkKotlinIsConfigured(module)
+
+    open fun setUpAndConvert(
+        project: Project,
+        module: Module,
+        javaFiles: List<PsiJavaFile>,
+        convertFunction: (List<PsiJavaFile>, Project, Module) -> Unit
+    ) = J2KKotlinConfigurationHelper.setUpAndConvert(project, module, javaFiles, convertFunction)
+
+''', '')
+  text = text.replace('''
+    abstract fun createPlainTextPasteImportResolver(
+        conversionData: ConversionData,
+        targetKotlinFile: KtFile
+    ): PlainTextPasteImportResolver
+
+    abstract fun createCopyPasteConverter(
+        project: Project,
+        editor: Editor,
+        conversionData: ConversionData,
+        targetData: TargetData,
+    ): J2KCopyPasteConverter
+''', '')
+  extensionFile.text = text
+  log.info("Patched J2kConverterExtension.kt: dropped copy/paste and configuration-helper members")
+} else {
+  log.warn("patch target not found: J2kConverterExtension.kt")
+}
+
+// 3. K2J2KConverterExtension: drop the corresponding overrides.
+def k2ExtensionFile = new File(srcDir, 'org/jetbrains/kotlin/j2k/k2/K2J2KConverterExtension.kt')
+if (k2ExtensionFile.exists()) {
+  def text = k2ExtensionFile.text
+  text = text.replace('import com.intellij.openapi.editor.Editor\n', '')
+  text = text.replace('import com.intellij.util.concurrency.ThreadingAssertions\n', '')
+  text = text.replace('import org.jetbrains.kotlin.j2k.copyPaste.TargetData\n', '')
+  text = text.replace('import org.jetbrains.kotlin.j2k.copyPaste.ConversionData\n', '')
+  text = text.replace('import org.jetbrains.kotlin.j2k.copyPaste.J2KCopyPasteConverter\n', '')
+  text = text.replace('import org.jetbrains.kotlin.j2k.copyPaste.PlainTextPasteImportResolver\n', '')
+  text = text.replace('import org.jetbrains.kotlin.j2k.k2.copyPaste.K2J2KCopyPasteConverter\n', '')
+  text = text.replace('import org.jetbrains.kotlin.j2k.k2.copyPaste.K2PlainTextPasteImportResolver\n', '')
+  def startMarker = '\n    override fun createPlainTextPasteImportResolver('
+  def startIdx = text.indexOf(startMarker)
+  if (startIdx >= 0) {
+    def closeIdx = text.lastIndexOf('\n}')
+    if (closeIdx > startIdx) {
+      text = text.substring(0, startIdx) + '\n' + text.substring(closeIdx + 1)
+    }
+  }
+  k2ExtensionFile.text = text
+  log.info("Patched K2J2KConverterExtension.kt: dropped copy/paste overrides")
+} else {
+  log.warn("patch target not found: K2J2KConverterExtension.kt")
+}
+                ]]></script>
+              </scripts>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-maven-plugin</artifactId>
+        <configuration>
+          <languageVersion>${kotlin.runtime.languageVersion}</languageVersion>
+          <apiVersion>${kotlin.runtime.languageVersion}</apiVersion>
+          <jvmTarget>17</jvmTarget>
+          <args>
+            <arg>-Xskip-metadata-version-check</arg>
+            <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaIdeApi</arg>
+            <arg>-Xcontext-parameters</arg>
+            <arg>-opt-in=org.jetbrains.kotlin.utils.addToStdlib.UnsafeCastFunction</arg>
+            <arg>-opt-in=org.jetbrains.kotlin.analysis.api.permissions.KaAllowAnalysisFromWriteAction</arg>
+            <arg>-opt-in=org.jetbrains.kotlin.analysis.api.permissions.KaAllowAnalysisOnEdt</arg>
+            <arg>-opt-in=org.jetbrains.kotlin.analysis.api.permissions.KaAllowProhibitedAnalyzeFromWriteAction</arg>
+            <arg>-opt-in=kotlin.ExperimentalContextParameters</arg>
+            <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaContextParameterApi</arg>
+            <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaExperimentalApi</arg>
+            <arg>-opt-in=com.intellij.openapi.util.IntellijInternalApi</arg>
+          </args>
+          <sourceDirs>
+            <sourceDir>${project.build.directory}/generated-sources/j2k</sourceDir>
+          </sourceDirs>
+        </configuration>
+        <executions>
+          <execution>
+            <id>compile</id>
+            <phase>process-sources</phase>
+            <goals><goal>compile</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- J2KNullityInferrer.java (Java nullity inference) needs real .class output. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <compilerArgument>-proc:none</compilerArgument>
+        </configuration>
+        <executions>
+          <execution>
+            <id>default-compile</id>
+            <phase>compile</phase>
+            <goals><goal>compile</goal></goals>
+            <configuration>
+              <compileSourceRoots>
+                <compileSourceRoot>${project.build.directory}/generated-sources/j2k</compileSourceRoot>
+              </compileSourceRoots>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <dependencies>
+    <!-- IntelliJ platform: PsiElement, PsiTreeUtil, TextRange, ... -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core</artifactId>
+      <version>${intellij.platform.253.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core-impl</artifactId>
+      <version>${intellij.platform.253.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- PostprocessReformattingAspect (j2k/postProcessing.kt); the class lives in code-style 253. -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>code-style</artifactId>
+      <version>${intellij.platform.253.version}</version>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <!-- PsiClassOwner (KtFile supertype), Java PSI of the input file -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.java</groupId>
+      <artifactId>java-psi</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <!-- Kotlin PSI -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-compiler-ir-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-compiler-common-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <!-- K2 Analysis API -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-impl-base-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-k2-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <!-- com.intellij.modcommand.* (apply-phase actions of the diagnostic-based post-processing) -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>analysis</artifactId>
+      <version>${intellij.platform.253.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.jetbrains</groupId>
+      <artifactId>annotations</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- ShortenReferencesFacility, KtReferenceMutateService, CommentSaver, ...
+         Must precede intention-utils: both jars contain an org.jetbrains.kotlin.util.CollectionUtilsKt
+         facade, but only this one has `takeWhileInclusive` (used by SwitchToWhenConversion);
+         the first jar on the compile classpath wins for a duplicated facade class. -->
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-refactoring</artifactId>
+      <version>${project.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- KotlinBundle, AbstractKotlinBundle and other shared IDEA utilities -->
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-intention-utils</artifactId>
+      <version>${project.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- KotlinPsiUpdateModCommandAction and the quick-fix classes the diagnostic-based
+         post-processing drives (AddExclExclCallFix, AddEqEqTrueFix, ...). -->
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-fixes-impl</artifactId>
+      <version>${project.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-code-insight-impl</artifactId>
+      <version>${project.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Era-193 IntelliJ classes shaded inside kotlin-compiler:2.3.21. Declared last so the
+         era-253 platform JARs above keep precedence for overlapping com.intellij.* classes.
+         See KotlinRefactoring/pom.xml for why no partial stub may shadow these. -->
+    <dependency>
+      <groupId>io.github.nbplugins</groupId>
+      <artifactId>netbeans-plugin-kotlin-compiler-cli-base</artifactId>
+      <version>${project.version}</version>
+      <scope>provided</scope>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+  </dependencies>
+</project>

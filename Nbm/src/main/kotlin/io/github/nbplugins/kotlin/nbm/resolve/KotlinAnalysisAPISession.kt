@@ -45,6 +45,7 @@ import org.openide.filesystems.FileUtil
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Manages a K2 Analysis API session ([StandaloneAnalysisAPISession]) for a NetBeans project.
@@ -115,6 +116,14 @@ class KotlinAnalysisAPISession private constructor(
      * (a new session with fresh LVFs is created on [invalidate]).
      */
     val fileMap: Map<String, LightVirtualFile>
+
+    /**
+     * Absolute paths whose in-memory content is owned by a long-running operation.
+     *
+     * See [freezeFileContent]. A concurrent set because NetBeans parser tasks call
+     * [updateFileContent] from their own threads while the owner runs on another one.
+     */
+    private val frozenPaths: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     /**
      * `true` when the session was initialised with at least one binary JAR on the classpath.
@@ -217,6 +226,11 @@ class KotlinAnalysisAPISession private constructor(
 
         installPomModel(session)
         installNoOpPsiSearchHelper(session)
+        installNullableNotNullManager(session)
+        installKaModuleProvider(session)
+        installJ2KConverterExtension()
+        installDeepestSuperMethodsSearch()
+        installReferencesSearch()
 
         val tProvider = System.nanoTime()
         installLiveDeclarationProvider(session)
@@ -261,12 +275,15 @@ class KotlinAnalysisAPISession private constructor(
      * `ChangeUtil.prepareAndRunChangeAction` queries `PomManager.getModel(project)`
      * during every PSI mutation (e.g. `PsiElement.replace()`); without this the
      * call throws because the standalone container has no `PomModel` service.
+     *
+     * The stub additionally drops the project's analysis caches after each transaction — our
+     * non-physical files fire no PSI change events, so nothing else would invalidate them.
      */
     private fun installPomModel(session: StandaloneAnalysisAPISession) {
         val project = session.project
         val mock = project as? com.intellij.mock.MockComponentManager ?: return
         if (project.getService(com.intellij.pom.PomModel::class.java) == null) {
-            mock.registerService(com.intellij.pom.PomModel::class.java, NoOpPomModel())
+            mock.registerService(com.intellij.pom.PomModel::class.java, NoOpPomModel(project))
             KotlinLogger.INSTANCE.logInfo("Registered NoOpPomModel for project ${project.name}")
         }
     }
@@ -286,6 +303,49 @@ class KotlinAnalysisAPISession private constructor(
             mock.registerService(com.intellij.psi.search.PsiSearchHelper::class.java, NoOpPsiSearchHelper())
             KotlinLogger.INSTANCE.logInfo("Registered NoOpPsiSearchHelper for project ${project.name}")
         }
+    }
+
+    /**
+     * Registers a [NullableNotNullManagerImpl] on the session's project.
+     *
+     * The abstract `NullableNotNullManager` ships inside the repacked `kotlin-compiler` JAR, but
+     * no implementation is published in any bundled platform artifact. Its static helpers
+     * (`getNullability`, `isNullable`, `isNotNull`) resolve the service through
+     * `project.getService(...)`, so without a registered implementation every call failed and the
+     * J2K engine lost annotation-based nullability inference (the failure was swallowed inside
+     * `DataflowResult`'s nullability collection).
+     */
+    private fun installNullableNotNullManager(session: StandaloneAnalysisAPISession) {
+        val project = session.project
+        val mock = project as? com.intellij.mock.MockComponentManager ?: return
+        if (project.getService(com.intellij.codeInsight.NullableNotNullManager::class.java) == null) {
+            mock.registerService(
+                com.intellij.codeInsight.NullableNotNullManager::class.java,
+                com.intellij.codeInsight.NullableNotNullManagerImpl(project),
+            )
+            KotlinLogger.INSTANCE.logInfo("Registered NullableNotNullManagerImpl for project ${project.name}")
+        }
+    }
+
+    /**
+     * Replaces the default [KaModuleProvider] with a [StandaloneKaModuleProvider] over this
+     * session's source modules.
+     *
+     * The default provider resolves an element's module through the IDE module manager and the
+     * project/module index, neither of which exists in a standalone session — it returns `null`
+     * or throws. The J2K engine asks for the target module of the element being converted
+     * (`Module.toKaSourceModuleWithElementSourceModuleKindOrProduction`), so without this the
+     * conversion aborts.
+     *
+     * @param session the freshly-built standalone session whose project services are patched
+     */
+    private fun installKaModuleProvider(session: StandaloneAnalysisAPISession) {
+        val project = session.project
+        val mock = project as? com.intellij.mock.MockComponentManager ?: return
+        val key = org.jetbrains.kotlin.analysis.api.projectStructure.KaModuleProvider::class.java
+        mock.picoContainer.unregisterComponent(key.name)
+        mock.registerService(key, StandaloneKaModuleProvider(session))
+        KotlinLogger.INSTANCE.logInfo("Installed StandaloneKaModuleProvider for project ${project.name}")
     }
 
     private fun installLiveDeclarationProvider(session: StandaloneAnalysisAPISession) {
@@ -317,6 +377,47 @@ class KotlinAnalysisAPISession private constructor(
          * `KotlinMoveUsageSearchServiceImpl`, which is only given a `KtNamedDeclaration`.
          */
         fun forProject(project: com.intellij.openapi.project.Project): KotlinAnalysisAPISession? = byProject[project]
+
+        /**
+         * Drops every cached FIR session of [project], so the next `analyze {}` rebuilds it from
+         * the current PSI.
+         *
+         * The project-scoped form of [invalidateAnalysisCaches]: the caches are keyed by the
+         * IntelliJ project, and a PSI change has to drop them even when no NetBeans session object
+         * is at hand. [NoOpPomModel] calls it after every PSI transaction, which is exactly where a
+         * real IDE fires the PSI change events that `LLFirSessionInvalidationListener` reacts to.
+         *
+         * Without that call a cached session keeps mapping PSI nodes created *before* the edit, so
+         * a reference the caller has just built resolves to `null` — and the failed result is then
+         * cached on the reference itself, making every later attempt fail too.
+         *
+         * @param project the IntelliJ project whose cached analysis sessions must be dropped
+         * @param reason short caller name used in the warning messages
+         */
+        @JvmStatic
+        fun invalidateProjectCaches(project: com.intellij.openapi.project.Project, reason: String) {
+            @OptIn(org.jetbrains.kotlin.analysis.low.level.api.fir.LLFirInternals::class)
+            runCatching {
+                org.jetbrains.kotlin.analysis.low.level.api.fir.sessions.LLFirSessionCache
+                    .getInstance(project)
+                    .storage.sourceCache.clear(reason)
+            }.onFailure { ex ->
+                KotlinLogger.INSTANCE.logWarning(
+                    "KotlinAnalysisAPISession.invalidateProjectCaches($reason): LLFirSessionCache clear failed: $ex"
+                )
+            }
+
+            @OptIn(KaImplementationDetail::class)
+            runCatching {
+                org.jetbrains.kotlin.analysis.api.session.KaSessionProvider
+                    .getInstance(project)
+                    .clearCaches()
+            }.onFailure { ex ->
+                KotlinLogger.INSTANCE.logWarning(
+                    "KotlinAnalysisAPISession.invalidateProjectCaches($reason): KaSessionProvider.clearCaches() failed: $ex"
+                )
+            }
+        }
 
         @Volatile private var appEnvInitialized = false
 
@@ -405,11 +506,10 @@ class KotlinAnalysisAPISession private constructor(
             registerEpIfAbsent(area, "org.jetbrains.kotlin.postInsertDeclarationCallback",
                 "org.jetbrains.kotlin.idea.refactoring.introduce.extractionEngine.PostInsertDeclarationCallback",
                 com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE)
-            // `com.intellij.referencesSearch` is consumed by IDEA refactorings (e.g. Inline Variable's
-            // `AbstractKotlinInlinePropertyProcessor.extractInitialization` calls
-            // `ReferencesSearchScopeHelper.search`). Registering the EP without any extensions is
-            // sufficient for `val`-with-initializer cases — the search returns an empty result and
-            // the initializer-in-declaration branch is taken. Declared in `platform/indexing-api/resources/META-INF/Indexing.xml`.
+            // `com.intellij.referencesSearch` backs `ReferencesSearch` for IDEA refactorings, the
+            // J2K post-processing included. Declared in
+            // `platform/indexing-api/resources/META-INF/Indexing.xml`; the local-scope executor is
+            // installed by [installReferencesSearch].
             registerEpIfAbsent(area, "com.intellij.referencesSearch",
                 "com.intellij.util.QueryExecutor",
                 com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE)
@@ -520,6 +620,80 @@ class KotlinAnalysisAPISession private constructor(
                     org.jetbrains.kotlin.idea.k2.refactoring.pullUp.K2PullUpHelperFactory(),
                 )
                 KotlinLogger.INSTANCE.logInfo("Registered K2PullUpHelperFactory for Kotlin")
+            }
+        }
+
+        /**
+         * Registers the J2K converter extension point and the K2 implementation of it.
+         *
+         * The J2K engine resolves its conversion list and its post-processor through
+         * `J2kConverterExtension.extension(K2)`, which is
+         * `EP_NAME.extensionList.first { it.kind == kind }`. In the IDE the EP is populated from
+         * `plugin.xml`; a standalone session loads no plugin descriptors, so without this the
+         * lookup throws `NoSuchElementException` and the conversion aborts. Both steps are
+         * idempotent — later sessions reuse the already-registered point and instance.
+         */
+        private fun installJ2KConverterExtension() {
+            val area = com.intellij.openapi.application.ApplicationManager.getApplication().extensionArea
+            registerEpIfAbsent(
+                area,
+                "org.jetbrains.kotlin.j2kConverterExtension",
+                "org.jetbrains.kotlin.j2k.J2kConverterExtension",
+                com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE,
+            )
+            val point = area.getExtensionPoint(org.jetbrains.kotlin.j2k.J2kConverterExtension.EP_NAME)
+            if (point.extensionList.none { it.kind == org.jetbrains.kotlin.j2k.J2kConverterExtension.Kind.K2 }) {
+                point.registerExtension(org.jetbrains.kotlin.j2k.k2.K2J2KConverterExtension())
+                KotlinLogger.INSTANCE.logInfo("Registered K2J2KConverterExtension")
+            }
+        }
+
+        /**
+         * Registers the `com.intellij.deepestSuperMethodsSearch` extension point and its
+         * PSI-based executor.
+         *
+         * `java-impl` declares the point in `plugin.xml`, which a standalone session never loads;
+         * without it `PsiMethod.findDeepestSuperMethods()` throws
+         * `IllegalArgumentException: Missing extension point`. The J2K engine calls it on every
+         * method symbol (`deepestFqName`) to recognise `equals`/`hashCode`/`toString` overrides.
+         * Both steps are idempotent.
+         */
+        private fun installDeepestSuperMethodsSearch() {
+            val area = com.intellij.openapi.application.ApplicationManager.getApplication().extensionArea
+            registerEpIfAbsent(
+                area,
+                "com.intellij.deepestSuperMethodsSearch",
+                "com.intellij.util.QueryExecutor",
+                com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE,
+            )
+            val point = area.getExtensionPoint(com.intellij.psi.search.searches.DeepestSuperMethodsSearch.EP_NAME)
+            if (point.extensionList.none { it is PsiDeepestSuperMethodsQueryExecutor }) {
+                point.registerExtension(PsiDeepestSuperMethodsQueryExecutor())
+                KotlinLogger.INSTANCE.logInfo("Registered PsiDeepestSuperMethodsQueryExecutor")
+            }
+        }
+
+        /**
+         * Registers [KotlinReferencesSearchExecutor] on the `com.intellij.referencesSearch`
+         * extension point.
+         *
+         * Without it the point has no extensions and every [com.intellij.psi.search.searches.ReferencesSearch]
+         * query returns an empty result — the J2K property post-processing then cannot find the
+         * uses of a field inside its own accessors and produces a broken property. The extension
+         * point itself is registered by [registerHighlightInfoFilterEP]; both steps are idempotent.
+         */
+        private fun installReferencesSearch() {
+            val area = com.intellij.openapi.application.ApplicationManager.getApplication().extensionArea
+            registerEpIfAbsent(
+                area,
+                "com.intellij.referencesSearch",
+                "com.intellij.util.QueryExecutor",
+                com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE,
+            )
+            val point = area.getExtensionPoint(com.intellij.psi.search.searches.ReferencesSearch.EP_NAME)
+            if (point.extensionList.none { it is KotlinReferencesSearchExecutor }) {
+                point.registerExtension(KotlinReferencesSearchExecutor())
+                KotlinLogger.INSTANCE.logInfo("Registered KotlinReferencesSearchExecutor")
             }
         }
 
@@ -820,7 +994,72 @@ class KotlinAnalysisAPISession private constructor(
         }
     }
 
+    /**
+     * `true` while at least one file's content is frozen by [freezeFileContent].
+     *
+     * The Java-to-Kotlin converter is the only caller of [freezeFileContent], so this marks a
+     * conversion in progress. [NoOpPomModel] uses it to decide whether a PSI transaction needs the
+     * synchronous analysis-cache drop: inside a conversion the PSI is edited by hand and resolved
+     * again immediately, while an ordinary refactoring must keep its caches until the platform
+     * commits the documents.
+     */
+    val hasFrozenContent: Boolean
+        get() = frozenPaths.isNotEmpty()
+
+    /**
+     * Prevents [updateFileContent] from touching [path] until [unfreezeFileContent] is called.
+     *
+     * Needed when an operation builds PSI for a file by hand and analyses it afterwards: the file
+     * is usually still empty on disk, so a NetBeans parser task running meanwhile would push that
+     * empty text into the session and replace the PSI the operation is about to analyse. The Java
+     * to Kotlin converter is the only caller.
+     *
+     * The freeze is per path and not reentrant: freeze, do the work, unfreeze in a `finally`.
+     *
+     * @param path absolute path of the file the caller takes ownership of
+     */
+    fun freezeFileContent(path: String) {
+        frozenPaths.add(path)
+    }
+
+    /**
+     * Releases a freeze installed by [freezeFileContent]; a no-op when [path] is not frozen.
+     *
+     * @param path absolute path of the file the caller releases
+     */
+    fun unfreezeFileContent(path: String) {
+        frozenPaths.remove(path)
+    }
+
     fun updateFileContent(path: String, text: String) {
+        if (path in frozenPaths) return
+        applyFileContent(path, text)
+    }
+
+    /**
+     * Updates [path] on behalf of the caller that froze it, bypassing [freezeFileContent].
+     *
+     * The freezing caller is the only one allowed to change the content of a frozen path: it is the
+     * one that knows the text the session must hold while the file on disk is still stale. Every
+     * other caller keeps using [updateFileContent], which the freeze blocks.
+     *
+     * @param path absolute path of a frozen source file
+     * @param text content the freezing operation wants the session to analyse
+     */
+    fun updateFrozenFileContent(path: String, text: String) {
+        applyFileContent(path, text)
+    }
+
+    /**
+     * Installs [text] as the in-memory content of [path] and re-parses the session PSI for it.
+     *
+     * Shared implementation of [updateFileContent] and [updateFrozenFileContent]; the freeze check
+     * belongs to the callers.
+     *
+     * @param path absolute path of a source file present in [fileMap]
+     * @param text content to install
+     */
+    private fun applyFileContent(path: String, text: String) {
         val lvf = fileMap[path] ?: return
         if (lvf.content.toString() == text) return
         lvf.setContent(null, text, true)
@@ -864,30 +1103,34 @@ class KotlinAnalysisAPISession private constructor(
         // (MockComponentManager.createListener() throws for the lazily-registered listener) and
         // logs a swallowed-but-noisy ERROR stack on every edit.  clear() removes and disposes all
         // cached source sessions without publishing any event.
-        @OptIn(org.jetbrains.kotlin.analysis.low.level.api.fir.LLFirInternals::class)
-        runCatching {
-            org.jetbrains.kotlin.analysis.low.level.api.fir.sessions.LLFirSessionCache
-                .getInstance(session.project)
-                .storage.sourceCache.clear("updateFileContent")
-        }.onFailure { ex ->
-            KotlinLogger.INSTANCE.logWarning(
-                "KotlinAnalysisAPISession.updateFileContent: LLFirSessionCache clear failed for $path: $ex"
-            )
-        }
-
+        //
         // Step 2: KaFirSessionProvider's own Caffeine cache.  analyze {} retrieves the KaFirSession
         // from this cache; without clearing it, the next analyze() returns a session whose FIR is
         // still bound to the old PSI node identities → "Classifier was found in KtFile but not in FirFile".
-        @OptIn(KaImplementationDetail::class)
-        runCatching {
-            org.jetbrains.kotlin.analysis.api.session.KaSessionProvider
-                .getInstance(session.project)
-                .clearCaches()
-        }.onFailure { ex ->
-            KotlinLogger.INSTANCE.logWarning(
-                "KotlinAnalysisAPISession.updateFileContent: KaSessionProvider.clearCaches() failed: $ex"
-            )
-        }
+        invalidateAnalysisCaches("updateFileContent")
+    }
+
+    /**
+     * Drops every cached FIR session, so the next `analyze {}` rebuilds it from the current PSI.
+     *
+     * A real IDE does this through `LLFirSessionInvalidationListener`, a project listener that
+     * reacts to PSI modification events. In standalone (MockProject) mode project listeners cannot
+     * be instantiated lazily, so every caller that changes the session PSI must clear the caches
+     * itself. Two caches hold a FIR session bound to PSI node identities:
+     *
+     * 1. `LLFirSessionCache`'s source-session storage — the [LLFirSession] built from the old PSI.
+     * 2. `KaFirSessionProvider`'s own `Cache<KaModule, KaFirSession>` — what `analyze {}` looks up.
+     *
+     * Step 1 clears the storage directly rather than through
+     * `LLFirSessionInvalidationService.invalidateAll()`, which publishes a `SESSION_INVALIDATION`
+     * event in a `finally` block; in standalone mode that publish fails and logs a noisy ERROR
+     * stack on every edit. Each step is wrapped in its own `runCatching` so a failure in one step
+     * does not skip the next one.
+     *
+     * @param reason short caller name used in the warning messages
+     */
+    fun invalidateAnalysisCaches(reason: String) {
+        invalidateProjectCaches(session.project, reason)
     }
 }
 

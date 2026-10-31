@@ -1,0 +1,5 @@
+package j2k
+
+class TwoGetters {
+    var name: String? = null
+}

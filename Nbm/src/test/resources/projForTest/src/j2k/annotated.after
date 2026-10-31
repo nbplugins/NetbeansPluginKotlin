@@ -1,0 +1,14 @@
+package j2k
+
+import com.fasterxml.jackson.annotation.JsonIgnore
+import com.fasterxml.jackson.databind.PropertyNamingStrategies
+import com.fasterxml.jackson.databind.annotation.JsonNaming
+
+@JsonNaming(PropertyNamingStrategies.KebabCaseStrategy::class)
+abstract class Annotated {
+    @get:JsonIgnore
+    var concreteName: String? = null
+
+    @get:JsonIgnore
+    abstract val primaryKey: Array<String?>?
+}

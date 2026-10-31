@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.12.0-SNAPSHOT</version>
+    <version>0.12.12-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-compiler-cli-base</artifactId>
@@ -119,10 +119,13 @@ def buildDir = new File(project.build.directory)
 def stamp    = new File(buildDir, 'repack.stamp')
 def outJar   = new File(buildDir, project.build.finalName + '.jar')
 def kcompJar = new File(project.properties['org.jetbrains.kotlin:kotlin-compiler:jar'])
+// The extraction rules live in this POM, so editing them must invalidate the stamp.
+def pomFile  = new File(project.basedir, 'pom.xml')
 
 // Fast no-clean guard.
 if (stamp.exists() && outJar.exists() &&
-    stamp.lastModified() >= kcompJar.lastModified()) {
+    stamp.lastModified() >= kcompJar.lastModified() &&
+    stamp.lastModified() >= pomFile.lastModified()) {
   log.info('KotlinCompilerCliBase: up-to-date, skipping extraction.')
   return
 }
@@ -176,7 +179,13 @@ int extracted = 0
 new ZipFile(kcompJar).withCloseable { zf ->
   zf.entries().each { e ->
     def name = e.name
-    if (!name.endsWith('.class')) return
+    // Message bundles for the repacked com.intellij Java PSI/parser classes live next to them and
+    // are not shipped by java-psi:253 (which carries no resources at all). Without
+    // messages/JavaPsiBundle.properties, BasicJavaParserUtil fails with MissingResourceException.
+    // The set-difference below keeps only the bundles absent from the platform JARs, so the newer
+    // platform copies of CoreBundle/UtilBundle always win.
+    def isBundle = name.startsWith('messages/') && name.endsWith('.properties')
+    if (!name.endsWith('.class') && !isBundle) return
     // Strip fastutil: provided separately as intellij-deps-fastutil; the bundled copy
     // conflicts with the version CoreImpl (util:253) was compiled against.
     // Strip fastutil: provided separately as intellij-deps-fastutil.

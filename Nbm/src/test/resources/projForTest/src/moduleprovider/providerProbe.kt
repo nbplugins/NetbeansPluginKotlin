@@ -1,0 +1,3 @@
+package moduleprovider
+
+class ProviderProbe

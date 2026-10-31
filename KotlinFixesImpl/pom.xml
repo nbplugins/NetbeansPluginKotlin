@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.12.0-SNAPSHOT</version>
+    <version>0.12.12-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-fixes-impl</artifactId>
@@ -79,6 +79,34 @@
                     <include>org/jetbrains/kotlin/idea/quickfix/RemoveNoConstructorFix.kt</include>
                     <include>org/jetbrains/kotlin/idea/quickfix/ChangeToFunctionInvocationFix.kt</include>
                     <include>org/jetbrains/kotlin/idea/quickfix/MakeOverriddenMemberOpenFixUtils.kt</include>
+                    <!-- E10 (J2K): fixes the diagnostic-based post-processing drives. The K1 variant
+                         in plugins/kotlin/idea/src is NOT used (it needs BindingContext). -->
+                    <include>org/jetbrains/kotlin/idea/quickfix/AddExclExclCallFix.kt</include>
+                    <include>org/jetbrains/kotlin/idea/quickfix/AddEqEqTrueFix.kt</include>
+                    <include>org/jetbrains/kotlin/idea/quickfix/RemoveExclExclCallFix.kt</include>
+                    <include>org/jetbrains/kotlin/idea/quickfix/RemoveUselessCastFix.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- code-insight/fixes-k2: the K2 quick-fix factories used by the J2K diagnostic-based
+               post-processing (unsafe-call / type-mismatch / iterator-on-nullable). -->
+          <execution>
+            <id>copy-fixes-k2-factories</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/fixes</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/code-insight/fixes-k2/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/kotlin/idea/k2/codeinsight/fixes/AddExclExclCallFixFactories.kt</include>
+                    <include>org/jetbrains/kotlin/idea/k2/codeinsight/fixes/TypeMismatchFactories.kt</include>
                   </includes>
                 </resource>
               </resources>
@@ -119,6 +147,7 @@
                   <filtering>false</filtering>
                   <includes>
                     <include>org/jetbrains/kotlin/idea/codeinsight/api/applicators/ApplicabilityRange.kt</include>
+                    <include>org/jetbrains/kotlin/idea/codeinsight/api/applicators/fixes/KotlinQuickFixFactory.kt</include>
                     <include>org/jetbrains/kotlin/idea/codeinsight/api/applicable/ApplicableRangesProvider.kt</include>
                     <include>org/jetbrains/kotlin/idea/codeinsight/api/applicable/ContextProvider.kt</include>
                     <include>org/jetbrains/kotlin/idea/codeinsight/api/applicable/inspections/KotlinApplicableInspectionBase.kt</include>
@@ -278,6 +307,88 @@ if (addReturnExprFile.exists()) {
 }
 
 // ---------------------------------------------------------------------------
+// E10 (J2K): the frontend-independent RemoveExclExclCallFix / RemoveUselessCastFix
+// extend the *classic* quick-fix API (org.jetbrains.kotlin.idea.codeinsight.api.classic.
+// quickfixes.{CleanupFix, PsiElementSuitabilityCheckers, QuickFixesPsiBasedFactory}), which
+// depends on the whole inspection/cleanup subsystem this plugin does not bundle. J2K only
+// needs the static `invoke(...)` mutation, so the factory companion is dropped and the
+// `CleanupFix.ModCommand` supertype removed. Behaviour of the mutation itself is unchanged;
+// RemoveUselessCastFix's `replaced(...).dropEnclosingParenthesesIfPossible()` pair (base/psi
+// extensions) is inlined with the same effect.
+// ---------------------------------------------------------------------------
+def removeExclExclFile = new File(srcDir, 'org/jetbrains/kotlin/idea/quickfix/RemoveExclExclCallFix.kt')
+if (removeExclExclFile.exists()) {
+  def text = removeExclExclFile.text
+  text = text.replace('import com.intellij.codeInsight.intention.IntentionAction\n', '')
+  text = text.replace('import org.jetbrains.kotlin.idea.codeinsight.api.classic.quickfixes.CleanupFix\n', '')
+  text = text.replace('import org.jetbrains.kotlin.idea.codeinsight.api.classic.quickfixes.PsiElementSuitabilityCheckers\n', '')
+  text = text.replace('import org.jetbrains.kotlin.idea.codeinsight.api.classic.quickfixes.QuickFixesPsiBasedFactory\n', '')
+  text = text.replace('import org.jetbrains.kotlin.psi.psiUtil.getNonStrictParentOfType\n', '')
+  text = text.replace(') : PsiUpdateModCommandAction<PsiElement>(element), CleanupFix.ModCommand {',
+                      ') : PsiUpdateModCommandAction<PsiElement>(element) {')
+  text = text.replace(
+    '''    companion object : QuickFixesPsiBasedFactory<PsiElement>(PsiElement::class, PsiElementSuitabilityCheckers.ALWAYS_SUITABLE) {
+        fun invoke(element: PsiElement) {
+            val postfixExpression = element as? KtPostfixExpression ?: return
+            val baseExpression = postfixExpression.baseExpression ?: return
+            postfixExpression.replace(baseExpression)
+        }
+
+        override fun doCreateQuickFix(psiElement: PsiElement): List<IntentionAction> {
+            val postfixExpression = psiElement.getNonStrictParentOfType<KtPostfixExpression>() ?: return emptyList()
+            return listOfNotNull(RemoveExclExclCallFix(postfixExpression).asIntention())
+        }
+    }''',
+    '''    companion object {
+        fun invoke(element: PsiElement) {
+            val postfixExpression = element as? KtPostfixExpression ?: return
+            val baseExpression = postfixExpression.baseExpression ?: return
+            postfixExpression.replace(baseExpression)
+        }
+    }''')
+  removeExclExclFile.text = text
+  log.info("Patched RemoveExclExclCallFix.kt: dropped classic quick-fix factory companion")
+}
+
+def removeUselessCastFile = new File(srcDir, 'org/jetbrains/kotlin/idea/quickfix/RemoveUselessCastFix.kt')
+if (removeUselessCastFile.exists()) {
+  def text = removeUselessCastFile.text
+  text = text.replace('import com.intellij.codeInsight.intention.IntentionAction\n', '')
+  text = text.replace('import org.jetbrains.kotlin.idea.base.psi.dropEnclosingParenthesesIfPossible\n', '')
+  text = text.replace('import org.jetbrains.kotlin.idea.base.psi.replaced\n', '')
+  text = text.replace('import org.jetbrains.kotlin.idea.codeinsight.api.classic.quickfixes.CleanupFix\n', '')
+  text = text.replace('import org.jetbrains.kotlin.idea.codeinsight.api.classic.quickfixes.PsiElementSuitabilityCheckers\n', '')
+  text = text.replace('import org.jetbrains.kotlin.idea.codeinsight.api.classic.quickfixes.QuickFixesPsiBasedFactory\n', '')
+  text = text.replace('import org.jetbrains.kotlin.psi.psiUtil.getNonStrictParentOfType\n', '')
+  text = text.replace('import org.jetbrains.kotlin.psi.KtExpression\n',
+                      'import org.jetbrains.kotlin.psi.KtExpression\nimport org.jetbrains.kotlin.psi.KtParenthesizedExpression\n')
+  text = text.replace('''class RemoveUselessCastFix(element: KtBinaryExpressionWithTypeRHS) : PsiUpdateModCommandAction<KtBinaryExpressionWithTypeRHS>(element),
+                                                                     CleanupFix.ModCommand {''',
+                      '''class RemoveUselessCastFix(element: KtBinaryExpressionWithTypeRHS) : PsiUpdateModCommandAction<KtBinaryExpressionWithTypeRHS>(element) {''')
+  text = text.replace(
+    '''    companion object : QuickFixesPsiBasedFactory<PsiElement>(PsiElement::class, PsiElementSuitabilityCheckers.ALWAYS_SUITABLE) {
+        operator fun invoke(element: KtBinaryExpressionWithTypeRHS): KtExpression = element.replaced(element.left).dropEnclosingParenthesesIfPossible()
+
+        override fun doCreateQuickFix(psiElement: PsiElement): List<IntentionAction> {
+            val expression = psiElement.getNonStrictParentOfType<KtBinaryExpressionWithTypeRHS>() ?: return emptyList()
+            return listOf(
+                RemoveUselessCastFix(expression).asIntention()
+            )
+        }
+    }''',
+    '''    companion object {
+        operator fun invoke(element: KtBinaryExpressionWithTypeRHS): KtExpression {
+            val left = element.left ?: return element
+            val replaced = element.replace(left)
+            return if (replaced is KtParenthesizedExpression) replaced.expression ?: replaced
+            else replaced as? KtExpression ?: left
+        }
+    }''')
+  removeUselessCastFile.text = text
+  log.info("Patched RemoveUselessCastFix.kt: dropped classic quick-fix factory companion, inlined replaced()")
+}
+
+// ---------------------------------------------------------------------------
 // code-insight/api applicable/** framework (used by the K2 inspections and
 // intentions in the KotlinCodeInsightImpl module).
 //
@@ -384,6 +495,9 @@ if (applicableModCommandFile.exists()) {
             <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaExperimentalApi</arg>
             <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaIdeApi</arg>
             <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaContextParameterApi</arg>
+            <!-- safeAs<T>() from addToStdlib is annotated @UnsafeCastFunction in 2.3.21
+                 (used by the fixes-k2 factories ported for E10) -->
+            <arg>-opt-in=org.jetbrains.kotlin.utils.addToStdlib.UnsafeCastFunction</arg>
           </args>
           <sourceDirs>
             <sourceDir>${project.build.directory}/generated-sources/fixes</sourceDir>
@@ -479,6 +593,15 @@ if (applicableModCommandFile.exists()) {
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>analysis-api-impl-base-for-ide</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <!-- E10 (J2K): FIR diagnostics (KaFirDiagnostic.UnsafeCall, …) used by the fixes-k2 factories -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-k2-for-ide</artifactId>
       <scope>provided</scope>
       <exclusions>
         <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>

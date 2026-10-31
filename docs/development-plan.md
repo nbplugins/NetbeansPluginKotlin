@@ -1079,9 +1079,27 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
       The reverse directions (`KaOperatorToFunctionIntention`, `KaConvertLambdaToReferenceIntention`)
       stay hand-written: their IDEA counterparts drag in a much larger slice of `code-insight`.
 
-- **E10** — J2K (Java→Kotlin): reimplement using `j2k/new` from `submodules/IntellijCommunity`
-  or binary artifact once published; wire up stubbed `Java2KotlinConverter` (stubbed since D2)
-  and re-enable `J2KTest`
+- [x] **E10** — J2K (Java→Kotlin) conversion
+  - Compiles IDEA's real J2K sources (`j2k/shared/src` + `j2k/k2/src`) into the new `KotlinJ2K`
+    reactor module with standalone stubs, the same pattern as `KotlinRefactoring`/`KotlinFixesImpl`.
+    The K2 post-processing subset from `code-insight/fixes-k2` was ported into `KotlinFixesImpl`.
+  - Entry point: **Refactor → Convert to Kotlin** on a Java file. The confirmation dialog runs
+    before anything is touched; the conversion then runs on a background thread as a headless
+    NetBeans refactoring (`JavaToKotlinRefactoring` + `JavaToKotlinPlugin` +
+    `JavaToKotlinElement`), so the sibling `.kt` creation, its content, and the `.java` removal are
+    one transaction registered in **Undo Last Refactoring**. The `.kt` appears only after the
+    conversion succeeds; a failure rolls everything back and leaves the Java file intact.
+  - Conversion itself: `NewJavaToKotlinConverter` over the analysis session, K2 post-processing,
+    and a final text-based formatting pass.
+  - Standalone wiring in `KotlinAnalysisAPISession`: `StandaloneKaModuleProvider` (replaces the
+    index-based IDE provider), the `org.jetbrains.kotlin.j2kConverterExtension` extension point with
+    `K2J2KConverterExtension`, and the `com.intellij.deepestSuperMethodsSearch` extension point with
+    a PSI-only executor — without them the engine throws "Missing extension point" on method symbols.
+  - `J2KTest` is re-enabled as `Java2KotlinConverterTest` over the existing fixtures, now with K2
+    output (for example `System.out.println` shortens to `println`).
+  - Unsupported: Java copy/paste conversion, IDEA's project-configuration prompts, unused-import
+    detection during conversion, and editor-level Ctrl+Z of the conversion (use **Undo Last
+    Refactoring** instead).
 
 - **E11** — New Project with Kotlin group:
   - `ProjectWizardPanel` integration

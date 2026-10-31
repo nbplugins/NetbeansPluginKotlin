@@ -268,6 +268,104 @@ class KotlinAnalysisAPISessionTest : KotlinTestCase("K2 Analysis API session", "
     }
 
     /**
+     * Verifies that [KotlinAnalysisAPISession.freezeFileContent] makes
+     * [KotlinAnalysisAPISession.updateFileContent] ignore the frozen path.
+     *
+     * This is what keeps a NetBeans parser task from replacing hand-built PSI with the still-empty
+     * on-disk content while the Java to Kotlin converter analyses it.
+     */
+    fun testFreezeFileContent_blocksContentUpdate() {
+        val wrapper = KotlinAnalysisAPISession.getSession(project)
+        val ktFile = wrapper.session.modulesWithFiles.values
+            .flatten()
+            .filterIsInstance<KtFile>()
+            .firstOrNull { it.name == "checkTypeMismatch.kt" }
+        assertNotNull("checkTypeMismatch.kt must be in the K2 session's source module", ktFile)
+        val path = ktFile!!.virtualFile!!.path
+        val originalText = ktFile.text
+
+        wrapper.freezeFileContent(path)
+        try {
+            wrapper.updateFileContent(path, originalText + "\nval frozenEdit = 1\n")
+
+            assertEquals(
+                "a frozen path must ignore content updates",
+                originalText,
+                ktFile.text,
+            )
+        } finally {
+            wrapper.unfreezeFileContent(path)
+        }
+    }
+
+    /**
+     * Verifies that [KotlinAnalysisAPISession.hasFrozenContent] reflects the freeze state.
+     *
+     * [NoOpPomModel] relies on it to decide whether a PSI transaction belongs to a Java to Kotlin
+     * conversion and therefore needs a synchronous analysis-cache drop.
+     */
+    fun testHasFrozenContent_reflectsFreezeState() {
+        val wrapper = KotlinAnalysisAPISession.getSession(project)
+        assertFalse("nothing is frozen initially", wrapper.hasFrozenContent)
+
+        wrapper.freezeFileContent("/tmp/frozen-state.kt")
+        try {
+            assertTrue("a frozen path must be reported", wrapper.hasFrozenContent)
+        } finally {
+            wrapper.unfreezeFileContent("/tmp/frozen-state.kt")
+        }
+        assertFalse("the state must return to unfrozen", wrapper.hasFrozenContent)
+    }
+
+    /**
+     * Verifies that the caller that froze a path can still install its own content through
+     * [KotlinAnalysisAPISession.updateFrozenFileContent].
+     *
+     * Without this escape hatch the converter could not seed the session with the converted source
+     * while the file on disk is still empty.
+     */
+    fun testUpdateFrozenFileContent_bypassesFreeze() {
+        val wrapper = KotlinAnalysisAPISession.getSession(project)
+        val ktFile = wrapper.session.modulesWithFiles.values
+            .flatten()
+            .filterIsInstance<KtFile>()
+            .firstOrNull { it.name == "checkTypeMismatch.kt" }
+        assertNotNull("checkTypeMismatch.kt must be in the K2 session's source module", ktFile)
+        val path = ktFile!!.virtualFile!!.path
+        val newText = ktFile.text + "\nval ownerEdit = 3\n"
+
+        wrapper.freezeFileContent(path)
+        try {
+            wrapper.updateFrozenFileContent(path, newText)
+
+            assertEquals("the freezing caller must be able to install content", newText, ktFile.text)
+        } finally {
+            wrapper.unfreezeFileContent(path)
+        }
+    }
+
+    /**
+     * Verifies that releasing a freeze restores normal [KotlinAnalysisAPISession.updateFileContent]
+     * behaviour, so the session follows the editor again after an operation finished.
+     */
+    fun testUnfreezeFileContent_resumesContentUpdate() {
+        val wrapper = KotlinAnalysisAPISession.getSession(project)
+        val ktFile = wrapper.session.modulesWithFiles.values
+            .flatten()
+            .filterIsInstance<KtFile>()
+            .firstOrNull { it.name == "checkTypeMismatch.kt" }
+        assertNotNull("checkTypeMismatch.kt must be in the K2 session's source module", ktFile)
+        val path = ktFile!!.virtualFile!!.path
+
+        wrapper.freezeFileContent(path)
+        wrapper.unfreezeFileContent(path)
+        val newText = ktFile.text + "\nval unfrozenEdit = 2\n"
+        wrapper.updateFileContent(path, newText)
+
+        assertEquals("updates must apply again after unfreeze", newText, ktFile.text)
+    }
+
+    /**
      * Verifies that [org.jetbrains.kotlin.analysis.api.analyze] succeeds after
      * [KotlinAnalysisAPISession.updateFileContent] — i.e., the K2 FIR cache is properly
      * invalidated so that the re-resolved FIR can map the new PSI nodes.

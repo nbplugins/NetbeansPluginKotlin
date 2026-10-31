@@ -41,6 +41,21 @@ object KotlinSearchUsagesSupport {
             }.getOrElse { emptyList() }
         }
 
+        /**
+         * Returns the most basic overridden declarations of [element].
+         *
+         * IDEA's version walks `findSuperMethodsNoWrapping` recursively; the standalone
+         * implementation uses the same K2-resolved direct supers, keeping the entries that do not
+         * override anything themselves.
+         *
+         * @param element the declaration to inspect.
+         * @return the deepest super declarations, or the direct supers when none is deepest.
+         */
+        fun findDeepestSuperMethodsNoWrapping(element: PsiElement): List<PsiElement> {
+            val supers = findSuperMethodsNoWrapping(element)
+            return supers.filter { findSuperMethodsNoWrapping(it).isEmpty() }.ifEmpty { supers }
+        }
+
         /** IDEA compatibility predicate: Kotlin declarations are potentially overridable. */
         fun KtDeclaration.isOverridable(): Boolean = true
     }

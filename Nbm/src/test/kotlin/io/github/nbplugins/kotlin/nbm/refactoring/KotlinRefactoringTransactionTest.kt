@@ -36,6 +36,7 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
         failWriting: ((FileObject) -> Boolean)? = null,
         moveFileOnDisk: ((FileObject, FileObject, String, String) -> FileObject)? = null,
         renameFolderOnDisk: ((FileObject, FileObject, String) -> FileObject)? = null,
+        deleteFileOnDisk: ((FileObject) -> Unit)? = null,
     ): Fixture {
         val root = FileUtil.createMemoryFileSystem().root
         val documents = linkedMapOf<FileObject, StyledDocument>()
@@ -56,20 +57,18 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
                         ?: error("Folder rename did not produce ${folder.parent.path}/$name")
                 }
             },
+            deleteFileOnDisk = deleteFileOnDisk ?: { file -> file.delete() },
         )
         return Fixture(root, documents, transaction)
     }
 
     /** Creates an existing file and its live document with [text]. */
-    private fun Fixture.existing(name: String, text: String): FileObject {
-        val file = root.createData(name)
-        documents[file] = DefaultStyledDocument().also { it.insertString(0, text, null) }
-        return file
-    }
+    private fun Fixture.existing(name: String, text: String): FileObject = existingIn(root, name, text)
 
-    /** Creates an existing file and document beneath [parent]. */
+    /** Creates an existing file and document beneath [parent], mirroring disk and buffer content. */
     private fun Fixture.existingIn(parent: FileObject, name: String, text: String): FileObject {
         val file = parent.createData(name)
+        file.getOutputStream().use { it.write(text.toByteArray(Charsets.UTF_8)) }
         documents[file] = DefaultStyledDocument().also { it.insertString(0, text, null) }
         return file
     }
@@ -723,6 +722,149 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
         assertNull("undo must remove the renamed folder", fixture.root.getFileObject("after"))
         assertTrue("undo must preserve non-Kotlin descendants", readme.isValid)
         assertEquals("undo must retain the original package directive", originalText, fixture.textByPath(restored!!))
+    }
+
+    /** Verifies commit deletes a scheduled file and undo recreates it with its original text. */
+    fun testCommitAndUndo_deletesFileAndRestoresItsText() {
+        val fixture = fixture()
+        val java = fixture.existing("Source.java", "class Source {}\n")
+
+        fixture.transaction.deleteFile(java)
+        fixture.transaction.commit()
+
+        assertNull("commit must remove the scheduled file", fixture.root.getFileObject("Source.java"))
+
+        fixture.transaction.undo()
+
+        val restored = fixture.root.getFileObject("Source.java")
+        assertNotNull("undo must recreate the deleted file", restored)
+        assertEquals("class Source {}\n", fixture.text(restored!!))
+    }
+
+    /** Verifies a failed staged write prevents the scheduled deletion and keeps the original text. */
+    fun testCommitFailure_doesNotDeleteScheduledFile() {
+        val fixture = fixture(failWriting = { it.nameExt == "Failing.kt" })
+        val java = fixture.existing("Source.java", "class Source {}\n")
+        val failing = fixture.existing("Failing.kt", "fun failing() = 1\n")
+
+        fixture.transaction.deleteFile(java)
+        fixture.transaction.captureExisting(failing)
+        fixture.transaction.stageText(failing, "fun failing() = 2\n")
+
+        try {
+            fixture.transaction.commit()
+            fail("commit must fail when a staged write fails")
+        } catch (_: KotlinRefactoringTransaction.Failure) {
+            // Expected: the rollback path restores every participant.
+        }
+
+        assertNotNull("a failed commit must not delete the scheduled file", fixture.root.getFileObject("Source.java"))
+        assertEquals("fun failing() = 1\n", fixture.text(failing))
+    }
+
+    /** Verifies a failed deletion restores earlier staged writes so no half-applied state remains. */
+    fun testCommitFailure_rollsBackStagedWritesWhenDeletionFails() {
+        val fixture = fixture(deleteFileOnDisk = { error("Injected deletion failure") })
+        val java = fixture.existing("Source.java", "class Source {}\n")
+        val kotlin = fixture.existing("Source.kt", "fun source() = 1\n")
+
+        fixture.transaction.deleteFile(java)
+        fixture.transaction.captureExisting(kotlin)
+        fixture.transaction.stageText(kotlin, "fun source() = 2\n")
+
+        try {
+            fixture.transaction.commit()
+            fail("commit must fail when the deletion fails")
+        } catch (_: KotlinRefactoringTransaction.Failure) {
+            // Expected: the staged write has been rolled back.
+        }
+
+        assertEquals("rollback must restore the staged document", "fun source() = 1\n", fixture.text(kotlin))
+        assertTrue("the scheduled file must survive a failed deletion", java.isValid)
+    }
+
+    /** Verifies the snapshot comes from the open editor document, not the stale on-disk content. */
+    fun testDeleteFile_capturesUnsavedEditorText() {
+        val root = FileUtil.createMemoryFileSystem().root
+        val java = root.createData("Source.java")
+        java.getOutputStream().use { it.write("class Stale {}\n".toByteArray(Charsets.UTF_8)) }
+        val document = DefaultStyledDocument().also { it.insertString(0, "class Edited {}\n", null) }
+        val transaction = KotlinRefactoringTransaction(
+            openDocument = { if (it == java) document else null },
+            writeDocument = { _, editableDocument, text ->
+                if (editableDocument.length > 0) editableDocument.remove(0, editableDocument.length)
+                editableDocument.insertString(0, text, null)
+            },
+            saveDocument = { },
+        )
+
+        transaction.deleteFile(java)
+        transaction.commit()
+        assertNull("commit must delete the file", root.getFileObject("Source.java"))
+
+        transaction.undo()
+
+        val restored = root.getFileObject("Source.java") ?: error("Expected restored file")
+        assertEquals("class Edited {}\n", restored.asText())
+    }
+
+    /** Verifies undo of a deleted file also reverses a folder rename so the path matches the original. */
+    fun testCommitAndUndo_restoresDeletedFileInOriginalFolder() {
+        val fixture = fixture()
+        val folder = fixture.root.createFolder("before")
+        val java = fixture.existingIn(folder, "Source.java", "class Source {}\n")
+
+        fixture.transaction.renameFolder(folder, "after")
+        fixture.transaction.deleteFile(java)
+        fixture.transaction.commit()
+
+        assertNull("commit must delete the file", fixture.root.getFileObject("after/Source.java"))
+        assertNotNull("commit must still rename the folder", fixture.root.getFileObject("after"))
+
+        fixture.transaction.undo()
+
+        val restored = fixture.root.getFileObject("before/Source.java")
+        assertNotNull("undo must recreate the file in its original folder", restored)
+        assertEquals("class Source {}\n", fixture.text(restored!!))
+        assertNull("undo must remove the renamed folder", fixture.root.getFileObject("after"))
+    }
+
+    /** Verifies a file cannot be deleted twice or both modified and deleted by one transaction. */
+    fun testDeleteFile_rejectsDuplicateAndConflictingParticipants() {
+        val fixture = fixture()
+        val deleted = fixture.existing("Deleted.java", "class Deleted {}\n")
+        val modified = fixture.existing("Modified.kt", "fun modified() = 1\n")
+
+        fixture.transaction.deleteFile(deleted)
+        try {
+            fixture.transaction.deleteFile(deleted)
+            fail("a file must not be scheduled for deletion twice")
+        } catch (_: IllegalStateException) {
+            // Expected: the duplicate is rejected before commit.
+        }
+
+        fixture.transaction.captureExisting(modified)
+        try {
+            fixture.transaction.deleteFile(modified)
+            fail("a captured file must not also be scheduled for deletion")
+        } catch (_: IllegalStateException) {
+            // Expected: modifying and deleting one file in one transaction is contradictory.
+        }
+    }
+
+    /** Verifies rollback after commit restores the deleted file, and a second rollback is a no-op. */
+    fun testRollback_recreatesDeletedFileOnlyOnce() {
+        val fixture = fixture()
+        val java = fixture.existing("Source.java", "class Source {}\n")
+
+        fixture.transaction.deleteFile(java)
+        fixture.transaction.commit()
+        fixture.transaction.rollback()
+        fixture.transaction.rollback()
+
+        val restored = fixture.root.getFileObject("Source.java")
+        assertNotNull("rollback must recreate the file", restored)
+        assertEquals("class Source {}\n", restored!!.asText())
     }
 
     /** Applies the same descending minimal-hunk sequence used by multi-file refactorings. */

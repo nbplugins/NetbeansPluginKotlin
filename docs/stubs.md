@@ -152,6 +152,7 @@ These are not class-file overrides but *service registrations* performed in
 | Service interface | Implementation | Scope | Purpose |
 |------------------|----------------|-------|---------|
 | `PsiSearchHelper` (`com.intellij.psi.search`) | `NoOpPsiSearchHelper` (`io.github.nbplugins.kotlin.nbm.resolve`) | Project | Called by `SearchRequestQuery.processResults` regardless of the search EP.  No-op: `getUseScope` returns `LocalSearchScope(file)`, booleans return `true`, arrays return empty. |
+| `NullableNotNullManager` (`com.intellij.codeInsight`) | `NullableNotNullManagerImpl` (`com.intellij.codeInsight`) | Project | The abstract base ships in the repacked `kotlin-compiler` JAR, but no implementation is published in any bundled artifact, so the static `getNullability`/`isNullable`/`isNotNull` helpers failed and J2K lost annotation-based nullability inference. The implementation honours direct nullability annotations plus JSR-305 `@TypeQualifierDefault`; nickname annotations and Checker Framework defaults are not scanned. It must sit in `com.intellij.codeInsight` because `getNullityDefault` is package-private. |
 | `ShortenReferencesFacility` (`org.jetbrains.kotlin.idea.base.codeInsight`) | `KotlinSymbolBasedShortenReferencesFacility` (`io.github.nbplugins.kotlin.refactoring`) | Application | Called by `InlinePostProcessor.shortenReferences` after each inline substitution.  Wraps `SymbolBasedShortenReferencesFacility` (IDEA `internal` class) via Kotlin delegation — wrapper lives in `KotlinRefactoring` module which can access `internal` Kotlin symbols of that module. |
 | `KotlinMemberInfoSupport` / `KotlinMemberInfoStorageSupport` (`org.jetbrains.kotlin.idea.refactoring.memberInfo`) | `K2MemberInfoSupport` / `K2MemberInfoStorageSupport` | Application | Supplies K2 member labels, override metadata, and hierarchy membership needed by Extract Super (E9.15/E9.16) and Pull Members Up (E9.17). |
 | `StandaloneInheritorSearch`, `forEachOverridingElement`, and `KotlinSearchUsagesSupport` hierarchy methods | `KotlinStandaloneInheritorSearch` (`io.github.nbplugins.kotlin.nbm.refactoring`) | Active standalone session | Replaces IDEA indexed Kotlin inheritor, overrider, and direct-super lookups with K2 scans of source files in the active build session. Java/library results and complete index-backed conflict checks remain unsupported. |
@@ -182,6 +183,66 @@ E9.17 reuses the K2 mutation engine and supports source and target classes in di
 The standalone conflict preview currently detects direct target-member name collisions. IDEA's additional
 project-index-backed checks (inheritor accidental overrides and full cross-project visibility search) rely on
 IDE services not present in the standalone Analysis API environment and are deliberately not simulated.
+
+## J2K engine port (added for E10)
+
+Java → Kotlin conversion runs IDEA's real K2 J2K engine, compiled from
+`submodules/IntellijCommunity` into the `KotlinJ2K` reactor module
+(`io.github.nbplugins:netbeans-plugin-kotlin-j2k`). `KotlinJ2K/pom.xml` copies the sources at
+`initialize`, applies patch scripts at `generate-sources`, and compiles them with `-proc:none` like
+`Nbm`.
+
+**Copied**: `j2k/shared/src`, `j2k/k2/src`, and the support sources `DocCommentConverter.kt`,
+`DocumentUtils.kt`, `KotlinPsiHeuristics.kt`, `KotlinUserDataUtils.kt`, `visibilityUtil.kt`,
+`KotlinStubUtils.kt`. **Not copied**: `j2k/k1.new*`, `j2k/k1.old*`, and the copy/paste entry points
+(`j2k/*/copyPaste/**`, `KotlinPasteFromJavaDialog.java`, `J2KKotlinConfigurationHelper.kt`) — they
+need the IDE project model or editor integration that the conversion path never touches.
+
+**Patches**: the K2 post-processor and its processing groups are widened from `internal` to
+`public`; `J2kConverterExtension` and `K2J2KConverterExtension` lose the copy/paste members and the
+configuration-helper calls.
+
+### Stubs in `KotlinJ2K/src/main/kotlin/`
+
+| Stub | Kind | Behaviour |
+|------|------|-----------|
+| `KotlinPluginModeProvider` | compile + runtime | reports K2 mode |
+| `Kotlin*Index` objects | runtime no-op | return empty lists (no stub index in a standalone session) |
+| `codeInspection/dataFlow/*` (`DfaUtil`, `DfaPsiUtil`, `NullabilityUtil`, `DfType`…) | runtime degraded | annotation-based nullability only |
+| `JavaSourceInference.inferNullability` | runtime degraded | reads nullability annotations from the Java PSI |
+| `localCanBeFinal/LocalCanBeFinal.getControlFlow` | **real** | delegates to the era-193 control-flow engine bundled in `KotlinCompilerCliBase` |
+| `siyeh/ig/psiutils/*` | mixed | `FinalUtils` is real (control flow); `ExpectedTypeUtils`, `ExpressionUtils`, `MethodCallUtils`, `VariableAccessUtils` return "unknown" |
+| `idea/j2k/IdeaDocCommentConverter` | runtime degraded | simplified Javadoc → KDoc (no `@param`/`@return` reformatting) |
+
+### Runtime registrations in `KotlinAnalysisAPISession`
+
+| Registration | Why |
+|--------------|-----|
+| `StandaloneKaModuleProvider` (project service, replaces `KaModuleProvider`) | IDEA's provider resolves through the module index; the standalone session answers from `modulesWithFiles` |
+| `org.jetbrains.kotlin.j2kConverterExtension` + `K2J2KConverterExtension` | without the EP, `J2kConverterExtension.extension(K2)` throws `NoSuchElementException` |
+| `com.intellij.deepestSuperMethodsSearch` + `PsiDeepestSuperMethodsQueryExecutor` | `java-impl` declares this EP in `plugin.xml`; without it `PsiMethod.findDeepestSuperMethods()` (used by `deepestFqName` for `equals`/`hashCode`/`toString`) throws `Missing extension point`. The executor walks `PsiSuperMethodImplUtil.findSuperMethods` — PSI only, no index |
+
+### Bridges in `KotlinRefactoring`
+
+`KotlinOptimizeImportsFacility` keeps IDEA's interface shape; `analyzeImports`/
+`prepareOptimizedImports` return `null` (no resolution index for unused-import detection), while
+`replaceImports` is the real implementation. `SearchUtils.findDeepestSuperMethodsNoWrapping` and
+`Module.toKaSourceModuleWithElementSourceModuleKindOrProduction` resolve through K2/the session
+provider.
+
+### Limitations
+
+- **No Java copy/paste conversion** (the copy/paste post-processors are not ported).
+- **No project-configuration prompts** (IDEA's "convert the whole module?" flow).
+- **Unused-import detection is off** during conversion, so imports are kept as the engine emitted
+  them.
+- **Formatting is text-based**: the engine's `FormatCodeProcessing` calls `CodeStyleManager.reformat`,
+  which is a no-op in the standalone mock application, so the adapter runs the converted text through
+  `KotlinFormatterUtils` with the project's Kotlin settings.
+- **No editor-level undo**: the conversion runs inside a NetBeans refactoring session (opened from
+  the Refactoring window), so Ctrl+Z in the new Kotlin buffer does not revert it. **Undo Last Refactoring** does: it restores the `.java`
+  with its original text and removes the `.kt` in one step. The stale sibling `.class` file is
+  deleted alongside the `.java` and is build output, so undo does not restore it.
 
 ## Active resource replacements
 
