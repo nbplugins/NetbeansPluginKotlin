@@ -99,7 +99,9 @@ class JavaToKotlinPlugin(
  * The Kotlin file is created by [KotlinRefactoringTransaction.createFile] before the analysis
  * session is rebuilt, because the session discovers its sources from disk. Writing the converted
  * text and deleting the Java original happen in the same [KotlinRefactoringTransaction.commit],
- * and [undoChange] restores both through the transaction retained after a successful commit.
+ * and [undoChange] restores both through the transaction retained after a successful commit. Undo
+ * recreates the Java file as a new `FileObject`, so every entry point resolves the target through
+ * [JavaToKotlinRefactoring.currentJavaFile] and a redo converts the restored file.
  *
  * `performChange` never throws: the refactoring session registers its undo entry even when an
  * element fails, so a thrown exception would leave a broken entry in the Undo Last Refactoring
@@ -125,13 +127,13 @@ class JavaToKotlinElement(
     override fun getDisplayText(): String = getText()
 
     /** @return the converted Java file, so the undo entry points at the original location. */
-    override fun getLookup(): Lookup = Lookups.fixed(refactoring.javaFile)
+    override fun getLookup(): Lookup = Lookups.fixed(currentJavaFile())
 
     /**
      * @return the Java file, which is also the parent for the removal half of the change and must
      * therefore be writable for the element to stay enabled
      */
-    override fun getParentFile(): FileObject = refactoring.javaFile
+    override fun getParentFile(): FileObject = currentJavaFile()
 
     /** @return no position, because the change spans two files and the preview is not used. */
     override fun getPosition(): PositionBounds? = null
@@ -146,7 +148,9 @@ class JavaToKotlinElement(
         var pending: KotlinRefactoringTransaction? = null
         try {
             val project = refactoring.project
-            val javaFile = refactoring.javaFile
+            // Undo recreates the deleted Java file, so a redo must convert the new handle.
+            val javaFile = refactoring.currentJavaFile()
+                ?: error("The Java source file no longer exists.")
             saveJavaFile(javaFile)
 
             val current = KotlinRefactoringTransaction()
@@ -222,6 +226,17 @@ class JavaToKotlinElement(
             KotlinLogger.INSTANCE.logException("JavaToKotlinElement: could not show the failure", error)
         }
     }
+
+    /**
+     * Resolves the Java file to convert, including one recreated by undo before a redo.
+     *
+     * The refactoring framework requires a non-null parent file and lookup, so the stale handle is
+     * returned when the target is gone; [performChange] reports that case instead of converting.
+     *
+     * @return the current Java file
+     */
+    private fun currentJavaFile(): FileObject =
+        refactoring.currentJavaFile() ?: refactoring.javaFile
 
     /**
      * Saves [javaFile] so the analysis session reads the text the user currently sees.

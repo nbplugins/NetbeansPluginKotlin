@@ -49,10 +49,38 @@ class PsiDeepestSuperMethodsQueryExecutor : QueryExecutor<PsiMethod, PsiMethod> 
      * @return `true` when all reported methods were processed, `false` when [consumer] stopped
      */
     override fun execute(method: PsiMethod, consumer: Processor<in PsiMethod>): Boolean {
-        for (superMethod in PsiSuperMethodImplUtil.findSuperMethods(method, false)) {
-            if (PsiSuperMethodImplUtil.findSuperMethods(superMethod, false).isNotEmpty()) continue
-            if (!consumer.process(superMethod)) return false
+        val roots = LinkedHashSet<PsiMethod>()
+        collectRoots(method, roots, HashSet())
+        for (root in roots) {
+            if (!consumer.process(root)) return false
         }
         return true
+    }
+
+    /**
+     * Collects the super-method chain roots of [method] into [roots].
+     *
+     * `findSuperMethods` reports the nearest declaration in each supertype branch, not the whole
+     * chain: with `B.equals` overriding `A.equals`, which overrides `Object.equals`, it returns
+     * only `A.equals`. A declaration that still overrides something must therefore be followed up
+     * instead of being discarded, or no root is found at all.
+     *
+     * @param method method whose ancestors are walked
+     * @param roots receives every reached declaration that overrides nothing
+     * @param visited guards against repeated and cyclic branches (diamond inheritance)
+     */
+    private fun collectRoots(
+        method: PsiMethod,
+        roots: MutableSet<PsiMethod>,
+        visited: MutableSet<PsiMethod>,
+    ) {
+        for (superMethod in PsiSuperMethodImplUtil.findSuperMethods(method, false)) {
+            if (!visited.add(superMethod)) continue
+            if (PsiSuperMethodImplUtil.findSuperMethods(superMethod, false).isEmpty()) {
+                roots += superMethod
+            } else {
+                collectRoots(superMethod, roots, visited)
+            }
+        }
     }
 }

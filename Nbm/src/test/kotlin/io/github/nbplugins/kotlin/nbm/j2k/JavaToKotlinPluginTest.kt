@@ -84,6 +84,44 @@ class JavaToKotlinPluginTest : NbTestCase("JavaToKotlinPluginTest") {
         assertTrue("the problem must be fatal", (problem as Problem).isFatal)
     }
 
+    /**
+     * Undo recreates the deleted Java file as a new `FileObject`; redo must not reuse the stale one.
+     *
+     * `Undo Last Refactoring` runs `restoreDeletions`, which creates a new handle for the restored
+     * file. The handle captured when the action ran points at a deleted file, and a second
+     * `performChange` would fail its `isValid` check instead of converting again.
+     */
+    fun testCurrentJavaFile_resolvesRecreatedFile() {
+        val java = root.createData("Source.java")
+        val refactoring = JavaToKotlinRefactoring(projectStub(), java)
+        java.delete()
+        val recreated = root.createData("Source.java")
+
+        val current = refactoring.currentJavaFile()
+
+        assertSame("the recreated file must be resolved", recreated, current)
+        assertSame("the carrier must keep the new handle", recreated, refactoring.javaFile)
+    }
+
+    /** The restored file passes validation, so a redo is not rejected as a missing target. */
+    fun testValidate_acceptsRecreatedFile() {
+        val java = root.createData("Source.java")
+        val refactoring = JavaToKotlinRefactoring(projectStub(), java)
+        java.delete()
+        root.createData("Source.java")
+
+        assertNull("the restored file must pass validation", refactoring.validate())
+    }
+
+    /** A target that stays deleted is reported as missing instead of being converted. */
+    fun testCurrentJavaFile_reportsMissingFile() {
+        val java = root.createData("Source.java")
+        val refactoring = JavaToKotlinRefactoring(projectStub(), java)
+        java.delete()
+
+        assertNull("a missing target must not be resolved", refactoring.currentJavaFile())
+    }
+
     /** A deleted or non-file target is rejected instead of being converted. */
     fun testValidate_rejectsInvalidTarget() {
         val folder = root.createFolder("Source.java")

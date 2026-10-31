@@ -44,12 +44,13 @@ class PsiDeepestSuperMethodsQueryExecutorTest : KotlinTestCase("PsiDeepestSuperM
     }
 
     /**
-     * Parses `withEquals.java` through the session's PSI manager.
+     * Parses a fixture file through the session's PSI manager.
      *
+     * @param fileName name of the fixture file to parse
      * @return the Java file, or `null` when the session does not contain it
      */
-    private fun javaFile(): PsiJavaFile? {
-        val fileObject = dir.getFileObject("withEquals.java") ?: return null
+    private fun javaFile(fileName: String = "withEquals.java"): PsiJavaFile? {
+        val fileObject = dir.getFileObject(fileName) ?: return null
         val virtualFile = session.fileMap[fileObject.path] ?: return null
         return runReadAction<PsiJavaFile?> {
             PsiManager.getInstance(session.session.project).findFile(virtualFile) as? PsiJavaFile
@@ -57,16 +58,18 @@ class PsiDeepestSuperMethodsQueryExecutorTest : KotlinTestCase("PsiDeepestSuperM
     }
 
     /**
-     * Returns the method with the given name from the fixture class.
+     * Returns the method with the given name from a fixture file.
      *
      * @param name method name
+     * @param fileName fixture file declaring the method
      * @return the method, or `null` when the fixture does not declare it
      */
-    private fun methodNamed(name: String): PsiMethod? = javaFile()?.let { file ->
-        runReadAction {
-            PsiTreeUtil.findChildrenOfType(file, PsiMethod::class.java).firstOrNull { it.name == name }
+    private fun methodNamed(name: String, fileName: String = "withEquals.java"): PsiMethod? =
+        javaFile(fileName)?.let { file ->
+            runReadAction {
+                PsiTreeUtil.findChildrenOfType(file, PsiMethod::class.java).firstOrNull { it.name == name }
+            }
         }
-    }
 
     /** An `equals` override resolves to the declaration in `java.lang.Object`. */
     fun testEqualsOverrideResolvesToObjectEquals() {
@@ -76,6 +79,38 @@ class PsiDeepestSuperMethodsQueryExecutorTest : KotlinTestCase("PsiDeepestSuperM
         val deepestMethod = deepest[0]
         assertEquals("equals", deepestMethod.name)
         assertEquals("java.lang.Object", runReadAction { deepestMethod.containingClass?.qualifiedName })
+    }
+
+    /**
+     * An override that passes through an intermediate implementation still resolves to `Object`.
+     *
+     * `WithIntermediate.equals` overrides `Middle.equals`, which overrides `Object.equals`. The
+     * intermediate declaration is not a deepest super method itself, so the search has to keep
+     * walking up its chain instead of discarding it.
+     */
+    fun testEqualsThroughIntermediateClassResolvesToObjectEquals() {
+        val method = methodNamed("equals", "withIntermediate.java") ?: return
+        val deepest = runReadAction { PsiSuperMethodImplUtil.findDeepestSuperMethods(method) }
+        assertEquals("deepest super methods of the inherited equals", 1, deepest.size)
+        assertEquals(
+            "java.lang.Object",
+            runReadAction { deepest[0].containingClass?.qualifiedName },
+        )
+    }
+
+    /** The executor walks through intermediate declarations as well. */
+    fun testExecutorWalksThroughIntermediateClass() {
+        val method = methodNamed("equals", "withIntermediate.java") ?: return
+        val reported = mutableListOf<PsiMethod>()
+        val finished = runReadAction {
+            PsiDeepestSuperMethodsQueryExecutor().execute(method) {
+                reported += it
+                true
+            }
+        }
+        assertTrue("executor must run to completion", finished)
+        assertEquals("reported methods", 1, reported.size)
+        assertEquals("java.lang.Object", runReadAction { reported[0].containingClass?.qualifiedName })
     }
 
     /** A method that overrides nothing has no deepest super methods. */

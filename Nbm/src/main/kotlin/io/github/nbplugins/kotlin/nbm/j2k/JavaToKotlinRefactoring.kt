@@ -38,8 +38,39 @@ import org.openide.util.lookup.Lookups
  */
 class JavaToKotlinRefactoring(
     val project: Project,
-    val javaFile: FileObject,
+    javaFile: FileObject,
 ) : AbstractRefactoring(Lookups.fixed(javaFile)) {
+
+    /**
+     * The Java source file to convert.
+     *
+     * Replaced through [currentJavaFile] when undo recreates the file as a new `FileObject`, so
+     * the element keeps a valid handle for a redo.
+     */
+    var javaFile: FileObject = javaFile
+        private set
+
+    /** Folder that contained the target when the refactoring was created, used to find it again. */
+    private val javaParent: FileObject? = javaFile.parent
+
+    /** Name and extension captured while the target still existed. */
+    private val javaNameExt: String = javaFile.nameExt
+
+    /**
+     * Returns the Java file that currently represents the conversion target.
+     *
+     * `Undo Last Refactoring` recreates a deleted Java file with `createData`, which produces a new
+     * `FileObject`; the handle captured when the action ran then points at a deleted file and a
+     * redo would fail its `isValid` check. The current handle is looked up by the original parent
+     * and name and cached, so the element's lookup and parent file are valid again.
+     *
+     * @return the current handle, or `null` when the conversion target does not exist (any more)
+     */
+    internal fun currentJavaFile(): FileObject? {
+        if (javaFile.isValid) return javaFile
+        javaParent?.getFileObject(javaNameExt)?.let { javaFile = it }
+        return javaFile.takeIf { it.isValid }
+    }
 
     /**
      * User-facing message of the last failed [JavaToKotlinElement.performChange] call.
@@ -63,7 +94,9 @@ class JavaToKotlinRefactoring(
      * @return a fatal problem describing why the conversion cannot run, or `null` when it can
      */
     internal fun validate(): Problem? {
-        if (!javaFile.isValid || javaFile.isFolder) {
+        val javaFile = currentJavaFile()
+            ?: return Problem(true, "Convert to Kotlin requires an existing Java source file.")
+        if (javaFile.isFolder) {
             return Problem(true, "Convert to Kotlin requires an existing Java source file.")
         }
         val parent = javaFile.parent
