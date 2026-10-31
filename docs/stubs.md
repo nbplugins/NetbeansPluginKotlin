@@ -239,8 +239,8 @@ provider.
 - **Formatting is text-based**: the engine's `FormatCodeProcessing` calls `CodeStyleManager.reformat`,
   which is a no-op in the standalone mock application, so the adapter runs the converted text through
   `KotlinFormatterUtils` with the project's Kotlin settings.
-- **No editor-level undo**: the conversion runs as a headless NetBeans refactoring, so Ctrl+Z in
-  the new Kotlin buffer does not revert it. **Undo Last Refactoring** does: it restores the `.java`
+- **No editor-level undo**: the conversion runs inside a NetBeans refactoring session (opened from
+  the Refactoring window), so Ctrl+Z in the new Kotlin buffer does not revert it. **Undo Last Refactoring** does: it restores the `.java`
   with its original text and removes the `.kt` in one step. The stale sibling `.class` file is
   deleted alongside the `.java` and is build output, so undo does not restore it.
 

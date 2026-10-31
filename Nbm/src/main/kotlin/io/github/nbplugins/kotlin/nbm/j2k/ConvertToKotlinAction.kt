@@ -18,6 +18,7 @@ package io.github.nbplugins.kotlin.nbm.j2k
 
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.netbeans.api.project.FileOwnerQuery
+import org.netbeans.modules.refactoring.spi.ui.UI
 import org.openide.DialogDisplayer
 import org.openide.NotifyDescriptor
 import org.openide.awt.ActionID
@@ -29,6 +30,7 @@ import org.openide.util.HelpCtx
 import org.openide.util.ImageUtilities
 import org.openide.util.Utilities
 import org.openide.util.actions.NodeAction
+import org.openide.windows.TopComponent
 
 /**
  * **Refactor → Convert to Kotlin** — converts the selected Java source file into a sibling
@@ -43,20 +45,26 @@ import org.openide.util.actions.NodeAction
  * the global context) is exactly one `text/x-java` file; the file must also belong to a project,
  * which is checked when the action runs.
  *
- * This is the **controller** layer: it resolves the target and shows the confirmation dialogs,
- * while the conversion itself is performed by [Java2KotlinConverter].
+ * Invoking the action opens the standard NetBeans Refactoring window ([JavaToKotlinUI]); the
+ * conversion itself runs only after the user presses **Refactor**, under NetBeans' own progress
+ * dialog. An unconvertible target (missing file, existing `.kt` sibling) is rejected with an error
+ * dialog before the window opens: a parameterless refactoring never shows a parameters dialog, so
+ * a problem reported later would be silently dropped.
+ *
+ * This is the **controller** layer: it resolves and validates the target, while the conversion
+ * itself is performed by [JavaToKotlinPlugin].
  */
 @ActionID(category = "Refactoring", id = "io.github.nbplugins.kotlin.nbm.j2k.ConvertToKotlinAction")
 @ActionRegistration(displayName = "Convert to Kotlin", iconBase = "org/jetbrains/kotlin/kotlin.png")
 open class ConvertToKotlinAction : NodeAction() {
 
     init {
-        putValue(NAME, "Convert to Kotlin")
+        putValue(NAME, JavaToKotlinUI.NAME)
         putValue(SHORT_DESCRIPTION, "Convert the Java Source File to Kotlin")
         putValue(SMALL_ICON, ImageUtilities.loadImageIcon(KOTLIN_ICON_PATH, false))
     }
 
-    /** Asks for confirmation and schedules the conversion of the selected Java file. */
+    /** Opens the Refactoring window for the selected Java file. */
     override fun performAction(nodes: Array<Node>) {
         val javaFile = targetFile(nodes) ?: return
         val project = FileOwnerQuery.getOwner(javaFile)
@@ -66,13 +74,19 @@ open class ConvertToKotlinAction : NodeAction() {
             )
             return
         }
-        val confirmation = NotifyDescriptor.Confirmation(
-            "Convert ${javaFile.name}.java to Kotlin?",
-            NotifyDescriptor.YES_NO_OPTION,
-        )
-        if (DialogDisplayer.getDefault().notify(confirmation) != NotifyDescriptor.YES_OPTION) return
-        // The document parameter is unused by the converter: it re-saves the file from disk.
-        Java2KotlinConverter.convert(null, project, javaFile)
+        val refactoring = JavaToKotlinRefactoring(project, javaFile)
+        val problem = refactoring.validate()
+        if (problem != null) {
+            DialogDisplayer.getDefault().notify(
+                NotifyDescriptor.Message(
+                    problem.message ?: "Java to Kotlin conversion is not applicable.",
+                    NotifyDescriptor.ERROR_MESSAGE,
+                ),
+            )
+            return
+        }
+        // Must run on the EDT: the Refactoring window builds its Swing components immediately.
+        UI.openRefactoringUI(JavaToKotlinUI(refactoring), TopComponent.getRegistry().activated)
     }
 
     /**
@@ -90,7 +104,7 @@ open class ConvertToKotlinAction : NodeAction() {
     override fun getHelpCtx(): HelpCtx = HelpCtx.DEFAULT_HELP
 
     /** @return stable name used by the manual layer registration. */
-    override fun getName(): String = "Convert to Kotlin"
+    override fun getName(): String = JavaToKotlinUI.NAME
 
     /**
      * Resolves the Java source file the action should convert.

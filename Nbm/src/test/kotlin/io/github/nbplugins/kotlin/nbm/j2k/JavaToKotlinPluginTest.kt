@@ -18,6 +18,7 @@ package io.github.nbplugins.kotlin.nbm.j2k
 
 import org.jetbrains.kotlin.refactorings.rename.KotlinRefactoringsFactory
 import org.netbeans.modules.refactoring.api.Problem
+import org.netbeans.modules.refactoring.spi.ProgressProvider
 import org.netbeans.junit.NbTestCase
 import org.openide.filesystems.FileObject
 import org.openide.filesystems.FileUtil
@@ -62,41 +63,80 @@ class JavaToKotlinPluginTest : NbTestCase("JavaToKotlinPluginTest") {
     }
 
     /** A missing Kotlin sibling is accepted, so the conversion is allowed to register its element. */
-    fun testPrepare_acceptsConvertibleFile() {
+    fun testValidate_acceptsConvertibleFile() {
         val java = root.createData("Source.java")
 
-        assertNull("a convertible file must not produce a problem", plugin(JavaToKotlinRefactoring(projectStub(), java)).validate())
+        assertNull(
+            "a convertible file must not produce a problem",
+            JavaToKotlinRefactoring(projectStub(), java).validate(),
+        )
     }
 
     /** An existing sibling `.kt` is a fatal problem, so nothing is ever overwritten. */
-    fun testPrepare_rejectsExistingKotlinFile() {
+    fun testValidate_rejectsExistingKotlinFile() {
         val java = root.createData("Source.java")
         root.createData("Source.kt")
         val refactoring = JavaToKotlinRefactoring(projectStub(), java)
 
-        val problem = plugin(refactoring).validate()
+        val problem = refactoring.validate()
 
         assertNotNull("an existing .kt must be rejected", problem)
         assertTrue("the problem must be fatal", (problem as Problem).isFatal)
     }
 
     /** A deleted or non-file target is rejected instead of being converted. */
-    fun testPrepare_rejectsInvalidTarget() {
+    fun testValidate_rejectsInvalidTarget() {
         val folder = root.createFolder("Source.java")
         val refactoring = JavaToKotlinRefactoring(projectStub(), folder)
 
-        val problem = plugin(refactoring).validate()
+        val problem = refactoring.validate()
 
         assertNotNull("a folder must be rejected", problem)
         assertTrue("the problem must be fatal", (problem as Problem).isFatal)
     }
 
-    /** The lifecycle hooks report no problems and the cancel hook performs no work. */
+    /**
+     * The target is validated in `preCheck`, because NetBeans silently drops a `prepare` problem
+     * when the refactoring has no parameters panel.
+     */
+    fun testPreCheck_reportsTargetProblem() {
+        val java = root.createData("Source.java")
+        root.createData("Source.kt")
+        val plugin = JavaToKotlinPlugin(JavaToKotlinRefactoring(projectStub(), java))
+
+        val problem = plugin.preCheck()
+
+        assertNotNull("preCheck must report the existing .kt", problem)
+        assertTrue("the problem must be fatal", (problem as Problem).isFatal)
+    }
+
+    /** A convertible file passes `preCheck`, so the Refactoring window opens. */
+    fun testPreCheck_acceptsConvertibleFile() {
+        val java = root.createData("Source.java")
+        val plugin = JavaToKotlinPlugin(JavaToKotlinRefactoring(projectStub(), java))
+
+        assertNull("a convertible file must pass preCheck", plugin.preCheck())
+    }
+
+    /**
+     * The plugin must not be a progress provider: NetBeans then shows the (empty) parameters
+     * dialog instead of the Refactoring window for this parameterless refactoring.
+     */
+    fun testPlugin_isNotProgressProvider() {
+        val java = root.createData("Source.java")
+        val plugin = JavaToKotlinPlugin(JavaToKotlinRefactoring(projectStub(), java))
+
+        assertFalse(
+            "a progress-providing plugin makes NetBeans open a parameters dialog instead of the Refactoring window",
+            plugin is ProgressProvider,
+        )
+    }
+
+    /** The parameter hooks report no problems and the cancel hook performs no work. */
     fun testPlugin_lifecycleHooks() {
         val java = root.createData("Source.java")
         val plugin = JavaToKotlinPlugin(JavaToKotlinRefactoring(projectStub(), java))
 
-        assertNull(plugin.preCheck())
         assertNull(plugin.fastCheckParameters())
         assertNull(plugin.checkParameters())
         plugin.cancelRequest()

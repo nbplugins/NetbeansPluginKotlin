@@ -17,6 +17,7 @@ package io.github.nbplugins.kotlin.nbm.j2k
 
 import org.netbeans.api.project.Project
 import org.netbeans.modules.refactoring.api.AbstractRefactoring
+import org.netbeans.modules.refactoring.api.Problem
 import org.openide.filesystems.FileObject
 import org.openide.util.lookup.Lookups
 
@@ -44,8 +45,32 @@ class JavaToKotlinRefactoring(
      * User-facing message of the last failed [JavaToKotlinElement.performChange] call.
      *
      * `performChange` cannot report failure through the refactoring API: the session registers its
-     * undo entry even when an element throws. The element therefore records the reason here, and
-     * [Java2KotlinConverter] shows it after the session completes.
+     * undo entry even when an element throws. The element therefore records the reason here; it also
+     * shows the message itself, because the Refactoring window closes without giving the caller a
+     * chance to report it. [Java2KotlinConverter.convertNow] keeps the field for headless callers
+     * and tests.
      */
     var failureMessage: String? = null
+
+    /**
+     * Checks that the Java file still exists and has no Kotlin sibling.
+     *
+     * Validation lives on the carrier rather than in [JavaToKotlinPlugin] because there are two
+     * callers that must agree on it: the plugin (in `preCheck`/`prepare`) and
+     * [ConvertToKotlinAction], which has to reject an unconvertible target before it opens the
+     * Refactoring window.
+     *
+     * @return a fatal problem describing why the conversion cannot run, or `null` when it can
+     */
+    internal fun validate(): Problem? {
+        if (!javaFile.isValid || javaFile.isFolder) {
+            return Problem(true, "Convert to Kotlin requires an existing Java source file.")
+        }
+        val parent = javaFile.parent
+            ?: return Problem(true, "Convert to Kotlin requires a file inside a folder.")
+        if (parent.getFileObject(javaFile.name, "kt") != null) {
+            return Problem(true, "${parent.path}/${javaFile.name}.kt already exists.")
+        }
+        return null
+    }
 }

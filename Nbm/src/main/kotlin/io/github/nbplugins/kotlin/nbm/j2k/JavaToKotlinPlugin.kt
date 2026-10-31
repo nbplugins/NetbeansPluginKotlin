@@ -19,10 +19,11 @@ import io.github.nbplugins.kotlin.nbm.refactoring.KotlinRefactoringTransaction
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.netbeans.modules.refactoring.api.Problem
-import org.netbeans.modules.refactoring.spi.ProgressProviderAdapter
 import org.netbeans.modules.refactoring.spi.RefactoringElementsBag
 import org.netbeans.modules.refactoring.spi.RefactoringPlugin
 import org.netbeans.modules.refactoring.spi.SimpleRefactoringElementImplementation
+import org.openide.DialogDisplayer
+import org.openide.NotifyDescriptor
 import org.openide.cookies.OpenCookie
 import org.openide.cookies.SaveCookie
 import org.openide.filesystems.FileObject
@@ -39,16 +40,33 @@ import org.openide.util.lookup.Lookups
  * registered as one **Undo Last Refactoring** entry.
  *
  * The plugin performs no work itself; all mutation happens in [JavaToKotlinElement], which the
- * session invokes once the caller has already confirmed the operation with the user.
+ * session invokes after the user presses **Refactor** in the Refactoring window opened by
+ * [JavaToKotlinUI].
+ *
+ * The plugin deliberately does **not** implement
+ * [org.netbeans.modules.refactoring.spi.ProgressProvider]: NetBeans registers the parameters panel
+ * of a refactoring as a progress listener before deciding whether to show that panel, and then
+ * treats a refactoring with a progress-providing plugin as one that needs a parameters dialog. The
+ * conversion has no parameters, so it would get an empty "Convert to Kotlin" dialog with a
+ * **Finish** button instead of the Refactoring window.
  *
  * @param refactoring carrier holding the Java file to convert and the failure message channel
  */
 class JavaToKotlinPlugin(
     private val refactoring: JavaToKotlinRefactoring,
-) : ProgressProviderAdapter(), RefactoringPlugin {
+) : RefactoringPlugin {
 
-    /** @return no preliminary problem; the file is validated in [prepare]. */
-    override fun preCheck(): Problem? = null
+    /**
+     * Validates the conversion target before NetBeans prepares the refactoring.
+     *
+     * The check must happen here, not only in [prepare]: with no parameters, NetBeans runs
+     * `prepare` on a dialog it is about to throw away, so a problem returned from `prepare` is
+     * silently lost and the Refactoring window just closes. A `preCheck` problem is displayed to
+     * the user.
+     *
+     * @return a fatal problem when the conversion cannot start, otherwise `null`
+     */
+    override fun preCheck(): Problem? = refactoring.validate()
 
     /** @return no fast problem; the conversion has no user-editable parameters. */
     override fun fastCheckParameters(): Problem? = null
@@ -60,38 +78,17 @@ class JavaToKotlinPlugin(
     override fun cancelRequest() = Unit
 
     /**
-     * Validates the conversion target and registers the single apply element.
+     * Re-validates the conversion target and registers the single apply element.
      *
-     * The target check is repeated here rather than only in the action so that a stale action
-     * invocation cannot overwrite a Kotlin file created in the meantime.
+     * The target check is repeated here rather than only in [preCheck] so that a Kotlin file
+     * created while the Refactoring window was open is never overwritten.
      *
      * @param bag NetBeans bag that receives the mutation element
      * @return a fatal problem when the conversion cannot start, otherwise `null`
      */
     override fun prepare(bag: RefactoringElementsBag): Problem? {
-        validate()?.let { return it }
+        refactoring.validate()?.let { return it }
         bag.add(refactoring, JavaToKotlinElement(refactoring))
-        return null
-    }
-
-    /**
-     * Checks that the Java file still exists and has no Kotlin sibling.
-     *
-     * Extracted from [prepare] so the guard conditions can be unit-tested without a
-     * [RefactoringElementsBag], whose constructor is package-private in the refactoring API.
-     *
-     * @return a fatal problem describing why the conversion cannot run, or `null` when it can
-     */
-    internal fun validate(): Problem? {
-        val javaFile = refactoring.javaFile
-        if (!javaFile.isValid || javaFile.isFolder) {
-            return Problem(true, "Convert to Kotlin requires an existing Java source file.")
-        }
-        val parent = javaFile.parent
-            ?: return Problem(true, "Convert to Kotlin requires a file inside a folder.")
-        if (parent.getFileObject(javaFile.name, "kt") != null) {
-            return Problem(true, "${parent.path}/${javaFile.name}.kt already exists.")
-        }
         return null
     }
 }
@@ -106,8 +103,11 @@ class JavaToKotlinPlugin(
  *
  * `performChange` never throws: the refactoring session registers its undo entry even when an
  * element fails, so a thrown exception would leave a broken entry in the Undo Last Refactoring
- * history. Failures are instead recorded in [JavaToKotlinRefactoring.failureMessage] after the
- * transaction has been rolled back.
+ * history. Unexpected failures are instead recorded in [JavaToKotlinRefactoring.failureMessage]
+ * after the transaction has been rolled back, and shown to the user from here: the Refactoring
+ * window closes as soon as the session ends and has no way to report an element's failure.
+ * Ordinary conversion failures are already reported by [Java2KotlinConverter.convertInSession]
+ * with a more specific message.
  *
  * @param refactoring carrier holding the Java file to convert and the failure message channel
  */
@@ -175,7 +175,9 @@ class JavaToKotlinElement(
             KotlinLogger.INSTANCE.logInfo("JavaToKotlinElement.performChange: converted ${javaFile.path}")
         } catch (error: Throwable) {
             KotlinLogger.INSTANCE.logException("JavaToKotlinElement.performChange failed", error)
-            refactoring.failureMessage = error.message ?: error.javaClass.simpleName
+            val message = error.message ?: error.javaClass.simpleName
+            refactoring.failureMessage = message
+            showFailureDialog(message)
         } finally {
             runCatching { pending?.rollback() }
                 .onFailure { error ->
@@ -198,6 +200,26 @@ class JavaToKotlinElement(
             KotlinAnalysisAPISession.invalidate(refactoring.project)
         }.onFailure { error ->
             KotlinLogger.INSTANCE.logException("JavaToKotlinElement.undoChange failed", error)
+        }
+    }
+
+    /**
+     * Shows an unexpected conversion failure without blocking the calling refactoring thread.
+     *
+     * `performChange` runs on a background thread, hence `notifyLater`.
+     *
+     * @param message the failure reason recorded in [JavaToKotlinRefactoring.failureMessage]
+     */
+    private fun showFailureDialog(message: String) {
+        runCatching {
+            DialogDisplayer.getDefault().notifyLater(
+                NotifyDescriptor.Message(
+                    "Java to Kotlin conversion failed: $message",
+                    NotifyDescriptor.ERROR_MESSAGE,
+                ),
+            )
+        }.onFailure { error ->
+            KotlinLogger.INSTANCE.logException("JavaToKotlinElement: could not show the failure", error)
         }
     }
 

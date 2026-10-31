@@ -23,7 +23,6 @@ import com.intellij.psi.PsiManager
 import io.github.nbplugins.kotlin.nbm.formatting.KotlinFormatterUtils
 import io.github.nbplugins.kotlin.nbm.formatting.options.ProjectCodeStyleStorage
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
-import javax.swing.text.Document
 import org.jetbrains.kotlin.idea.formatter.createSpacingBuilder
 import org.jetbrains.kotlin.j2k.ConverterSettings
 import org.jetbrains.kotlin.j2k.PostProcessingTarget
@@ -42,22 +41,26 @@ import org.openide.DialogDisplayer
 import org.openide.NotifyDescriptor
 import org.openide.filesystems.FileObject
 import org.openide.util.Exceptions
-import org.openide.util.RequestProcessor
 
 /**
  * Converts a Java source file into Kotlin using the IDEA K2 J2K engine
  * (module `netbeans-plugin-kotlin-j2k`).
  *
  * The engine is the real IntelliJ implementation compiled from
- * `submodules/IntellijCommunity`; this class is only the NetBeans adapter. It runs the
- * conversion as a headless NetBeans refactoring ([JavaToKotlinRefactoring] + [JavaToKotlinPlugin]),
+ * `submodules/IntellijCommunity`; this class is only the NetBeans adapter. Both entry points run
+ * the conversion as a NetBeans refactoring ([JavaToKotlinRefactoring] + [JavaToKotlinPlugin]),
  * which
  * 1. creates the sibling `.kt` file before the analysis session is rebuilt, so K2 sees it,
  * 2. runs the conversion and the K2 post-processing chain on the session PSI,
  * 3. writes the result into the `.kt` and deletes the `.java` as one transaction, which
  *    **Undo Last Refactoring** can revert in a single step.
  *
- * The whole flow runs on a background [RequestProcessor] thread: the post-processor calls
+ * The interactive path is driven by NetBeans: [ConvertToKotlinAction] opens [JavaToKotlinUI], the
+ * Refactoring window collects the prepared element, and pressing **Refactor** runs the session
+ * under NetBeans' progress dialog. [convertNow] is the headless counterpart used by tests and by
+ * callers that have already obtained a confirmation.
+ *
+ * The conversion itself runs on a background thread: the post-processor calls
  * `ApplicationManager.getApplication().invokeAndWait(...)`, which must not be issued from the EDT.
  *
  * This is the **controller** layer: it wires the model (J2K engine, analysis session) to the view
@@ -66,28 +69,17 @@ import org.openide.util.RequestProcessor
 object Java2KotlinConverter {
 
     /**
-     * Schedules the conversion of [fo] (a Java file) to a sibling Kotlin file.
-     *
-     * The NetBeans action passes the file's [Document], its [Project], and the [FileObject];
-     * the document is kept for the unsaved-changes check and otherwise unused.
-     *
-     * @param doc the document of [fo] as it was open in the editor, or `null`
-     * @param proj the NetBeans project that owns [fo]
-     * @param fo the Java source file to convert
-     */
-    @JvmStatic
-    fun convert(doc: Document?, proj: Project, fo: FileObject) {
-        RequestProcessor.getDefault().post { convertNow(proj, fo) }
-    }
-
-    /**
      * Runs the conversion synchronously on the calling (background) thread.
      *
      * The operation is executed as a headless NetBeans refactoring: a fresh [RefactoringSession] per
      * conversion (the session's `finished()` latch is one-way) applies the element prepared by
      * [JavaToKotlinPlugin], which in turn creates the `.kt`, writes the converted source and
      * deletes the `.java` as one transaction registered in **Undo Last Refactoring**. No
-     * Refactoring panel is opened: the caller has already confirmed the operation.
+     * Refactoring window is opened; [JavaToKotlinUI] is the interactive entry point.
+     *
+     * Conversion failures are reported by the refactoring element
+     * ([JavaToKotlinElement.performChange]); this method only reports problems detected before the
+     * element runs.
      *
      * @param proj the NetBeans project that owns [javaFileObject]
      * @param javaFileObject the Java source file
@@ -95,7 +87,7 @@ object Java2KotlinConverter {
     internal fun convertNow(proj: Project, javaFileObject: FileObject) {
         val refactoring = JavaToKotlinRefactoring(proj, javaFileObject)
         try {
-            val session = RefactoringSession.create("Convert to Kotlin")
+            val session = RefactoringSession.create(JavaToKotlinUI.NAME)
             val problem = refactoring.preCheck() ?: refactoring.prepare(session)
             if (problem != null) {
                 showError(problem.message ?: "Java to Kotlin conversion is not applicable.")
@@ -104,7 +96,6 @@ object Java2KotlinConverter {
             // `false`: the transaction already saved every document it changed. A global
             // LifecycleManager.saveAll() would also write the user's unrelated unsaved buffers.
             session.doRefactoring(false)
-            refactoring.failureMessage?.let { showError("Java to Kotlin conversion failed: $it") }
         } catch (t: Throwable) {
             Exceptions.printStackTrace(t)
             showError("Java to Kotlin conversion failed: ${t.message}")
