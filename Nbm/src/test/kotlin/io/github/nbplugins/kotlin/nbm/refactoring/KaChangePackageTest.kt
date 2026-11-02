@@ -1566,6 +1566,55 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
+     * Verifies an extension receiver spelled like the old package is not treated as a qualifier.
+     *
+     * `a.decorate()` calls the extension on a local `a: String`; matching the chain text against
+     * the old FQN `a.decorate` would replace the receiver, so the receiver must be known to
+     * resolve to a package before the whole chain is rewritten.
+     */
+    fun testApply_realSession_keepsExtensionReceiverSpelledLikePackage() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-extension-receiver")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("old")
+            val usageDirectory = temporaryRoot.resolve("usage")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(usageDirectory)
+            val sourcePath = sourceDirectory.resolve("Extension.kt")
+            val usagePath = usageDirectory.resolve("Use.kt")
+            Files.writeString(sourcePath, "package a\n\nfun String.decorate() = this\n")
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport a.decorate\n\nfun use(a: String) = a.decorate()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-extension-receiver-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("b")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "The extension receiver must survive while the import follows the move",
+                "package usage\n\nimport b.decorate\n\nfun use(a: String) = a.decorate()\n",
+                success.changedFiles[usagePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies an explicit constructor call is retargeted with its moved class.
      *
      * A constructor call resolves to a constructor symbol whose PSI is the class's primary

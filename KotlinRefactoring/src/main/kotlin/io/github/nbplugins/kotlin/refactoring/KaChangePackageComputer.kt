@@ -22,12 +22,14 @@ import com.intellij.usageView.UsageInfo
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassLikeSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaPackageSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaSymbol
 import org.jetbrains.kotlin.idea.k2.refactoring.move.KotlinMoveUsageSearchService
 import org.jetbrains.kotlin.idea.k2.refactoring.move.MoveImport
 import org.jetbrains.kotlin.idea.k2.refactoring.move.descriptor.K2ChangePackageDescriptor
 import org.jetbrains.kotlin.idea.k2.refactoring.move.processor.K2ChangePackageRefactoringProcessor
 import org.jetbrains.kotlin.idea.references.KtReference
+import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtCallExpression
@@ -37,6 +39,7 @@ import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
+import org.jetbrains.kotlin.psi.KtReferenceExpression
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
 import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
 import org.jetbrains.kotlin.psi.KtUserType
@@ -291,7 +294,10 @@ class KaChangePackageComputer(
      * Records a replacement when [element] spells a moved declaration by its old fully qualified name.
      *
      * Simple-name references keep their text and follow their rewritten import; only a qualified
-     * chain that equals the old FQN needs replacing in place.
+     * chain that equals the old FQN needs replacing in place. The chain text alone is not enough:
+     * an extension receiver can spell the old package name (`a.decorate()` on a local `a: String`
+     * bound to `a.decorate`), and replacing that chain would drop the receiver. The chain's
+     * leftmost name must therefore not resolve to a non-package symbol.
      *
      * @param element reference expression that K2 resolved to the moved declaration
      * @param oldFqName declaration FQN before the package change
@@ -312,6 +318,15 @@ class KaChangePackageComputer(
         val file = element.containingFile as? KtFile ?: return false
         val chain = element.qualifiedChain()
         if (!chain.matches(oldFqName)) return false
+        // K2 resolves package references to `null` in this position, so only a concrete
+        // non-package symbol proves the chain root is a value/class rather than a package.
+        val root = chain.rootReference
+        if (root != null) {
+            val rootSymbol = runCatching {
+                analyze(file) { root.mainReference?.resolveToSymbol() }
+            }.getOrNull()
+            if (rootSymbol != null && rootSymbol !is KaPackageSymbol) return false
+        }
         edits.getOrPut(file, ::linkedSetOf) += TextEdit(chain.startOffset, chain.endOffset, KotlinSourceNames.renderFqName(newFqName))
         return true
     }
@@ -693,8 +708,18 @@ class KaChangePackageComputer(
         return null
     }
 
-    /** Source range and text of the qualified chain that ends at a reference expression. */
-    private data class QualifiedChain(val startOffset: Int, val endOffset: Int, val text: String)
+    /**
+     * Source range, text and leftmost reference of the qualified chain ending at a reference.
+     *
+     * [rootReference] is the leftmost simple name of the receiver, which tells a package qualifier
+     * apart from an expression that merely spells the same text.
+     */
+    private data class QualifiedChain(
+        val startOffset: Int,
+        val endOffset: Int,
+        val text: String,
+        val rootReference: KtReferenceExpression?,
+    )
 
     /**
      * Tells whether this chain's identifiers spell [fqName].
@@ -722,21 +747,37 @@ class KaChangePackageComputer(
         var current: KtElement = this
         var start = textRange.startOffset
         val end = textRange.endOffset
+        var rootReference: KtReferenceExpression? = null
         while (true) {
             val parent = current.parent
             when {
                 parent is KtDotQualifiedExpression && parent.selectorExpression == current -> {
                     start = parent.receiverExpression.textRange.startOffset
+                    rootReference = parent.receiverExpression.leadingReference()
                     current = parent
                 }
                 parent is KtCallExpression && parent.calleeExpression == current -> current = parent
                 parent is KtUserType && parent.referenceExpression == current -> {
-                    parent.qualifier?.let { qualifier -> start = qualifier.textRange.startOffset }
+                    parent.qualifier?.let { qualifier ->
+                        start = qualifier.textRange.startOffset
+                        rootReference = qualifier.leadingReference()
+                    }
                     current = parent
                 }
-                else -> return QualifiedChain(start, end, containingFile.text.substring(start, end))
+                else -> return QualifiedChain(start, end, containingFile.text.substring(start, end), rootReference)
             }
         }
+    }
+
+    /**
+     * Returns the leftmost simple name of this receiver expression's qualified chain.
+     *
+     * @return the leftmost reference, or `null` when the receiver is not a name-based chain
+     */
+    private fun KtElement.leadingReference(): KtReferenceExpression? = when (this) {
+        is KtDotQualifiedExpression -> receiverExpression.leadingReference()
+        is KtUserType -> qualifier?.leadingReference() ?: referenceExpression
+        else -> this as? KtReferenceExpression
     }
 
     /** Retargeted text and the replacements accepted for it, in its coordinates. */
