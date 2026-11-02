@@ -305,6 +305,182 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies a moved file explicitly imports declarations that remain in its former package.
+     *
+     * Same-package visibility disappears with the package directive and leaves no import directive
+     * to rewrite, so without a captured import the reference would silently become unresolved.
+     */
+    fun testApply_realSession_addsImportForOutgoingSamePackageReference() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-outgoing")
+        try {
+            val oldPackageDirectory = temporaryRoot.resolve("old/source")
+            Files.createDirectories(oldPackageDirectory)
+            val sourcePath = oldPackageDirectory.resolve("Moved.kt")
+            val staysPath = oldPackageDirectory.resolve("Stays.kt")
+            Files.writeString(sourcePath, "package old.source\n\nfun moved() = stays()\n")
+            Files.writeString(staysPath, "package old.source\n\nfun stays() = 1\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-outgoing-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("new.changed")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "A moved file must import declarations that stay in its former package",
+                "package new.changed\n\nimport old.source.stays\n\nfun moved() = stays()\n",
+                success.changedFiles[sourcePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies fully qualified references inside `${...}` templates follow a moved declaration.
+     *
+     * A template expression is executable Kotlin code, not the string-text occurrence excluded from
+     * the refactoring, so string tracking must re-enter code mode inside the braces.
+     */
+    fun testApply_realSession_rewritesQualifiedReferenceInsideStringTemplate() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-template")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("source")
+            val usageDirectory = temporaryRoot.resolve("usage")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(usageDirectory)
+            val sourcePath = sourceDirectory.resolve("Moved.kt")
+            val usagePath = usageDirectory.resolve("Usage.kt")
+            Files.writeString(sourcePath, "package old.source\n\nfun moved() = 1\n")
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.source.moved\n\nfun use() = \"\${old.source.moved()}\"\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-template-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("new.changed")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val usageText = success.changedFiles[usagePath.toString()].orEmpty()
+            assertTrue("A template expression must be retargeted: $usageText", usageText.contains("\${new.changed.moved()}"))
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies raw strings with interior quotes keep their literal text after reference retargeting.
+     *
+     * Treating the first interior quote as the end of the raw string made later literal text look
+     * like code, silently changing runtime string values.
+     */
+    fun testApply_realSession_keepsRawStringLiteralWithInteriorQuotes() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-raw-string")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("source")
+            val usageDirectory = temporaryRoot.resolve("usage")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(usageDirectory)
+            val sourcePath = sourceDirectory.resolve("Moved.kt")
+            val usagePath = usageDirectory.resolve("Usage.kt")
+            Files.writeString(sourcePath, "package old.source\n\nfun moved() = 1\n")
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.source.moved\n\nfun use() = moved()\n\n" +
+                    "val text = \"\"\"say \"old.source.moved\" now\"\"\"\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-raw-string-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("new.changed")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val usageText = success.changedFiles[usagePath.toString()].orEmpty()
+            assertTrue("The import must still follow the declaration: $usageText", usageText.contains("import new.changed.moved"))
+            assertTrue(
+                "Raw string content must stay verbatim: $usageText",
+                usageText.contains("say \"old.source.moved\" now"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies moving a file out of the root package never rewrites its own declaration names.
+     *
+     * Root-package declarations have single-segment FQNs, so token replacement of the old name
+     * turned `fun moved()` into `fun dest.moved()`. Bindings survive through imports instead.
+     */
+    fun testApply_realSession_keepsDeclarationNamesWhenMovingFromDefaultPackage() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-default-package")
+        try {
+            val sourcePath = temporaryRoot.resolve("Moved.kt")
+            Files.writeString(sourcePath, "fun moved() = 1\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-default-package-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val changedText = success.changedFiles[sourcePath.toString()].orEmpty()
+            assertTrue("The new package directive is required: $changedText", changedText.contains("package dest"))
+            assertTrue("Declaration names must survive the package change: $changedText", changedText.contains("fun moved() = 1"))
+            assertFalse("A declaration must never be rewritten to a qualified name: $changedText", changedText.contains("dest.moved"))
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

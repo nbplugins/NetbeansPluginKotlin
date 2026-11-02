@@ -16,16 +16,23 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.refactoring
 
+import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.refactoring.util.MoveRenameUsageInfo
 import com.intellij.usageView.UsageInfo
+import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.idea.k2.refactoring.move.KotlinMoveUsageSearchService
 import org.jetbrains.kotlin.idea.k2.refactoring.move.MoveImport
 import org.jetbrains.kotlin.idea.k2.refactoring.move.descriptor.K2ChangePackageDescriptor
 import org.jetbrains.kotlin.idea.k2.refactoring.move.processor.K2ChangePackageRefactoringProcessor
+import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
+import org.jetbrains.kotlin.psi.KtSimpleNameExpression
+import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
 
 /**
  * Applies IDEA K2 Change Package semantics without its IDE-specific processor lifecycle.
@@ -109,7 +116,14 @@ class KaChangePackageComputer(
                 }
             }.toMap()
             val samePackageImportUpdates = if (updateReferences) {
-                findSamePackageImportUpdates(files, targets)
+                // Incoming imports fix callers that lose visibility of a moved declaration;
+                // outgoing imports fix the moved file itself losing visibility of the declarations
+                // that stay behind in its former package.
+                val incomingImports = findSamePackageImportUpdates(files, targets)
+                val outgoingImports = findOutgoingSamePackageImports(files, targets)
+                (incomingImports.keys + outgoingImports.keys).associateWith { file ->
+                    incomingImports[file].orEmpty() + outgoingImports[file].orEmpty()
+                }
             } else {
                 emptyMap()
             }
@@ -127,6 +141,10 @@ class KaChangePackageComputer(
             }
             val participants = (files + filesWithUsages(usages) + importOnlyUsageFiles + samePackageImportUpdates.keys)
                 .distinct()
+            // A root-package declaration's FQN is its bare name: replacing it textually would also
+            // rewrite the declaration itself (`fun moved` -> `fun dest.moved`). Root-package
+            // references are never package-qualified, so the imports above keep them bound.
+            val retargetableDeclarations = movedDeclarations.filterKeys { oldFqName -> !oldFqName.parent().isRoot }
             // Snapshot before any mutation: updatePackageDirective invalidates standalone PSI.
             val originalTexts = participants.mapNotNull { file ->
                 file.virtualFile?.path?.let { path -> path to file.text }
@@ -139,9 +157,10 @@ class KaChangePackageComputer(
 
             val changedFiles = linkedMapOf<String, String>()
             participants.forEach { file ->
+                val text = targets[file]?.let { target -> ensurePackageDirectiveSeparator(file.text, target) } ?: file.text
                 val changedText = rewriteMovedReferences(
-                    file.text,
-                    movedDeclarations,
+                    text,
+                    retargetableDeclarations,
                     samePackageImportUpdates[file].orEmpty(),
                 )
                 file.virtualFile?.path?.let { changedFiles[it] = changedText }
@@ -180,6 +199,91 @@ class KaChangePackageComputer(
             }
         }
         return updates
+    }
+
+    /**
+     * Finds declarations that stay in a moved file's former package and need an explicit import.
+     *
+     * Changing a package directive removes the implicit same-package visibility that such
+     * references rely on, and those references have no import directive to rewrite. Resolve the
+     * moved file's references before any directive is mutated and record the imports they need.
+     *
+     * Members reached through a receiver are skipped: only top-level declarations participate in
+     * same-package visibility, and a receiver whose text already spells out the package makes the
+     * reference self-sufficient.
+     *
+     * @param movedFiles Kotlin sources whose declared package changes
+     * @param targets mapped files with their final declared packages
+     * @return affected files mapped to the imports their references now require
+     */
+    private fun findOutgoingSamePackageImports(
+        movedFiles: Collection<KtFile>,
+        targets: Map<KtFile, FqName>,
+    ): Map<KtFile, Set<FqName>> {
+        val movedPaths = movedFiles.mapNotNull { file -> file.virtualFile?.path }.toSet()
+        val updates = linkedMapOf<KtFile, Set<FqName>>()
+        movedFiles.forEach { file ->
+            val originalPackage = file.packageFqName
+            if (originalPackage.isRoot || targets[file] == originalPackage) return@forEach
+            val importedFqNames = file.importDirectives.mapNotNull { it.importedFqName }.toSet()
+            val starPackages = file.importDirectives
+                .filter { it.isAllUnder }
+                .mapNotNull { it.importedFqName }
+                .toSet()
+            val missingImports = linkedSetOf<FqName>()
+            runCatching {
+                analyze(file) {
+                    file.accept(object : KtTreeVisitorVoid() {
+                        override fun visitSimpleNameExpression(expression: KtSimpleNameExpression) {
+                            super.visitSimpleNameExpression(expression)
+                            if (PsiTreeUtil.getParentOfType(expression, KtImportDirective::class.java) != null) return
+                            val reference = expression.references.filterIsInstance<KtReference>().firstOrNull() ?: return
+                            val declaration = reference.resolveToSymbol()?.psi as? KtNamedDeclaration ?: return
+                            val containingFile = declaration.containingKtFile
+                            if (containingFile.virtualFile?.path in movedPaths) return
+                            if (containingFile.packageFqName != originalPackage) return
+                            if (declaration.parent !is KtFile) return
+                            val name = declaration.name ?: return
+                            val importFqName = originalPackage.child(Name.identifier(name))
+                            if (importFqName in importedFqNames || originalPackage in starPackages) return
+                            if (expression.isPackageQualified(originalPackage)) return
+                            missingImports += importFqName
+                        }
+                    })
+                }
+            }
+            if (missingImports.isNotEmpty()) updates[file] = missingImports
+        }
+        return updates
+    }
+
+    /**
+     * Tells whether [this] is the selector of a qualified access whose receiver already spells out
+     * [packageFqName], in which case the reference resolves without an import.
+     */
+    private fun KtSimpleNameExpression.isPackageQualified(packageFqName: FqName): Boolean {
+        val qualified = parent as? KtDotQualifiedExpression ?: return false
+        if (qualified.selectorExpression != this) return false
+        val receiverText = qualified.receiverExpression.text
+        val packageName = packageFqName.asString()
+        return packageName == receiverText || packageName.startsWith("$receiverText.")
+    }
+
+    /**
+     * Separates a package directive from the first declaration of a source that had none.
+     *
+     * [K2ChangePackageRefactoringProcessor.updatePackages] replaces the empty directive of a
+     * root-package file in place, which leaves `package dest` glued to the next declaration in
+     * standalone PSI. Restore the mandatory line break before references are rewritten.
+     *
+     * @return text whose package directive is followed by whitespace
+     */
+    private fun ensurePackageDirectiveSeparator(text: String, targetPackage: FqName): String {
+        if (targetPackage.isRoot) return text
+        val directive = "package ${targetPackage.asString()}"
+        if (!text.startsWith(directive)) return text
+        val next = text.getOrNull(directive.length) ?: return text
+        return if (next.isWhitespace()) text else "$directive\n\n${text.substring(directive.length)}"
     }
 
     /**
@@ -241,75 +345,175 @@ class KaChangePackageComputer(
         return addSamePackageImports(retargetedText, samePackageImports)
     }
 
+    /** Lexical context of the source scanner; only code contexts allow FQN replacement. */
+    private sealed class ScanMode {
+        /** Ordinary Kotlin code, including package and import directives. */
+        object Code : ScanMode()
+
+        /** Executable `${...}` expression inside a string literal, where code resumes. */
+        class Template(var braceDepth: Int) : ScanMode()
+
+        /** Double-quoted string literal, where only a `${...}` template re-enters code. */
+        object StringLiteral : ScanMode()
+
+        /** Triple-quoted raw string, where only a `${...}` template re-enters code. */
+        object RawString : ScanMode()
+
+        /** Character literal, whose content is never a reference. */
+        object CharacterLiteral : ScanMode()
+
+        /** Block comment; Kotlin block comments nest. */
+        class BlockComment(var depth: Int) : ScanMode()
+    }
+
     /**
-     * Replaces the longest matching declaration FQN at each position, outside comments and strings.
+     * Replaces the longest matching declaration FQN at each code position.
      *
+     * Comments, character literals, string literals, and raw strings are copied verbatim, except
+     * that executable `${...}` template expressions re-enter code mode: a reference such as
+     * `"${old.pkg.moved()}"` is code, not the string-text occurrence excluded by the refactoring.
      * Longest match wins so that a qualified access such as `a.b.C.member` keeps its suffix even
-     * when both `a.b.C` and a shorter prefix are moved declarations.
+     * when both `a.b.C` and a shorter prefix are moved declarations. The package directive is
+     * never rewritten: it can share its text with a declaration's FQN.
      */
     private fun String.replaceFqNames(mappings: Map<FqName, FqName>): String {
         val candidates = mappings.entries
             .map { (oldFqName, newFqName) -> oldFqName.asString() to newFqName.asString() }
             .sortedByDescending { (oldFqName, _) -> oldFqName.length }
+        val packageRange = PACKAGE_DIRECTIVE.find(this)?.range
         val result = StringBuilder(length)
+        val modes = ArrayDeque<ScanMode>()
+        modes.addLast(ScanMode.Code)
         var index = 0
-        var inLineComment = false
-        var inBlockComment = false
-        var quote: Char? = null
         while (index < length) {
             val current = this[index]
             val next = getOrNull(index + 1)
-            when {
-                inLineComment -> {
-                    result.append(current)
-                    if (current == '\n') inLineComment = false
-                    index++
+            when (val mode = modes.last()) {
+                ScanMode.Code, is ScanMode.Template -> {
+                    val template = mode as? ScanMode.Template
+                    when {
+                        current == '/' && next == '/' -> {
+                            val lineEnd = indexOf('\n', index).let { if (it < 0) length else it }
+                            result.append(this, index, lineEnd)
+                            index = lineEnd
+                        }
+                        current == '/' && next == '*' -> {
+                            result.append(current).append(next)
+                            index += 2
+                            modes.addLast(ScanMode.BlockComment(1))
+                        }
+                        current == '"' && getOrNull(index + 1) == '"' && getOrNull(index + 2) == '"' -> {
+                            result.append("\"\"\"")
+                            index += 3
+                            modes.addLast(ScanMode.RawString)
+                        }
+                        current == '"' -> {
+                            result.append(current)
+                            index++
+                            modes.addLast(ScanMode.StringLiteral)
+                        }
+                        current == '\'' -> {
+                            result.append(current)
+                            index++
+                            modes.addLast(ScanMode.CharacterLiteral)
+                        }
+                        template != null && current == '{' -> {
+                            result.append(current)
+                            index++
+                            template.braceDepth++
+                        }
+                        template != null && current == '}' -> {
+                            result.append(current)
+                            index++
+                            if (--template.braceDepth <= 0) modes.removeLast()
+                        }
+                        else -> {
+                            val match = if (packageRange != null && index in packageRange) {
+                                null
+                            } else {
+                                candidates.firstOrNull { (oldFqName, _) ->
+                                    startsWith(oldFqName, index) &&
+                                        canStartFqNameAt(index) &&
+                                        canEndFqNameAt(index + oldFqName.length)
+                                }
+                            }
+                            if (match == null) {
+                                result.append(current)
+                                index++
+                            } else {
+                                result.append(match.second)
+                                index += match.first.length
+                            }
+                        }
+                    }
                 }
-                inBlockComment -> {
-                    result.append(current)
-                    if (current == '*' && next == '/') {
-                        result.append(next)
+                ScanMode.StringLiteral -> when {
+                    current == '\\' -> {
+                        result.append(current)
+                        if (next != null) {
+                            result.append(next)
+                            index += 2
+                        } else {
+                            index++
+                        }
+                    }
+                    current == '$' && next == '{' -> {
+                        result.append(current).append(next)
                         index += 2
-                        inBlockComment = false
-                    } else {
-                        index++
+                        modes.addLast(ScanMode.Template(1))
                     }
-                }
-                quote != null -> {
-                    result.append(current)
-                    if (current == '\\' && next != null) {
-                        result.append(next)
-                        index += 2
-                    } else {
-                        if (current == quote) quote = null
-                        index++
-                    }
-                }
-                current == '/' && next == '/' -> {
-                    result.append(current).append(next)
-                    index += 2
-                    inLineComment = true
-                }
-                current == '/' && next == '*' -> {
-                    result.append(current).append(next)
-                    index += 2
-                    inBlockComment = true
-                }
-                current == '\'' || current == '\"' -> {
-                    result.append(current)
-                    quote = current
-                    index++
-                }
-                else -> {
-                    val match = candidates.firstOrNull { (oldFqName, _) ->
-                        startsWith(oldFqName, index) && canStartFqNameAt(index) && canEndFqNameAt(index + oldFqName.length)
-                    }
-                    if (match == null) {
+                    else -> {
                         result.append(current)
                         index++
-                    } else {
-                        result.append(match.second)
-                        index += match.first.length
+                        if (current == '"') modes.removeLast()
+                    }
+                }
+                ScanMode.RawString -> when {
+                    current == '$' && next == '{' -> {
+                        result.append(current).append(next)
+                        index += 2
+                        modes.addLast(ScanMode.Template(1))
+                    }
+                    current == '"' && getOrNull(index + 1) == '"' && getOrNull(index + 2) == '"' -> {
+                        result.append("\"\"\"")
+                        index += 3
+                        modes.removeLast()
+                    }
+                    else -> {
+                        result.append(current)
+                        index++
+                    }
+                }
+                ScanMode.CharacterLiteral -> when {
+                    current == '\\' -> {
+                        result.append(current)
+                        if (next != null) {
+                            result.append(next)
+                            index += 2
+                        } else {
+                            index++
+                        }
+                    }
+                    else -> {
+                        result.append(current)
+                        index++
+                        if (current == '\'') modes.removeLast()
+                    }
+                }
+                is ScanMode.BlockComment -> when {
+                    current == '/' && next == '*' -> {
+                        result.append(current).append(next)
+                        index += 2
+                        mode.depth++
+                    }
+                    current == '*' && next == '/' -> {
+                        result.append(current).append(next)
+                        index += 2
+                        if (--mode.depth <= 0) modes.removeLast()
+                    }
+                    else -> {
+                        result.append(current)
+                        index++
                     }
                 }
             }
