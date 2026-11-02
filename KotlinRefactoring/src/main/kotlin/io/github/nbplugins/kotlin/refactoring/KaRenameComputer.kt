@@ -32,6 +32,7 @@ import org.jetbrains.kotlin.kdoc.lexer.KDocTokens
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtClassOrObject
+import org.jetbrains.kotlin.psi.KtConstructorDelegationReferenceExpression
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtImportDirective
@@ -357,6 +358,10 @@ class KaRenameComputer(
                 kaFile.accept(object : KtTreeVisitorVoid() {
                     override fun visitReferenceExpression(expression: KtReferenceExpression) {
                         super.visitReferenceExpression(expression)
+                        // `this(...)`/`super(...)` in a secondary constructor delegates to a
+                        // constructor of the renamed class, but the keyword itself is syntax and
+                        // must never be rewritten into the new class name.
+                        if (expression is KtConstructorDelegationReferenceExpression) return
                         val simpleName = expression as? KtSimpleNameExpression
                         if (simpleName != null && simpleName.getReferencedName() in aliasNames &&
                             simpleName.isAliasUsage()

@@ -92,11 +92,15 @@ class KotlinMoveUsageSearchServiceImpl : KotlinMoveUsageSearchService {
     }
 
     /**
-     * Finds Kotlin files that directly import a moved top-level declaration.
+     * Finds Kotlin files that directly import a moved declaration or one nested inside it.
      *
      * Import directives are intentionally absent from [findUsages] because K2 semantic rebinding
      * cannot safely replace an import-path segment in standalone PSI. The caller replaces whole
      * directives after semantic retargeting instead.
+     *
+     * A file importing `old.Outer.Nested` names the moved class `old.Outer` only as a path prefix,
+     * so no `Nested` usage resolves to the moved declaration and usage search cannot discover the
+     * file. Such imports are matched here by their moved-declaration prefix.
      *
      * @param project IntelliJ project owning the standalone K2 session
      * @param movedImports original package/name keys mapped to final packages
@@ -113,7 +117,7 @@ class KotlinMoveUsageSearchServiceImpl : KotlinMoveUsageSearchService {
             file.takeIf { candidate ->
                 candidate.importDirectives.any { directive ->
                     directive.aliasName == null && !directive.isAllUnder && directive.importedFqName?.let { imported ->
-                        MoveImport(imported.parent(), imported.shortName().asString()) in movedImports
+                        importsMovedDeclaration(imported, movedImports)
                     } == true
                 }
             }
@@ -124,6 +128,26 @@ class KotlinMoveUsageSearchServiceImpl : KotlinMoveUsageSearchService {
             )
         }
         return candidates
+    }
+
+    /**
+     * Tells whether [imported] names a moved declaration, directly or as a nested prefix.
+     *
+     * @param imported fully qualified path of the import directive
+     * @param movedImports original package/name keys mapped to final packages
+     * @return `true` when [imported] or one of its prefixes is a moved declaration
+     */
+    private fun importsMovedDeclaration(imported: FqName, movedImports: Map<MoveImport, FqName>): Boolean {
+        fun isMoved(fqName: FqName): Boolean =
+            MoveImport(fqName.parent(), fqName.shortName().asString()) in movedImports
+
+        if (isMoved(imported)) return true
+        var prefix = imported.parent()
+        while (!prefix.isRoot) {
+            if (isMoved(prefix)) return true
+            prefix = prefix.parent()
+        }
+        return false
     }
 
     /**

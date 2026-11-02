@@ -1664,6 +1664,51 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
+     * Verifies a caller importing a nested declaration directly follows the enclosing class move.
+     *
+     * `import old.pkg.Outer.Nested` names the moved class only as a path prefix, so usage search
+     * cannot discover the caller through `Nested` references; the import itself must be enough.
+     */
+    fun testApply_realSession_retargetsDirectNestedImport() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-nested-import")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("old/pkg")
+            val usageDirectory = temporaryRoot.resolve("usage")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(usageDirectory)
+            val sourcePath = sourceDirectory.resolve("Outer.kt")
+            val usagePath = usageDirectory.resolve("Use.kt")
+            Files.writeString(sourcePath, "package old.pkg\n\nclass Outer {\n    class Nested\n}\n")
+            Files.writeString(usagePath, "package usage\n\nimport old.pkg.Outer.Nested\n\nfun use(): Nested? = null\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-nested-import-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("new.pkg")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "A direct import of a nested declaration must follow the moved class",
+                "package usage\n\nimport new.pkg.Outer.Nested\n\nfun use(): Nested? = null\n",
+                success.changedFiles[usagePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies a package wildcard stays when the caller still uses declarations left behind.
      *
      * Rewriting `import old.pkg.*` wholesale would drop bindings for declarations that do not

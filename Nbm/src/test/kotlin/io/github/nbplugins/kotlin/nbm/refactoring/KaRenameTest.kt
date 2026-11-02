@@ -273,6 +273,88 @@ class KaRenameTest : KotlinTestCase("KaRenameTest", "rename") {
         }
     }
 
+    /**
+     * Verifies a secondary constructor's `this(...)` delegation is not renamed with its class.
+     *
+     * The delegation call resolves to a constructor of the same class, but its `this` keyword is
+     * syntax, not a reference to the class name.
+     */
+    fun testRenameClassKeepsThisConstructorDelegation() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping constructor-delegation rename test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-this-delegation")
+        try {
+            val sourceDirectory = root.resolve("source")
+            Files.createDirectories(sourceDirectory)
+            val sourcePath = sourceDirectory.resolve("Foo.kt")
+            Files.writeString(
+                sourcePath,
+                "package a\n\nclass Foo(val n: Int) {\n    constructor() : this(0)\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-this-delegation-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val changes = KaRenameComputer(source, source.text.indexOf("Foo"), setOf(source), "Bar").compute()
+
+            assertNotNull("compute() must return non-null for a delegated constructor", changes)
+            assertEquals(
+                "A this(...) delegation must keep its keyword",
+                "package a\n\nclass Bar(val n: Int) {\n    constructor() : this(0)\n}\n",
+                applyChanges(source.text, changes!![sourcePath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a base class rename does not rewrite a subclass's `super(...)` delegation.
+     *
+     * `super(0)` resolves to the renamed base constructor, but the keyword must stay while the
+     * supertype reference in the class header does follow the rename.
+     */
+    fun testRenameBaseClassKeepsSuperConstructorDelegation() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping super-delegation rename test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-super-delegation")
+        try {
+            val baseDirectory = root.resolve("base")
+            val derivedDirectory = root.resolve("derived")
+            Files.createDirectories(baseDirectory)
+            Files.createDirectories(derivedDirectory)
+            val basePath = baseDirectory.resolve("Base.kt")
+            val derivedPath = derivedDirectory.resolve("Derived.kt")
+            Files.writeString(basePath, "package a\n\nopen class Base(val n: Int)\n")
+            Files.writeString(derivedPath, "package a\n\nclass Derived : Base {\n    constructor() : super(0)\n}\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-super-delegation-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val base = session.getKtFileForPath(basePath.toString()) ?: error("Could not obtain source PSI")
+            val derived = session.getKtFileForPath(derivedPath.toString()) ?: error("Could not obtain derived PSI")
+
+            val changes = KaRenameComputer(base, base.text.indexOf("Base"), setOf(base, derived), "Renamed").compute()
+
+            assertNotNull("compute() must return non-null for a subclass", changes)
+            assertEquals(
+                "The supertype must follow the rename while super(...) keeps its keyword",
+                "package a\n\nclass Derived : Renamed {\n    constructor() : super(0)\n}\n",
+                applyChanges(derived.text, changes!![derivedPath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))
