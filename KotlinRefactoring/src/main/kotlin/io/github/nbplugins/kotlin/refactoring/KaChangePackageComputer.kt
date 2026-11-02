@@ -607,7 +607,9 @@ class KaChangePackageComputer(
                     val suffixText = if (suffixSegments.isEmpty()) {
                         ""
                     } else {
-                        suffixSegments.joinToString(separator = ".", prefix = ".")
+                        suffixSegments.joinToString(separator = ".", prefix = ".") { segment ->
+                            KotlinSourceNames.renderIdentifier(segment.asString())
+                        }
                     }
                     KotlinSourceNames.renderFqName(newPrefix) + suffixText
                 } else {
