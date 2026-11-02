@@ -186,6 +186,48 @@ class KaRenameTest : KotlinTestCase("KaRenameTest", "rename") {
         }
     }
 
+    /**
+     * Verifies a constructor call bound through an import alias keeps the alias.
+     *
+     * `import a.Foo as Alias` binds only `Alias`; the class name changes in the import path, but
+     * rewriting the call to the new class name would leave it unresolved in the caller's package.
+     */
+    fun testRenameClassWithAliasedConstructorCall() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping aliased-constructor rename test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-alias-constructor")
+        try {
+            val sourceDirectory = root.resolve("source")
+            val callerDirectory = root.resolve("caller")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(callerDirectory)
+            val sourcePath = sourceDirectory.resolve("Foo.kt")
+            val callerPath = callerDirectory.resolve("Use.kt")
+            Files.writeString(sourcePath, "package a\n\nclass Foo(val x: Int)\n")
+            Files.writeString(callerPath, "package b\n\nimport a.Foo as Alias\n\nfun use() = Alias(1)\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-alias-constructor-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val changes = KaRenameComputer(source, source.text.indexOf("Foo"), setOf(source, caller), "Bar").compute()
+
+            assertNotNull("compute() must return non-null for an aliased constructor call", changes)
+            assertEquals(
+                "An aliased constructor call must keep the alias while the import path follows the class",
+                "package b\n\nimport a.Bar as Alias\n\nfun use() = Alias(1)\n",
+                applyChanges(caller.text, changes!![callerPath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

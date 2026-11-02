@@ -408,10 +408,14 @@ class KaChangePackageComputer(
     /**
      * Tells whether [this] is the selector of a qualified access whose receiver already spells out
      * [packageFqName], in which case the reference resolves without an import.
+     *
+     * A callee is wrapped in a [KtCallExpression] (`a.Helper(1)`), so the qualified access is found
+     * through that call node rather than directly through the callee's parent.
      */
     private fun KtSimpleNameExpression.isPackageQualified(packageFqName: FqName): Boolean {
-        val qualified = parent as? KtDotQualifiedExpression ?: return false
-        if (qualified.selectorExpression != this) return false
+        val selector = (parent as? KtCallExpression)?.takeIf { it.calleeExpression == this } ?: this
+        val qualified = selector.parent as? KtDotQualifiedExpression ?: return false
+        if (qualified.selectorExpression != selector) return false
         val receiverText = qualified.receiverExpression.text
         val packageName = packageFqName.asString()
         return packageName == receiverText || packageName.startsWith("$receiverText.")

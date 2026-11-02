@@ -32,10 +32,12 @@ import org.jetbrains.kotlin.kdoc.lexer.KDocTokens
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtReferenceExpression
+import org.jetbrains.kotlin.psi.KtSimpleNameExpression
 import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
 import java.util.logging.Logger
 
@@ -306,7 +308,13 @@ class KaRenameComputer(
         return result
     }
 
-    /** Returns all reference expression ranges in [kaFile] that resolve to [targetPsi]. */
+    /**
+     * Returns all reference expression ranges in [kaFile] that resolve to [targetPsi].
+     *
+     * References bound through an import alias are excluded: `import a.Foo as Alias` binds only
+     * `Alias`, so the class name changes in the import path while `Alias` references keep their
+     * name.
+     */
     private fun searchFileForUsages(kaFile: KtFile, targetPsi: PsiElement): List<Pair<Int, Int>> {
         val ranges = mutableListOf<Pair<Int, Int>>()
         runCatching {
@@ -315,9 +323,25 @@ class KaRenameComputer(
                 // KtPrimaryConstructor rather than the class declaration being renamed, so
                 // compare class ids as well as PSI identity.
                 val targetClassId = (targetPsi as? KtClassOrObject)?.getClassOrObjectSymbol()?.classId
+                // `import a.Foo as Alias` binds only the alias: the class name changes in the
+                // import path, while every `Alias` reference must keep its name.
+                val targetFqName = targetClassId?.asSingleFqName()
+                val aliasNames: Set<String> = if (targetFqName == null) {
+                    emptySet()
+                } else {
+                    kaFile.importDirectives.mapNotNullTo(mutableSetOf()) { directive ->
+                        directive.aliasName?.takeIf { directive.importedFqName == targetFqName }
+                    }
+                }
                 kaFile.accept(object : KtTreeVisitorVoid() {
                     override fun visitReferenceExpression(expression: KtReferenceExpression) {
                         super.visitReferenceExpression(expression)
+                        val referencedName = (expression as? KtSimpleNameExpression)?.getReferencedName()
+                        if (referencedName != null && referencedName in aliasNames &&
+                            PsiTreeUtil.getParentOfType(expression, KtImportDirective::class.java) == null
+                        ) {
+                            return
+                        }
                         val sym = runCatching {
                             expression.mainReference?.resolveToSymbol()
                         }.getOrNull() ?: return
