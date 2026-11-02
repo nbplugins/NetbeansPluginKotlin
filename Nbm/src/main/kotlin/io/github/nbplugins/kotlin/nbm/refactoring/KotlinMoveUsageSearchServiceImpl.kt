@@ -20,12 +20,15 @@ import com.intellij.psi.PsiReference
 import com.intellij.psi.util.PsiTreeUtil
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.analysis.api.analyze
+import org.jetbrains.kotlin.analysis.api.compat.getClassOrObjectSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
 import org.jetbrains.kotlin.idea.k2.refactoring.move.KotlinMoveUsageSearchService
 import org.jetbrains.kotlin.idea.k2.refactoring.move.MoveImport
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.log.KotlinLogger
+import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
@@ -49,6 +52,10 @@ class KotlinMoveUsageSearchServiceImpl : KotlinMoveUsageSearchService {
             val ktFile = session.getKtFileForPath(kaFile.path) ?: continue
             runCatching {
                 analyze(ktFile) {
+                    // A constructor call resolves to a constructor symbol whose PSI is the class's
+                    // primary constructor rather than the class declaration, so compare the
+                    // constructed class id with the moved class in addition to PSI identity.
+                    val targetClassId = (declaration as? KtClassOrObject)?.getClassOrObjectSymbol()?.classId
                     ktFile.accept(object : KtTreeVisitorVoid() {
                         override fun visitSimpleNameExpression(expression: KtSimpleNameExpression) {
                             super.visitSimpleNameExpression(expression)
@@ -66,8 +73,10 @@ class KotlinMoveUsageSearchServiceImpl : KotlinMoveUsageSearchService {
                             // can bindToElement() on — only its callee child, a
                             // KtNameReferenceExpression, does).
                             val reference = expression.references.filterIsInstance<KtReference>().firstOrNull() ?: return
-                            val resolved = runCatching { reference.resolveToSymbol()?.psi }.getOrNull()
-                            if (resolved == declaration) {
+                            val symbol = runCatching { reference.resolveToSymbol() }.getOrNull() ?: return
+                            val constructsTarget = targetClassId != null &&
+                                (symbol as? KaConstructorSymbol)?.containingClassId == targetClassId
+                            if (symbol.psi == declaration || constructsTarget) {
                                 references += reference
                             }
                         }

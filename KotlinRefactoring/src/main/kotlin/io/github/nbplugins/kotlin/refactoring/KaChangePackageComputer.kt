@@ -339,7 +339,7 @@ class KaChangePackageComputer(
         val updates = linkedMapOf<KtFile, Set<FqName>>()
         movedFiles.forEach { file ->
             val originalPackage = file.packageFqName
-            if (originalPackage.isRoot || targets[file] == originalPackage) return@forEach
+            if (targets[file] == originalPackage) return@forEach
             // An aliased import binds only the alias, so it cannot satisfy a simple-name use of
             // the original name; only an unaliased import counts as an existing binding.
             val importedFqNames = file.importDirectives

@@ -1525,6 +1525,100 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
+     * Verifies a file leaving the default package imports the declarations that stay behind.
+     *
+     * Root-package declarations are visible only to files in the root package, so moving the file
+     * into a named package must add a bare `import stays`.
+     */
+    fun testApply_realSession_addsRootPackageImportWhenLeavingDefaultPackage() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-root-outgoing")
+        try {
+            val sourcePath = temporaryRoot.resolve("Moved.kt")
+            val staysPath = temporaryRoot.resolve("Stays.kt")
+            Files.writeString(sourcePath, "fun moved() = stays()\n")
+            Files.writeString(staysPath, "fun stays() = 1\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-root-outgoing-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "A file leaving the default package must import the declarations that stay in it",
+                "package dest\n\nimport stays\n\nfun moved() = stays()\n",
+                success.changedFiles[sourcePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies an explicit constructor call is retargeted with its moved class.
+     *
+     * A constructor call resolves to a constructor symbol whose PSI is the class's primary
+     * constructor, so usage discovery must compare the constructed class id; both the unqualified
+     * call in a former package mate and the qualified call elsewhere must follow the move.
+     */
+    fun testApply_realSession_addsIncomingImportForExplicitConstructorCall() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-incoming-constructor")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("a")
+            val qualifiedDirectory = temporaryRoot.resolve("c")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(qualifiedDirectory)
+            val sourcePath = sourceDirectory.resolve("Helper.kt")
+            val matePath = sourceDirectory.resolve("Mate.kt")
+            val qualifiedPath = qualifiedDirectory.resolve("Other.kt")
+            Files.writeString(sourcePath, "package a\n\nclass Helper(val x: Int)\n")
+            Files.writeString(matePath, "package a\n\nfun use() = Helper(1)\n")
+            Files.writeString(qualifiedPath, "package c\n\nfun use() = a.Helper(1)\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-incoming-constructor-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("b")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "A former package mate must import the moved class",
+                "package a\n\nimport b.Helper\n\nfun use() = Helper(1)\n",
+                success.changedFiles[matePath.toString()],
+            )
+            assertEquals(
+                "A package-qualified constructor call must follow the moved class",
+                "package c\n\nfun use() = b.Helper(1)\n",
+                success.changedFiles[qualifiedPath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies a wildcard import rooted in a moved class follows that class.
      *
      * `import old.pkg.Outer.*` binds nested declarations through `Outer`; once `Outer` moves the
