@@ -117,18 +117,14 @@ class KaChangePackageComputer(
                     }
                 }
             }.toMap()
-            val samePackageImportUpdates = if (updateReferences) {
-                // Incoming imports fix callers that lose visibility of a moved declaration, either
-                // because they shared its package or because they imported the whole old package.
-                // Outgoing imports fix the moved file itself losing visibility of the declarations
-                // that stay behind in its former package.
-                val incomingImports = findIncomingImportUpdates(files, targets)
-                val outgoingImports = findOutgoingSamePackageImports(files, targets)
-                (incomingImports.keys + outgoingImports.keys).associateWith { file ->
-                    incomingImports[file].orEmpty() + outgoingImports[file].orEmpty()
-                }
-            } else {
-                emptyMap()
+            // Incoming changes fix callers that lose visibility of a moved declaration, either
+            // because they shared its package or because they imported the whole old package.
+            // Outgoing imports fix the moved file itself losing visibility of the declarations
+            // that stay behind in its former package.
+            val incoming = if (updateReferences) findIncomingRetargeting(files, targets) else IncomingRetargeting()
+            val outgoingImports = if (updateReferences) findOutgoingSamePackageImports(files, targets) else emptyMap()
+            val samePackageImportUpdates = (incoming.imports.keys + outgoingImports.keys).associateWith { file ->
+                incoming.imports[file].orEmpty() + outgoingImports[file].orEmpty()
             }
             val importOnlyUsageFiles = if (updateReferences) {
                 KotlinMoveUsageSearchService.getInstance()
@@ -142,16 +138,29 @@ class KaChangePackageComputer(
             } else {
                 emptyList()
             }
-            val participants = (files + filesWithUsages(usages) + importOnlyUsageFiles + samePackageImportUpdates.keys)
+            val participants = (files + filesWithUsages(usages) + importOnlyUsageFiles + samePackageImportUpdates.keys + incoming.edits.keys)
                 .distinct()
-            // Capture replacement ranges while PSI is still valid. Only usages that K2 resolved to
-            // a moved declaration and direct import directives are retargeted, so text that merely
-            // spells a moved FQN (comments, strings, unrelated receiver chains) is left alone.
+            // Capture replacement ranges while PSI is still valid. Only import directives that
+            // target a moved declaration and references that K2 resolved to one are retargeted, so
+            // text that merely spells a moved FQN (comments, strings, unrelated chains) is untouched.
             val textEdits = if (updateReferences) {
-                captureTextEdits(participants, movedDeclarations, usages)
+                val importEdits = captureImportEdits(participants, movedDeclarations)
+                (importEdits.keys + incoming.edits.keys).associateWith { file ->
+                    importEdits[file].orEmpty() + incoming.edits[file].orEmpty()
+                }
             } else {
                 emptyMap()
             }
+            // A caller without a package directive and without imports still needs a place to
+            // receive one: its first declaration, after file annotations and header comments.
+            val importInsertionOffsets = participants.mapNotNull { file ->
+                val path = file.virtualFile?.path ?: return@mapNotNull null
+                if (targets[file] != null || !file.packageFqName.isRoot || file.importDirectives.isNotEmpty()) {
+                    return@mapNotNull null
+                }
+                val offset = file.declarations.firstOrNull()?.textRange?.startOffset ?: return@mapNotNull null
+                path to offset
+            }.toMap()
             // Snapshot before any mutation: updatePackageDirective invalidates standalone PSI.
             val originalTexts = participants.mapNotNull { file ->
                 file.virtualFile?.path?.let { path -> path to file.text }
@@ -170,7 +179,11 @@ class KaChangePackageComputer(
                 // Captured offsets refer to the original text; the package directive is the only
                 // text before them that changed, so a single length delta realigns all edits.
                 val retargetedText = applyTextEdits(text, textEdits[file].orEmpty(), text.length - originalText.length)
-                changedFiles[path] = addSamePackageImports(retargetedText, samePackageImportUpdates[file].orEmpty())
+                changedFiles[path] = addSamePackageImports(
+                    retargetedText,
+                    samePackageImportUpdates[file].orEmpty(),
+                    importInsertionOffsets[path],
+                )
             }
             ApplyOutcome.Success(changedFiles, originalTexts)
         } catch (error: Throwable) {
@@ -178,45 +191,56 @@ class KaChangePackageComputer(
         }
     }
 
+    /** Caller-side text changes captured before the package directives mutate. */
+    private data class IncomingRetargeting(
+        val imports: Map<KtFile, Set<FqName>> = emptyMap(),
+        val edits: Map<KtFile, List<TextEdit>> = emptyMap(),
+    )
+
     /**
-     * Finds callers that will lose visibility of a moved declaration and need an explicit import.
+     * Captures how callers must change so references to moved declarations keep resolving.
      *
-     * A caller loses that visibility in two ways: it formerly shared the declaration's package, or
-     * it imported the whole old package with a wildcard. A direct import is rewritten elsewhere and
+     * A caller loses visibility in two ways: it formerly shared the declaration's package, or it
+     * imported the whole old package with a wildcard. A direct import is rewritten elsewhere and
      * keeps the binding, and a caller that ends in the declaration's final package keeps the
-     * implicit binding. Text-based retargeting cannot invent an import, so these callers are
-     * discovered from resolved references before any directive changes.
+     * implicit binding. Qualified references are rewritten in place instead.
      *
      * Every moved declaration is searched directly rather than through the processor's usages:
-     * the processor only reports functions, properties, and classes, while a moved type alias also
-     * loses its implicit same-package binding.
+     * the processor only reports functions, properties, and classes, while moving a type alias
+     * also loses implicit visibility and can be referenced by its fully qualified name.
      *
      * @param movedFiles Kotlin sources whose declared package changes
      * @param targets mapped files with their final declared packages
-     * @return affected files mapped to the imports their references now require
+     * @return imports that callers still need and reference replacements captured from PSI
      */
-    private fun findIncomingImportUpdates(
+    private fun findIncomingRetargeting(
         movedFiles: Collection<KtFile>,
         targets: Map<KtFile, FqName>,
-    ): Map<KtFile, Set<FqName>> {
+    ): IncomingRetargeting {
         val movedDeclarations = movedFiles.flatMap { file ->
             file.declarations.filterIsInstance<KtNamedDeclaration>().mapNotNull { declaration ->
-                declaration.name?.let { name -> declaration to targets.getValue(file).child(Name.identifier(name)) }
+                declaration.name?.let { name ->
+                    val unified = file.packageFqName.child(Name.identifier(name)) to
+                        targets.getValue(file).child(Name.identifier(name))
+                    declaration to unified
+                }
             }
         }.toMap()
-        if (movedDeclarations.isEmpty()) return emptyMap()
-        val session = KotlinMoveUsageSearchService.getInstance() ?: return emptyMap()
-        val updates = linkedMapOf<KtFile, MutableSet<FqName>>()
-        movedDeclarations.forEach { (declaration, targetFqName) ->
-            val name = declaration.name ?: return@forEach
+        if (movedDeclarations.isEmpty()) return IncomingRetargeting()
+        val session = KotlinMoveUsageSearchService.getInstance() ?: return IncomingRetargeting()
+        val imports = linkedMapOf<KtFile, MutableSet<FqName>>()
+        val edits = linkedMapOf<KtFile, MutableSet<TextEdit>>()
+        movedDeclarations.forEach { (declaration, unified) ->
+            val (oldFqName, newFqName) = unified
             val declarationFile = declaration.containingKtFile
-            val originalPackage = declarationFile.packageFqName
-            val oldFqName = originalPackage.child(Name.identifier(name))
+            val originalPackage = oldFqName.parent()
             session.findUsages(declaration).forEach { reference ->
-                val file = reference.element?.containingFile as? KtFile ?: return@forEach
+                val element = reference.element as? KtElement ?: return@forEach
+                val file = element.containingFile as? KtFile ?: return@forEach
+                captureQualifiedReference(element, oldFqName, newFqName, edits)
                 if (file.virtualFile?.path == declarationFile.virtualFile?.path) return@forEach
                 val finalPackage = targets[file] ?: file.packageFqName
-                if (finalPackage == targetFqName.parent()) return@forEach
+                if (finalPackage == newFqName.parent()) return@forEach
                 val importsDirectly = file.importDirectives.any { directive ->
                     !directive.isAllUnder && directive.importedFqName == oldFqName
                 }
@@ -226,10 +250,37 @@ class KaChangePackageComputer(
                     directive.isAllUnder && directive.importedFqName == originalPackage
                 }
                 if (!sharesOriginalPackage && !importsOriginalPackage) return@forEach
-                updates.getOrPut(file, ::linkedSetOf) += targetFqName
+                imports.getOrPut(file, ::linkedSetOf) += newFqName
             }
         }
-        return updates
+        return IncomingRetargeting(imports, edits.mapValues { (_, fileEdits) -> fileEdits.toList() })
+    }
+
+    /**
+     * Records a replacement when [element] spells a moved declaration by its old fully qualified name.
+     *
+     * Simple-name references keep their text and follow their rewritten import; only a qualified
+     * chain that equals the old FQN needs replacing in place.
+     *
+     * @param element reference expression that K2 resolved to the moved declaration
+     * @param oldFqName declaration FQN before the package change
+     * @param newFqName declaration FQN after the package change
+     * @param edits per-file replacement accumulator
+     */
+    private fun captureQualifiedReference(
+        element: KtElement,
+        oldFqName: FqName,
+        newFqName: FqName,
+        edits: MutableMap<KtFile, MutableSet<TextEdit>>,
+    ) {
+        // A root-package FQN is a bare name. Qualifying such a reference would rewrite
+        // declaration-like positions that cannot take a package prefix (`::moved`); imports
+        // alone keep root-package bindings intact.
+        if (oldFqName.parent().isRoot) return
+        val file = element.containingFile as? KtFile ?: return
+        val chain = element.qualifiedChain()
+        if (chain.text != oldFqName.asString()) return
+        edits.getOrPut(file, ::linkedSetOf) += TextEdit(chain.startOffset, chain.endOffset, newFqName.asString())
     }
 
     /**
@@ -323,27 +374,44 @@ class KaChangePackageComputer(
      * The header is rebuilt as text rather than through PSI: the import list is invalid after the
      * package directive changed, and the standalone parser drops inserted whitespace nodes.
      *
+     * @param usageText source text of the caller after reference replacement
+     * @param imports declarations that need an explicit import
+     * @param declarationOffset captured start of the first declaration for files without a package
+     * directive and without imports, after file annotations and header comments
      * @return final source text with a canonical package/import boundary
      */
-    private fun addSamePackageImports(usageText: String, imports: Set<FqName>): String {
+    private fun addSamePackageImports(
+        usageText: String,
+        imports: Set<FqName>,
+        declarationOffset: Int? = null,
+    ): String {
         if (imports.isEmpty()) return usageText
-        val packageMatch = PACKAGE_DIRECTIVE.find(usageText) ?: return usageText
         val existingFqNames = IMPORT_DIRECTIVE.findAll(usageText)
             .map { match -> FqName(match.groupValues[1]) }
             .toSet()
         val missingImports = imports.filterNot { it in existingFqNames }
             .map { imported -> "import ${imported.asString()}" }
         if (missingImports.isEmpty()) return usageText
+        val importLines = missingImports.joinToString(separator = "\n")
         val firstImport = IMPORT_DIRECTIVE.find(usageText)
-        return if (firstImport == null) {
-            usageText.substring(0, packageMatch.range.last + 1) +
-                "\n\n${missingImports.joinToString(separator = "\n")}" +
-                usageText.substring(packageMatch.range.last + 1)
-        } else {
-            usageText.substring(0, firstImport.range.first) +
-                "${missingImports.joinToString(separator = "\n")}\n" +
+        if (firstImport != null) {
+            return usageText.substring(0, firstImport.range.first) +
+                "$importLines\n" +
                 usageText.substring(firstImport.range.first)
         }
+        val packageMatch = PACKAGE_DIRECTIVE.find(usageText)
+        if (packageMatch != null) {
+            val boundary = packageMatch.range.last + 1
+            return usageText.substring(0, boundary) +
+                "\n\n$importLines" +
+                usageText.substring(boundary)
+        }
+        if (declarationOffset != null && declarationOffset in 0..usageText.length) {
+            return usageText.substring(0, declarationOffset) +
+                "$importLines\n\n" +
+                usageText.substring(declarationOffset)
+        }
+        return usageText
     }
 
     /** Captures usage files before K2 reference rebinding can invalidate individual usage elements. */
@@ -354,56 +422,57 @@ class KaChangePackageComputer(
     private data class TextEdit(val start: Int, val end: Int, val replacement: String)
 
     /**
-     * Captures the exact text ranges that must follow moved declarations.
+     * Captures the import directives that must follow moved declarations.
      *
-     * Only two kinds of text are captured: direct import directives and reference chains that K2
-     * resolved to a moved declaration before mutation. Everything else — comments, string literals,
-     * declaration names, and receiver chains that merely spell the same text — is left alone.
+     * Paths are matched by FQN prefix, so an import of a nested declaration keeps its suffix, and
+     * only directives that actually target a moved declaration are recorded. References themselves
+     * are captured separately from K2-resolved usages.
      *
      * @param participants files whose text may change
      * @param movedDeclarations old top-level declaration FQNs mapped to their new FQNs
-     * @param usages external usages resolved before package mutation
      * @return per-file replacements keyed by captured source offsets
      */
-    private fun captureTextEdits(
+    private fun captureImportEdits(
         participants: Collection<KtFile>,
         movedDeclarations: Map<FqName, FqName>,
-        usages: Collection<UsageInfo>,
     ): Map<KtFile, List<TextEdit>> {
         if (movedDeclarations.isEmpty()) return emptyMap()
         val mappings = movedDeclarations.entries
             .sortedByDescending { (oldFqName, _) -> oldFqName.pathSegments().size }
         val edits = linkedMapOf<KtFile, MutableSet<TextEdit>>()
         participants.forEach { file ->
+            val fileText = file.text
             file.importDirectives.forEach { directive ->
                 if (directive.isAllUnder) return@forEach
-                val importedText = directive.importPath?.pathStr ?: return@forEach
-                val replacement = rewriteImportedPath(importedText, mappings) ?: return@forEach
-                val offset = directive.textRange.startOffset + directive.text.indexOf(importedText)
-                edits.getOrPut(file, ::linkedSetOf) +=
-                    TextEdit(offset, offset + importedText.length, replacement)
+                val importedReference = directive.importedReference ?: return@forEach
+                // Ranges come from PSI: `importPath.pathStr` is a rendered path and can differ
+                // from the source spelling (backticks, whitespace), so searching for it corrupts.
+                val pathStart = directive.textRange.startOffset + importPathStart(directive.text)
+                val pathEnd = importedReference.textRange.endOffset
+                if (pathStart >= pathEnd) return@forEach
+                val replacement = rewriteImportedPath(fileText.substring(pathStart, pathEnd), mappings)
+                    ?: return@forEach
+                edits.getOrPut(file, ::linkedSetOf) += TextEdit(pathStart, pathEnd, replacement)
             }
         }
-        usages.filterIsInstance<MoveRenameUsageInfo>().forEach { usage ->
-            val element = usage.element as? KtElement ?: return@forEach
-            val file = element.containingFile as? KtFile ?: return@forEach
-            val declaration = usage.referencedElement as? KtNamedDeclaration ?: return@forEach
-            val name = declaration.name ?: return@forEach
-            val oldFqName = declaration.containingKtFile.packageFqName.child(Name.identifier(name))
-            val newFqName = movedDeclarations[oldFqName] ?: return@forEach
-            // A root-package FQN is a bare name. Qualifying such a reference would rewrite
-            // declaration-like positions that cannot take a package prefix (`::moved`); imports
-            // alone keep root-package bindings intact.
-            if (oldFqName.parent().isRoot) return@forEach
-            val chain = element.qualifiedChain()
-            if (chain.text != oldFqName.asString()) return@forEach
-            edits.getOrPut(file, ::linkedSetOf) += TextEdit(
-                chain.startOffset,
-                chain.endOffset,
-                newFqName.asString(),
-            )
-        }
         return edits.mapValues { (_, fileEdits) -> fileEdits.toList() }
+    }
+
+    /**
+     * Finds where an import path starts inside a directive's text.
+     *
+     * @param directiveText exact source text of the import directive
+     * @return offset of the first non-whitespace character after the `import` keyword
+     */
+    private fun importPathStart(directiveText: String): Int {
+        val keywordEnd = directiveText.indexOf("import").let { index ->
+            if (index < 0) 0 else index + "import".length
+        }
+        var pathStart = keywordEnd
+        while (pathStart < directiveText.length && directiveText[pathStart].isWhitespace()) {
+            pathStart++
+        }
+        return pathStart
     }
 
     /**
@@ -420,7 +489,7 @@ class KaChangePackageComputer(
         importedText: String,
         mappings: List<Map.Entry<FqName, FqName>>,
     ): String? {
-        val segments = importedText.split('.')
+        val segments = importedText.split('.').map { segment -> segment.trim() }
         mappings.forEach { (oldFqName, newFqName) ->
             val oldSegments = oldFqName.pathSegments().map { segment -> segment.asString() }
             if (segments.size < oldSegments.size) return@forEach

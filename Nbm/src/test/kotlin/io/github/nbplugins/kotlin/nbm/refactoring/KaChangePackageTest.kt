@@ -625,6 +625,145 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies references to a moved type alias are retargeted even though the processor ignores it.
+     *
+     * Change Package usage discovery only reports functions, properties, and classes, so aliases
+     * need the declaration-level scan: a same-package caller must gain an explicit import, and a
+     * qualified type reference must follow the declaration.
+     */
+    fun testApply_realSession_retargetsTypeAliasReferences() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-typealias")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("source")
+            val usageDirectory = temporaryRoot.resolve("usage")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(usageDirectory)
+            val aliasPath = sourceDirectory.resolve("Alias.kt")
+            val siblingPath = sourceDirectory.resolve("Sibling.kt")
+            val usagePath = usageDirectory.resolve("Usage.kt")
+            Files.writeString(aliasPath, "package old.source\n\ntypealias Handler = () -> Unit\n")
+            Files.writeString(siblingPath, "package old.source\n\nval sibling: Handler = {}\n")
+            Files.writeString(usagePath, "package usage\n\nval usageAlias: old.source.Handler = {}\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-typealias-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(aliasPath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("new.changed")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val siblingText = success.changedFiles[siblingPath.toString()].orEmpty()
+            assertTrue(
+                "A same-package caller must gain an explicit alias import: $siblingText",
+                siblingText.contains("import new.changed.Handler"),
+            )
+            val usageText = success.changedFiles[usagePath.toString()].orEmpty()
+            assertTrue(
+                "A qualified alias reference must follow the declaration: $usageText",
+                usageText.contains("val usageAlias: new.changed.Handler = {}"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a root-package caller receives an import even though it has no package directive.
+     *
+     * The import must be inserted before the first declaration while keeping header comments.
+     */
+    fun testApply_realSession_addsImportToCallerWithoutPackageDirective() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-root-caller")
+        try {
+            val sourcePath = temporaryRoot.resolve("Moved.kt")
+            val callerPath = temporaryRoot.resolve("Caller.kt")
+            Files.writeString(sourcePath, "fun moved() = 1\n")
+            Files.writeString(callerPath, "// Generated helper\n\nfun use() = moved()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-root-caller-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val callerText = success.changedFiles[callerPath.toString()].orEmpty()
+            assertEquals(
+                "A root-package caller must gain an import after its header comment",
+                "// Generated helper\n\nimport dest.moved\n\nfun use() = moved()\n",
+                callerText,
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies import rewriting uses PSI ranges rather than the rendered import path text.
+     *
+     * A backticked segment makes `importPath.pathStr` differ from the source spelling; locating
+     * that rendered path in the directive returned -1 and corrupted text before the directive.
+     */
+    fun testApply_realSession_rewritesBacktickedImportPath() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-backtick-import")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("source")
+            val usageDirectory = temporaryRoot.resolve("usage")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(usageDirectory)
+            val sourcePath = sourceDirectory.resolve("Moved.kt")
+            val usagePath = usageDirectory.resolve("Usage.kt")
+            Files.writeString(sourcePath, "package old.source\n\nfun moved() = 1\n")
+            Files.writeString(usagePath, "package usage\n\nimport old.source.`moved`\n\nfun use() = moved()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-backtick-import-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("new.changed")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val usageText = success.changedFiles[usagePath.toString()].orEmpty()
+            assertTrue(
+                "A backticked import path must be rewritten without corrupting the header: $usageText",
+                usageText.startsWith("package usage\n\nimport new.changed.moved\n"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))
