@@ -263,8 +263,11 @@ class KaChangePackageComputer(
                 if (file.virtualFile?.path == declarationFile.virtualFile?.path) return@forEach
                 val finalPackage = targets[file] ?: file.packageFqName
                 if (finalPackage == newFqName.parent()) return@forEach
+                // An aliased directive binds only its alias; the original name still needs an
+                // explicit import, so only an unaliased import suppresses that update.
                 val importsDirectly = file.importDirectives.any { directive ->
-                    !directive.isAllUnder && directive.importedFqName == oldFqName
+                    !directive.isAllUnder && directive.aliasName == null &&
+                        directive.importedFqName == oldFqName
                 }
                 if (importsDirectly) return@forEach
                 val sharesOriginalPackage = file.packageFqName == originalPackage

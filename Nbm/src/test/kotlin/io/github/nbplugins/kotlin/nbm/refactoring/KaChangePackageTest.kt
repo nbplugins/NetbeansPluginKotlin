@@ -1356,6 +1356,49 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies an aliased import in a caller does not suppress the incoming unaliased import.
+     *
+     * `import a.moved as alias` keeps only `alias()` bound after the declaration moves; a caller
+     * that also calls `moved()` needs `import b.moved` in addition to the rewritten alias.
+     */
+    fun testApply_realSession_addsIncomingImportWhenCallerOnlyAliasedIt() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-incoming-alias")
+        try {
+            val oldPackageDirectory = temporaryRoot.resolve("old")
+            Files.createDirectories(oldPackageDirectory)
+            val sourcePath = oldPackageDirectory.resolve("Moved.kt")
+            val callerPath = oldPackageDirectory.resolve("Use.kt")
+            Files.writeString(sourcePath, "package a\n\nfun moved() = 1\n")
+            Files.writeString(callerPath, "package a\n\nimport a.moved as alias\n\nfun use() = moved() + alias()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-incoming-alias-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("b")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "The caller must keep both the alias and an unaliased binding",
+                "package a\n\nimport b.moved\nimport b.moved as alias\n\nfun use() = moved() + alias()\n",
+                success.changedFiles[callerPath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

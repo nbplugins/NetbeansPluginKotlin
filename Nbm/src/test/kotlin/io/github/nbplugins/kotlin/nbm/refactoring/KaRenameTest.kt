@@ -22,6 +22,8 @@ import io.github.nbplugins.kotlin.refactoring.KaRenameComputer
 import io.github.nbplugins.kotlin.refactoring.TextChange
 import org.jetbrains.kotlin.builder.isKotlinFile
 import utils.KotlinTestCase
+import java.nio.file.Files
+import java.nio.file.Path
 
 /**
  * Unit tests for [KaRenameComputer].
@@ -146,6 +148,49 @@ class KaRenameTest : KotlinTestCase("KaRenameTest", "rename") {
 
     /** Renames a class declaration and all its constructor call sites. */
     fun testRenameClass() = runFixture("classrename")
+
+    /** Renames a class with an explicit primary constructor and its constructor call sites. */
+    fun testRenameClassWithExplicitConstructor() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping explicit-constructor rename test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-constructor")
+        try {
+            val sourceDirectory = root.resolve("source")
+            val callerDirectory = root.resolve("caller")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(callerDirectory)
+            val sourcePath = sourceDirectory.resolve("Foo.kt")
+            val callerPath = callerDirectory.resolve("Use.kt")
+            Files.writeString(sourcePath, "package a\n\nclass Foo(val x: Int)\n")
+            Files.writeString(callerPath, "package b\n\nimport a.Foo\n\nfun use() = Foo(1)\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-constructor-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val changes = KaRenameComputer(source, source.text.indexOf("Foo"), setOf(source, caller), "Bar").compute()
+
+            assertNotNull("compute() must return non-null for an explicit primary constructor", changes)
+            assertEquals(
+                "An explicit constructor call must follow the renamed class",
+                "package b\n\nimport a.Bar\n\nfun use() = Bar(1)\n",
+                applyChanges(caller.text, changes!![callerPath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /** Locates Kotlin stdlib supplied by the Maven test runtime. */
+    private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
+        .split(System.getProperty("path.separator"))
+        .map(Path::of)
+        .firstOrNull { it.fileName?.toString()?.startsWith("kotlin-stdlib") == true && it.toFile().exists() }
 
     /** Renames a method declaration and the single call site in the same file. */
     fun testRenameFunction() = runFixture("function", newName = "fooFunc")

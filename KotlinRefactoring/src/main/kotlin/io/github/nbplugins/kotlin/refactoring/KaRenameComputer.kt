@@ -24,10 +24,13 @@ import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.analysis.api.analyze
+import org.jetbrains.kotlin.analysis.api.compat.getClassOrObjectSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
 import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.kdoc.lexer.KDocTokens
 import org.jetbrains.kotlin.lexer.KtTokens
+import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
 import org.jetbrains.kotlin.psi.KtNamedFunction
@@ -308,13 +311,19 @@ class KaRenameComputer(
         val ranges = mutableListOf<Pair<Int, Int>>()
         runCatching {
             analyze(kaFile) {
+                // A constructor call resolves to a constructor symbol, whose PSI is the
+                // KtPrimaryConstructor rather than the class declaration being renamed, so
+                // compare class ids as well as PSI identity.
+                val targetClassId = (targetPsi as? KtClassOrObject)?.getClassOrObjectSymbol()?.classId
                 kaFile.accept(object : KtTreeVisitorVoid() {
                     override fun visitReferenceExpression(expression: KtReferenceExpression) {
                         super.visitReferenceExpression(expression)
                         val sym = runCatching {
                             expression.mainReference?.resolveToSymbol()
                         }.getOrNull() ?: return
-                        if (sym.psi == targetPsi) {
+                        val constructsTarget = targetClassId != null &&
+                            (sym as? KaConstructorSymbol)?.containingClassId == targetClassId
+                        if (sym.psi == targetPsi || constructsTarget) {
                             val tr = expression.textRange
                             ranges.add(tr.startOffset to tr.endOffset)
                         }
