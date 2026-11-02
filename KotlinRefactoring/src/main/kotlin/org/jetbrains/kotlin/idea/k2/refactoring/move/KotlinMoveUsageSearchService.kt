@@ -48,6 +48,18 @@ interface KotlinMoveUsageSearchService {
      */
     fun findImportingFiles(project: com.intellij.openapi.project.Project, movedImports: Map<MoveImport, FqName>): List<KtFile> = emptyList()
 
+    /**
+     * Finds session files whose wildcard import is rooted in one of [classFqNames].
+     *
+     * A caller may reference only nested declarations of a moved class, in which case the import
+     * prefix `import old.Outer.*` is the only place the moved class is named.
+     *
+     * @param project IntelliJ project whose standalone K2 session supplies candidate files
+     * @param classFqNames old fully qualified names of moved classes
+     * @return Kotlin files with a class-scoped wildcard import that follows a moved class
+     */
+    fun findWildcardImportingFiles(project: com.intellij.openapi.project.Project, classFqNames: Set<FqName>): List<KtFile> = emptyList()
+
     companion object {
         fun getInstance(): KotlinMoveUsageSearchService? =
             ApplicationManager.getApplication()?.getService(KotlinMoveUsageSearchService::class.java)

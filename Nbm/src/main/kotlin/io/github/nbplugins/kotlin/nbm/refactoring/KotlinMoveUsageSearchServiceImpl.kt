@@ -116,4 +116,30 @@ class KotlinMoveUsageSearchServiceImpl : KotlinMoveUsageSearchService {
         }
         return candidates
     }
+
+    /**
+     * Finds Kotlin files with a wildcard import rooted in a moved class.
+     *
+     * Such a caller may reference only nested declarations of that class, so K2 usage discovery
+     * never reports it; the import prefix is the only place the moved class is named.
+     *
+     * @param project IntelliJ project owning the standalone K2 session
+     * @param classFqNames old fully qualified names of moved classes
+     * @return session files whose class-scoped wildcard import follows a moved class
+     */
+    override fun findWildcardImportingFiles(
+        project: com.intellij.openapi.project.Project,
+        classFqNames: Set<FqName>,
+    ): List<KtFile> {
+        if (classFqNames.isEmpty()) return emptyList()
+        val session = KotlinAnalysisAPISession.forProject(project) ?: return emptyList()
+        return session.fileMap.values.mapNotNull { lightFile ->
+            val file = session.getKtFileForPath(lightFile.path) ?: return@mapNotNull null
+            file.takeIf { candidate ->
+                candidate.importDirectives.any { directive ->
+                    directive.isAllUnder && directive.importedFqName in classFqNames
+                }
+            }
+        }
+    }
 }

@@ -31,6 +31,7 @@ import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtCallExpression
+import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.KtFile
@@ -112,6 +113,20 @@ class KaChangePackageComputer(
                     }
                 }
             }.toMap()
+            // Class-scoped wildcard imports (`import old.Outer.*`) follow the class only when the
+            // prefix is a moved class; package wildcards never move with it.
+            val movedClassFqNames = files.flatMap { file ->
+                file.declarations.filterIsInstance<KtClassOrObject>().mapNotNull { declaration ->
+                    declaration.name?.let { name -> file.packageFqName.child(Name.identifier(name)) }
+                }
+            }.toSet()
+            val wildcardImportFiles = if (updateReferences) {
+                KotlinMoveUsageSearchService.getInstance()
+                    ?.findWildcardImportingFiles(ktFile.project, movedClassFqNames)
+                    .orEmpty()
+            } else {
+                emptyList()
+            }
             // Incoming changes fix callers that lose visibility of a moved declaration, either
             // because they shared its package or because they imported the whole old package.
             // Outgoing imports fix the moved file itself losing visibility of the declarations
@@ -133,13 +148,13 @@ class KaChangePackageComputer(
             } else {
                 emptyList()
             }
-            val participants = (files + filesWithUsages(usages) + importOnlyUsageFiles + samePackageImportUpdates.keys + incoming.edits.keys)
+            val participants = (files + filesWithUsages(usages) + importOnlyUsageFiles + wildcardImportFiles + samePackageImportUpdates.keys + incoming.edits.keys)
                 .distinct()
             // Capture replacement ranges while PSI is still valid. Only import directives that
             // target a moved declaration and references that K2 resolved to one are retargeted, so
             // text that merely spells a moved FQN (comments, strings, unrelated chains) is untouched.
             val textEdits = if (updateReferences) {
-                val importEdits = captureImportEdits(participants, movedDeclarations)
+                val importEdits = captureImportEdits(participants, movedDeclarations, movedClassFqNames)
                 (importEdits.keys + incoming.edits.keys).associateWith { file ->
                     importEdits[file].orEmpty() + incoming.edits[file].orEmpty()
                 }
@@ -314,7 +329,12 @@ class KaChangePackageComputer(
         movedFiles.forEach { file ->
             val originalPackage = file.packageFqName
             if (originalPackage.isRoot || targets[file] == originalPackage) return@forEach
-            val importedFqNames = file.importDirectives.mapNotNull { it.importedFqName }.toSet()
+            // An aliased import binds only the alias, so it cannot satisfy a simple-name use of
+            // the original name; only an unaliased import counts as an existing binding.
+            val importedFqNames = file.importDirectives
+                .filterNot { directive -> directive.isAllUnder || directive.aliasName != null }
+                .mapNotNull { it.importedFqName }
+                .toSet()
             val starPackages = file.importDirectives
                 .filter { it.isAllUnder }
                 .mapNotNull { it.importedFqName }
@@ -440,8 +460,10 @@ class KaChangePackageComputer(
      * @return captured insertion point, or `null` when the file cannot host an import
      */
     private fun importInsertionFor(file: KtFile): ImportInsertion? {
+        // An alias binds only its alias, not the imported name, so an unaliased use still needs
+        // its own import even when an aliased directive for the same FQN exists.
         val existingFqNames = file.importDirectives
-            .filterNot { directive -> directive.isAllUnder }
+            .filterNot { directive -> directive.isAllUnder || directive.aliasName != null }
             .mapNotNull { directive -> directive.importedFqName }
             .toSet()
         file.importDirectives.firstOrNull()?.let { firstImport ->
@@ -503,8 +525,10 @@ class KaChangePackageComputer(
      * Captures the import directives that must follow moved declarations.
      *
      * Paths are matched by FQN prefix, so an import of a nested declaration keeps its suffix, and
-     * only directives that actually target a moved declaration are recorded. References themselves
-     * are captured separately from K2-resolved usages.
+     * only directives that actually target a moved declaration are recorded. A wildcard import
+     * follows only when its prefix itself is a moved class; a package wildcard keeps binding
+     * declarations that stay behind. References themselves are captured separately from
+     * K2-resolved usages.
      *
      * @param participants files whose text may change
      * @param movedDeclarations old top-level declaration FQNs mapped to their new FQNs
@@ -513,6 +537,7 @@ class KaChangePackageComputer(
     private fun captureImportEdits(
         participants: Collection<KtFile>,
         movedDeclarations: Map<FqName, FqName>,
+        movedClassFqNames: Set<FqName>,
     ): Map<KtFile, List<TextEdit>> {
         if (movedDeclarations.isEmpty()) return emptyMap()
         val mappings = movedDeclarations.entries
@@ -521,15 +546,23 @@ class KaChangePackageComputer(
         participants.forEach { file ->
             val fileText = file.text
             file.importDirectives.forEach { directive ->
-                if (directive.isAllUnder) return@forEach
                 val importedReference = directive.importedReference ?: return@forEach
                 // Ranges come from PSI: `importPath.pathStr` is a rendered path and can differ
                 // from the source spelling (backticks, whitespace), so searching for it corrupts.
                 val pathStart = directive.textRange.startOffset + importPathStart(directive.text)
                 val pathEnd = importedReference.textRange.endOffset
                 if (pathStart >= pathEnd) return@forEach
-                val replacement = rewriteImportedPath(fileText.substring(pathStart, pathEnd), mappings)
-                    ?: return@forEach
+                val replacement = if (directive.isAllUnder) {
+                    // A package wildcard keeps importing whatever stays behind, so only a
+                    // wildcard rooted in a moved class follows that class to its new package.
+                    val imported = directive.importedFqName ?: return@forEach
+                    if (imported !in movedClassFqNames) return@forEach
+                    val newPrefix = movedDeclarations[imported] ?: return@forEach
+                    KotlinSourceNames.renderFqName(newPrefix)
+                } else {
+                    rewriteImportedPath(fileText.substring(pathStart, pathEnd), mappings)
+                        ?: return@forEach
+                }
                 edits.getOrPut(file, ::linkedSetOf) += TextEdit(pathStart, pathEnd, replacement)
             }
         }
