@@ -1708,6 +1708,57 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
+     * Verifies a call receiver that happens to spell the old package is left alone.
+     *
+     * `a.b()` in `a.b().decorate()` is a call on a local value whose identifiers match the moved
+     * package path by coincidence. The receiver call is unresolved, so the chain root resolves to
+     * no symbol and cannot prove the chain is an expression; replacing the chain with the new FQN
+     * would delete the receiver and leave a dangling call, so only chains made purely of names may
+     * be rewritten.
+     */
+    fun testApply_realSession_keepsCallReceiverBeforeQualifiedName() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-call-receiver")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("old")
+            val usageDirectory = temporaryRoot.resolve("usage")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(usageDirectory)
+            val sourcePath = sourceDirectory.resolve("Extension.kt")
+            val usagePath = usageDirectory.resolve("Use.kt")
+            Files.writeString(sourcePath, "package a\n\nfun String.decorate() = this\n")
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport a.decorate\n\nfun use() = a().decorate()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-call-receiver-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("x")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "A call receiver must not be replaced by the package FQN",
+                "package usage\n\nimport x.decorate\n\nfun use() = a().decorate()\n",
+                success.changedFiles[usagePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies an explicit constructor call is retargeted with its moved class.
      *
      * A constructor call resolves to a constructor symbol whose PSI is the class's primary

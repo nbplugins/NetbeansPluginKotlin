@@ -41,7 +41,6 @@ import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
-import org.jetbrains.kotlin.psi.KtReferenceExpression
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
 import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
 import org.jetbrains.kotlin.psi.KtUserType
@@ -318,7 +317,7 @@ class KaChangePackageComputer(
         // alone keep root-package bindings intact.
         if (oldFqName.parent().isRoot) return false
         val file = element.containingFile as? KtFile ?: return false
-        val chain = element.qualifiedChain()
+        val chain = element.qualifiedChain() ?: return false
         if (!chain.matches(oldFqName)) return false
         // K2 resolves package references to `null` in this position, so only a concrete
         // non-package symbol proves the chain root is a value/class rather than a package.
@@ -744,18 +743,17 @@ class KaChangePackageComputer(
     }
 
     /**
-     * Source range, PSI identifiers and leftmost reference of the qualified chain ending at a
-     * reference.
+     * Source range, PSI identifiers and leftmost name of the qualified chain ending at a reference.
      *
      * [identifiers] ignores source spelling (backticks, comments), and [rootReference] is the
-     * leftmost simple name of the receiver, which tells a package qualifier apart from an
-     * expression that merely spells the same text.
+     * leftmost simple name of the chain, which tells a package qualifier apart from an expression
+     * that merely spells the same text.
      */
     private data class QualifiedChain(
         val startOffset: Int,
         val endOffset: Int,
         val identifiers: List<String>,
-        val rootReference: KtReferenceExpression?,
+        val rootReference: KtSimpleNameExpression?,
     )
 
     /**
@@ -776,24 +774,34 @@ class KaChangePackageComputer(
      *
      * `old.pkg.moved()` visits the `moved` reference; climbing through qualified expressions, their
      * call nodes, and user types yields the identifiers `old`, `pkg`, `moved` while dropping any
-     * argument list or type argument suffix. The chain stops at any other construct.
+     * argument list or type argument suffix.
+     *
+     * The chain must consist only of names. A receiver that is a call, index access, or any other
+     * expression (`a.b().moved()`) would contribute its own identifiers to the captured range while
+     * the replacement deletes the expression itself, so such a chain is rejected rather than
+     * matched by name alone.
+     *
+     * @return the chain ending at this element, or `null` when its receiver is not a plain name chain
      */
-    private fun KtElement.qualifiedChain(): QualifiedChain {
+    private fun KtElement.qualifiedChain(): QualifiedChain? {
         var current: KtElement = this
         var start = textRange.startOffset
         val end = textRange.endOffset
-        var rootReference: KtReferenceExpression? = null
+        var rootReference: KtSimpleNameExpression? = null
         while (true) {
             val parent = current.parent
             when {
                 parent is KtDotQualifiedExpression && parent.selectorExpression == current -> {
-                    start = parent.receiverExpression.textRange.startOffset
-                    rootReference = parent.receiverExpression.leadingReference()
+                    val receiver = parent.receiverExpression
+                    if (!receiver.isNameChain()) return null
+                    start = receiver.textRange.startOffset
+                    rootReference = receiver.leadingReference()
                     current = parent
                 }
                 parent is KtCallExpression && parent.calleeExpression == current -> current = parent
                 parent is KtUserType && parent.referenceExpression == current -> {
                     parent.qualifier?.let { qualifier ->
+                        if (!qualifier.isNameChain()) return null
                         start = qualifier.textRange.startOffset
                         rootReference = qualifier.leadingReference()
                     }
@@ -805,14 +813,36 @@ class KaChangePackageComputer(
     }
 
     /**
+     * Tells whether this element is a chain of names joined by dots.
+     *
+     * Only such a chain denotes exactly the identifiers it spells and can be replaced by a
+     * package-qualified name as a whole. Calls, index accesses, postfix operators, parentheses and
+     * any other expression must keep their own structure.
+     *
+     * @return `true` when the element consists solely of simple names, qualified name chains and
+     * user types
+     */
+    private fun KtElement.isNameChain(): Boolean = when (this) {
+        is KtSimpleNameExpression -> true
+        is KtDotQualifiedExpression ->
+            selectorExpression?.isNameChain() == true && receiverExpression.isNameChain()
+        is KtUserType -> referenceExpression != null && (qualifier?.isNameChain() ?: true)
+        else -> false
+    }
+
+    /**
      * Returns the leftmost simple name of this receiver expression's qualified chain.
      *
-     * @return the leftmost reference, or `null` when the receiver is not a name-based chain
+     * A call or any other expression is not a name and yields `null`: resolving it would not tell
+     * whether the chain starts from a package.
+     *
+     * @return the leftmost name, or `null` when the receiver is not a name-based chain
      */
-    private fun KtElement.leadingReference(): KtReferenceExpression? = when (this) {
+    private fun KtElement.leadingReference(): KtSimpleNameExpression? = when (this) {
         is KtDotQualifiedExpression -> receiverExpression.leadingReference()
         is KtUserType -> qualifier?.leadingReference() ?: referenceExpression
-        else -> this as? KtReferenceExpression
+        is KtSimpleNameExpression -> this
+        else -> null
     }
 
     /** Retargeted text and the replacements accepted for it, in its coordinates. */
