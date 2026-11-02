@@ -20,6 +20,9 @@ import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.refactoring.util.MoveRenameUsageInfo
 import com.intellij.usageView.UsageInfo
 import org.jetbrains.kotlin.analysis.api.analyze
+import org.jetbrains.kotlin.analysis.api.symbols.KaClassLikeSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaSymbol
 import org.jetbrains.kotlin.idea.k2.refactoring.move.KotlinMoveUsageSearchService
 import org.jetbrains.kotlin.idea.k2.refactoring.move.MoveImport
 import org.jetbrains.kotlin.idea.k2.refactoring.move.descriptor.K2ChangePackageDescriptor
@@ -54,19 +57,6 @@ import org.jetbrains.kotlin.psi.KtUserType
 class KaChangePackageComputer(
     private val ktFile: KtFile,
 ) {
-    private companion object {
-        /**
-         * Kotlin hard keywords, which cannot be written as bare identifiers in generated source.
-         *
-         * Soft keywords (`value`, `field`, `import`, ...) are legal identifiers and stay plain.
-         */
-        val HARD_KEYWORDS = setOf(
-            "as", "break", "class", "continue", "do", "else", "false", "for", "fun", "if", "in",
-            "interface", "is", "null", "object", "package", "return", "super", "this", "throw",
-            "true", "try", "typealias", "typeof", "val", "var", "when", "while",
-        )
-    }
-
     /** Describes the result of applying package changes to one or more Kotlin source files. */
     sealed class ApplyOutcome {
         /** K2 found blocking semantic conflicts and did not mutate any PSI. */
@@ -166,9 +156,10 @@ class KaChangePackageComputer(
             }.toMap()
             // Offsets before the package directive end are unaffected by its replacement length;
             // file annotations are the one place where Kotlin code precedes the directive.
-            val packageDirectiveEnds = participants.mapNotNull { file ->
+            val packageDirectiveRanges = participants.mapNotNull { file ->
                 val path = file.virtualFile?.path ?: return@mapNotNull null
-                path to file.packageDirective?.textRange?.endOffset
+                val range = file.packageDirective?.textRange
+                path to (range?.startOffset to range?.endOffset)
             }.toMap()
             // Snapshot before any mutation: updatePackageDirective invalidates standalone PSI.
             val originalTexts = participants.mapNotNull { file ->
@@ -184,11 +175,14 @@ class KaChangePackageComputer(
             participants.forEach { file ->
                 val path = file.virtualFile?.path ?: return@forEach
                 val originalText = originalTexts[path] ?: return@forEach
-                val text = targets[file]?.let { target -> ensurePackageDirectiveSeparator(file.text, target) } ?: file.text
+                val directiveRange = packageDirectiveRanges[path]
+                val text = targets[file]?.let { target ->
+                    ensurePackageDirectiveSeparator(file.text, target, directiveRange?.first ?: 0)
+                } ?: file.text
                 // Captured offsets refer to the original text; only the package directive changed,
                 // so its length delta realigns every range that follows the directive.
                 val shift = text.length - originalText.length
-                val shiftAfter = if (targets[file] != null) packageDirectiveEnds[path] else null
+                val shiftAfter = if (targets[file] != null) directiveRange?.second else null
                 val retargeted = applyTextEdits(text, textEdits[file].orEmpty(), shift, shiftAfter)
                 changedFiles[path] = addSamePackageImports(
                     retargeted.text,
@@ -293,7 +287,7 @@ class KaChangePackageComputer(
         val file = element.containingFile as? KtFile ?: return
         val chain = element.qualifiedChain()
         if (!chain.matches(oldFqName)) return
-        edits.getOrPut(file, ::linkedSetOf) += TextEdit(chain.startOffset, chain.endOffset, renderFqName(newFqName))
+        edits.getOrPut(file, ::linkedSetOf) += TextEdit(chain.startOffset, chain.endOffset, KotlinSourceNames.renderFqName(newFqName))
     }
 
     /**
@@ -333,13 +327,8 @@ class KaChangePackageComputer(
                             super.visitSimpleNameExpression(expression)
                             if (PsiTreeUtil.getParentOfType(expression, KtImportDirective::class.java) != null) return
                             val reference = expression.references.filterIsInstance<KtReference>().firstOrNull() ?: return
-                            val declaration = reference.resolveToSymbol()?.psi as? KtNamedDeclaration ?: return
-                            val containingFile = declaration.containingKtFile
-                            if (containingFile.virtualFile?.path in movedPaths) return
-                            if (containingFile.packageFqName != originalPackage) return
-                            if (declaration.parent !is KtFile) return
-                            val name = declaration.name ?: return
-                            val importFqName = originalPackage.child(Name.identifier(name))
+                            val symbol = reference.resolveToSymbol() ?: return
+                            val importFqName = samePackageTopLevelName(symbol, originalPackage, movedPaths) ?: return
                             if (importFqName in importedFqNames || originalPackage in starPackages) return
                             if (expression.isPackageQualified(originalPackage)) return
                             missingImports += importFqName
@@ -350,6 +339,43 @@ class KaChangePackageComputer(
             if (missingImports.isNotEmpty()) updates[file] = missingImports
         }
         return updates
+    }
+
+    /**
+     * Resolves which top-level declaration a moved file's simple name still needs to import.
+     *
+     * Only declarations that stay behind in the file's former package qualify. Kotlin sources are
+     * identified through their PSI; Java classes have no [KtNamedDeclaration] and constructor calls
+     * resolve to a constructor symbol, so both are matched through the symbol's class id instead.
+     *
+     * @param symbol symbol resolved for the simple-name reference inside a moved file
+     * @param originalPackage package the moved file declares before the change
+     * @param movedPaths paths of the files whose package changes
+     * @return FQN of the declaration to import, or `null` when no import is required
+     */
+    private fun samePackageTopLevelName(
+        symbol: KaSymbol,
+        originalPackage: FqName,
+        movedPaths: Set<String>,
+    ): FqName? {
+        val psi = symbol.psi
+        if (psi is KtNamedDeclaration) {
+            val containingFile = psi.containingKtFile
+            if (containingFile.virtualFile?.path in movedPaths) return null
+            if (containingFile.packageFqName != originalPackage) return null
+            if (psi.parent !is KtFile) return null
+            val name = psi.name ?: return null
+            return originalPackage.child(Name.identifier(name))
+        }
+        val classId = when (symbol) {
+            is KaConstructorSymbol -> symbol.containingClassId
+            is KaClassLikeSymbol -> symbol.classId
+            else -> null
+        } ?: return null
+        if (classId.isLocal || classId.isNestedClass) return null
+        if (classId.packageFqName != originalPackage) return null
+        if (psi?.containingFile?.virtualFile?.path in movedPaths) return null
+        return classId.asSingleFqName()
     }
 
     /**
@@ -365,20 +391,32 @@ class KaChangePackageComputer(
     }
 
     /**
-     * Separates a package directive from the first declaration of a source that had none.
+     * Separates a package directive from adjacent code when it replaced an empty directive.
      *
      * [K2ChangePackageRefactoringProcessor.updatePackages] replaces the empty directive of a
-     * root-package file in place, which leaves `package dest` glued to the next declaration in
-     * standalone PSI. Restore the mandatory line break before references are rewritten.
+     * root-package file in place, which leaves `package dest` glued to the next declaration or,
+     * for a file with file annotations, to the closing parenthesis of the last annotation. Both
+     * sides need whitespace so the directive stays a standalone line between them.
      *
-     * @return text whose package directive is followed by whitespace
+     * @param text source text after the package mutation
+     * @param targetPackage package written by the processor
+     * @param startOffset captured offset where the new directive begins
+     * @return text whose package directive is surrounded by whitespace or file boundaries
      */
-    private fun ensurePackageDirectiveSeparator(text: String, targetPackage: FqName): String {
+    private fun ensurePackageDirectiveSeparator(text: String, targetPackage: FqName, startOffset: Int): String {
         if (targetPackage.isRoot) return text
         val directive = "package ${targetPackage.asString()}"
-        if (!text.startsWith(directive)) return text
-        val next = text.getOrNull(directive.length) ?: return text
-        return if (next.isWhitespace()) text else "$directive\n\n${text.substring(directive.length)}"
+        if (!text.startsWith(directive, startOffset)) return text
+        var result = text
+        var directiveEnd = startOffset + directive.length
+        if (startOffset > 0 && !result[startOffset - 1].isWhitespace()) {
+            result = result.substring(0, startOffset) + "\n" + result.substring(startOffset)
+            directiveEnd++
+        }
+        if (directiveEnd < result.length && !result[directiveEnd].isWhitespace()) {
+            result = result.substring(0, directiveEnd) + "\n\n" + result.substring(directiveEnd)
+        }
+        return result
     }
 
     /** PSI-captured facts required to insert imports without rescanning the changed source text. */
@@ -441,7 +479,7 @@ class KaChangePackageComputer(
     ): String {
         if (imports.isEmpty() || insertion == null) return usageText
         val missingImports = imports.filterNot { imported -> imported in insertion.existingFqNames }
-            .map { imported -> "import ${renderFqName(imported)}" }
+            .map { imported -> "import ${KotlinSourceNames.renderFqName(imported)}" }
         if (missingImports.isEmpty()) return usageText
         val shiftedOffset = insertion.offset + shift
         val offset = shiftedOffset + appliedEdits
@@ -537,35 +575,9 @@ class KaChangePackageComputer(
             if (prefix != oldSegments) return@forEach
             val suffix = segments.drop(oldSegments.size)
             val separator = if (suffix.isEmpty()) "" else "."
-            return renderFqName(newFqName) + suffix.joinToString(separator = ".", prefix = separator)
+            return KotlinSourceNames.renderFqName(newFqName) + suffix.joinToString(separator = ".", prefix = separator)
         }
         return null
-    }
-
-    /**
-     * Renders a fully qualified name as Kotlin source text.
-     *
-     * [FqName.asString] joins raw names, so a declaration that needs backticks (a keyword or a name
-     * with spaces) would otherwise yield invalid source in generated references and imports.
-     *
-     * @param fqName name of a moved declaration or its new package prefix
-     * @return the FQN with each segment escaped when it cannot be written as a bare identifier
-     */
-    private fun renderFqName(fqName: FqName): String =
-        fqName.pathSegments().joinToString(separator = ".") { segment -> renderIdentifier(segment.asString()) }
-
-    /**
-     * Renders one identifier as Kotlin source, adding backticks when the bare spelling is invalid.
-     *
-     * @param name unescaped identifier as stored by Kotlin PSI
-     * @return the name unchanged when it is a plain non-keyword identifier, otherwise backticked
-     */
-    private fun renderIdentifier(name: String): String {
-        val isPlain = name.isNotEmpty() &&
-            (name.first().isLetter() || name.first() == '_') &&
-            name.all { symbol -> symbol.isLetterOrDigit() || symbol == '_' } &&
-            name !in HARD_KEYWORDS
-        return if (isPlain) name else "`$name`"
     }
 
     /** Source range and text of the qualified chain that ends at a reference expression. */

@@ -21,11 +21,16 @@ import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectSourceGrou
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.KaChangePackageComputer
 import io.github.nbplugins.kotlin.refactoring.KaRenameComputer
+import io.github.nbplugins.kotlin.refactoring.KotlinSourceNames
 import io.github.nbplugins.kotlin.refactoring.TextChange
+import org.jetbrains.kotlin.builder.KotlinPsiManager
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.psi.KtClass
+import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtNamedDeclaration
+import org.jetbrains.kotlin.psi.KtTypeAlias
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.api.project.Project
 import org.netbeans.modules.csl.api.OffsetRange
@@ -58,7 +63,9 @@ class KotlinRenameFilePlugin(
     override fun preCheck(): Problem? = validateKotlinFile(refactoring.file)
 
     /** @return a fatal problem when the requested basename is invalid. */
-    override fun fastCheckParameters(): Problem? = validateIdentifier(refactoring.newName)
+    override fun fastCheckParameters(): Problem? =
+        validateIdentifier(refactoring.newName)
+            ?: validateClassName(refactoring.newName, refactoring.updatePrimaryClass)
 
     /** @return the same validation used before UI confirmation. */
     override fun checkParameters(): Problem? = fastCheckParameters()
@@ -70,9 +77,41 @@ class KotlinRenameFilePlugin(
     override fun prepare(bag: RefactoringElementsBag): Problem? {
         preCheck()?.let { return it }
         fastCheckParameters()?.let { return it }
+        classConflictProblem()?.let { return it }
         bag.add(refactoring, KotlinFindUsagesResultElement(OffsetRange.NONE, refactoring.file))
         bag.add(refactoring, KotlinRenameFileApplyElement(refactoring))
         return null
+    }
+
+    /**
+     * Reports a redeclaration conflict before the semantic rename is staged.
+     *
+     * The rename writes the new class name verbatim and does not run Kotlin's redeclaration checks,
+     * so an existing class, object, or type alias with the same name in the same package would
+     * become a second declaration of the same FQN.
+     *
+     * @return a blocking problem when the target class name is already declared, otherwise `null`
+     */
+    private fun classConflictProblem(): Problem? {
+        if (!refactoring.updatePrimaryClass) return null
+        val project = ProjectUtils.getKotlinProjectForFileObject(refactoring.file) ?: return null
+        KotlinAnalysisAPISession.invalidate(project)
+        val session = KotlinAnalysisAPISession.getSession(project)
+        session.synchronizeOpenDocuments()
+        val source = session.getKtFileForPath(refactoring.file.path) ?: return null
+        val primaryClass = source.declarations.filterIsInstance<KtClass>()
+            .firstOrNull { declaration -> declaration.name == refactoring.file.name }
+            ?: return null
+        val files = KotlinPsiManager.getFilesByProject(project)
+            .mapNotNull { file -> session.getKtFileForPath(file.path) }
+        val conflict = findClassifierConflict(source, primaryClass, refactoring.newName, files)
+            ?: return null
+        val packageName = source.packageFqName
+        val location = if (packageName.isRoot) "the root package" else "package ${packageName.asString()}"
+        return Problem(
+            true,
+            "The Kotlin name ${refactoring.newName} is already declared in $location (${conflict.containingKtFile.name}).",
+        )
     }
 }
 
@@ -140,7 +179,7 @@ class KotlinRenameFileApplyElement(
         val primaryClass = source.declarations.filterIsInstance<KtClass>()
             .firstOrNull { it.name == refactoring.file.name }
             ?: return
-        val allFiles = org.jetbrains.kotlin.builder.KotlinPsiManager.getFilesByProject(project)
+        val allFiles = KotlinPsiManager.getFilesByProject(project)
         val allKtFiles = allFiles.mapNotNull { session.getKtFileForPath(it.path) }.toSet()
         val changes = KaRenameComputer(
             source,
@@ -454,6 +493,59 @@ private fun validateIdentifier(name: String): Problem? = if (name.matches(Regex(
 } else {
     Problem(true, "The new Kotlin file or package-directory name must be a Kotlin identifier.")
 }
+
+/**
+ * Rejects a basename that would become an invalid Kotlin class name in semantic mode.
+ *
+ * A physical file may be named after a hard keyword, but the matching top-level class is written
+ * verbatim into source text, where a bare keyword is not a valid identifier.
+ *
+ * @param name requested basename, already accepted as a plain identifier
+ * @param updatePrimaryClass whether generic Rename also renames the matching class
+ * @return a fatal problem when the basename cannot name a Kotlin class
+ */
+private fun validateClassName(name: String, updatePrimaryClass: Boolean): Problem? =
+    if (updatePrimaryClass && !KotlinSourceNames.isPlainIdentifier(name)) {
+        Problem(true, "The new Kotlin class name must not be a Kotlin keyword: $name")
+    } else {
+        null
+    }
+
+/**
+ * Finds a top-level classifier that already uses [newName] in the package of [source].
+ *
+ * Renaming a file together with its primary class writes the new name verbatim, so a class,
+ * object, or type alias that already owns that name in the same package would be redeclared.
+ *
+ * @param source file whose matching class is renamed
+ * @param primaryClass top-level class renamed together with the file
+ * @param newName requested class name
+ * @param files Kotlin sources of the project
+ * @return the first conflicting declaration, or `null` when the name is free
+ */
+internal fun findClassifierConflict(
+    source: KtFile,
+    primaryClass: KtClass,
+    newName: String,
+    files: Collection<KtFile>,
+): KtNamedDeclaration? {
+    val packageName = source.packageFqName
+    return files.asSequence()
+        .filter { file -> file.packageFqName == packageName }
+        .flatMap { file -> file.declarations.asSequence() }
+        .filter { declaration -> declaration is KtClassOrObject || declaration is KtTypeAlias }
+        .map { declaration -> declaration as KtNamedDeclaration }
+        .filter { declaration -> !declaration.isSameDeclaration(primaryClass) }
+        .firstOrNull { declaration -> declaration.name == newName }
+}
+
+/** Tells whether this declaration is [primaryClass], tolerating distinct PSI instances of it. */
+private fun KtNamedDeclaration.isSameDeclaration(primaryClass: KtClass): Boolean =
+    this === primaryClass ||
+        (this is KtClass &&
+            name == primaryClass.name &&
+            containingKtFile.virtualFile?.path == primaryClass.containingKtFile.virtualFile?.path &&
+            textRange.startOffset == primaryClass.textRange.startOffset)
 
 /** Creates position bounds for one preview source when a CloneableEditorSupport is available. */
 private fun positionFor(file: FileObject): PositionBounds? = runCatching {

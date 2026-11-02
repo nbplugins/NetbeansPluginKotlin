@@ -20,8 +20,12 @@ import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.KaChangePackageComputer
 import org.jetbrains.kotlin.name.FqName
 import utils.KotlinTestCase
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.jar.JarEntry
+import java.util.jar.JarOutputStream
+import javax.tools.ToolProvider
 
 /** Integration tests for the standalone K2 [KaChangePackageComputer]. */
 class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
@@ -1049,9 +1053,215 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies a new package directive is separated from the declaration when a header comment leads.
+     *
+     * The empty package directive of a root-package file sits at the first declaration token, after
+     * the comment, so the in-place replacement must still restore the line break.
+     */
+    fun testApply_realSession_separatesPackageDirectiveAfterHeaderComment() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-header-comment")
+        try {
+            val sourcePath = temporaryRoot.resolve("Moved.kt")
+            Files.writeString(sourcePath, "// Generated file\nfun moved() = 1\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-header-comment-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "The new directive must not be glued to the declaration",
+                "package dest\n\n// Generated file\nfun moved() = 1\n",
+                success.changedFiles[sourcePath.toString()].orEmpty(),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a file annotation stays before a newly written package directive.
+     *
+     * Kotlin requires file annotations to precede the package header, so a root-package file that
+     * gains a package must not move the directive above its annotation.
+     */
+    fun testApply_realSession_keepsFileAnnotationBeforeNewPackageDirective() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-new-directive-annotation")
+        try {
+            val sourcePath = temporaryRoot.resolve("Moved.kt")
+            Files.writeString(sourcePath, "@file:JvmName(\"Moved\")\nfun moved() = 1\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-new-directive-annotation-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "A file annotation must stay above the package directive",
+                "@file:JvmName(\"Moved\")\npackage dest\nfun moved() = 1\n",
+                success.changedFiles[sourcePath.toString()].orEmpty(),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a moved file imports a Java class that stays in its former package.
+     *
+     * Java classes have no Kotlin PSI declaration, so the outgoing-dependency pass must recognise
+     * them through their class id; otherwise the simple name loses its binding after the move.
+     */
+    fun testApply_realSession_addsImportForOutgoingSamePackageJavaClass() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-outgoing-java")
+        val buildRoot = Files.createTempDirectory("nbkotlin-change-package-outgoing-java-build")
+        try {
+            val javaJar = compileJavaClassJar(buildRoot, "old.source", "JavaHelper") ?: run {
+                println("Java compiler unavailable — skipping outgoing Java class test")
+                return
+            }
+            val oldPackageDirectory = temporaryRoot.resolve("old/source")
+            Files.createDirectories(oldPackageDirectory)
+            val sourcePath = oldPackageDirectory.resolve("Moved.kt")
+            Files.writeString(sourcePath, "package old.source\n\nfun create() = JavaHelper()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-outgoing-java-integration",
+                binaryJars = listOf(stdlib, javaJar),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("new.changed")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "A moved file must import a Java class that stays in its former package",
+                "package new.changed\n\nimport old.source.JavaHelper\n\nfun create() = JavaHelper()\n",
+                success.changedFiles[sourcePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+            buildRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a moved file imports a Kotlin class whose constructor it calls.
+     *
+     * A constructor call resolves to a constructor symbol rather than to the class declaration,
+     * so outgoing dependency capture must fall back to the constructed class id.
+     */
+    fun testApply_realSession_addsImportForOutgoingSamePackageClassConstructor() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-outgoing-constructor")
+        try {
+            val oldPackageDirectory = temporaryRoot.resolve("old/source")
+            Files.createDirectories(oldPackageDirectory)
+            val sourcePath = oldPackageDirectory.resolve("Moved.kt")
+            val staysPath = oldPackageDirectory.resolve("Stays.kt")
+            Files.writeString(sourcePath, "package old.source\n\nfun create() = Helper()\n")
+            Files.writeString(staysPath, "package old.source\n\nclass Helper\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-outgoing-constructor-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("new.changed")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "A moved file must import a class that stays in its former package",
+                "package new.changed\n\nimport old.source.Helper\n\nfun create() = Helper()\n",
+                success.changedFiles[sourcePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))
         .map(Path::of)
         .firstOrNull { it.fileName?.toString()?.startsWith("kotlin-stdlib") == true && it.toFile().exists() }
+
+    /**
+     * Compiles [packageName].[className] with the JDK compiler and packs it into a JAR.
+     *
+     * @param directory scratch directory owned by the caller
+     * @param packageName Java package of the generated class
+     * @param className simple name of the generated class
+     * @return the compiled JAR, or `null` when no JDK compiler is available
+     */
+    private fun compileJavaClassJar(directory: Path, packageName: String, className: String): Path? {
+        val compiler = ToolProvider.getSystemJavaCompiler() ?: return null
+        val packagePath = packageName.replace('.', '/')
+        val sourceFile = directory.resolve("src/$packagePath/$className.java")
+        Files.createDirectories(sourceFile.parent)
+        Files.writeString(sourceFile, "package $packageName;\n\npublic class $className {}\n")
+        val classesDirectory = directory.resolve("classes")
+        Files.createDirectories(classesDirectory)
+        var compiled = false
+        compiler.getStandardFileManager(null, null, StandardCharsets.UTF_8).use { fileManager ->
+            val units = fileManager.getJavaFileObjectsFromFiles(listOf(sourceFile.toFile()))
+            compiled = compiler.getTask(
+                null,
+                fileManager,
+                null,
+                listOf("-d", classesDirectory.toString()),
+                null,
+                units,
+            ).call()
+        }
+        if (!compiled) return null
+        val jarPath = directory.resolve("$className.jar")
+        JarOutputStream(Files.newOutputStream(jarPath)).use { jar ->
+            jar.putNextEntry(JarEntry("$packagePath/$className.class"))
+            Files.copy(classesDirectory.resolve("$packagePath/$className.class"), jar)
+            jar.closeEntry()
+        }
+        return jarPath
+    }
 }

@@ -44,6 +44,25 @@ class KotlinRenameRefactoringTest : NbTestCase("KotlinRenameRefactoringTest") {
         assertTrue("generic Rename must update a matching top-level class", refactoring.updatePrimaryClass)
     }
 
+    /** Verifies semantic file Rename rejects a basename that cannot name a Kotlin class. */
+    fun testFilePlugin_rejectsKeywordBasenameInSemanticMode() {
+        val file = FileUtil.createMemoryFileSystem().root.createData("Before.kt")
+        val plugin = KotlinRenameFilePlugin(KotlinRenameFileRefactoring(file, "class", updatePrimaryClass = true))
+
+        assertNotNull(
+            "a hard keyword must not be written as a class name",
+            plugin.fastCheckParameters(),
+        )
+    }
+
+    /** Verifies the physical-only explicit action still accepts a keyword basename. */
+    fun testFilePlugin_acceptsKeywordBasenameInPhysicalMode() {
+        val file = FileUtil.createMemoryFileSystem().root.createData("Before.kt")
+        val plugin = KotlinRenameFilePlugin(KotlinRenameFileRefactoring(file, "class"))
+
+        assertNull("a physical file may be named after a keyword", plugin.fastCheckParameters())
+    }
+
     /** Verifies a directory carrier defaults to a physical-only rename. */
     fun testDirectoryCarrier_retainsPhysicalSourceAndName() {
         val directory = FileUtil.createMemoryFileSystem().root.createFolder("before")
