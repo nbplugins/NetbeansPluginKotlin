@@ -354,6 +354,8 @@ class KaChangePackageComputer(
                             val importFqName = samePackageTopLevelName(symbol, originalPackage, movedPaths) ?: return
                             if (importFqName in importedFqNames || originalPackage in starPackages) return
                             if (expression.isPackageQualified(originalPackage)) return
+                            if (expression.isPackageQualified(originalPackage)) return
+                            if (expression.isAliasBound(importFqName)) return
                             missingImports += importFqName
                         }
                     })
@@ -403,6 +405,20 @@ class KaChangePackageComputer(
         if (psi.parent !is KtFile) return null
         val name = psi.name ?: return null
         return originalPackage.child(Name.identifier(name))
+    }
+
+    /**
+     * Tells whether [this] is spelled with an import alias that binds [fqName].
+     *
+     * `import a.Helper as OriginalHelper` already keeps the dependency: the alias resolves the
+     * declaration without a further import, and adding the unaliased name would collide with a
+     * same-named class imported from elsewhere.
+     */
+    private fun KtSimpleNameExpression.isAliasBound(fqName: FqName): Boolean {
+        val name = getReferencedName()
+        return containingKtFile.importDirectives.any { directive ->
+            directive.aliasName == name && directive.importedFqName == fqName
+        }
     }
 
     /**

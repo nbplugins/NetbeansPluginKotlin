@@ -30,7 +30,9 @@ import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
 import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.kdoc.lexer.KDocTokens
 import org.jetbrains.kotlin.lexer.KtTokens
+import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtClassOrObject
+import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
@@ -39,6 +41,7 @@ import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtReferenceExpression
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
 import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
+import org.jetbrains.kotlin.psi.KtUserType
 import java.util.logging.Logger
 
 /**
@@ -193,6 +196,24 @@ class KaRenameComputer(
     }
 
     /**
+     * Tells whether [this] uses an import alias rather than being part of a qualified access.
+     *
+     * `import p.Foo as Foo` makes the alias and the class name equal, so only the syntactic
+     * position distinguishes an alias usage from `p.Foo(1)` or a `p.Foo` type: an alias usage is
+     * an unqualified name, while a qualified access is the selector of a dot access or a qualified
+     * user type. References inside import directives always follow the imported declaration.
+     */
+    private fun KtSimpleNameExpression.isAliasUsage(): Boolean {
+        if (PsiTreeUtil.getParentOfType(this, KtImportDirective::class.java) != null) return false
+        val selector = (parent as? KtCallExpression)?.takeIf { it.calleeExpression == this } ?: this
+        val qualified = selector.parent as? KtDotQualifiedExpression
+        if (qualified?.selectorExpression == selector) return false
+        val userType = parent as? KtUserType
+        if (userType != null && userType.referenceExpression == this && userType.qualifier != null) return false
+        return true
+    }
+
+    /**
      * Adds a [TextChange] for the name identifier of [targetDecl] to [into].
      *
      * Supports both Kotlin ([KtNamedDeclaration]) and Java ([PsiMethod] / [PsiField] / [PsiClass])
@@ -336,9 +357,9 @@ class KaRenameComputer(
                 kaFile.accept(object : KtTreeVisitorVoid() {
                     override fun visitReferenceExpression(expression: KtReferenceExpression) {
                         super.visitReferenceExpression(expression)
-                        val referencedName = (expression as? KtSimpleNameExpression)?.getReferencedName()
-                        if (referencedName != null && referencedName in aliasNames &&
-                            PsiTreeUtil.getParentOfType(expression, KtImportDirective::class.java) == null
+                        val simpleName = expression as? KtSimpleNameExpression
+                        if (simpleName != null && simpleName.getReferencedName() in aliasNames &&
+                            simpleName.isAliasUsage()
                         ) {
                             return
                         }

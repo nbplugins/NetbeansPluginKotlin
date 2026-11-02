@@ -228,6 +228,51 @@ class KaRenameTest : KotlinTestCase("KaRenameTest", "rename") {
         }
     }
 
+    /**
+     * Verifies qualified references stay renamed when a redundant alias has the class's own name.
+     *
+     * `import p.Foo as Foo` makes the alias name indistinguishable from the class name, but
+     * `p.Foo(1)` and `p.Foo` are spelled through the package, so they must still follow the rename.
+     */
+    fun testRenameClassKeepsQualifiedReferencesWithRedundantAlias() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping redundant-alias rename test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-redundant-alias")
+        try {
+            val sourceDirectory = root.resolve("source")
+            val callerDirectory = root.resolve("caller")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(callerDirectory)
+            val sourcePath = sourceDirectory.resolve("Foo.kt")
+            val callerPath = callerDirectory.resolve("Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Foo(val x: Int)\n")
+            Files.writeString(
+                callerPath,
+                "package b\n\nimport p.Foo as Foo\n\nfun use(): p.Foo = p.Foo(1)\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-redundant-alias-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val changes = KaRenameComputer(source, source.text.indexOf("Foo"), setOf(source, caller), "Bar").compute()
+
+            assertNotNull("compute() must return non-null for a redundant alias", changes)
+            assertEquals(
+                "Qualified references must follow the rename even when an alias reuses the class name",
+                "package b\n\nimport p.Bar as Foo\n\nfun use(): p.Bar = p.Bar(1)\n",
+                applyChanges(caller.text, changes!![callerPath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))
