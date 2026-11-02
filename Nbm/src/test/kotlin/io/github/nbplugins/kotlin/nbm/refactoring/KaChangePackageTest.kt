@@ -535,6 +535,55 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
+     * Verifies a package-qualified call from a wildcard importer needs no explicit import.
+     *
+     * `a.moved()` is rewritten in place to `b.moved()`, so requesting `import b.moved` would
+     * collide with the caller's unrelated `import c.moved`.
+     */
+    fun testApply_realSession_skipsIncomingImportForPackageQualifiedWildcardUsage() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-wildcard-qualified")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("a")
+            val usageDirectory = temporaryRoot.resolve("call")
+            val otherDirectory = temporaryRoot.resolve("c")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(usageDirectory)
+            Files.createDirectories(otherDirectory)
+            val sourcePath = sourceDirectory.resolve("Moved.kt")
+            val usagePath = usageDirectory.resolve("Usage.kt")
+            val otherPath = otherDirectory.resolve("Other.kt")
+            Files.writeString(sourcePath, "package a\n\nfun moved() = 1\n")
+            Files.writeString(usagePath, "package call\n\nimport a.*\nimport c.moved\n\nfun use() = a.moved() + moved()\n")
+            Files.writeString(otherPath, "package c\n\nfun moved() = 2\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-wildcard-qualified-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("b")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "A qualified usage must not add a conflicting incoming import",
+                "package call\n\nimport a.*\nimport c.moved\n\nfun use() = b.moved() + moved()\n",
+                success.changedFiles[usagePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies an explicit import of a default-package declaration follows it into a named package.
      *
      * Bare names are excluded from reference replacement to protect declaration names, but their
@@ -1366,6 +1415,56 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
                     "import old.source.Helper as OriginalHelper\n" +
                     "import other.Helper\n\n" +
                     "fun create() = OriginalHelper(1).x + Helper(2).x\n",
+                success.changedFiles[sourcePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a package-qualified type reference needs no import.
+     *
+     * `a.Helper` as a type names the package itself, so the moved file must keep its existing
+     * `import c.Helper` usable without an extra unaliased `import a.Helper`.
+     */
+    fun testApply_realSession_skipsImportForPackageQualifiedType() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-qualified-type")
+        try {
+            val oldPackageDirectory = temporaryRoot.resolve("a")
+            val otherPackageDirectory = temporaryRoot.resolve("c")
+            Files.createDirectories(oldPackageDirectory)
+            Files.createDirectories(otherPackageDirectory)
+            val sourcePath = oldPackageDirectory.resolve("Moved.kt")
+            val staysPath = oldPackageDirectory.resolve("Stays.kt")
+            val otherPath = otherPackageDirectory.resolve("Helper.kt")
+            Files.writeString(
+                sourcePath,
+                "package a\n\nimport c.Helper\n\nfun create(): a.Helper? = null\n\nfun other(): Helper = Helper(1)\n",
+            )
+            Files.writeString(staysPath, "package a\n\nclass Helper(val x: Int)\n")
+            Files.writeString(otherPath, "package c\n\nclass Helper(val x: Int)\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-qualified-type-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("b")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "A package-qualified type must not add a conflicting import",
+                "package b\n\nimport c.Helper\n\nfun create(): a.Helper? = null\n\nfun other(): Helper = Helper(1)\n",
                 success.changedFiles[sourcePath.toString()],
             )
         } finally {

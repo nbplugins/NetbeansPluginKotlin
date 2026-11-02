@@ -259,7 +259,9 @@ class KaChangePackageComputer(
             session.findUsages(declaration).forEach { reference ->
                 val element = reference.element as? KtElement ?: return@forEach
                 val file = element.containingFile as? KtFile ?: return@forEach
-                captureQualifiedReference(element, oldFqName, newFqName, edits)
+                // A qualified chain is rewritten in place, so this usage needs no import; an
+                // unqualified usage in the same file still adds one when the loop reaches it.
+                if (captureQualifiedReference(element, oldFqName, newFqName, edits)) return@forEach
                 if (file.virtualFile?.path == declarationFile.virtualFile?.path) return@forEach
                 val finalPackage = targets[file] ?: file.packageFqName
                 if (finalPackage == newFqName.parent()) return@forEach
@@ -291,21 +293,23 @@ class KaChangePackageComputer(
      * @param oldFqName declaration FQN before the package change
      * @param newFqName declaration FQN after the package change
      * @param edits per-file replacement accumulator
+     * @return `true` when a qualified chain was replaced in place and therefore needs no import
      */
     private fun captureQualifiedReference(
         element: KtElement,
         oldFqName: FqName,
         newFqName: FqName,
         edits: MutableMap<KtFile, MutableSet<TextEdit>>,
-    ) {
+    ): Boolean {
         // A root-package FQN is a bare name. Qualifying such a reference would rewrite
         // declaration-like positions that cannot take a package prefix (`::moved`); imports
         // alone keep root-package bindings intact.
-        if (oldFqName.parent().isRoot) return
-        val file = element.containingFile as? KtFile ?: return
+        if (oldFqName.parent().isRoot) return false
+        val file = element.containingFile as? KtFile ?: return false
         val chain = element.qualifiedChain()
-        if (!chain.matches(oldFqName)) return
+        if (!chain.matches(oldFqName)) return false
         edits.getOrPut(file, ::linkedSetOf) += TextEdit(chain.startOffset, chain.endOffset, KotlinSourceNames.renderFqName(newFqName))
+        return true
     }
 
     /**
@@ -426,13 +430,22 @@ class KaChangePackageComputer(
      * [packageFqName], in which case the reference resolves without an import.
      *
      * A callee is wrapped in a [KtCallExpression] (`a.Helper(1)`), so the qualified access is found
-     * through that call node rather than directly through the callee's parent.
+     * through that call node rather than directly through the callee's parent. A type reference is
+     * wrapped in a [KtUserType] whose qualifier spells the receiver (`a.Helper`).
      */
     private fun KtSimpleNameExpression.isPackageQualified(packageFqName: FqName): Boolean {
         val selector = (parent as? KtCallExpression)?.takeIf { it.calleeExpression == this } ?: this
-        val qualified = selector.parent as? KtDotQualifiedExpression ?: return false
-        if (qualified.selectorExpression != selector) return false
-        val receiverText = qualified.receiverExpression.text
+        val receiverText = when (val qualified = selector.parent as? KtDotQualifiedExpression) {
+            null -> {
+                val userType = parent as? KtUserType
+                if (userType == null || userType.referenceExpression != this) return false
+                userType.qualifier?.text ?: return false
+            }
+            else -> {
+                if (qualified.selectorExpression != selector) return false
+                qualified.receiverExpression.text
+            }
+        }
         val packageName = packageFqName.asString()
         return packageName == receiverText || packageName.startsWith("$receiverText.")
     }
