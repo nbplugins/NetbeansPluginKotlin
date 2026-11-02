@@ -277,6 +277,10 @@ class KaChangePackageComputer(
                     directive.isAllUnder && directive.importedFqName == originalPackage
                 }
                 if (!sharesOriginalPackage && !importsOriginalPackage) return@forEach
+                // The rewritten alias directive keeps this usage bound, so it needs no
+                // unaliased import of its own.
+                val simpleName = element as? KtSimpleNameExpression
+                if (simpleName != null && simpleName.isAliasBound(oldFqName)) return@forEach
                 imports.getOrPut(file, ::linkedSetOf) += newFqName
             }
         }

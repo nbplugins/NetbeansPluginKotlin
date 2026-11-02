@@ -584,6 +584,58 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
+     * Verifies an alias-bound usage of a moved declaration needs no incoming unaliased import.
+     *
+     * The rewritten `import b.moved as alias` keeps `alias()` bound, so adding `import b.moved`
+     * would only make the caller's unrelated `moved()` call ambiguous.
+     */
+    fun testApply_realSession_skipsIncomingImportForAliasBoundWildcardUsage() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-wildcard-alias")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("a")
+            val usageDirectory = temporaryRoot.resolve("call")
+            val otherDirectory = temporaryRoot.resolve("c")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(usageDirectory)
+            Files.createDirectories(otherDirectory)
+            val sourcePath = sourceDirectory.resolve("Moved.kt")
+            val usagePath = usageDirectory.resolve("Usage.kt")
+            val otherPath = otherDirectory.resolve("Other.kt")
+            Files.writeString(sourcePath, "package a\n\nfun moved() = 1\n")
+            Files.writeString(
+                usagePath,
+                "package call\n\nimport a.*\nimport a.moved as alias\nimport c.moved\n\nfun use() = alias() + moved()\n",
+            )
+            Files.writeString(otherPath, "package c\n\nfun moved() = 2\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-wildcard-alias-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("b")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "An alias-bound usage must not add a conflicting incoming import",
+                "package call\n\nimport a.*\nimport b.moved as alias\nimport c.moved\n\nfun use() = alias() + moved()\n",
+                success.changedFiles[usagePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies an explicit import of a default-package declaration follows it into a named package.
      *
      * Bare names are excluded from reference replacement to protect declaration names, but their
@@ -1565,12 +1617,13 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
-     * Verifies an aliased import in a caller does not suppress the incoming unaliased import.
+     * Verifies a caller's alias-bound usage needs no incoming unaliased import.
      *
-     * `import a.moved as alias` keeps only `alias()` bound after the declaration moves; a caller
-     * that also calls `moved()` needs `import b.moved` in addition to the rewritten alias.
+     * The caller formerly shared the declaration's package, but it reaches the declaration only
+     * through `import a.moved as alias`. Rewriting that directive keeps `alias()` bound, so no
+     * `import b.moved` is required.
      */
-    fun testApply_realSession_addsIncomingImportWhenCallerOnlyAliasedIt() {
+    fun testApply_realSession_skipsIncomingImportForAliasBoundUsage() {
         val stdlib = findStdlibJar() ?: run {
             println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
             return
@@ -1582,7 +1635,7 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
             val sourcePath = oldPackageDirectory.resolve("Moved.kt")
             val callerPath = oldPackageDirectory.resolve("Use.kt")
             Files.writeString(sourcePath, "package a\n\nfun moved() = 1\n")
-            Files.writeString(callerPath, "package a\n\nimport a.moved as alias\n\nfun use() = moved() + alias()\n")
+            Files.writeString(callerPath, "package a\n\nimport a.moved as alias\n\nfun use() = alias()\n")
             val session = KotlinAnalysisAPISession.createWithJars(
                 moduleName = "change-package-incoming-alias-integration",
                 binaryJars = listOf(stdlib),
@@ -1598,8 +1651,8 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
             assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
             val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
             assertEquals(
-                "The caller must keep both the alias and an unaliased binding",
-                "package a\n\nimport b.moved\nimport b.moved as alias\n\nfun use() = moved() + alias()\n",
+                "The rewritten alias must be the only import the caller needs",
+                "package a\n\nimport b.moved as alias\n\nfun use() = alias()\n",
                 success.changedFiles[callerPath.toString()],
             )
         } finally {
