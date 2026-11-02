@@ -1664,6 +1664,54 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
+     * Verifies a wildcard rooted in a class nested inside a moved class follows that move.
+     *
+     * `import old.pkg.Outer.Inner.*` names `Outer` only as a prefix, so the caller is not found by
+     * usage search; the wildcard prefix must be retargeted with its nested suffix and `.*` kept.
+     */
+    fun testApply_realSession_retargetsWildcardImportRootedInNestedClass() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-nested-wildcard")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("old/pkg")
+            val usageDirectory = temporaryRoot.resolve("usage")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(usageDirectory)
+            val sourcePath = sourceDirectory.resolve("Outer.kt")
+            val usagePath = usageDirectory.resolve("Use.kt")
+            Files.writeString(
+                sourcePath,
+                "package old.pkg\n\nclass Outer {\n    class Inner {\n        class Nested\n    }\n}\n",
+            )
+            Files.writeString(usagePath, "package usage\n\nimport old.pkg.Outer.Inner.*\n\nfun use(): Nested? = null\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-nested-wildcard-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("new.pkg")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "A wildcard import rooted in a nested class must keep its suffix and follow the move",
+                "package usage\n\nimport new.pkg.Outer.Inner.*\n\nfun use(): Nested? = null\n",
+                success.changedFiles[usagePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies a caller importing a nested declaration directly follows the enclosing class move.
      *
      * `import old.pkg.Outer.Nested` names the moved class only as a path prefix, so usage search

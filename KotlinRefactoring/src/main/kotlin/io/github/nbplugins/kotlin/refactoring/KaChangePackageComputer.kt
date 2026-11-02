@@ -598,11 +598,18 @@ class KaChangePackageComputer(
                 if (pathStart >= pathEnd) return@forEach
                 val replacement = if (directive.isAllUnder) {
                     // A package wildcard keeps importing whatever stays behind, so only a
-                    // wildcard rooted in a moved class follows that class to its new package.
+                    // wildcard rooted in a moved class (or a class nested inside it) follows
+                    // that class to its new package, keeping the nested suffix and `.*`.
                     val imported = directive.importedFqName ?: return@forEach
-                    if (imported !in movedClassFqNames) return@forEach
-                    val newPrefix = movedDeclarations[imported] ?: return@forEach
-                    KotlinSourceNames.renderFqName(newPrefix)
+                    val movedClass = longestMovedClassPrefix(imported, movedClassFqNames) ?: return@forEach
+                    val newPrefix = movedDeclarations[movedClass] ?: return@forEach
+                    val suffixSegments = imported.pathSegments().drop(movedClass.pathSegments().size)
+                    val suffixText = if (suffixSegments.isEmpty()) {
+                        ""
+                    } else {
+                        suffixSegments.joinToString(separator = ".", prefix = ".")
+                    }
+                    KotlinSourceNames.renderFqName(newPrefix) + suffixText
                 } else {
                     rewriteImportedPath(fileText.substring(pathStart, pathEnd), mappings)
                         ?: return@forEach
@@ -611,6 +618,33 @@ class KaChangePackageComputer(
             }
         }
         return edits.mapValues { (_, fileEdits) -> fileEdits.toList() }
+    }
+
+    /**
+     * Returns the deepest moved class whose FQN is [imported] or a prefix of it.
+     *
+     * Matching the longest prefix keeps a nested wildcard (`old.Outer.Inner.*`) attached to the
+     * moved class (`old.Outer`) with `Inner` as its suffix.
+     *
+     * @param imported FQN named by a wildcard import directive
+     * @param movedClassFqNames old FQNs of moved top-level classes
+     * @return the longest matching moved class FQN, or `null` when none matches
+     */
+    private fun longestMovedClassPrefix(imported: FqName, movedClassFqNames: Set<FqName>): FqName? =
+        movedClassFqNames
+            .filter { candidate -> candidate.isPrefixOf(imported) }
+            .maxByOrNull { candidate -> candidate.pathSegments().size }
+
+    /**
+     * Tells whether this FQN equals [fqName] or is one of its package/class prefixes.
+     *
+     * @param fqName fully qualified name to test
+     * @return `true` when this FQN names the same declaration or one of its enclosing segments
+     */
+    private fun FqName.isPrefixOf(fqName: FqName): Boolean {
+        val prefix = pathSegments()
+        val segments = fqName.pathSegments()
+        return segments.size >= prefix.size && segments.subList(0, prefix.size) == prefix
     }
 
     /**

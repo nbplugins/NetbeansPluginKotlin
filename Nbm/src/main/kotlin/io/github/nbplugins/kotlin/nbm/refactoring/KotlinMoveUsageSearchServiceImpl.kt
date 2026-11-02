@@ -154,7 +154,9 @@ class KotlinMoveUsageSearchServiceImpl : KotlinMoveUsageSearchService {
      * Finds Kotlin files with a wildcard import rooted in a moved class.
      *
      * Such a caller may reference only nested declarations of that class, so K2 usage discovery
-     * never reports it; the import prefix is the only place the moved class is named.
+     * never reports it; the import prefix is the only place the moved class is named. A wildcard
+     * rooted in a class nested inside a moved class (`old.Outer.Inner.*`) names the moved class as
+     * a path prefix, so prefixes are matched as well.
      *
      * @param project IntelliJ project owning the standalone K2 session
      * @param classFqNames old fully qualified names of moved classes
@@ -170,9 +172,23 @@ class KotlinMoveUsageSearchServiceImpl : KotlinMoveUsageSearchService {
             val file = session.getKtFileForPath(lightFile.path) ?: return@mapNotNull null
             file.takeIf { candidate ->
                 candidate.importDirectives.any { directive ->
-                    directive.isAllUnder && directive.importedFqName in classFqNames
+                    directive.isAllUnder && directive.importedFqName?.let { imported ->
+                        classFqNames.any { movedClass -> movedClass.isPrefixOf(imported) }
+                    } == true
                 }
             }
         }
+    }
+
+    /**
+     * Tells whether this FQN equals [fqName] or is one of its package/class prefixes.
+     *
+     * @param fqName fully qualified name to test
+     * @return `true` when this FQN names the same declaration or one of its enclosing segments
+     */
+    private fun FqName.isPrefixOf(fqName: FqName): Boolean {
+        val prefix = pathSegments()
+        val segments = fqName.pathSegments()
+        return segments.size >= prefix.size && segments.subList(0, prefix.size) == prefix
     }
 }
