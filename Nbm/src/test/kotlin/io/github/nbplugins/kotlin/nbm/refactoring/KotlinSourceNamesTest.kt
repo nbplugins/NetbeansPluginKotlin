@@ -43,6 +43,8 @@ class KotlinSourceNamesTest : NbTestCase("KotlinSourceNamesTest") {
         assertFalse(KotlinSourceNames.isPlainIdentifier("two words"))
         assertFalse(KotlinSourceNames.isPlainIdentifier("2fast"))
         assertFalse(KotlinSourceNames.isPlainIdentifier(""))
+        assertFalse("all-underscore names are reserved", KotlinSourceNames.isPlainIdentifier("_"))
+        assertFalse("all-underscore names are reserved", KotlinSourceNames.isPlainIdentifier("___"))
     }
 
     /** Verifies a plain name is rendered unchanged. */
@@ -54,6 +56,7 @@ class KotlinSourceNamesTest : NbTestCase("KotlinSourceNamesTest") {
     fun testRenderIdentifier_backticksInvalidNames() {
         assertEquals("`when`", KotlinSourceNames.renderIdentifier("when"))
         assertEquals("`two words`", KotlinSourceNames.renderIdentifier("two words"))
+        assertEquals("`_`", KotlinSourceNames.renderIdentifier("_"))
     }
 
     /** Verifies a plain FQN is rendered unchanged. */

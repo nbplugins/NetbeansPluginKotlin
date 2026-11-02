@@ -41,6 +41,9 @@ object KotlinSourceNames {
     /**
      * Tells whether an unescaped name can be written without backticks.
      *
+     * Names made of underscores only (`_`, `__`, ...) are reserved in Kotlin and need backticks
+     * just like hard keywords, so they are not plain.
+     *
      * @param name identifier as stored by Kotlin PSI
      * @return `true` for a plain letter/underscore-led non-keyword identifier
      */
@@ -48,6 +51,7 @@ object KotlinSourceNames {
         name.isNotEmpty() &&
             (name.first().isLetter() || name.first() == '_') &&
             name.all { symbol -> symbol.isLetterOrDigit() || symbol == '_' } &&
+            name.any { symbol -> symbol != '_' } &&
             name !in HARD_KEYWORDS
 
     /**
