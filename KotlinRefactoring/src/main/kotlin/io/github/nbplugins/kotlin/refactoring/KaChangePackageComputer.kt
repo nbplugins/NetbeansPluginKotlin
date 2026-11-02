@@ -27,12 +27,15 @@ import org.jetbrains.kotlin.idea.k2.refactoring.move.processor.K2ChangePackageRe
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
+import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
 import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
+import org.jetbrains.kotlin.psi.KtUserType
 
 /**
  * Applies IDEA K2 Change Package semantics without its IDE-specific processor lifecycle.
@@ -98,9 +101,8 @@ class KaChangePackageComputer(
                     ),
                 )
             }
-            // Use the copied upstream Change Package processor rather than the F4.1 Move File helper:
-            // its findUsages() also reports whole-file internal references, so a same-package caller
-            // without any import is still known and gets an explicit import once the package changes.
+            // Reuse the copied upstream Change Package processor for usage discovery, conflict
+            // checking, and package rewriting; only its IDE-bound retargeting pass is replaced.
             val usages = if (updateReferences) processors.flatMap { it.findUsages().asIterable() }.distinct() else emptyList()
             val conflicts = processors.flatMap { processor ->
                 processor.findConflicts(usages.filterIsInstance<MoveRenameUsageInfo>()).values()
@@ -116,10 +118,11 @@ class KaChangePackageComputer(
                 }
             }.toMap()
             val samePackageImportUpdates = if (updateReferences) {
-                // Incoming imports fix callers that lose visibility of a moved declaration;
-                // outgoing imports fix the moved file itself losing visibility of the declarations
+                // Incoming imports fix callers that lose visibility of a moved declaration, either
+                // because they shared its package or because they imported the whole old package.
+                // Outgoing imports fix the moved file itself losing visibility of the declarations
                 // that stay behind in its former package.
-                val incomingImports = findSamePackageImportUpdates(files, targets)
+                val incomingImports = findIncomingImportUpdates(files, targets)
                 val outgoingImports = findOutgoingSamePackageImports(files, targets)
                 (incomingImports.keys + outgoingImports.keys).associateWith { file ->
                     incomingImports[file].orEmpty() + outgoingImports[file].orEmpty()
@@ -141,10 +144,14 @@ class KaChangePackageComputer(
             }
             val participants = (files + filesWithUsages(usages) + importOnlyUsageFiles + samePackageImportUpdates.keys)
                 .distinct()
-            // A root-package declaration's FQN is its bare name: replacing it textually would also
-            // rewrite the declaration itself (`fun moved` -> `fun dest.moved`). Root-package
-            // references are never package-qualified, so the imports above keep them bound.
-            val retargetableDeclarations = movedDeclarations.filterKeys { oldFqName -> !oldFqName.parent().isRoot }
+            // Capture replacement ranges while PSI is still valid. Only usages that K2 resolved to
+            // a moved declaration and direct import directives are retargeted, so text that merely
+            // spells a moved FQN (comments, strings, unrelated receiver chains) is left alone.
+            val textEdits = if (updateReferences) {
+                captureTextEdits(participants, movedDeclarations, usages)
+            } else {
+                emptyMap()
+            }
             // Snapshot before any mutation: updatePackageDirective invalidates standalone PSI.
             val originalTexts = participants.mapNotNull { file ->
                 file.virtualFile?.path?.let { path -> path to file.text }
@@ -157,13 +164,13 @@ class KaChangePackageComputer(
 
             val changedFiles = linkedMapOf<String, String>()
             participants.forEach { file ->
+                val path = file.virtualFile?.path ?: return@forEach
+                val originalText = originalTexts[path] ?: return@forEach
                 val text = targets[file]?.let { target -> ensurePackageDirectiveSeparator(file.text, target) } ?: file.text
-                val changedText = rewriteMovedReferences(
-                    text,
-                    retargetableDeclarations,
-                    samePackageImportUpdates[file].orEmpty(),
-                )
-                file.virtualFile?.path?.let { changedFiles[it] = changedText }
+                // Captured offsets refer to the original text; the package directive is the only
+                // text before them that changed, so a single length delta realigns all edits.
+                val retargetedText = applyTextEdits(text, textEdits[file].orEmpty(), text.length - originalText.length)
+                changedFiles[path] = addSamePackageImports(retargetedText, samePackageImportUpdates[file].orEmpty())
             }
             ApplyOutcome.Success(changedFiles, originalTexts)
         } catch (error: Throwable) {
@@ -172,12 +179,23 @@ class KaChangePackageComputer(
     }
 
     /**
-     * Finds old-package simple references that will lose their implicit package visibility.
+     * Finds callers that will lose visibility of a moved declaration and need an explicit import.
      *
-     * Text-based retargeting can rewrite an existing import but cannot invent one, so discover the
-     * affected callers before directives change and later add only the imports they need.
+     * A caller loses that visibility in two ways: it formerly shared the declaration's package, or
+     * it imported the whole old package with a wildcard. A direct import is rewritten elsewhere and
+     * keeps the binding, and a caller that ends in the declaration's final package keeps the
+     * implicit binding. Text-based retargeting cannot invent an import, so these callers are
+     * discovered from resolved references before any directive changes.
+     *
+     * Every moved declaration is searched directly rather than through the processor's usages:
+     * the processor only reports functions, properties, and classes, while a moved type alias also
+     * loses its implicit same-package binding.
+     *
+     * @param movedFiles Kotlin sources whose declared package changes
+     * @param targets mapped files with their final declared packages
+     * @return affected files mapped to the imports their references now require
      */
-    private fun findSamePackageImportUpdates(
+    private fun findIncomingImportUpdates(
         movedFiles: Collection<KtFile>,
         targets: Map<KtFile, FqName>,
     ): Map<KtFile, Set<FqName>> {
@@ -190,11 +208,24 @@ class KaChangePackageComputer(
         val session = KotlinMoveUsageSearchService.getInstance() ?: return emptyMap()
         val updates = linkedMapOf<KtFile, MutableSet<FqName>>()
         movedDeclarations.forEach { (declaration, targetFqName) ->
+            val name = declaration.name ?: return@forEach
+            val declarationFile = declaration.containingKtFile
+            val originalPackage = declarationFile.packageFqName
+            val oldFqName = originalPackage.child(Name.identifier(name))
             session.findUsages(declaration).forEach { reference ->
                 val file = reference.element?.containingFile as? KtFile ?: return@forEach
-                val originalPackage = declaration.containingKtFile.packageFqName
-                val finalPackage = targets[file]
-                if (file.packageFqName != originalPackage || finalPackage == targetFqName.parent()) return@forEach
+                if (file.virtualFile?.path == declarationFile.virtualFile?.path) return@forEach
+                val finalPackage = targets[file] ?: file.packageFqName
+                if (finalPackage == targetFqName.parent()) return@forEach
+                val importsDirectly = file.importDirectives.any { directive ->
+                    !directive.isAllUnder && directive.importedFqName == oldFqName
+                }
+                if (importsDirectly) return@forEach
+                val sharesOriginalPackage = file.packageFqName == originalPackage
+                val importsOriginalPackage = file.importDirectives.any { directive ->
+                    directive.isAllUnder && directive.importedFqName == originalPackage
+                }
+                if (!sharesOriginalPackage && !importsOriginalPackage) return@forEach
                 updates.getOrPut(file, ::linkedSetOf) += targetFqName
             }
         }
@@ -287,7 +318,7 @@ class KaChangePackageComputer(
     }
 
     /**
-     * Adds imports for former same-package declarations that no longer resolve implicitly.
+     * Adds imports that no longer arrive implicitly from the package or a wildcard import.
      *
      * The header is rebuilt as text rather than through PSI: the import list is invalid after the
      * package directive changed, and the standalone parser drops inserted whitespace nodes.
@@ -319,215 +350,151 @@ class KaChangePackageComputer(
     private fun filesWithUsages(usages: Collection<UsageInfo>): List<KtFile> =
         usages.mapNotNull { usage -> usage.element?.containingFile as? KtFile }.distinct()
 
+    /** One replacement of `[start, end)` in the source text captured before package mutation. */
+    private data class TextEdit(val start: Int, val end: Int, val replacement: String)
+
     /**
-     * Rewrites imports and fully qualified Kotlin references without touching invalid standalone PSI.
+     * Captures the exact text ranges that must follow moved declarations.
      *
-     * [K2ChangePackageRefactoringProcessor.updatePackages] invalidates every standalone PSI smart
-     * pointer. Source text has already been captured in [originalTexts] at that point, so update
-     * only FQN token sequences and import directives here; ordinary simple references continue to
-     * resolve through their rewritten imports.
+     * Only two kinds of text are captured: direct import directives and reference chains that K2
+     * resolved to a moved declaration before mutation. Everything else — comments, string literals,
+     * declaration names, and receiver chains that merely spell the same text — is left alone.
      *
-     * @param usageText source text read after the package directive changed
-     * @param movedDeclarations old declaration FQNs mapped to their new FQNs
-     * @param samePackageImports explicit imports needed by callers that formerly shared a package
-     * @return source text that preserves supported Kotlin bindings after the package change
+     * @param participants files whose text may change
+     * @param movedDeclarations old top-level declaration FQNs mapped to their new FQNs
+     * @param usages external usages resolved before package mutation
+     * @return per-file replacements keyed by captured source offsets
      */
-    private fun rewriteMovedReferences(
-        usageText: String,
+    private fun captureTextEdits(
+        participants: Collection<KtFile>,
         movedDeclarations: Map<FqName, FqName>,
-        samePackageImports: Set<FqName>,
-    ): String {
-        val retargetedText = if (movedDeclarations.isEmpty()) {
-            usageText
-        } else {
-            usageText.replaceFqNames(movedDeclarations)
+        usages: Collection<UsageInfo>,
+    ): Map<KtFile, List<TextEdit>> {
+        if (movedDeclarations.isEmpty()) return emptyMap()
+        val mappings = movedDeclarations.entries
+            .sortedByDescending { (oldFqName, _) -> oldFqName.pathSegments().size }
+        val edits = linkedMapOf<KtFile, MutableSet<TextEdit>>()
+        participants.forEach { file ->
+            file.importDirectives.forEach { directive ->
+                if (directive.isAllUnder) return@forEach
+                val importedText = directive.importPath?.pathStr ?: return@forEach
+                val replacement = rewriteImportedPath(importedText, mappings) ?: return@forEach
+                val offset = directive.textRange.startOffset + directive.text.indexOf(importedText)
+                edits.getOrPut(file, ::linkedSetOf) +=
+                    TextEdit(offset, offset + importedText.length, replacement)
+            }
         }
-        return addSamePackageImports(retargetedText, samePackageImports)
-    }
-
-    /** Lexical context of the source scanner; only code contexts allow FQN replacement. */
-    private sealed class ScanMode {
-        /** Ordinary Kotlin code, including package and import directives. */
-        object Code : ScanMode()
-
-        /** Executable `${...}` expression inside a string literal, where code resumes. */
-        class Template(var braceDepth: Int) : ScanMode()
-
-        /** Double-quoted string literal, where only a `${...}` template re-enters code. */
-        object StringLiteral : ScanMode()
-
-        /** Triple-quoted raw string, where only a `${...}` template re-enters code. */
-        object RawString : ScanMode()
-
-        /** Character literal, whose content is never a reference. */
-        object CharacterLiteral : ScanMode()
-
-        /** Block comment; Kotlin block comments nest. */
-        class BlockComment(var depth: Int) : ScanMode()
+        usages.filterIsInstance<MoveRenameUsageInfo>().forEach { usage ->
+            val element = usage.element as? KtElement ?: return@forEach
+            val file = element.containingFile as? KtFile ?: return@forEach
+            val declaration = usage.referencedElement as? KtNamedDeclaration ?: return@forEach
+            val name = declaration.name ?: return@forEach
+            val oldFqName = declaration.containingKtFile.packageFqName.child(Name.identifier(name))
+            val newFqName = movedDeclarations[oldFqName] ?: return@forEach
+            // A root-package FQN is a bare name. Qualifying such a reference would rewrite
+            // declaration-like positions that cannot take a package prefix (`::moved`); imports
+            // alone keep root-package bindings intact.
+            if (oldFqName.parent().isRoot) return@forEach
+            val chain = element.qualifiedChain()
+            if (chain.text != oldFqName.asString()) return@forEach
+            edits.getOrPut(file, ::linkedSetOf) += TextEdit(
+                chain.startOffset,
+                chain.endOffset,
+                newFqName.asString(),
+            )
+        }
+        return edits.mapValues { (_, fileEdits) -> fileEdits.toList() }
     }
 
     /**
-     * Replaces the longest matching declaration FQN at each code position.
+     * Rewrites the package prefix of an imported path, keeping alias and nested-class suffixes.
      *
-     * Comments, character literals, string literals, and raw strings are copied verbatim, except
-     * that executable `${...}` template expressions re-enter code mode: a reference such as
-     * `"${old.pkg.moved()}"` is code, not the string-text occurrence excluded by the refactoring.
-     * Longest match wins so that a qualified access such as `a.b.C.member` keeps its suffix even
-     * when both `a.b.C` and a shorter prefix are moved declarations. The package directive is
-     * never rewritten: it can share its text with a declaration's FQN.
+     * Import paths are compared segment by segment rather than as token sequences so a backticked
+     * segment still matches its plain FQN.
+     *
+     * @param importedText path text as written in the directive
+     * @param mappings moved declarations ordered from the longest FQN to the shortest
+     * @return retargeted path text, or `null` when the import does not target a moved declaration
      */
-    private fun String.replaceFqNames(mappings: Map<FqName, FqName>): String {
-        val candidates = mappings.entries
-            .map { (oldFqName, newFqName) -> oldFqName.asString() to newFqName.asString() }
-            .sortedByDescending { (oldFqName, _) -> oldFqName.length }
-        val packageRange = PACKAGE_DIRECTIVE.find(this)?.range
-        val result = StringBuilder(length)
-        val modes = ArrayDeque<ScanMode>()
-        modes.addLast(ScanMode.Code)
-        var index = 0
-        while (index < length) {
-            val current = this[index]
-            val next = getOrNull(index + 1)
-            when (val mode = modes.last()) {
-                ScanMode.Code, is ScanMode.Template -> {
-                    val template = mode as? ScanMode.Template
-                    when {
-                        current == '/' && next == '/' -> {
-                            val lineEnd = indexOf('\n', index).let { if (it < 0) length else it }
-                            result.append(this, index, lineEnd)
-                            index = lineEnd
-                        }
-                        current == '/' && next == '*' -> {
-                            result.append(current).append(next)
-                            index += 2
-                            modes.addLast(ScanMode.BlockComment(1))
-                        }
-                        current == '"' && getOrNull(index + 1) == '"' && getOrNull(index + 2) == '"' -> {
-                            result.append("\"\"\"")
-                            index += 3
-                            modes.addLast(ScanMode.RawString)
-                        }
-                        current == '"' -> {
-                            result.append(current)
-                            index++
-                            modes.addLast(ScanMode.StringLiteral)
-                        }
-                        current == '\'' -> {
-                            result.append(current)
-                            index++
-                            modes.addLast(ScanMode.CharacterLiteral)
-                        }
-                        template != null && current == '{' -> {
-                            result.append(current)
-                            index++
-                            template.braceDepth++
-                        }
-                        template != null && current == '}' -> {
-                            result.append(current)
-                            index++
-                            if (--template.braceDepth <= 0) modes.removeLast()
-                        }
-                        else -> {
-                            val match = if (packageRange != null && index in packageRange) {
-                                null
-                            } else {
-                                candidates.firstOrNull { (oldFqName, _) ->
-                                    startsWith(oldFqName, index) &&
-                                        canStartFqNameAt(index) &&
-                                        canEndFqNameAt(index + oldFqName.length)
-                                }
-                            }
-                            if (match == null) {
-                                result.append(current)
-                                index++
-                            } else {
-                                result.append(match.second)
-                                index += match.first.length
-                            }
-                        }
-                    }
+    private fun rewriteImportedPath(
+        importedText: String,
+        mappings: List<Map.Entry<FqName, FqName>>,
+    ): String? {
+        val segments = importedText.split('.')
+        mappings.forEach { (oldFqName, newFqName) ->
+            val oldSegments = oldFqName.pathSegments().map { segment -> segment.asString() }
+            if (segments.size < oldSegments.size) return@forEach
+            val prefix = segments.take(oldSegments.size).map { segment -> segment.removeSurrounding("`") }
+            if (prefix != oldSegments) return@forEach
+            val suffix = segments.drop(oldSegments.size)
+            val separator = if (suffix.isEmpty()) "" else "."
+            return newFqName.asString() + suffix.joinToString(separator = ".", prefix = separator)
+        }
+        return null
+    }
+
+    /** Source range and text of the qualified chain that ends at a reference expression. */
+    private data class QualifiedChain(val startOffset: Int, val endOffset: Int, val text: String)
+
+    /**
+     * Extends a reference expression through the qualified receiver chain that contains it.
+     *
+     * `old.pkg.moved()` visits the `moved` reference; climbing through qualified expressions, their
+     * call nodes, and user types yields the `old.pkg.moved` text while dropping any argument list
+     * or type argument suffix. The chain stops at any other construct.
+     */
+    private fun KtElement.qualifiedChain(): QualifiedChain {
+        var current: KtElement = this
+        var start = textRange.startOffset
+        val end = textRange.endOffset
+        while (true) {
+            val parent = current.parent
+            when {
+                parent is KtDotQualifiedExpression && parent.selectorExpression == current -> {
+                    start = parent.receiverExpression.textRange.startOffset
+                    current = parent
                 }
-                ScanMode.StringLiteral -> when {
-                    current == '\\' -> {
-                        result.append(current)
-                        if (next != null) {
-                            result.append(next)
-                            index += 2
-                        } else {
-                            index++
-                        }
-                    }
-                    current == '$' && next == '{' -> {
-                        result.append(current).append(next)
-                        index += 2
-                        modes.addLast(ScanMode.Template(1))
-                    }
-                    else -> {
-                        result.append(current)
-                        index++
-                        if (current == '"') modes.removeLast()
-                    }
+                parent is KtCallExpression && parent.calleeExpression == current -> current = parent
+                parent is KtUserType && parent.referenceExpression == current -> {
+                    parent.qualifier?.let { qualifier -> start = qualifier.textRange.startOffset }
+                    current = parent
                 }
-                ScanMode.RawString -> when {
-                    current == '$' && next == '{' -> {
-                        result.append(current).append(next)
-                        index += 2
-                        modes.addLast(ScanMode.Template(1))
-                    }
-                    current == '"' && getOrNull(index + 1) == '"' && getOrNull(index + 2) == '"' -> {
-                        result.append("\"\"\"")
-                        index += 3
-                        modes.removeLast()
-                    }
-                    else -> {
-                        result.append(current)
-                        index++
-                    }
-                }
-                ScanMode.CharacterLiteral -> when {
-                    current == '\\' -> {
-                        result.append(current)
-                        if (next != null) {
-                            result.append(next)
-                            index += 2
-                        } else {
-                            index++
-                        }
-                    }
-                    else -> {
-                        result.append(current)
-                        index++
-                        if (current == '\'') modes.removeLast()
-                    }
-                }
-                is ScanMode.BlockComment -> when {
-                    current == '/' && next == '*' -> {
-                        result.append(current).append(next)
-                        index += 2
-                        mode.depth++
-                    }
-                    current == '*' && next == '/' -> {
-                        result.append(current).append(next)
-                        index += 2
-                        if (--mode.depth <= 0) modes.removeLast()
-                    }
-                    else -> {
-                        result.append(current)
-                        index++
-                    }
-                }
+                else -> return QualifiedChain(start, end, containingFile.text.substring(start, end))
             }
+        }
+    }
+
+    /**
+     * Applies replacements captured on the pre-mutation text to the post-mutation text.
+     *
+     * The package directive is the only text before the captured ranges that changes, so one length
+     * delta realigns every offset. Nested ranges are dropped in favour of the widest captured
+     * replacement, and edits are applied from the end so earlier offsets stay valid.
+     *
+     * @param text source text after package mutation
+     * @param edits replacements captured on the original text
+     * @param shift length difference between the mutated and original text
+     * @return text with all non-overlapping replacements applied
+     */
+    private fun applyTextEdits(text: String, edits: Collection<TextEdit>, shift: Int): String {
+        if (edits.isEmpty()) return text
+        val shifted = edits.asSequence()
+            .map { edit -> TextEdit(edit.start + shift, edit.end + shift, edit.replacement) }
+            .filter { edit -> edit.start >= 0 && edit.end <= text.length && edit.start < edit.end }
+            .distinct()
+            .sortedWith(compareBy<TextEdit> { it.start }.thenByDescending { it.end })
+            .toList()
+        val accepted = mutableListOf<TextEdit>()
+        shifted.forEach { edit ->
+            val contained = accepted.any { acceptedEdit ->
+                acceptedEdit.start <= edit.start && edit.end <= acceptedEdit.end
+            }
+            if (!contained) accepted += edit
+        }
+        val result = StringBuilder(text)
+        accepted.sortedByDescending { edit -> edit.start }.forEach { edit ->
+            result.replace(edit.start, edit.end, edit.replacement)
         }
         return result.toString()
     }
-
-    /** Rejects a match that continues a longer identifier or qualified name on its left. */
-    private fun String.canStartFqNameAt(index: Int): Boolean {
-        val previous = index - 1
-        return previous !in indices || (!this[previous].isLetterOrDigit() && this[previous] != '_' && this[previous] != '.')
-    }
-
-    /** Rejects a match that continues a longer identifier on its right; `.member` suffixes are kept. */
-    private fun String.canEndFqNameAt(index: Int): Boolean =
-        index !in indices || (!this[index].isLetterOrDigit() && this[index] != '_')
 }
