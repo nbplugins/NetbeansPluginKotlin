@@ -54,14 +54,6 @@ import org.jetbrains.kotlin.psi.KtUserType
 class KaChangePackageComputer(
     private val ktFile: KtFile,
 ) {
-    private companion object {
-        /** Matches a file-level Kotlin package directive in source text. */
-        val PACKAGE_DIRECTIVE = Regex("(?m)^package\\s+[^\\s;]+")
-
-        /** Matches a non-aliased Kotlin import directive in source text. */
-        val IMPORT_DIRECTIVE = Regex("(?m)^import\\s+([A-Za-z_][A-Za-z0-9_.]*)\\s*$")
-    }
-
     /** Describes the result of applying package changes to one or more Kotlin source files. */
     sealed class ApplyOutcome {
         /** K2 found blocking semantic conflicts and did not mutate any PSI. */
@@ -151,15 +143,13 @@ class KaChangePackageComputer(
             } else {
                 emptyMap()
             }
-            // A caller without a package directive and without imports still needs a place to
-            // receive one: its first declaration, after file annotations and header comments.
-            val importInsertionOffsets = participants.mapNotNull { file ->
+            // Header facts for import insertion come from PSI as well: an import-looking line
+            // inside a raw string or block comment must neither count as an existing import nor
+            // serve as the boundary where new imports are placed.
+            val importInsertions = participants.mapNotNull { file ->
                 val path = file.virtualFile?.path ?: return@mapNotNull null
-                if (targets[file] != null || !file.packageFqName.isRoot || file.importDirectives.isNotEmpty()) {
-                    return@mapNotNull null
-                }
-                val offset = file.declarations.firstOrNull()?.textRange?.startOffset ?: return@mapNotNull null
-                path to offset
+                val insertion = importInsertionFor(file) ?: return@mapNotNull null
+                path to insertion
             }.toMap()
             // Snapshot before any mutation: updatePackageDirective invalidates standalone PSI.
             val originalTexts = participants.mapNotNull { file ->
@@ -178,11 +168,14 @@ class KaChangePackageComputer(
                 val text = targets[file]?.let { target -> ensurePackageDirectiveSeparator(file.text, target) } ?: file.text
                 // Captured offsets refer to the original text; the package directive is the only
                 // text before them that changed, so a single length delta realigns all edits.
-                val retargetedText = applyTextEdits(text, textEdits[file].orEmpty(), text.length - originalText.length)
+                val shift = text.length - originalText.length
+                val retargeted = applyTextEdits(text, textEdits[file].orEmpty(), shift)
                 changedFiles[path] = addSamePackageImports(
-                    retargetedText,
+                    retargeted.text,
                     samePackageImportUpdates[file].orEmpty(),
-                    importInsertionOffsets[path],
+                    importInsertions[path],
+                    retargeted.edits,
+                    shift,
                 )
             }
             ApplyOutcome.Success(changedFiles, originalTexts)
@@ -279,7 +272,7 @@ class KaChangePackageComputer(
         if (oldFqName.parent().isRoot) return
         val file = element.containingFile as? KtFile ?: return
         val chain = element.qualifiedChain()
-        if (chain.text != oldFqName.asString()) return
+        if (!chain.matches(oldFqName)) return
         edits.getOrPut(file, ::linkedSetOf) += TextEdit(chain.startOffset, chain.endOffset, newFqName.asString())
     }
 
@@ -368,50 +361,77 @@ class KaChangePackageComputer(
         return if (next.isWhitespace()) text else "$directive\n\n${text.substring(directive.length)}"
     }
 
+    /** PSI-captured facts required to insert imports without rescanning the changed source text. */
+    private data class ImportInsertion(
+        val existingFqNames: Set<FqName>,
+        val offset: Int,
+        val prefix: String,
+        val suffix: String,
+    )
+
+    /**
+     * Captures where a file's import block starts and which imports it already declares.
+     *
+     * The offset refers to the pre-mutation text. A file with imports gains new lines at its first
+     * directive; otherwise the insertion follows the package directive or, for a root-package
+     * file, precedes the first declaration so header comments and file annotations stay on top.
+     * Only real PSI import directives and the package directive are consulted, so text inside
+     * literals or comments cannot influence either the duplicate check or the boundary.
+     *
+     * @param file participant whose original PSI is still valid
+     * @return captured insertion point, or `null` when the file cannot host an import
+     */
+    private fun importInsertionFor(file: KtFile): ImportInsertion? {
+        val existingFqNames = file.importDirectives
+            .filterNot { directive -> directive.isAllUnder }
+            .mapNotNull { directive -> directive.importedFqName }
+            .toSet()
+        file.importDirectives.firstOrNull()?.let { firstImport ->
+            return ImportInsertion(existingFqNames, firstImport.textRange.startOffset, "", "\n")
+        }
+        if (!file.packageFqName.isRoot) {
+            val directive = file.packageDirective ?: return null
+            if (directive.text.isBlank()) return null
+            return ImportInsertion(existingFqNames, directive.textRange.endOffset, "\n\n", "")
+        }
+        val declarationStart = file.declarations.firstOrNull()?.textRange?.startOffset ?: return null
+        return ImportInsertion(existingFqNames, declarationStart, "", "\n\n")
+    }
+
     /**
      * Adds imports that no longer arrive implicitly from the package or a wildcard import.
      *
-     * The header is rebuilt as text rather than through PSI: the import list is invalid after the
-     * package directive changed, and the standalone parser drops inserted whitespace nodes.
+     * Placement and duplicate detection come from PSI captured before the package mutation. The
+     * insertion offset is realigned by the package change and by the net length of accepted
+     * replacements that end before it.
      *
      * @param usageText source text of the caller after reference replacement
      * @param imports declarations that need an explicit import
-     * @param declarationOffset captured start of the first declaration for files without a package
-     * directive and without imports, after file annotations and header comments
-     * @return final source text with a canonical package/import boundary
+     * @param insertion captured header facts for this file, or `null` when none were captured
+     * @param appliedEdits replacements already applied to [usageText], in its coordinates
+     * @param shift length difference caused by the package directive change
+     * @return final source text with imports added at the captured boundary
      */
     private fun addSamePackageImports(
         usageText: String,
         imports: Set<FqName>,
-        declarationOffset: Int? = null,
+        insertion: ImportInsertion?,
+        appliedEdits: List<TextEdit>,
+        shift: Int,
     ): String {
-        if (imports.isEmpty()) return usageText
-        val existingFqNames = IMPORT_DIRECTIVE.findAll(usageText)
-            .map { match -> FqName(match.groupValues[1]) }
-            .toSet()
-        val missingImports = imports.filterNot { it in existingFqNames }
+        if (imports.isEmpty() || insertion == null) return usageText
+        val missingImports = imports.filterNot { imported -> imported in insertion.existingFqNames }
             .map { imported -> "import ${imported.asString()}" }
         if (missingImports.isEmpty()) return usageText
+        val shiftedOffset = insertion.offset + shift
+        val offset = shiftedOffset + appliedEdits
+            .filter { edit -> edit.end <= shiftedOffset }
+            .sumOf { edit -> edit.replacement.length - (edit.end - edit.start) }
+        if (offset !in 0..usageText.length) return usageText
         val importLines = missingImports.joinToString(separator = "\n")
-        val firstImport = IMPORT_DIRECTIVE.find(usageText)
-        if (firstImport != null) {
-            return usageText.substring(0, firstImport.range.first) +
-                "$importLines\n" +
-                usageText.substring(firstImport.range.first)
-        }
-        val packageMatch = PACKAGE_DIRECTIVE.find(usageText)
-        if (packageMatch != null) {
-            val boundary = packageMatch.range.last + 1
-            return usageText.substring(0, boundary) +
-                "\n\n$importLines" +
-                usageText.substring(boundary)
-        }
-        if (declarationOffset != null && declarationOffset in 0..usageText.length) {
-            return usageText.substring(0, declarationOffset) +
-                "$importLines\n\n" +
-                usageText.substring(declarationOffset)
-        }
-        return usageText
+        return usageText.substring(0, offset) +
+            insertion.prefix + importLines + insertion.suffix +
+            usageText.substring(offset)
     }
 
     /** Captures usage files before K2 reference rebinding can invalidate individual usage elements. */
@@ -506,6 +526,21 @@ class KaChangePackageComputer(
     private data class QualifiedChain(val startOffset: Int, val endOffset: Int, val text: String)
 
     /**
+     * Tells whether this chain's identifiers spell [fqName].
+     *
+     * Backticks and whitespace around dots change the source spelling but not the identifiers K2
+     * resolved, so segments are compared after trimming and unquoting while the captured PSI range
+     * still delimits the replacement.
+     *
+     * @param fqName fully qualified name of the declaration K2 resolved
+     * @return `true` when the chain text denotes exactly that FQN
+     */
+    private fun QualifiedChain.matches(fqName: FqName): Boolean {
+        val segments = text.split('.').map { segment -> segment.trim().removeSurrounding("`") }
+        return segments == fqName.pathSegments().map { segment -> segment.asString() }
+    }
+
+    /**
      * Extends a reference expression through the qualified receiver chain that contains it.
      *
      * `old.pkg.moved()` visits the `moved` reference; climbing through qualified expressions, their
@@ -533,6 +568,9 @@ class KaChangePackageComputer(
         }
     }
 
+    /** Retargeted text and the replacements accepted for it, in its coordinates. */
+    private data class AppliedEdits(val text: String, val edits: List<TextEdit>)
+
     /**
      * Applies replacements captured on the pre-mutation text to the post-mutation text.
      *
@@ -543,10 +581,10 @@ class KaChangePackageComputer(
      * @param text source text after package mutation
      * @param edits replacements captured on the original text
      * @param shift length difference between the mutated and original text
-     * @return text with all non-overlapping replacements applied
+     * @return text with all non-overlapping replacements applied plus the accepted edits
      */
-    private fun applyTextEdits(text: String, edits: Collection<TextEdit>, shift: Int): String {
-        if (edits.isEmpty()) return text
+    private fun applyTextEdits(text: String, edits: Collection<TextEdit>, shift: Int): AppliedEdits {
+        if (edits.isEmpty()) return AppliedEdits(text, emptyList())
         val shifted = edits.asSequence()
             .map { edit -> TextEdit(edit.start + shift, edit.end + shift, edit.replacement) }
             .filter { edit -> edit.start >= 0 && edit.end <= text.length && edit.start < edit.end }
@@ -564,6 +602,6 @@ class KaChangePackageComputer(
         accepted.sortedByDescending { edit -> edit.start }.forEach { edit ->
             result.replace(edit.start, edit.end, edit.replacement)
         }
-        return result.toString()
+        return AppliedEdits(result.toString(), accepted)
     }
 }

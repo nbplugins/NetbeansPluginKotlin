@@ -764,6 +764,198 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies an import-looking line inside a raw string never becomes the insertion boundary.
+     *
+     * Text scanning cannot distinguish executable header imports from literals; the import must be
+     * inserted after the package directive so the runtime string value stays intact.
+     */
+    fun testApply_realSession_insertsImportAtPackageBoundaryDespiteImportLineInRawString() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-import-in-string")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("source")
+            val usageDirectory = temporaryRoot.resolve("usage")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(usageDirectory)
+            val sourcePath = sourceDirectory.resolve("Moved.kt")
+            val usagePath = usageDirectory.resolve("Usage.kt")
+            Files.writeString(sourcePath, "package old.source\n\nfun moved() = 1\n")
+            Files.writeString(
+                usagePath,
+                "package old.source\n\nfun use() = moved()\n\nval sample = \"\"\"\nimport unrelated.foo\n\"\"\"\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-import-in-string-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val usageText = success.changedFiles[usagePath.toString()].orEmpty()
+            assertEquals(
+                "The import must go after the package directive, not inside the literal",
+                "package old.source\n\nimport dest.moved\n\nfun use() = moved()\n\n"
+                    + "val sample = \"\"\"\nimport unrelated.foo\n\"\"\"\n",
+                usageText,
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a literal repeating the future import path does not suppress a required import.
+     *
+     * Only real import directives count as already present; otherwise the moved declaration stays
+     * unresolved while the literal keeps its original runtime value.
+     */
+    fun testApply_realSession_insertsImportWhenRawStringRepeatsNewImportPath() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-import-duplicate-in-string")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("source")
+            val usageDirectory = temporaryRoot.resolve("usage")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(usageDirectory)
+            val sourcePath = sourceDirectory.resolve("Moved.kt")
+            val usagePath = usageDirectory.resolve("Usage.kt")
+            Files.writeString(sourcePath, "package old.source\n\nfun moved() = 1\n")
+            Files.writeString(
+                usagePath,
+                "package old.source\n\nfun use() = moved()\n\nval sample = \"\"\"\nimport new.changed.moved\n\"\"\"\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-import-duplicate-in-string-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("new.changed")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val usageText = success.changedFiles[usagePath.toString()].orEmpty()
+            assertEquals(
+                "A literal must not count as an existing import",
+                "package old.source\n\nimport new.changed.moved\n\nfun use() = moved()\n\n"
+                    + "val sample = \"\"\"\nimport new.changed.moved\n\"\"\"\n",
+                usageText,
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a backticked qualified reference follows the moved declaration.
+     *
+     * K2 resolves such a chain even though its source spelling differs from the canonical FQN, so
+     * the comparison must work on identifier segments while replacement keeps the PSI range.
+     */
+    fun testApply_realSession_retargetsBacktickedQualifiedReference() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-backtick-reference")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("source")
+            val usageDirectory = temporaryRoot.resolve("usage")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(usageDirectory)
+            val sourcePath = sourceDirectory.resolve("Moved.kt")
+            val usagePath = usageDirectory.resolve("Usage.kt")
+            Files.writeString(sourcePath, "package old.source\n\nfun moved() = 1\n")
+            Files.writeString(usagePath, "package usage\n\nfun use() = old.source.`moved`()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-backtick-reference-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("new.changed")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val usageText = success.changedFiles[usagePath.toString()].orEmpty()
+            assertEquals(
+                "A backticked qualified reference must follow the declaration",
+                "package usage\n\nfun use() = new.changed.moved()\n",
+                usageText,
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a qualified reference split across lines follows the moved declaration.
+     *
+     * Whitespace around the dot changes the chain's source spelling but not the identifiers K2
+     * resolved, and replacement must span the whole chain.
+     */
+    fun testApply_realSession_retargetsQualifiedReferenceWithWhitespaceAroundDot() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-spaced-reference")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("source")
+            val usageDirectory = temporaryRoot.resolve("usage")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(usageDirectory)
+            val sourcePath = sourceDirectory.resolve("Moved.kt")
+            val usagePath = usageDirectory.resolve("Usage.kt")
+            Files.writeString(sourcePath, "package old.source\n\nfun moved() = 1\n")
+            Files.writeString(usagePath, "package usage\n\nfun use() = old.source\n    .moved()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-spaced-reference-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("new.changed")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val usageText = success.changedFiles[usagePath.toString()].orEmpty()
+            assertEquals(
+                "A multi-line qualified reference must follow the declaration",
+                "package usage\n\nfun use() = new.changed.moved()\n",
+                usageText,
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))
