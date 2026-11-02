@@ -956,6 +956,99 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies a reference before the package directive is not shifted by the directive's new length.
+     *
+     * A file annotation precedes the package directive in source order but is captured in the same
+     * coordinate space; applying the delta to it moved the replacement into unrelated text.
+     */
+    fun testApply_realSession_keepsFileAnnotationReferenceBeforePackageDirectiveAligned() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-file-annotation")
+        try {
+            val sourcePath = temporaryRoot.resolve("Moved.kt")
+            val originalText = "@file:Suppress(old.pkg.MESSAGE)\npackage old.pkg\n\nconst val MESSAGE = \"unused\"\n"
+            Files.writeString(sourcePath, originalText)
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-file-annotation-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("new.much.longer.destination")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "A reference before the package directive must keep its own offsets",
+                "@file:Suppress(new.much.longer.destination.MESSAGE)\n" +
+                    "package new.much.longer.destination\n\nconst val MESSAGE = \"unused\"\n",
+                success.changedFiles[sourcePath.toString()].orEmpty(),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies generated references and imports escape declaration names that need backticks.
+     *
+     * A declaration named `two words` has no plain Kotlin spelling, so `FqName.asString()` would
+     * emit invalid source in the rewritten qualified reference and in the compensating import.
+     */
+    fun testApply_realSession_escapesBacktickedDeclarationInGeneratedText() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-backtick-name")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("source")
+            val usageDirectory = temporaryRoot.resolve("usage")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(usageDirectory)
+            val sourcePath = sourceDirectory.resolve("Moved.kt")
+            val siblingPath = sourceDirectory.resolve("Sibling.kt")
+            val usagePath = usageDirectory.resolve("Usage.kt")
+            Files.writeString(sourcePath, "package old.pkg\n\nfun `two words`() = 1\n")
+            Files.writeString(siblingPath, "package old.pkg\n\nfun sibling() = `two words`()\n")
+            Files.writeString(usagePath, "package usage\n\nfun use() = old.pkg.`two words`()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-backtick-name-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "A generated qualified reference must escape the declaration name",
+                "package usage\n\nfun use() = dest.`two words`()\n",
+                success.changedFiles[usagePath.toString()].orEmpty(),
+            )
+            assertEquals(
+                "A generated import must escape the declaration name",
+                "package old.pkg\n\nimport dest.`two words`\n\nfun sibling() = `two words`()\n",
+                success.changedFiles[siblingPath.toString()].orEmpty(),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

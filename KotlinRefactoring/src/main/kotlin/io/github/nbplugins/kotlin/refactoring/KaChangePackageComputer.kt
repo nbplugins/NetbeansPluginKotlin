@@ -54,6 +54,19 @@ import org.jetbrains.kotlin.psi.KtUserType
 class KaChangePackageComputer(
     private val ktFile: KtFile,
 ) {
+    private companion object {
+        /**
+         * Kotlin hard keywords, which cannot be written as bare identifiers in generated source.
+         *
+         * Soft keywords (`value`, `field`, `import`, ...) are legal identifiers and stay plain.
+         */
+        val HARD_KEYWORDS = setOf(
+            "as", "break", "class", "continue", "do", "else", "false", "for", "fun", "if", "in",
+            "interface", "is", "null", "object", "package", "return", "super", "this", "throw",
+            "true", "try", "typealias", "typeof", "val", "var", "when", "while",
+        )
+    }
+
     /** Describes the result of applying package changes to one or more Kotlin source files. */
     sealed class ApplyOutcome {
         /** K2 found blocking semantic conflicts and did not mutate any PSI. */
@@ -151,6 +164,12 @@ class KaChangePackageComputer(
                 val insertion = importInsertionFor(file) ?: return@mapNotNull null
                 path to insertion
             }.toMap()
+            // Offsets before the package directive end are unaffected by its replacement length;
+            // file annotations are the one place where Kotlin code precedes the directive.
+            val packageDirectiveEnds = participants.mapNotNull { file ->
+                val path = file.virtualFile?.path ?: return@mapNotNull null
+                path to file.packageDirective?.textRange?.endOffset
+            }.toMap()
             // Snapshot before any mutation: updatePackageDirective invalidates standalone PSI.
             val originalTexts = participants.mapNotNull { file ->
                 file.virtualFile?.path?.let { path -> path to file.text }
@@ -166,10 +185,11 @@ class KaChangePackageComputer(
                 val path = file.virtualFile?.path ?: return@forEach
                 val originalText = originalTexts[path] ?: return@forEach
                 val text = targets[file]?.let { target -> ensurePackageDirectiveSeparator(file.text, target) } ?: file.text
-                // Captured offsets refer to the original text; the package directive is the only
-                // text before them that changed, so a single length delta realigns all edits.
+                // Captured offsets refer to the original text; only the package directive changed,
+                // so its length delta realigns every range that follows the directive.
                 val shift = text.length - originalText.length
-                val retargeted = applyTextEdits(text, textEdits[file].orEmpty(), shift)
+                val shiftAfter = if (targets[file] != null) packageDirectiveEnds[path] else null
+                val retargeted = applyTextEdits(text, textEdits[file].orEmpty(), shift, shiftAfter)
                 changedFiles[path] = addSamePackageImports(
                     retargeted.text,
                     samePackageImportUpdates[file].orEmpty(),
@@ -273,7 +293,7 @@ class KaChangePackageComputer(
         val file = element.containingFile as? KtFile ?: return
         val chain = element.qualifiedChain()
         if (!chain.matches(oldFqName)) return
-        edits.getOrPut(file, ::linkedSetOf) += TextEdit(chain.startOffset, chain.endOffset, newFqName.asString())
+        edits.getOrPut(file, ::linkedSetOf) += TextEdit(chain.startOffset, chain.endOffset, renderFqName(newFqName))
     }
 
     /**
@@ -421,7 +441,7 @@ class KaChangePackageComputer(
     ): String {
         if (imports.isEmpty() || insertion == null) return usageText
         val missingImports = imports.filterNot { imported -> imported in insertion.existingFqNames }
-            .map { imported -> "import ${imported.asString()}" }
+            .map { imported -> "import ${renderFqName(imported)}" }
         if (missingImports.isEmpty()) return usageText
         val shiftedOffset = insertion.offset + shift
         val offset = shiftedOffset + appliedEdits
@@ -517,9 +537,35 @@ class KaChangePackageComputer(
             if (prefix != oldSegments) return@forEach
             val suffix = segments.drop(oldSegments.size)
             val separator = if (suffix.isEmpty()) "" else "."
-            return newFqName.asString() + suffix.joinToString(separator = ".", prefix = separator)
+            return renderFqName(newFqName) + suffix.joinToString(separator = ".", prefix = separator)
         }
         return null
+    }
+
+    /**
+     * Renders a fully qualified name as Kotlin source text.
+     *
+     * [FqName.asString] joins raw names, so a declaration that needs backticks (a keyword or a name
+     * with spaces) would otherwise yield invalid source in generated references and imports.
+     *
+     * @param fqName name of a moved declaration or its new package prefix
+     * @return the FQN with each segment escaped when it cannot be written as a bare identifier
+     */
+    private fun renderFqName(fqName: FqName): String =
+        fqName.pathSegments().joinToString(separator = ".") { segment -> renderIdentifier(segment.asString()) }
+
+    /**
+     * Renders one identifier as Kotlin source, adding backticks when the bare spelling is invalid.
+     *
+     * @param name unescaped identifier as stored by Kotlin PSI
+     * @return the name unchanged when it is a plain non-keyword identifier, otherwise backticked
+     */
+    private fun renderIdentifier(name: String): String {
+        val isPlain = name.isNotEmpty() &&
+            (name.first().isLetter() || name.first() == '_') &&
+            name.all { symbol -> symbol.isLetterOrDigit() || symbol == '_' } &&
+            name !in HARD_KEYWORDS
+        return if (isPlain) name else "`$name`"
     }
 
     /** Source range and text of the qualified chain that ends at a reference expression. */
@@ -574,19 +620,29 @@ class KaChangePackageComputer(
     /**
      * Applies replacements captured on the pre-mutation text to the post-mutation text.
      *
-     * The package directive is the only text before the captured ranges that changes, so one length
-     * delta realigns every offset. Nested ranges are dropped in favour of the widest captured
+     * The package directive replacement is the only length change before the captured ranges, and
+     * only ranges starting after its end are shifted: a file annotation precedes the directive in
+     * source order and keeps its offsets. Nested ranges are dropped in favour of the widest captured
      * replacement, and edits are applied from the end so earlier offsets stay valid.
      *
      * @param text source text after package mutation
      * @param edits replacements captured on the original text
-     * @param shift length difference between the mutated and original text
+     * @param shift length difference caused by the package directive change
+     * @param shiftAfter original offset after which [shift] applies; `null` shifts every range
      * @return text with all non-overlapping replacements applied plus the accepted edits
      */
-    private fun applyTextEdits(text: String, edits: Collection<TextEdit>, shift: Int): AppliedEdits {
+    private fun applyTextEdits(
+        text: String,
+        edits: Collection<TextEdit>,
+        shift: Int,
+        shiftAfter: Int?,
+    ): AppliedEdits {
         if (edits.isEmpty()) return AppliedEdits(text, emptyList())
         val shifted = edits.asSequence()
-            .map { edit -> TextEdit(edit.start + shift, edit.end + shift, edit.replacement) }
+            .map { edit ->
+                val delta = if (shiftAfter == null || edit.start >= shiftAfter) shift else 0
+                TextEdit(edit.start + delta, edit.end + delta, edit.replacement)
+            }
             .filter { edit -> edit.start >= 0 && edit.end <= text.length && edit.start < edit.end }
             .distinct()
             .sortedWith(compareBy<TextEdit> { it.start }.thenByDescending { it.end })
