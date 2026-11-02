@@ -1566,6 +1566,99 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
+     * Verifies an import path containing a comment still follows its moved declaration.
+     *
+     * Segment matching must come from PSI identifiers; splitting source text leaves comment tokens
+     * inside a segment and the directive is then never rewritten.
+     */
+    fun testApply_realSession_retargetsImportWithInterspersedComment() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-import-comment")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("old/pkg")
+            val usageDirectory = temporaryRoot.resolve("usage")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(usageDirectory)
+            val sourcePath = sourceDirectory.resolve("Moved.kt")
+            val usagePath = usageDirectory.resolve("Use.kt")
+            Files.writeString(sourcePath, "package old.pkg\n\nclass Moved\n")
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old./* note */pkg.Moved\n\nfun use(): Moved? = null\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-import-comment-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("new.pkg")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "An import path with an interspersed comment must still be retargeted",
+                "package usage\n\nimport new.pkg.Moved\n\nfun use(): Moved? = null\n",
+                success.changedFiles[usagePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a qualified call containing a comment is still rewritten in place.
+     *
+     * `old./* note */pkg.moved()` spells the old FQN in PSI terms even though its text contains a
+     * comment token; the chain must be recognized and rewritten without that token.
+     */
+    fun testApply_realSession_retargetsQualifiedCallWithInterspersedComment() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-call-comment")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("old/pkg")
+            val usageDirectory = temporaryRoot.resolve("usage")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(usageDirectory)
+            val sourcePath = sourceDirectory.resolve("Moved.kt")
+            val usagePath = usageDirectory.resolve("Use.kt")
+            Files.writeString(sourcePath, "package old.pkg\n\nfun moved() = 1\n")
+            Files.writeString(usagePath, "package usage\n\nfun use() = old./* note */pkg.moved()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-call-comment-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("new.pkg")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "A qualified call with an interspersed comment must be rewritten in place",
+                "package usage\n\nfun use() = new.pkg.moved()\n",
+                success.changedFiles[usagePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies an extension receiver spelled like the old package is not treated as a qualifier.
      *
      * `a.decorate()` calls the extension on a local `a: String`; matching the chain text against

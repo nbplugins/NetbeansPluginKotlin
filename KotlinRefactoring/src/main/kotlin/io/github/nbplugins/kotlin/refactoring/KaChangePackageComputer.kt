@@ -16,6 +16,7 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.refactoring
 
+import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.refactoring.util.MoveRenameUsageInfo
 import com.intellij.usageView.UsageInfo
@@ -30,6 +31,7 @@ import org.jetbrains.kotlin.idea.k2.refactoring.move.descriptor.K2ChangePackageD
 import org.jetbrains.kotlin.idea.k2.refactoring.move.processor.K2ChangePackageRefactoringProcessor
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.idea.references.mainReference
+import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtCallExpression
@@ -603,7 +605,6 @@ class KaChangePackageComputer(
             .sortedByDescending { (oldFqName, _) -> oldFqName.pathSegments().size }
         val edits = linkedMapOf<KtFile, MutableSet<TextEdit>>()
         participants.forEach { file ->
-            val fileText = file.text
             file.importDirectives.forEach { directive ->
                 val importedReference = directive.importedReference ?: return@forEach
                 // Ranges come from PSI: `importPath.pathStr` is a rendered path and can differ
@@ -628,7 +629,7 @@ class KaChangePackageComputer(
                     }
                     KotlinSourceNames.renderFqName(newPrefix) + suffixText
                 } else {
-                    rewriteImportedPath(fileText.substring(pathStart, pathEnd), mappings)
+                    rewriteImportedPath(directive.identifiersWithin(pathStart, pathEnd), mappings)
                         ?: return@forEach
                 }
                 edits.getOrPut(file, ::linkedSetOf) += TextEdit(pathStart, pathEnd, replacement)
@@ -684,64 +685,98 @@ class KaChangePackageComputer(
     /**
      * Rewrites the package prefix of an imported path, keeping alias and nested-class suffixes.
      *
-     * Import paths are compared segment by segment rather than as token sequences so a backticked
-     * segment still matches its plain FQN.
+     * Segments are PSI identifiers, so backticks, whitespace, and interspersed comments in the
+     * source text do not affect matching. The suffix is rendered again with the escaping Kotlin
+     * requires.
      *
-     * @param importedText path text as written in the directive
+     * @param segments identifier names of the imported path, in source order
      * @param mappings moved declarations ordered from the longest FQN to the shortest
      * @return retargeted path text, or `null` when the import does not target a moved declaration
      */
     private fun rewriteImportedPath(
-        importedText: String,
+        segments: List<String>,
         mappings: List<Map.Entry<FqName, FqName>>,
     ): String? {
-        val segments = importedText.split('.').map { segment -> segment.trim() }
         mappings.forEach { (oldFqName, newFqName) ->
             val oldSegments = oldFqName.pathSegments().map { segment -> segment.asString() }
             if (segments.size < oldSegments.size) return@forEach
-            val prefix = segments.take(oldSegments.size).map { segment -> segment.removeSurrounding("`") }
-            if (prefix != oldSegments) return@forEach
+            if (segments.take(oldSegments.size) != oldSegments) return@forEach
             val suffix = segments.drop(oldSegments.size)
-            val separator = if (suffix.isEmpty()) "" else "."
-            return KotlinSourceNames.renderFqName(newFqName) + suffix.joinToString(separator = ".", prefix = separator)
+            val suffixText = suffix.joinToString(separator = ".", prefix = if (suffix.isEmpty()) "" else ".") { name ->
+                KotlinSourceNames.renderIdentifier(name)
+            }
+            return KotlinSourceNames.renderFqName(newFqName) + suffixText
         }
         return null
     }
 
     /**
-     * Source range, text and leftmost reference of the qualified chain ending at a reference.
+     * Collects the simple-name identifiers of this element inside `[start, end)`.
      *
-     * [rootReference] is the leftmost simple name of the receiver, which tells a package qualifier
-     * apart from an expression that merely spells the same text.
+     * Identifiers come from PSI, so whitespace, backticks, and comments between them are ignored
+     * while the captured replacement range stays in source coordinates. Type arguments and call
+     * arguments located after [end] are excluded.
+     *
+     * @param start first offset of the region to read
+     * @param end offset just past the region
+     * @return referenced names in source order
+     */
+    private fun PsiElement.identifiersWithin(start: Int, end: Int): List<String> {
+        val found = mutableListOf<Pair<Int, String>>()
+        fun visit(element: PsiElement) {
+            val range = element.textRange
+            if (range.endOffset <= start || range.startOffset >= end) return
+            if (element is KtSimpleNameExpression) {
+                if (range.startOffset >= start && range.endOffset <= end) {
+                    found += range.startOffset to element.getReferencedName()
+                }
+                return
+            }
+            // Import path qualifiers are plain identifier tokens rather than name references.
+            if (element.node?.elementType == KtTokens.IDENTIFIER) {
+                found += range.startOffset to element.text.removeSurrounding("`")
+                return
+            }
+            for (child in element.children) visit(child)
+        }
+        visit(this)
+        return found.sortedBy { (offset, _) -> offset }.map { (_, name) -> name }
+    }
+
+    /**
+     * Source range, PSI identifiers and leftmost reference of the qualified chain ending at a
+     * reference.
+     *
+     * [identifiers] ignores source spelling (backticks, comments), and [rootReference] is the
+     * leftmost simple name of the receiver, which tells a package qualifier apart from an
+     * expression that merely spells the same text.
      */
     private data class QualifiedChain(
         val startOffset: Int,
         val endOffset: Int,
-        val text: String,
+        val identifiers: List<String>,
         val rootReference: KtReferenceExpression?,
     )
 
     /**
-     * Tells whether this chain's identifiers spell [fqName].
+     * Tells whether this chain's PSI identifiers spell [fqName].
      *
-     * Backticks and whitespace around dots change the source spelling but not the identifiers K2
-     * resolved, so segments are compared after trimming and unquoting while the captured PSI range
-     * still delimits the replacement.
+     * Backticks, whitespace, and comments between segments change the source spelling but not the
+     * identifiers K2 resolved, so only the names are compared while the captured PSI range still
+     * delimits the replacement.
      *
      * @param fqName fully qualified name of the declaration K2 resolved
-     * @return `true` when the chain text denotes exactly that FQN
+     * @return `true` when the chain identifiers denote exactly that FQN
      */
-    private fun QualifiedChain.matches(fqName: FqName): Boolean {
-        val segments = text.split('.').map { segment -> segment.trim().removeSurrounding("`") }
-        return segments == fqName.pathSegments().map { segment -> segment.asString() }
-    }
+    private fun QualifiedChain.matches(fqName: FqName): Boolean =
+        identifiers == fqName.pathSegments().map { segment -> segment.asString() }
 
     /**
      * Extends a reference expression through the qualified receiver chain that contains it.
      *
      * `old.pkg.moved()` visits the `moved` reference; climbing through qualified expressions, their
-     * call nodes, and user types yields the `old.pkg.moved` text while dropping any argument list
-     * or type argument suffix. The chain stops at any other construct.
+     * call nodes, and user types yields the identifiers `old`, `pkg`, `moved` while dropping any
+     * argument list or type argument suffix. The chain stops at any other construct.
      */
     private fun KtElement.qualifiedChain(): QualifiedChain {
         var current: KtElement = this
@@ -764,7 +799,7 @@ class KaChangePackageComputer(
                     }
                     current = parent
                 }
-                else -> return QualifiedChain(start, end, containingFile.text.substring(start, end), rootReference)
+                else -> return QualifiedChain(start, end, current.identifiersWithin(start, end), rootReference)
             }
         }
     }
