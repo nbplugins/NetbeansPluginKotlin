@@ -367,9 +367,12 @@ class KaChangePackageComputer(
     /**
      * Resolves which top-level declaration a moved file's simple name still needs to import.
      *
-     * Only declarations that stay behind in the file's former package qualify. Kotlin sources are
-     * identified through their PSI; Java classes have no [KtNamedDeclaration] and constructor calls
-     * resolve to a constructor symbol, so both are matched through the symbol's class id instead.
+     * Only declarations that stay behind in the file's former package qualify. Class-like and
+     * constructor symbols are matched through their class id first: a constructor call resolves to
+     * a constructor symbol whose PSI is the constructor inside the class declaration (never a
+     * [KtFile] child), so the PSI branch alone would reject explicit-constructor calls. Java classes
+     * also have no [KtNamedDeclaration] and are matched the same way. Remaining Kotlin top-level
+     * callables are identified through their PSI.
      *
      * @param symbol symbol resolved for the simple-name reference inside a moved file
      * @param originalPackage package the moved file declares before the change
@@ -382,23 +385,24 @@ class KaChangePackageComputer(
         movedPaths: Set<String>,
     ): FqName? {
         val psi = symbol.psi
-        if (psi is KtNamedDeclaration) {
-            val containingFile = psi.containingKtFile
-            if (containingFile.virtualFile?.path in movedPaths) return null
-            if (containingFile.packageFqName != originalPackage) return null
-            if (psi.parent !is KtFile) return null
-            val name = psi.name ?: return null
-            return originalPackage.child(Name.identifier(name))
-        }
         val classId = when (symbol) {
             is KaConstructorSymbol -> symbol.containingClassId
             is KaClassLikeSymbol -> symbol.classId
             else -> null
-        } ?: return null
-        if (classId.isLocal || classId.isNestedClass) return null
-        if (classId.packageFqName != originalPackage) return null
-        if (psi?.containingFile?.virtualFile?.path in movedPaths) return null
-        return classId.asSingleFqName()
+        }
+        if (classId != null) {
+            if (classId.isLocal || classId.isNestedClass) return null
+            if (classId.packageFqName != originalPackage) return null
+            if (psi?.containingFile?.virtualFile?.path in movedPaths) return null
+            return classId.asSingleFqName()
+        }
+        if (psi !is KtNamedDeclaration) return null
+        val containingFile = psi.containingKtFile
+        if (containingFile.virtualFile?.path in movedPaths) return null
+        if (containingFile.packageFqName != originalPackage) return null
+        if (psi.parent !is KtFile) return null
+        val name = psi.name ?: return null
+        return originalPackage.child(Name.identifier(name))
     }
 
     /**

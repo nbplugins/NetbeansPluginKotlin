@@ -1222,6 +1222,51 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
+     * Verifies a moved file imports a Kotlin class that declares an explicit primary constructor.
+     *
+     * The constructor symbol's PSI is a [org.jetbrains.kotlin.psi.KtPrimaryConstructor], which is a
+     * named declaration whose parent is the class rather than the file. Outgoing dependency capture
+     * must therefore consult the constructed class id before the top-level PSI check, otherwise the
+     * call loses its import and stops resolving after the move.
+     */
+    fun testApply_realSession_addsImportForOutgoingSamePackageExplicitConstructor() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-outgoing-explicit-constructor")
+        try {
+            val oldPackageDirectory = temporaryRoot.resolve("old/source")
+            Files.createDirectories(oldPackageDirectory)
+            val sourcePath = oldPackageDirectory.resolve("Moved.kt")
+            val staysPath = oldPackageDirectory.resolve("Stays.kt")
+            Files.writeString(sourcePath, "package old.source\n\nfun create() = Helper(1)\n")
+            Files.writeString(staysPath, "package old.source\n\nclass Helper(val x: Int)\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-outgoing-explicit-constructor-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("new.changed")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "A moved file must import a class whose explicit constructor it calls",
+                "package new.changed\n\nimport old.source.Helper\n\nfun create() = Helper(1)\n",
+                success.changedFiles[sourcePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies a wildcard import rooted in a moved class follows that class.
      *
      * `import old.pkg.Outer.*` binds nested declarations through `Outer`; once `Outer` moves the
