@@ -3441,6 +3441,103 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies an outgoing import that would capture a moving overload is reported.
+     *
+     * The caller moves to `dest` together with the `Int` overload while the `Number` overload
+     * stays in `old`. Keeping the latter visible requires `import old.choose`, but that explicit
+     * import outranks the moved `dest.choose(Int)`, so `choose(1)` would silently switch overload.
+     */
+    fun testApply_realSession_conflictsWhenOutgoingImportCapturesMovingOverload() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-outgoing-capture")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            val intPath = temporaryRoot.resolve("old/Int.kt")
+            Files.writeString(intPath, "package old\n\nfun choose(n: Int) = 2\n")
+            Files.writeString(temporaryRoot.resolve("old/Number.kt"), "package old\n\nfun choose(n: Number) = 1\n")
+            val usagePath = temporaryRoot.resolve("old/Usage.kt")
+            Files.writeString(usagePath, "package old\n\nfun use() = choose(1) + choose(1.5)\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-outgoing-capture-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val intSource = session.getKtFileForPath(intPath.toString()) ?: error("Could not obtain source PSI")
+            val usageSource = session.getKtFileForPath(usagePath.toString()) ?: error("Could not obtain usage PSI")
+
+            val outcome = KaChangePackageComputer(usageSource).apply(
+                mapOf(intSource to FqName("dest"), usageSource to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected conflicts, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Conflicts)
+            val conflicts = outcome as KaChangePackageComputer.ApplyOutcome.Conflicts
+            assertTrue(
+                "The conflict must name the caller whose outgoing import would capture a moved overload: " +
+                    conflicts.messages,
+                conflicts.messages.any { message -> message.contains("Usage.kt") },
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a destination package segment inherited from a superclass is not treated as free.
+     *
+     * `Base` exposes `val dest: Holder` and `Holder` has its own `moved()`, so rewriting
+     * `old.moved()` to `dest.moved()` would call the holder's member. The chain must be shortened
+     * and the moved declaration imported instead.
+     */
+    fun testApply_realSession_shortensWhenDestinationSegmentIsInherited() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-inherited-segment")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            Files.writeString(sourcePath, "package old\n\nfun moved() = 1\n")
+            Files.writeString(
+                temporaryRoot.resolve("usage/Base.kt"),
+                "package usage\n\nopen class Base {\n    val dest: Holder = Holder()\n}\n\n" +
+                    "class Holder {\n    fun moved() = 2\n}\n",
+            )
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                usagePath,
+                "package usage\n\nclass Caller : Base() {\n    fun use() = old.moved()\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-inherited-segment-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "An inherited destination segment must be replaced by an import of the moved declaration",
+                "package usage\n\nimport dest.moved\n\nclass Caller : Base() {\n    fun use() = moved()\n}\n",
+                success.changedFiles[usagePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

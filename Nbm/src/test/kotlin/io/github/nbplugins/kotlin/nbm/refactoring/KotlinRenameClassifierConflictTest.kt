@@ -202,6 +202,64 @@ class KotlinRenameClassifierConflictTest : KotlinTestCase("KotlinRenameClassifie
         }
     }
 
+    /**
+     * Verifies a same-package caller using the new name blocks the rename.
+     *
+     * `fun After(n: Number)` already exists in the package, and the renamed `Before(Int)` becomes
+     * an `After(Int)` constructor. The caller needs no import for either, but `After(1)` would
+     * start selecting the more specific constructor while still compiling.
+     */
+    fun testFindSamePackageOverloadConflict_reportsCallerUsingNewName() {
+        withSession(
+            name = "same-package-overload",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(root.resolve("source/Foo.kt"), "package p\n\nclass Foo(val n: Int)\n")
+                Files.writeString(root.resolve("source/Functions.kt"), "package p\n\nfun After(n: Number) = \"other\"\n")
+                Files.writeString(root.resolve("usage/Usage.kt"), "package p\n\nfun use() = After(1).toString()\n")
+            },
+        ) { session, root ->
+            val source = session.ktFile(root.resolve("source/Foo.kt"))
+            val functions = session.ktFile(root.resolve("source/Functions.kt"))
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+
+            val conflict = findSamePackageOverloadConflict(
+                source,
+                primaryClass(source),
+                "After",
+                listOf(source, functions, usage),
+            )
+
+            assertEquals("Usage.kt", conflict?.virtualFile?.name)
+        }
+    }
+
+    /** Verifies a same-package caller of an unrelated name is not reported. */
+    fun testFindSamePackageOverloadConflict_ignoresCallerWithoutNewName() {
+        withSession(
+            name = "same-package-overload-clean",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(root.resolve("source/Foo.kt"), "package p\n\nclass Foo(val n: Int)\n")
+                Files.writeString(root.resolve("usage/Usage.kt"), "package p\n\nfun use() = Foo(1)\n")
+            },
+        ) { session, root ->
+            val source = session.ktFile(root.resolve("source/Foo.kt"))
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+
+            val conflict = findSamePackageOverloadConflict(
+                source,
+                primaryClass(source),
+                "After",
+                listOf(source, usage),
+            )
+
+            assertNull("a caller that never names After cannot switch overload", conflict)
+        }
+    }
+
     /** @return the single top-level class of [source]. */
     private fun primaryClass(source: KtFile): KtClass = source.declarations.filterIsInstance<KtClass>().single()
 

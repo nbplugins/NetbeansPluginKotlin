@@ -137,9 +137,13 @@ class KaChangePackageComputer(
             } else {
                 IncomingRetargeting()
             }
+            // Outgoing imports are validated before anything is staged as well: an explicit
+            // import outranks the same-package declarations the moved file gains, so it can
+            // capture references to declarations moving along with that file.
+            val outgoingImports = if (updateReferences) findOutgoingSamePackageImports(files, targets) else emptyMap()
             val conflicts = processors.flatMap { processor ->
                 processor.findConflicts(usages.filterIsInstance<MoveRenameUsageInfo>()).values()
-            } + incoming.conflicts
+            } + incoming.conflicts + outgoingImportConflicts(outgoingImports, files, movedDeclarations.keys)
             if (conflicts.isNotEmpty()) return ApplyOutcome.Conflicts(conflicts.distinct())
             // Class-scoped wildcard imports (`import old.Outer.*`) follow the class only when the
             // prefix is a moved class; package wildcards never move with it.
@@ -155,7 +159,6 @@ class KaChangePackageComputer(
             } else {
                 emptyList()
             }
-            val outgoingImports = if (updateReferences) findOutgoingSamePackageImports(files, targets) else emptyMap()
             val samePackageImportUpdates = (incoming.imports.keys + outgoingImports.keys).associateWith { file ->
                 incoming.imports[file].orEmpty() + outgoingImports[file].orEmpty()
             }
@@ -370,6 +373,40 @@ class KaChangePackageComputer(
     }
 
     /**
+     * Reports outgoing imports that cannot be added without changing an existing reference.
+     *
+     * An outgoing import keeps a moved file bound to a declaration left in its former package,
+     * but an explicit import outranks the same-package declarations the file gains in its new
+     * package. A second import of the same simple name is a conflicting import, so both cases
+     * abort the change before any text is staged.
+     *
+     * @param outgoingImports moved files mapped to the imports their references now require
+     * @param movedFiles Kotlin sources whose declared package changes
+     * @param movedOldFqNames original FQNs of the declarations moving with those files
+     * @return conflict messages for imports that cannot be added safely
+     */
+    private fun outgoingImportConflicts(
+        outgoingImports: Map<KtFile, Set<FqName>>,
+        movedFiles: Collection<KtFile>,
+        movedOldFqNames: Set<FqName>,
+    ): List<String> {
+        val movedPaths = movedFiles.mapNotNull { file -> file.virtualFile?.path }.toSet()
+        return outgoingImports.flatMap { (file, imports) ->
+            imports.mapNotNull { importFqName ->
+                val name = importFqName.shortName().asString()
+                when {
+                    file.hasConflictingImport(importFqName, movedOldFqNames) ->
+                        "Cannot update ${file.name}: it already imports another declaration named $name."
+                    KotlinImportBindingCheck.hasConflictingOutgoingImport(file, importFqName, movedPaths) ->
+                        "Cannot update ${file.name}: importing $name would capture a reference " +
+                            "to a declaration that moves with the file."
+                    else -> null
+                }
+            }
+        }
+    }
+
+    /**
      * Tells whether [file] already imports a different declaration under the name [imported] binds.
      *
      * Adding a second explicit import with the same simple name is a conflicting import, and one
@@ -489,9 +526,15 @@ class KaChangePackageComputer(
             return QualifiedRewrite.NEEDS_IMPORT
         }
         val packageHead = newFqName.parent().pathSegments().first().asString()
-        // Same-package declarations are visible without an import, so a sibling file's
-        // `object dest` hides the package just like a declaration of the caller file does.
+        // The package segment is resolved as an ordinary name at this position, so a local,
+        // parameter, member, inherited member, or import of the caller can hide the package.
+        // A sibling file's `object dest` is visible through the package as well.
         if (file.hasDeclarationNamed(packageHead) ||
+            KotlinImportBindingCheck.isNameBoundInScope(
+                element,
+                packageHead,
+                ignoredDeclarations = setOf(movedDeclaration),
+            ) ||
             KotlinImportBindingCheck.isDeclaredInPackage(file, packageHead)
         ) {
             // The new package's first segment would resolve to a local declaration instead of

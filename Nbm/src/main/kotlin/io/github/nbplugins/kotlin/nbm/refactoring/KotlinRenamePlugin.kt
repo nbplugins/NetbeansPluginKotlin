@@ -116,6 +116,7 @@ class KotlinRenameFilePlugin(
             )
         }
         val caller = findCallerScopeConflict(source, primaryClass, refactoring.newName, files)
+            ?: findSamePackageOverloadConflict(source, primaryClass, refactoring.newName, files)
             ?: return captureConflictProblem(source, primaryClass, files)
         return Problem(
             true,
@@ -624,6 +625,38 @@ internal fun findCallerScopeConflict(
                     directive.importedFqName == oldFqName
             } &&
             KotlinImportBindingCheck.hasConflictingReference(file, newName, setOf(primaryClass))
+    }
+}
+
+/**
+ * Finds a same-package caller whose existing reference to the new name would rebind.
+ *
+ * The renamed class adds a constructor under the new name to its package, and a same-package
+ * caller needs no import for it. Overload resolution can then prefer the constructor over an
+ * existing function of that name — `After(1)` with `fun After(n: Number)` switches to the newly
+ * named `After(Int)` constructor — while the file still compiles.
+ *
+ * @param source file whose primary class is renamed
+ * @param primaryClass class renamed together with the file
+ * @param newName requested class name
+ * @param files Kotlin sources of the project
+ * @return the first caller whose references would change their target, or `null` when none would
+ */
+internal fun findSamePackageOverloadConflict(
+    source: KtFile,
+    primaryClass: KtClass,
+    newName: String,
+    files: Collection<KtFile>,
+): KtFile? {
+    val packageName = source.packageFqName
+    return files.firstOrNull { file ->
+        file.packageFqName == packageName &&
+            KotlinImportBindingCheck.hasSamePackageReferenceToOtherDeclaration(
+                file,
+                newName,
+                packageName,
+                setOf(primaryClass),
+            )
     }
 }
 

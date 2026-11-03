@@ -171,6 +171,93 @@ object KotlinImportBindingCheck {
     }.getOrDefault(false)
 
     /**
+     * Tells whether adding [imported] to a moved file would capture one of its own references.
+     *
+     * An outgoing import keeps a moved file bound to a declaration left in its former package,
+     * but an explicit import outranks the same-package declarations of the file's new package and
+     * any wildcard import. A reference that currently resolves to a declaration moving with the
+     * file, or to a declaration of another package, would silently bind to the staying declaration
+     * instead.
+     *
+     * @param file moved file that is about to receive the import
+     * @param imported FQN of the declaration that stays behind
+     * @param movingPaths paths of the files whose package changes
+     * @return `true` when an unqualified reference would bind to the staying declaration instead
+     */
+    fun hasConflictingOutgoingImport(
+        file: KtFile,
+        imported: FqName,
+        movingPaths: Set<String>,
+    ): Boolean = runCatching {
+        analyze(file) {
+            var conflicting = false
+            file.accept(object : KtTreeVisitorVoid() {
+                override fun visitSimpleNameExpression(expression: KtSimpleNameExpression) {
+                    super.visitSimpleNameExpression(expression)
+                    if (conflicting) return
+                    val importedName = imported.shortName().asString()
+                    val referencedName = expression.getReferencedName()
+                    if (referencedName != importedName && expression !is KtOperationReferenceExpression) return
+                    if (PsiTreeUtil.getParentOfType(expression, KtImportDirective::class.java) != null) return
+                    if (expression.isQualifiedSelector() && !expression.isValueReceiverExtension()) return
+                    val symbol = expression.references.filterIsInstance<KtReference>().firstOrNull()
+                        ?.resolveToSymbol() ?: return
+                    if (referencedName != importedName && symbol.declaredName() != importedName) return
+                    if (!symbol.isTopLevelBinding()) return
+                    val path = symbol.psi?.containingFile?.virtualFile?.path
+                    if (path != null && path in movingPaths) {
+                        conflicting = true
+                        return
+                    }
+                    if (symbol.declaredPackage() != imported.parent()) conflicting = true
+                }
+            })
+            conflicting
+        }
+    }.getOrDefault(false)
+
+    /**
+     * Tells whether [file] already refers to a same-package declaration named [name].
+     *
+     * Adding a top-level declaration to a package changes overload resolution for unqualified
+     * references to that name, so a same-package reference that currently resolves to another
+     * top-level callable can silently bind to the added declaration. An explicit import of the
+     * name from elsewhere keeps winning over the package, so it is not a conflict.
+     *
+     * @param file caller that already names the declaration
+     * @param name simple name of the declaration being added
+     * @param packageName package the declaration is added to
+     * @param excludedDeclarations declarations the added name is meant for
+     * @return `true` when a reference to another same-package declaration would be affected
+     */
+    fun hasSamePackageReferenceToOtherDeclaration(
+        file: KtFile,
+        name: String,
+        packageName: FqName,
+        excludedDeclarations: Set<PsiElement>,
+    ): Boolean = runCatching {
+        analyze(file) {
+            var conflicting = false
+            file.accept(object : KtTreeVisitorVoid() {
+                override fun visitSimpleNameExpression(expression: KtSimpleNameExpression) {
+                    super.visitSimpleNameExpression(expression)
+                    if (conflicting) return
+                    if (expression.getReferencedName() != name) return
+                    if (expression.isQualifiedSelector()) return
+                    if (PsiTreeUtil.getParentOfType(expression, KtImportDirective::class.java) != null) return
+                    val symbol = expression.references.filterIsInstance<KtReference>().firstOrNull()
+                        ?.resolveToSymbol() ?: return
+                    if (symbol.belongsTo(excludedDeclarations)) return
+                    if (!symbol.isTopLevelBinding()) return
+                    if (symbol.declaredPackage() != packageName) return
+                    conflicting = true
+                }
+            })
+            conflicting
+        }
+    }.getOrDefault(false)
+
+    /**
      * Tells whether [name] is already bound to a classifier at [element].
      *
      * Kotlin resolves type references in a namespace separate from values, so a rewritten type
