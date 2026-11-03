@@ -20,14 +20,18 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.refactoring.util.MoveRenameUsageInfo
 import com.intellij.usageView.UsageInfo
+import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
+import org.jetbrains.kotlin.analysis.api.components.packageScope
 import org.jetbrains.kotlin.analysis.api.components.resolveToSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassLikeSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaPackageSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaTypeAliasSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaVariableSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.findPackage
 import org.jetbrains.kotlin.idea.k2.refactoring.move.KotlinMoveUsageSearchService
 import org.jetbrains.kotlin.idea.k2.refactoring.move.MoveImport
 import org.jetbrains.kotlin.idea.k2.refactoring.move.descriptor.K2ChangePackageDescriptor
@@ -288,7 +292,7 @@ class KaChangePackageComputer(
                 // A qualified chain rewritten to a full package path keeps resolving on its own.
                 // A root-package target becomes a bare name, and a shadowed package segment is
                 // rewritten to a bare name as well, so both still need an explicit import.
-                val rewrite = captureQualifiedReference(element, oldFqName, newFqName, edits, conflicts)
+                val rewrite = captureQualifiedReference(element, declaration, oldFqName, newFqName, edits, conflicts)
                 if (rewrite == QualifiedRewrite.REWRITTEN) return@forEach
                 if (file.virtualFile?.path == declarationFile.virtualFile?.path) return@forEach
                 val finalPackage = targets[file] ?: file.packageFqName
@@ -328,6 +332,40 @@ class KaChangePackageComputer(
                         "Cannot update ${file.name}: it already imports another declaration named $shortName."
                     hasConflictingBinding(file, shortName, movedPsi) -> conflicts +=
                         "Cannot update ${file.name}: $shortName already refers to another declaration there."
+                }
+            }
+        }
+        // A rewritten direct import follows the moved declaration, but the overload set it bound
+        // stays behind: a caller that used one of the remaining overloads would silently switch to
+        // the moved declaration. Only files whose package also changes lose same-package visibility
+        // of those overloads, so files staying in the old package are unaffected.
+        val movedPaths = movedFiles.mapNotNull { file -> file.virtualFile?.path }.toSet()
+        val movedImports = movedDeclarations.values.associate { (oldFqName, newFqName) ->
+            MoveImport(oldFqName.parent(), oldFqName.shortName().asString()) to newFqName.parent()
+        }
+        session.findImportingFiles(ktFile.project, movedImports).forEach { file ->
+            file.importDirectives.forEach directives@{ directive ->
+                val importedFqName = directive.importedFqName ?: return@directives
+                if (directive.isAllUnder || directive.aliasName != null) return@directives
+                if (importedFqName !in movedOldFqNames) return@directives
+                // A file that stays in the old package keeps every remaining overload visible
+                // there, so the rewritten import cannot change what its calls resolve to.
+                if (file.packageFqName == importedFqName.parent() &&
+                    file.virtualFile?.path !in movedPaths
+                ) {
+                    return@directives
+                }
+                // A wildcard of the old package keeps every remaining overload visible, so the
+                // rewritten direct import cannot change what a call resolves to.
+                if (file.importDirectives.any { candidate ->
+                        candidate.isAllUnder && candidate.importedFqName == importedFqName.parent()
+                    }
+                ) {
+                    return@directives
+                }
+                if (KotlinImportBindingCheck.hasConflictingImportRewrite(file, importedFqName, movedPaths)) {
+                    conflicts += "Cannot update ${file.name}: import ${importedFqName.asString()} " +
+                        "also binds declarations that stay behind."
                 }
             }
         }
@@ -403,6 +441,8 @@ class KaChangePackageComputer(
      * is requested; when that name is shadowed as well, the caller reports a conflict instead.
      *
      * @param element reference expression that K2 resolved to the moved declaration
+     * @param movedDeclaration declaration being moved; a package change keeps its name, so it
+     * must not be mistaken for a capture of the shortened reference
      * @param oldFqName declaration FQN before the package change
      * @param newFqName declaration FQN after the package change
      * @param edits per-file replacement accumulator
@@ -411,6 +451,7 @@ class KaChangePackageComputer(
      */
     private fun captureQualifiedReference(
         element: KtElement,
+        movedDeclaration: KtNamedDeclaration,
         oldFqName: FqName,
         newFqName: FqName,
         edits: MutableMap<KtFile, MutableSet<TextEdit>>,
@@ -434,6 +475,19 @@ class KaChangePackageComputer(
         }
         // A root target has no receiver to rewrite: `old.moved()` becomes the bare `moved`.
         if (newFqName.parent().isRoot) {
+            val shortName = newFqName.shortName().asString()
+            // A member or local of that name outranks an import, so the shortened call would bind
+            // to it instead; the chain cannot stay either, since the old package disappears.
+            if (element.isNameShadowedInScope(
+                    shortName,
+                    ignoredImports = setOf(oldFqName),
+                    ignoredDeclarations = setOf(movedDeclaration),
+                )
+            ) {
+                conflicts += "Cannot update ${file.name}: $shortName already refers to another " +
+                    "declaration there."
+                return QualifiedRewrite.NONE
+            }
             edits.getOrPut(file, ::linkedSetOf) += TextEdit(
                 chain.startOffset,
                 chain.endOffset,
@@ -446,7 +500,12 @@ class KaChangePackageComputer(
             // The new package's first segment would resolve to a local declaration instead of
             // the package, so the chain is shortened and the declaration imported instead.
             val shortName = newFqName.shortName().asString()
-            if (element.isNameShadowedInScope(shortName)) {
+            if (element.isNameShadowedInScope(
+                    shortName,
+                    ignoredImports = setOf(oldFqName),
+                    ignoredDeclarations = setOf(movedDeclaration),
+                )
+            ) {
                 conflicts += "Cannot update ${file.name}: both $packageHead and $shortName refer " +
                     "to other declarations there."
                 return QualifiedRewrite.NONE
@@ -530,10 +589,20 @@ class KaChangePackageComputer(
      * Tells whether [name] is bound to a local or member declaration visible at this element.
      *
      * @param name identifier to look for in the enclosing scopes
+     * @param ignoredImports imported FQNs that bind the moved declaration itself
+     * @param ignoredDeclarations declarations that are the moved target themselves
      * @return `true` when a value, function, or nested declaration here would win over an import
      */
-    private fun KtElement.isNameShadowedInScope(name: String): Boolean =
-        KotlinImportBindingCheck.isNameBoundInScope(this, name)
+    private fun KtElement.isNameShadowedInScope(
+        name: String,
+        ignoredImports: Set<FqName> = emptySet(),
+        ignoredDeclarations: Set<PsiElement> = emptySet(),
+    ): Boolean = KotlinImportBindingCheck.isNameBoundInScope(
+        this,
+        name,
+        ignoredImports,
+        ignoredDeclarations,
+    )
 
     /**
      * Finds declarations that stay in a moved file's former package and need an explicit import.
@@ -578,23 +647,27 @@ class KaChangePackageComputer(
                             if (PsiTreeUtil.getParentOfType(expression, KtImportDirective::class.java) != null) return
                             val reference = expression.references.filterIsInstance<KtReference>().firstOrNull() ?: return
                             val symbol = reference.resolveToSymbol() ?: return
-                            val resolvedFqName = samePackageTopLevelName(symbol, originalPackage, movedPaths)
-                                ?: return
-                            // The reference may already be bound through an import alias of the
-                            // resolved declaration; the alias directive stays valid after a move.
-                            if (expression.isAliasBound(resolvedFqName)) return
+                            val referencedName = expression.getReferencedName()
+                            val topLevelFqName = samePackageTopLevelName(symbol, originalPackage, movedPaths)
                             // A call may spell a same-package type alias rather than the class it
                             // expands to: K2 reports the constructor of the underlying class, but
                             // the source keeps calling the alias, so the alias itself is imported.
                             // Convention operators spell `+` while resolving to `plus`, and an
                             // import of the spelled symbol would be unresolved; only classifiers
                             // resolved through a constructor or class-like symbol can be aliases.
-                            val referencedName = expression.getReferencedName()
-                            val importFqName = when {
-                                referencedName == resolvedFqName.shortName().asString() -> resolvedFqName
-                                symbol is KaConstructorSymbol || symbol is KaClassLikeSymbol ->
-                                    originalPackage.child(Name.identifier(referencedName))
-                                else -> resolvedFqName
+                            val importFqName = if (topLevelFqName != null) {
+                                // The reference may already be bound through an import alias of
+                                // the resolved declaration; the alias directive stays valid.
+                                if (expression.isAliasBound(topLevelFqName)) return
+                                when {
+                                    referencedName == topLevelFqName.shortName().asString() -> topLevelFqName
+                                    symbol is KaConstructorSymbol || symbol is KaClassLikeSymbol ->
+                                        originalPackage.child(Name.identifier(referencedName))
+                                    else -> topLevelFqName
+                                }
+                            } else {
+                                samePackageTypeAliasName(expression, symbol, originalPackage, movedPaths)
+                                    ?: return
                             }
                             if (importFqName in importedFqNames || originalPackage in starPackages) return
                             // An extension access on a value receiver can spell the package name
@@ -682,6 +755,51 @@ class KaChangePackageComputer(
         if (psi.parent !is KtFile) return null
         val name = psi.name ?: return null
         return originalPackage.child(Name.identifier(name))
+    }
+
+    /**
+     * Resolves a type alias that a moved file still needs to import from its former package.
+     *
+     * A constructor call through a type alias resolves to the constructor of the underlying class,
+     * which may live in another package. The source keeps spelling the alias, so the alias itself
+     * must be imported when the file leaves the package that declared it.
+     *
+     * @param expression simple-name reference inside a moved file
+     * @param symbol symbol K2 resolved for the reference
+     * @param originalPackage package the moved file declares before the change
+     * @param movedPaths paths of the files whose package changes
+     * @return FQN of the same-package type alias to import, or `null` when there is none
+     */
+    context(_: KaSession)
+    private fun samePackageTypeAliasName(
+        expression: KtSimpleNameExpression,
+        symbol: KaSymbol,
+        originalPackage: FqName,
+        movedPaths: Set<String>,
+    ): FqName? {
+        val classId = when (symbol) {
+            is KaConstructorSymbol -> symbol.containingClassId
+            is KaClassLikeSymbol -> symbol.classId
+            else -> null
+        } ?: return null
+        if (classId.isLocal || classId.isNestedClass) return null
+        val referencedName = expression.getReferencedName()
+        // Only a differently spelled class reference can be a type alias call.
+        if (referencedName == classId.shortClassName.asString()) return null
+        val file = expression.containingKtFile
+        // Any explicit import of the spelled name binds it wherever it lives and stays valid.
+        val importedName = file.importDirectives.any { directive ->
+            !directive.isAllUnder &&
+                (directive.aliasName ?: directive.importedFqName?.shortName()?.asString()) == referencedName
+        }
+        if (importedName) return null
+        // The alias must really be declared in the package the file is leaving, and must not
+        // travel with the file itself.
+        val alias = (findPackage(originalPackage)?.packageScope
+            ?.classifiers?.firstOrNull { classifier -> classifier.name?.asString() == referencedName }
+            as? KaTypeAliasSymbol) ?: return null
+        if (alias.psi?.containingFile?.virtualFile?.path in movedPaths) return null
+        return originalPackage.child(Name.identifier(referencedName))
     }
 
     /**
@@ -932,11 +1050,11 @@ class KaChangePackageComputer(
      * Builds the edit that keeps a package wildcard resolvable when its package loses every source.
      *
      * A wildcard import of a package that no longer exists is an unresolved reference even when
-     * every moved usage was retargeted. When all declarations that left [imported] gathered in one
-     * new package, the wildcard follows them and keeps binding the same names. Otherwise — several
-     * destination packages, or the root package that no wildcard can name — the directive is
-     * removed; the incoming pass already captured an explicit import for every moved declaration
-     * the caller uses.
+     * every moved usage was retargeted, so the directive is removed once no declaration stays
+     * behind. Retargeting it to the single destination package would be worse: it would also
+     * import every unrelated declaration already in that package, which can capture names the
+     * caller currently resolves through another wildcard import. The incoming pass already
+     * captured an explicit import for every moved declaration the caller uses.
      *
      * @param file file containing the directive
      * @param directive wildcard import whose prefix is not a moved class
@@ -956,21 +1074,8 @@ class KaChangePackageComputer(
         if (movedFromPackage.isEmpty()) return null
         val service = KotlinMoveUsageSearchService.getInstance() ?: return null
         if (service.hasDeclarationsInPackage(ktFile.project, imported, movedPaths)) return null
-        val targetPackages = movedFromPackage.values.map { newFqName -> newFqName.parent() }.distinct()
-        // A root-package destination cannot be spelled as a wildcard at all: `import *` is not a
-        // valid directive, and root-package declarations need no import. Removal is the only
-        // option that keeps the file compiling.
-        if (targetPackages.size == 1 && !targetPackages.single().isRoot) {
-            val pathEnd = directive.importedReference?.textRange?.endOffset ?: return null
-            return TextEdit(
-                directive.textRange.startOffset + importPathStart(directive.text),
-                pathEnd,
-                KotlinSourceNames.renderFqName(targetPackages.single()),
-            )
-        }
-        // The package splits into several target packages (or the declarations became root-package
-        // ones), so no single wildcard keeps the bindings. Remove the directive together with the
-        // rest of its line.
+        // The package keeps no declaration, so neither the old wildcard nor a broadened one is
+        // safe: remove the directive together with the rest of its line.
         val text = file.text
         var end = directive.textRange.endOffset
         while (end < text.length &&

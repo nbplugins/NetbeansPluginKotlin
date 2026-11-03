@@ -593,6 +593,46 @@ class KaRenameTest : KotlinTestCase("KaRenameTest", "rename") {
         }
     }
 
+    /**
+     * Verifies a type-position rewrite that would bind to a nested classifier is reported.
+     *
+     * Renaming `Before` to `After` rewrites `val value: Before?` to `After?`; inside `Caller` that
+     * name already denotes the nested class `Caller.After`, so the property type would silently
+     * change while the file keeps compiling.
+     */
+    fun testFindCaptureConflicts_reportsNestedClassifierCapture() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-classifier")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("p/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before\n")
+            Files.writeString(
+                callerPath,
+                "package p\n\nclass Caller {\n    class After\n    val value: Before? = null\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-classifier-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "After",
+            ).findCaptureConflicts()
+
+            assertEquals("The caller's nested class captures the rewritten type", caller, conflict)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

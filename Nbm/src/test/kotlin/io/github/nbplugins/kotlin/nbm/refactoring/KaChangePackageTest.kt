@@ -2878,6 +2878,191 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies rewriting a direct import does not silently drop an overload that stays behind.
+     *
+     * `import old.choose` binds the whole overload set; rewriting it to `dest.choose` removes the
+     * unmoved `choose(Int)`, so `choose(1)` would resolve to the moved `Number` overload instead.
+     */
+    fun testApply_realSession_conflictsWhenRewrittenImportLosesUnmovedOverload() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-rewritten-import")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Number.kt")
+            Files.writeString(sourcePath, "package old\n\nfun choose(n: Number) = 1\n")
+            Files.writeString(temporaryRoot.resolve("old/Int.kt"), "package old\n\nfun choose(n: Int) = 2\n")
+            Files.writeString(
+                temporaryRoot.resolve("usage/Usage.kt"),
+                "package usage\n\nimport old.choose\n\nfun use() = choose(1)\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-rewritten-import-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected conflicts, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Conflicts)
+            val conflicts = outcome as KaChangePackageComputer.ApplyOutcome.Conflicts
+            assertTrue(
+                "The conflict must name the caller whose import loses an overload: ${conflicts.messages}",
+                conflicts.messages.any { message -> message.contains("Usage.kt") },
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies an emptied package wildcard is removed instead of broadened to its destination.
+     *
+     * Retargeting `import old.*` to `import dest.*` also imports unrelated declarations already in
+     * `dest`, which can capture names that currently resolve through another wildcard import.
+     */
+    fun testApply_realSession_removesObsoleteWildcardInsteadOfBroadeningDestination() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-wildcard-broaden")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("lib"))
+            Files.createDirectories(temporaryRoot.resolve("dest"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(sourcePath, "package old\n\nfun moved() = 1\n")
+            Files.writeString(temporaryRoot.resolve("lib/Lib.kt"), "package lib\n\nfun choose(n: Number) = 2\n")
+            Files.writeString(temporaryRoot.resolve("dest/Existing.kt"), "package dest\n\nfun choose(n: Int) = 3\n")
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\nimport lib.*\n\nfun use() = moved() + choose(1)\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-wildcard-broaden-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "An emptied wildcard is removed rather than importing the whole destination package",
+                "package usage\n\nimport dest.moved\nimport lib.*\n\nfun use() = moved() + choose(1)\n",
+                success.changedFiles[usagePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies shortening to a root-package name is rejected when a member captures that name.
+     *
+     * `old.moved()` becomes `moved()`, but the enclosing class declares a member with that name,
+     * which outranks the root-package import, so the call would silently change meaning.
+     */
+    fun testApply_realSession_conflictsWhenRootTargetNameIsCapturedByMember() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-root-capture")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            Files.writeString(sourcePath, "package old\n\nfun moved() = 1\n")
+            Files.writeString(
+                temporaryRoot.resolve("usage/Usage.kt"),
+                "package usage\n\nimport old.*\n\nclass Caller {\n" +
+                    "    fun moved() = 2\n" +
+                    "    fun use() = old.moved()\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-root-capture-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName.ROOT),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected conflicts, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Conflicts)
+            val conflicts = outcome as KaChangePackageComputer.ApplyOutcome.Conflicts
+            assertTrue(
+                "The conflict must name the capturing caller: ${conflicts.messages}",
+                conflicts.messages.any { message -> message.contains("Usage.kt") },
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a same-package type alias that expands to another package is still imported.
+     *
+     * `Alias()` resolves to the constructor of `other.Impl`, so the expanded declaration is not in
+     * the package being left; the source keeps spelling `Alias`, which only the alias declaration
+     * in the old package provides.
+     */
+    fun testApply_realSession_importsSamePackageTypeAliasExpandingElsewhere() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-expanding-alias")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("p"))
+            Files.createDirectories(temporaryRoot.resolve("other"))
+            val sourcePath = temporaryRoot.resolve("p/Moved.kt")
+            Files.writeString(sourcePath, "package p\n\nfun make() = Alias()\n")
+            Files.writeString(temporaryRoot.resolve("p/Aliases.kt"), "package p\n\ntypealias Alias = other.Impl\n")
+            Files.writeString(temporaryRoot.resolve("other/Impl.kt"), "package other\n\nclass Impl\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-expanding-alias-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "The type alias must be imported by the name the source spells",
+                "package dest\n\nimport p.Alias\n\nfun make() = Alias()\n",
+                success.changedFiles[sourcePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

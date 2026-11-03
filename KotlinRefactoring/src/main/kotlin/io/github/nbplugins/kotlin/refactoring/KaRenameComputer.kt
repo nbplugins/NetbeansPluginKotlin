@@ -338,9 +338,9 @@ class KaRenameComputer(
      * file that also binds `After` lexically — a local, parameter, member, file-level declaration,
      * or import — makes the rewritten text resolve to that binding instead. A constructor call
      * then becomes a call of a member function and the code still compiles with a new meaning.
-     * Type positions are skipped because Kotlin resolves type names in a separate namespace,
-     * receiver labels because they name a labeled scope, and import directives because they follow
-     * the rename rather than capture it.
+     * Type positions are checked against classifiers only, because Kotlin resolves type names in a
+     * separate namespace; receiver labels are skipped because they name a labeled scope, and
+     * import directives because they follow the rename rather than capture it.
      *
      * @return the first file whose rewritten reference would capture, or `null` when every
      *         rewritten reference keeps its target
@@ -353,12 +353,18 @@ class KaRenameComputer(
         for (kaFile in projectKtFiles) {
             for (target in targets) {
                 for (element in collectReferenceElements(kaFile, target)) {
-                    if (element.isTypeReference()) continue
                     // A receiver label such as `this@After` names a labeled scope, not a
                     // declaration, so a local or member of that name cannot capture it.
                     if (element is KtLabelReferenceExpression) continue
                     if (PsiTreeUtil.getParentOfType(element, KtImportDirective::class.java) != null) continue
-                    if (KotlinImportBindingCheck.isNameBoundInScope(element, newName)) return kaFile
+                    // Kotlin resolves types and values in separate namespaces: a type position is
+                    // only captured by another classifier, a value position only by another value.
+                    val captured = if (element.isTypeReference()) {
+                        KotlinImportBindingCheck.isClassifierBoundInScope(element, newName)
+                    } else {
+                        KotlinImportBindingCheck.isNameBoundInScope(element, newName)
+                    }
+                    if (captured) return kaFile
                 }
             }
         }

@@ -48,6 +48,7 @@ import org.jetbrains.kotlin.psi.KtPropertyAccessor
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
 import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
 import org.jetbrains.kotlin.psi.KtTypeAlias
+import org.jetbrains.kotlin.psi.KtTypeParameterListOwner
 import org.jetbrains.kotlin.psi.KtUserType
 import org.jetbrains.kotlin.psi.KtWhenExpression
 
@@ -104,6 +105,80 @@ object KotlinImportBindingCheck {
     }.getOrDefault(false)
 
     /**
+     * Tells whether rewriting an import of [imported] to another package would rebind references.
+     *
+     * `import old.choose` binds the whole overload set of that name, so following the declaration
+     * to a new package drops every overload that stays behind. A reference that currently uses
+     * one of those overloads would then resolve to the moved declaration instead — or stop
+     * resolving at all — while the file still compiles.
+     *
+     * Only references this import actually selects are considered: a chain qualified by the
+     * package spelling keeps resolving on its own, and qualified selectors keep resolving through
+     * their receiver unless they are extension calls on a value. References that resolve into one
+     * of [movingPaths] follow the import and are fine.
+     *
+     * @param file caller whose import directive is being rewritten
+     * @param imported original FQN of the moved declaration
+     * @param movingPaths paths of the files whose package changes
+     * @return `true` when a reference would bind to the moved declaration instead of its own
+     */
+    fun hasConflictingImportRewrite(
+        file: KtFile,
+        imported: FqName,
+        movingPaths: Set<String>,
+    ): Boolean = runCatching {
+        analyze(file) {
+            var conflicting = false
+            file.accept(object : KtTreeVisitorVoid() {
+                override fun visitSimpleNameExpression(expression: KtSimpleNameExpression) {
+                    super.visitSimpleNameExpression(expression)
+                    if (conflicting) return
+                    if (expression.getReferencedName() != imported.shortName().asString()) return
+                    if (PsiTreeUtil.getParentOfType(expression, KtImportDirective::class.java) != null) return
+                    if (expression.isQualifiedSelector() && !expression.isValueReceiverExtension()) return
+                    val symbol = expression.references.filterIsInstance<KtReference>().firstOrNull()
+                        ?.resolveToSymbol() ?: return
+                    val path = symbol.psi?.containingFile?.virtualFile?.path
+                    if (path != null && path in movingPaths) return
+                    if (!symbol.isTopLevelBinding()) return
+                    if (symbol.declaredPackage() != imported.parent()) return
+                    conflicting = true
+                }
+            })
+            conflicting
+        }
+    }.getOrDefault(false)
+
+    /**
+     * Tells whether [name] is already bound to a classifier at [element].
+     *
+     * Kotlin resolves type references in a namespace separate from values, so a rewritten type
+     * position can only be captured by a class, object, type alias, or type parameter of that
+     * name — not by a function or property. Imports are treated conservatively because telling a
+     * classifier import from a callable import needs resolution.
+     *
+     * @param element position whose rewritten text denotes a type
+     * @param name new simple name the position is about to spell
+     * @return `true` when another classifier would win over the intended target
+     */
+    fun isClassifierBoundInScope(element: KtElement, name: String): Boolean {
+        val file = element.containingKtFile
+        if (file.importDirectives.any { directive -> directive.bindsName(name, emptySet()) }) return true
+        if (file.declarations.any { declaration -> declaration.declaresClassifierName(name) }) return true
+        var current: PsiElement? = element.parent
+        while (current != null) {
+            val bound = when (current) {
+                is KtClassBody -> current.declarations.any { declaration -> declaration.declaresClassifierName(name) }
+                is KtTypeParameterListOwner -> current.typeParameters.any { parameter -> parameter.name == name }
+                else -> false
+            }
+            if (bound) return true
+            current = current.parent
+        }
+        return false
+    }
+
+    /**
      * Tells whether [name] is already bound to something else at [element].
      *
      * Used before rewriting a declaration name into a scope where the new name may already be
@@ -115,16 +190,21 @@ object KotlinImportBindingCheck {
      * @param name new simple name the position is about to spell
      * @param ignoredImports imported FQNs that already bind the declaration being renamed, so
      * re-spelling [name] through them is not a capture
+     * @param ignoredDeclarations declarations that are the intended target themselves; a package
+     * change leaves their names in place, so they must not be reported as captures
      * @return `true` when another declaration would win over the intended target
      */
     fun isNameBoundInScope(
         element: KtElement,
         name: String,
         ignoredImports: Set<FqName> = emptySet(),
+        ignoredDeclarations: Set<PsiElement> = emptySet(),
     ): Boolean {
         val file = element.containingKtFile
         if (file.importDirectives.any { directive -> directive.bindsName(name, ignoredImports) }) return true
-        if (file.declarations.any { declaration -> declaration.declaresName(name) }) return true
+        if (file.declarations.any { declaration ->
+                declaration !in ignoredDeclarations && declaration.declaresName(name)
+            }) return true
         var child: PsiElement = element
         var current: PsiElement? = element.parent
         while (current != null) {
@@ -179,6 +259,30 @@ object KotlinImportBindingCheck {
         is KtTypeAlias -> this.name == name
         is KtDestructuringDeclaration -> entries.any { entry -> entry.name == name }
         else -> false
+    }
+
+    /**
+     * Tells whether this statement or member declaration binds [name] in the type namespace.
+     *
+     * @param name identifier to look for
+     * @return `true` when this declaration introduces a classifier of that name
+     */
+    private fun KtDeclaration.declaresClassifierName(name: String): Boolean = when (this) {
+        is KtClassOrObject -> this.name == name
+        is KtTypeAlias -> this.name == name
+        else -> false
+    }
+
+    /**
+     * Returns the package this symbol is declared in, or `null` for members and locals.
+     *
+     * @return the declaring package, or `null` when the symbol is not a top-level declaration
+     */
+    private fun KaSymbol.declaredPackage(): FqName? = when (this) {
+        is KaConstructorSymbol -> containingClassId?.takeUnless { classId -> classId.isLocal }?.packageFqName
+        is KaCallableSymbol -> callableId?.takeIf { callableId -> callableId.className == null }?.packageName
+        is KaClassLikeSymbol -> classId?.takeUnless { classId -> classId.isLocal }?.packageFqName
+        else -> (psi?.parent as? KtFile)?.packageFqName
     }
 
     /**
