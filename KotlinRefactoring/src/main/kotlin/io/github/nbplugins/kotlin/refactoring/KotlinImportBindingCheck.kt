@@ -21,6 +21,7 @@ import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.compat.getClassOrObjectSymbol
+import org.jetbrains.kotlin.analysis.api.components.KaScopeImplicitReceiverValue
 import org.jetbrains.kotlin.analysis.api.components.expandedSymbol
 import org.jetbrains.kotlin.analysis.api.components.memberScope
 import org.jetbrains.kotlin.analysis.api.components.packageScope
@@ -273,14 +274,23 @@ object KotlinImportBindingCheck {
         val file = element.containingKtFile
         if (file.importDirectives.any { directive -> directive.bindsName(name, emptySet()) }) return true
         if (file.declarations.any { declaration -> declaration.declaresClassifierName(name) }) return true
+        var child: PsiElement = element
         var current: PsiElement? = element.parent
         while (current != null) {
             val bound = when (current) {
+                // A local class or type alias is visible only after its declaration and only
+                // inside the block that declares it; it is not a member of any enclosing class.
+                is KtBlockExpression -> current.statements
+                    .takeWhile { statement -> statement.textRange.startOffset < child.textRange.startOffset }
+                    .any { statement ->
+                        (statement as? KtDeclaration)?.declaresClassifierName(name) == true
+                    }
                 is KtClassBody -> current.declarations.any { declaration -> declaration.declaresClassifierName(name) }
                 is KtTypeParameterListOwner -> current.typeParameters.any { parameter -> parameter.name == name }
                 else -> false
             }
             if (bound) return true
+            child = current
             current = current.parent
         }
         return isNameBoundByInheritedMember(element, name, typesOnly = true)
@@ -356,17 +366,18 @@ object KotlinImportBindingCheck {
     }.getOrDefault(false)
 
     /**
-     * Tells whether a member inherited into an enclosing class binds [name].
+     * Tells whether a member of an enclosing or implicit receiver binds [name].
      *
      * Only declarations physically present in the enclosing class bodies are visible through
      * PSI; a superclass member (`class Caller : Base()` calling an inherited `fun After()`) lives
-     * in another file but is still in scope unqualified, so the resolved member scope must be
-     * consulted instead.
+     * in another file but is still in scope unqualified. An extension function's receiver
+     * (`fun Receiver.make()`) and a receiver lambda contribute their members through implicit
+     * receivers rather than PSI ancestors, so K2's scope tower is consulted as well.
      *
      * @param element position whose rewritten text must keep its meaning
      * @param name identifier to look for
      * @param typesOnly `true` to search the type namespace only, `false` to include values
-     * @return `true` when an inherited member of that name is in scope
+     * @return `true` when an inherited member or implicit receiver member of that name is in scope
      */
     private fun isNameBoundByInheritedMember(
         element: KtElement,
@@ -389,7 +400,18 @@ object KotlinImportBindingCheck {
                 }
                 current = current.parent
             }
-            false
+            // Extension receivers and receiver lambdas are not PSI ancestors of the position, but
+            // their members shadow top-level declarations exactly like those of an enclosing class.
+            element.containingKtFile.scopeContext(element).implicitValues
+                .filterIsInstance<KaScopeImplicitReceiverValue>()
+                .any { receiver ->
+                    val scope = receiver.type.expandedSymbol?.memberScope ?: return@any false
+                    if (typesOnly) {
+                        scope.classifiers.any { classifier -> classifier.name?.asString() == name }
+                    } else {
+                        scope.declarations.any { declaration -> declaration.declaredName() == name }
+                    }
+                }
         }
     }.getOrDefault(false)
 

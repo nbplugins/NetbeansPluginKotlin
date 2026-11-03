@@ -3538,6 +3538,94 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies a for loop imports the convention operator left behind.
+     *
+     * `for (x in box)` spells no name for `iterator`, which same-package visibility provided; after
+     * the move, that top-level function must be imported explicitly or the loop stops compiling.
+     */
+    fun testApply_realSession_addsImportForOutgoingForLoopIterator() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-for-loop")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("p"))
+            val sourcePath = temporaryRoot.resolve("p/Moved.kt")
+            Files.writeString(sourcePath, "package p\n\nfun use(box: Box) {\n    for (x in box) println(x)\n}\n")
+            Files.writeString(
+                temporaryRoot.resolve("p/Box.kt"),
+                "package p\n\nclass Box\n\noperator fun Box.iterator(): Iterator<Int> = emptyList<Int>().iterator()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-for-loop-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("q")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "A for loop needs the iterator operator dependency imported as well",
+                "package q\n\nimport p.Box\nimport p.iterator\n\n" +
+                    "fun use(box: Box) {\n    for (x in box) println(x)\n}\n",
+                success.changedFiles[sourcePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a type alias whose name equals the expanded class is still imported.
+     *
+     * `typealias Impl = other.Impl` is invisible after the move, so `Impl()` needs `import p.Impl`
+     * even though the resolved constructor's simple name already matches the spelled name.
+     */
+    fun testApply_realSession_importsSameNamedTypeAliasExpandingElsewhere() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-same-named-alias")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("p"))
+            Files.createDirectories(temporaryRoot.resolve("other"))
+            val sourcePath = temporaryRoot.resolve("p/Move.kt")
+            Files.writeString(sourcePath, "package p\n\nfun make() = Impl()\n")
+            Files.writeString(temporaryRoot.resolve("p/Aliases.kt"), "package p\n\ntypealias Impl = other.Impl\n")
+            Files.writeString(temporaryRoot.resolve("other/Impl.kt"), "package other\n\nclass Impl\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-same-named-alias-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "The type alias must be imported by the name the source spells",
+                "package dest\n\nimport p.Impl\n\nfun make() = Impl()\n",
+                success.changedFiles[sourcePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

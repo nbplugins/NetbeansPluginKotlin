@@ -50,6 +50,7 @@ import org.jetbrains.kotlin.psi.KtDestructuringDeclarationEntry
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtForExpression
 import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
 import org.jetbrains.kotlin.psi.KtNamedFunction
@@ -753,6 +754,25 @@ class KaChangePackageComputer(
                             }
                         }
 
+                        // A for loop spells no name for the convention it calls: `for (x in box)`
+                        // depends on a top-level `operator fun Box.iterator` that only the
+                        // original package's visibility provided. Its reference resolves to both
+                        // the loop variable's property and the convention function.
+                        override fun visitForExpression(expression: KtForExpression) {
+                            super.visitForExpression(expression)
+                            expression.references.filterIsInstance<KtReference>().forEach { reference ->
+                                val symbols = runCatching { reference.resolveToSymbols() }.getOrNull()
+                                    ?: return@forEach
+                                val importFqName = symbols.firstNotNullOfOrNull { symbol ->
+                                    samePackageTopLevelName(symbol, originalPackage, movedPaths)
+                                } ?: return@forEach
+                                if (importFqName in importedFqNames || originalPackage in starPackages) {
+                                    return@forEach
+                                }
+                                missingImports += importFqName
+                            }
+                        }
+
                         // Convention operators are not spelled as simple names: `box[0]` depends
                         // on a top-level `operator fun Box.get` that same-package visibility
                         // provided, so its reference has to be captured separately.
@@ -854,8 +874,9 @@ class KaChangePackageComputer(
         } ?: return null
         if (classId.isLocal || classId.isNestedClass) return null
         val referencedName = expression.getReferencedName()
-        // Only a differently spelled class reference can be a type alias call.
-        if (referencedName == classId.shortClassName.asString()) return null
+        // The resolved constructor may belong to the alias itself or to the class it expands to,
+        // depending on how K2 names the symbol; the package-scope lookup below settles it either
+        // way, so a name equality with the class id must not skip it.
         val file = expression.containingKtFile
         // Any explicit import of the spelled name binds it wherever it lives and stays valid.
         val importedName = file.importDirectives.any { directive ->

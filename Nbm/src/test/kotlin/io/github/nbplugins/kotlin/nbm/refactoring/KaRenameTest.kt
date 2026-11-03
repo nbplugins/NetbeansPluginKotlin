@@ -675,6 +675,86 @@ class KaRenameTest : KotlinTestCase("KaRenameTest", "rename") {
     }
 
     /**
+     * Verifies a member of an extension receiver capturing the new name is reported.
+     *
+     * Inside `fun Receiver.make()`, the receiver's members are in scope unqualified. Renaming
+     * `Before` to `After` rewrites `Before()` to `After()`, which the receiver's member function
+     * would capture while the file keeps compiling.
+     */
+    fun testFindCaptureConflicts_reportsExtensionReceiverCapture() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-receiver")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("p/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before\n")
+            Files.writeString(
+                callerPath,
+                "package p\n\nclass Receiver {\n    fun After() = \"other\"\n}\n\n" +
+                    "fun Receiver.make() = Before().toString()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-receiver-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "After",
+            ).findCaptureConflicts()
+
+            assertEquals("The extension receiver's member captures the rewritten constructor call", caller, conflict)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a block-local classifier capturing a rewritten type is reported.
+     *
+     * `class After` declared earlier in the function body is visible unqualified, so rewriting
+     * `x is Before` to `x is After` would silently test the local class instead.
+     */
+    fun testFindCaptureConflicts_reportsBlockLocalClassifierCapture() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-block-classifier")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("p/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before\n")
+            Files.writeString(
+                callerPath,
+                "package p\n\nfun accepts(x: Any): Boolean {\n    class After\n    return x is Before\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-block-classifier-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "After",
+            ).findCaptureConflicts()
+
+            assertEquals("The block-local class captures the rewritten type", caller, conflict)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies a fully qualified reference is not checked against lexical bindings.
      *
      * Renaming `Before` to `After` only changes the selector of `p.Before()`, which still names
