@@ -16,9 +16,14 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.refactoring
 
+import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
+import org.jetbrains.kotlin.analysis.api.components.buildTypeParameterType
+import org.jetbrains.kotlin.analysis.api.components.createSubstitutor
 import org.jetbrains.kotlin.analysis.api.components.semanticallyEquals
 import org.jetbrains.kotlin.analysis.api.components.type
+import org.jetbrains.kotlin.analysis.api.symbols.symbol
+import org.jetbrains.kotlin.analysis.api.types.KaSubstitutor
 import org.jetbrains.kotlin.psi.KtClass
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtParameter
@@ -29,7 +34,8 @@ import org.jetbrains.kotlin.psi.KtParameter
  * Renaming a class writes its new name verbatim, so a same-package function whose call signature
  * matches a constructor becomes a conflicting overload that Kotlin rejects. Parameter types are
  * compared as resolved types, because `Int` and a fully qualified `kotlin.Int` are the same Kotlin
- * type even though their source spellings differ.
+ * type even though their source spellings differ. Type parameters are compared by position after
+ * substituting the function's parameters with the class's, and their bounds are compared as well.
  */
 object KotlinConstructorSignatureCheck {
 
@@ -53,13 +59,74 @@ object KotlinConstructorSignatureCheck {
             .filter { parameters -> parameters.size == function.valueParameters.size }
         if (matching.isEmpty()) return false
         return analyze(function) {
-            matching.any { parameters ->
+            val substitutor = typeParameterSubstitutor(primaryClass, function)
+            typeParametersMatch(primaryClass, function, substitutor) && matching.any { parameters ->
                 parameters.indices.all { index ->
                     val constructorType = runCatching { parameters[index].typeReference?.type }.getOrNull()
                     val functionType = runCatching { function.valueParameters[index].typeReference?.type }.getOrNull()
-                    constructorType == null || functionType == null || functionType.semanticallyEquals(constructorType)
+                    constructorType == null || functionType == null || runCatching {
+                        substitutor.substitute(functionType).semanticallyEquals(constructorType)
+                    }.getOrDefault(false)
                 }
             }
+        }
+    }
+
+    /**
+     * Maps the function's type parameters to the class's parameters at the same position.
+     *
+     * After the rename the function spells the class's parameters, so a parameter type using the
+     * function's first type parameter corresponds to one using the class's first type parameter.
+     * Their resolved type symbols differ, which would make semantically equivalent signatures
+     * compare as different. Function parameters without a counterpart stay unmapped and therefore
+     * keep a parameter type that uses them different.
+     *
+     * @param classOrObject class whose type parameters the function would spell
+     * @param function function whose type parameters are substituted
+     * @return substitutor replacing the function's type parameters with the class's
+     */
+    context(_: KaSession)
+    private fun typeParameterSubstitutor(
+        classOrObject: KtClass,
+        function: KtNamedFunction,
+    ): KaSubstitutor {
+        val classParameters = classOrObject.typeParameters
+        val mapping = function.typeParameters.mapIndexedNotNull { index, parameter ->
+            val classParameter = classParameters.getOrNull(index) ?: return@mapIndexedNotNull null
+            parameter.symbol to buildTypeParameterType(classParameter.symbol)
+        }.toMap()
+        return createSubstitutor(mapping)
+    }
+
+    /**
+     * Tells whether corresponding type parameters have equivalent bounds.
+     *
+     * Two signatures are conflicting only when their type parameters also allow the same type
+     * arguments; a function accepting any `T` would not collide with a constructor restricted to
+     * `T : Number`.
+     *
+     * @param classOrObject class whose type parameter bounds are compared
+     * @param function function whose type parameter bounds are compared
+     * @param substitutor maps the function's type parameters to the class's
+     * @return `true` when every corresponding bound is equivalent
+     */
+    context(_: KaSession)
+    private fun typeParametersMatch(
+        classOrObject: KtClass,
+        function: KtNamedFunction,
+        substitutor: KaSubstitutor,
+    ): Boolean {
+        val classParameters = classOrObject.typeParameters
+        return function.typeParameters.indices.all { index ->
+            val classParameter = classParameters.getOrNull(index) ?: return@all true
+            val functionBounds = function.typeParameters[index].symbol.upperBounds
+            val classBounds = classParameter.symbol.upperBounds
+            functionBounds.size == classBounds.size &&
+                functionBounds.zip(classBounds).all { (functionBound, classBound) ->
+                    runCatching {
+                        substitutor.substitute(functionBound).semanticallyEquals(classBound)
+                    }.getOrDefault(false)
+                }
         }
     }
 

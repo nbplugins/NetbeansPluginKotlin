@@ -3949,6 +3949,215 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies a package head bound by a wildcard import falls back to the shortened call.
+     *
+     * The caller imports `lib.*`, and `lib.dest` is an object. Rewriting `old.moved()` to
+     * `dest.moved()` would resolve the qualifier to that object's member instead of the package
+     * the declaration moved to, so the reference must become a bare name with an explicit import.
+     */
+    fun testApply_realSession_shortensPackageHeadCapturedByWildcardImport() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-wildcard-head")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("lib"))
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            Files.writeString(
+                temporaryRoot.resolve("lib/Lib.kt"),
+                "package lib\n\nobject dest {\n    fun moved() = \"other\"\n}\n",
+            )
+            Files.writeString(sourcePath, "package old\n\nfun moved() = \"old\"\n")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport lib.*\n\nfun use() = old.moved()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-wildcard-head-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The qualifier is captured by lib.dest, so the call must be shortened: $text",
+                text.contains("fun use() = moved()"),
+            )
+            assertTrue(
+                "The shortened call needs an explicit import: $text",
+                text.contains("import dest.moved"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies adding an import for an extension does not capture a delegated property's accessor.
+     *
+     * The caller imports `old.*` and declares `val value by 1`, which selects the staying
+     * `Int.getValue`. The moved `Number.getValue` needs a new explicit import, and an explicit
+     * import outranks the wildcard, so the delegated property would silently use the Number
+     * accessor instead. The change must be rejected.
+     */
+    fun testApply_realSession_rejectsImportCapturingDelegateAccessor() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-delegate-capture")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Number.kt")
+            Files.writeString(
+                sourcePath,
+                "package old\n\noperator fun Number.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 1\n",
+            )
+            Files.writeString(
+                temporaryRoot.resolve("old/Int.kt"),
+                "package old\n\noperator fun Int.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 2\n",
+            )
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nval value by 1\n\n" +
+                    "fun probe(property: kotlin.reflect.KProperty<*>) = (1.5).getValue(null, property)\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-delegate-capture-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected conflicts, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Conflicts)
+            val conflicts = outcome as KaChangePackageComputer.ApplyOutcome.Conflicts
+            assertTrue(
+                "The conflict must name the caller whose delegated property is captured: ${conflicts.messages}",
+                conflicts.messages.any { message -> message.contains("Usage.kt") },
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a compound indexed write discovers the setter even when the getter is a member.
+     *
+     * `Box` declares a member `get`, so no operator import is needed for it, but the top-level
+     * `set` extension stays in the old package and is still called by `box[0]++`.
+     */
+    fun testApply_realSession_importsIndexedSetterForMemberGetter() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-member-get-indexed-set")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Box.kt"),
+                "package old\n\nclass Box {\n    operator fun get(i: Int): Int = i\n}\n\n" +
+                    "operator fun Box.set(i: Int, value: Int) {}\n",
+            )
+            Files.writeString(sourcePath, "package old\n\nfun bump(box: Box) {\n    box[0]++\n}\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-member-get-indexed-set-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[sourcePath.toString()] ?: error("The moved file must change")
+            assertTrue(
+                "The compound write still calls the staying setter: $text",
+                text.contains("import old.set"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a member `provideDelegate` selects the accessor type used for import discovery.
+     *
+     * The provider is a member of `Delegate` and returns `Provided`, whose `getValue` is a top-level
+     * extension staying in the old package. Looking only at top-level providers would miss the
+     * provider and look for the accessor on `Delegate` instead, leaving the property uncompilable.
+     */
+    fun testApply_realSession_followsMemberProviderForDelegateAccessor() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-member-provider")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Delegate.kt"),
+                "package old\n\n" +
+                    "class Delegate {\n" +
+                    "    operator fun provideDelegate(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Provided = Provided()\n}\n\n" +
+                    "class Provided\n\n" +
+                    "operator fun Provided.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 1\n",
+            )
+            Files.writeString(sourcePath, "package old\n\nval value by Delegate()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-member-provider-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[sourcePath.toString()] ?: error("The moved file must change")
+            assertTrue(
+                "The accessor is selected on the provided type: $text",
+                text.contains("import old.getValue"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

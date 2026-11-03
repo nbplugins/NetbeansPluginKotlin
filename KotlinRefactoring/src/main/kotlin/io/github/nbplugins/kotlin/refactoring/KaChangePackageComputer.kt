@@ -22,8 +22,10 @@ import com.intellij.refactoring.util.MoveRenameUsageInfo
 import com.intellij.usageView.UsageInfo
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
+import org.jetbrains.kotlin.analysis.api.components.expandedSymbol
 import org.jetbrains.kotlin.analysis.api.components.expressionType
 import org.jetbrains.kotlin.analysis.api.components.isSubtypeOf
+import org.jetbrains.kotlin.analysis.api.components.memberScope
 import org.jetbrains.kotlin.analysis.api.components.packageScope
 import org.jetbrains.kotlin.analysis.api.components.resolveToSymbol
 import org.jetbrains.kotlin.analysis.api.components.resolveToSymbols
@@ -822,9 +824,10 @@ class KaChangePackageComputer(
                                     importFqName !in importedFqNames && originalPackage !in starPackages
                                 }
                                 .forEach { importFqName -> missingImports += importFqName }
-                            // Only a convention that stays behind needs the companion setter, so a
-                            // member operator keeps its resolution untouched.
-                            if (expression.isCompoundWrite() && retainedOperators.isNotEmpty()) {
+                            // A compound indexed write needs the companion setter even when the
+                            // getter is a member: the array reference exposes only `get`, so a
+                            // staying top-level `set` would otherwise be lost without an import.
+                            if (expression.isCompoundWrite()) {
                                 samePackageIndexedSetter(expression, originalPackage, movedPaths)
                                     ?.takeIf { importFqName ->
                                         importFqName !in importedFqNames && originalPackage !in starPackages
@@ -840,25 +843,28 @@ class KaChangePackageComputer(
                         override fun visitProperty(property: KtProperty) {
                             super.visitProperty(property)
                             val delegateType = property.delegateExpression?.expressionType ?: return
-                            val provider = samePackageDelegateOperator(
-                                delegateType,
-                                "provideDelegate",
-                                originalPackage,
-                                movedPaths,
-                            )
+                            // A member provider wins over extensions and needs no import, but its
+                            // return type still decides which accessor the property selects.
+                            val provider = delegateType.memberDelegateOperator("provideDelegate")
+                                ?: samePackageDelegateOperator(
+                                    delegateType,
+                                    "provideDelegate",
+                                    originalPackage,
+                                    movedPaths,
+                                )
                             // `provideDelegate` runs before the accessors and its return type is the
                             // type the accessors are selected on, so it replaces the expression type.
                             val accessorType = provider?.returnType ?: delegateType
                             val operators = buildList {
                                 if (provider != null) add(provider)
-                                samePackageDelegateOperator(
+                                samePackageDelegateAccessor(
                                     accessorType,
                                     "getValue",
                                     originalPackage,
                                     movedPaths,
                                 )?.let { symbol -> add(symbol) }
                                 if (property.isVar) {
-                                    samePackageDelegateOperator(
+                                    samePackageDelegateAccessor(
                                         accessorType,
                                         "setValue",
                                         originalPackage,
@@ -982,6 +988,45 @@ class KaChangePackageComputer(
                 if (!receiverType.isSubtypeOf(receiver)) return@firstNotNullOfOrNull null
                 samePackageTopLevelName(symbol, originalPackage, movedPaths)
             }
+    }
+
+    /**
+     * Returns the member declaration of [name] on this type, or `null` when it has none.
+     *
+     * A member always wins over an extension, so the compiler never falls back to a same-package
+     * operator when the type declares one of that name.
+     *
+     * @param name member name
+     * @return the declared member, regardless of its applicability
+     */
+    context(_: KaSession)
+    private fun KaType.memberDelegateOperator(name: String): KaCallableSymbol? = runCatching {
+        expandedSymbol?.memberScope?.declarations
+            ?.filterIsInstance<KaCallableSymbol>()
+            ?.firstOrNull { symbol -> (symbol as? KaNamedSymbol)?.name?.asString() == name }
+    }.getOrNull()
+
+    /**
+     * Finds the delegate accessor a moved file still needs from the original package.
+     *
+     * A member accessor wins over every extension, so the same-package lookup only applies when the
+     * receiver type declares no member of that name.
+     *
+     * @param accessorType type the accessor is selected on
+     * @param operatorName `getValue` or `setValue`
+     * @param originalPackage package the moved file declares before the change
+     * @param movedPaths paths of the files whose package changes
+     * @return the remaining accessor extension, or `null` when none applies
+     */
+    context(_: KaSession)
+    private fun samePackageDelegateAccessor(
+        accessorType: KaType,
+        operatorName: String,
+        originalPackage: FqName,
+        movedPaths: Set<String>,
+    ): KaCallableSymbol? {
+        if (accessorType.memberDelegateOperator(operatorName) != null) return null
+        return samePackageDelegateOperator(accessorType, operatorName, originalPackage, movedPaths)
     }
 
     /**

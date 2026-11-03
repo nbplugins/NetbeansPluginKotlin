@@ -86,6 +86,58 @@ class KotlinConstructorSignatureCheckTest : KotlinTestCase("KotlinConstructorSig
     }
 
     /**
+     * Verifies type parameters are compared by position rather than by symbol.
+     *
+     * The constructor's `T` is a parameter of the class while the function's `T` is its own type
+     * parameter, so the resolved types refer to different symbols even though both signatures are
+     * the same after renaming.
+     */
+    fun testConflictsWithRenamedConstructor_matchesCorrespondingTypeParameter() {
+        withSession(
+            name = "type-parameter",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.writeString(root.resolve("source/Types.kt"), "package p\n\nclass Foo<T>(val n: T)\n")
+                Files.writeString(root.resolve("source/Functions.kt"), "package p\n\nfun <T> Bar(n: T) = n\n")
+            },
+        ) { session, root ->
+            val types = session.ktFile(root.resolve("source/Types.kt"))
+            val functions = session.ktFile(root.resolve("source/Functions.kt"))
+
+            assertTrue(
+                "both signatures take one type parameter in the same position",
+                KotlinConstructorSignatureCheck.conflictsWithRenamedConstructor(
+                    primaryClass(types),
+                    functions.declarations.filterIsInstance<KtNamedFunction>().single(),
+                ),
+            )
+        }
+    }
+
+    /** Verifies a type parameter nested in another type is normalized as well. */
+    fun testConflictsWithRenamedConstructor_ignoresDifferentTypeParameterUse() {
+        withSession(
+            name = "type-parameter-different",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.writeString(root.resolve("source/Types.kt"), "package p\n\nclass Foo<T>(val n: List<T>)\n")
+                Files.writeString(root.resolve("source/Functions.kt"), "package p\n\nfun <T> Bar(n: T) = n\n")
+            },
+        ) { session, root ->
+            val types = session.ktFile(root.resolve("source/Types.kt"))
+            val functions = session.ktFile(root.resolve("source/Functions.kt"))
+
+            assertFalse(
+                "List<T> is not the same type as T",
+                KotlinConstructorSignatureCheck.conflictsWithRenamedConstructor(
+                    primaryClass(types),
+                    functions.declarations.filterIsInstance<KtNamedFunction>().single(),
+                ),
+            )
+        }
+    }
+
+    /**
      * Verifies a fully qualified parameter type is recognized as the constructor's type.
      *
      * `kotlin.Int` and `Int` denote the same type, so the function would collide with the renamed

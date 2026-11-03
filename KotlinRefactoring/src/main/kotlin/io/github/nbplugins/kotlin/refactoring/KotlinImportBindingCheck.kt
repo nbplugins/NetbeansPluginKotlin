@@ -23,10 +23,13 @@ import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.compat.getClassOrObjectSymbol
 import org.jetbrains.kotlin.analysis.api.components.KaScopeImplicitReceiverValue
 import org.jetbrains.kotlin.analysis.api.components.expandedSymbol
+import org.jetbrains.kotlin.analysis.api.components.expressionType
+import org.jetbrains.kotlin.analysis.api.components.isSubtypeOf
 import org.jetbrains.kotlin.analysis.api.components.memberScope
 import org.jetbrains.kotlin.analysis.api.components.packageScope
 import org.jetbrains.kotlin.analysis.api.components.resolveToSymbol
 import org.jetbrains.kotlin.analysis.api.components.resolveToSymbols
+import org.jetbrains.kotlin.analysis.api.components.scopeContext
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassKind
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassLikeSymbol
@@ -35,9 +38,12 @@ import org.jetbrains.kotlin.analysis.api.symbols.KaPackageSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaVariableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.findPackage
+import org.jetbrains.kotlin.analysis.api.symbols.findTopLevelCallables
 import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
+import org.jetbrains.kotlin.analysis.api.types.KaType
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtArrayAccessExpression
 import org.jetbrains.kotlin.psi.KtBlockExpression
 import org.jetbrains.kotlin.psi.KtCallExpression
@@ -98,6 +104,12 @@ object KotlinImportBindingCheck {
     ): Boolean = runCatching {
         analyze(file) {
             var conflicting = false
+            // Only an extension can act as a delegate accessor, so importing a class or property
+            // of that name cannot change which accessor a delegated property selects.
+            val importsAccessor = excludedDeclarations.any { declaration ->
+                declaration is KtNamedFunction && declaration.name == name &&
+                    declaration.receiverTypeReference != null
+            }
             file.accept(object : KtTreeVisitorVoid() {
                 override fun visitSimpleNameExpression(expression: KtSimpleNameExpression) {
                     super.visitSimpleNameExpression(expression)
@@ -117,6 +129,18 @@ object KotlinImportBindingCheck {
                     if (symbol.belongsTo(excludedDeclarations)) return
                     if (!symbol.isTopLevelBinding()) return
                     conflicting = true
+                }
+
+                // A delegated property spells none of its operators either: `val value by 1`
+                // calls a top-level `getValue` that an added explicit import outranks.
+                override fun visitProperty(property: KtProperty) {
+                    super.visitProperty(property)
+                    if (conflicting || !importsAccessor) return
+                    runCatching { property.delegateAccessorCandidates(name) }.getOrNull()?.forEach { symbol ->
+                        if (!symbol.belongsTo(excludedDeclarations) && symbol.isTopLevelBinding()) {
+                            conflicting = true
+                        }
+                    }
                 }
 
                 // Convention references spell no name for the callable they invoke: `n[0]` calls
@@ -189,6 +213,9 @@ object KotlinImportBindingCheck {
         analyze(file) {
             var conflicting = false
             val importedName = imported.shortName().asString()
+            // Only an extension can act as a delegate accessor, and an aliased directive provides
+            // no operator under the declaration's own name.
+            val rewritesAccessor = !aliased && isExtensionCallable(imported)
             file.accept(object : KtTreeVisitorVoid() {
                 override fun visitSimpleNameExpression(expression: KtSimpleNameExpression) {
                     super.visitSimpleNameExpression(expression)
@@ -208,6 +235,18 @@ object KotlinImportBindingCheck {
                     if (!symbol.isTopLevelBinding()) return
                     if (symbol.declaredPackage() != imported.parent()) return
                     conflicting = true
+                }
+
+                // A delegated property spells no accessor either, so `val value by 1` keeps
+                // binding the overload the rewritten directive stops importing.
+                override fun visitProperty(property: KtProperty) {
+                    super.visitProperty(property)
+                    if (conflicting || !rewritesAccessor) return
+                    runCatching { property.delegateAccessorCandidates(importedName) }.getOrNull()?.forEach { symbol ->
+                        if (symbol.isTopLevelBinding() && symbol.staysInOriginalPackage(imported, movingPaths)) {
+                            conflicting = true
+                        }
+                    }
                 }
 
                 // A convention call spells no name, so `n[0]` (`get`) keeps binding an overload
@@ -269,6 +308,9 @@ object KotlinImportBindingCheck {
         analyze(file) {
             var conflicting = false
             val importedName = imported.shortName().asString()
+            // Only an extension can act as a delegate accessor, so importing another kind of
+            // declaration of that name leaves the property's resolution untouched.
+            val importsAccessor = isExtensionCallable(imported)
             file.accept(object : KtTreeVisitorVoid() {
                 override fun visitSimpleNameExpression(expression: KtSimpleNameExpression) {
                     super.visitSimpleNameExpression(expression)
@@ -282,6 +324,20 @@ object KotlinImportBindingCheck {
                     if (referencedName != importedName && symbol.declaredName() != importedName) return
                     if (!symbol.isTopLevelBinding()) return
                     if (symbol.isCapturedByOutgoingImport(imported, movingPaths)) conflicting = true
+                }
+
+                // A delegated property spells no accessor, so the added import can retarget the
+                // operator its delegate expression selects.
+                override fun visitProperty(property: KtProperty) {
+                    super.visitProperty(property)
+                    if (conflicting || !importsAccessor) return
+                    runCatching { property.delegateAccessorCandidates(importedName) }.getOrNull()?.forEach { symbol ->
+                        if (symbol.isTopLevelBinding() &&
+                            symbol.isCapturedByOutgoingImport(imported, movingPaths)
+                        ) {
+                            conflicting = true
+                        }
+                    }
                 }
 
                 // A convention call spells no name, so `n[0]` (`get`) keeps binding the same-package
@@ -436,6 +492,10 @@ object KotlinImportBindingCheck {
         if (file.declarations.any { declaration ->
                 declaration !in ignoredDeclarations && declaration.declaresName(name)
             }) return true
+        // A wildcard or default import binds names without spelling any directive of this file, so
+        // a classifier or callable it provides hides a same-named package segment or declaration
+        // exactly like an explicit import does.
+        if (isNameBoundByWildcardImport(element, name)) return true
         var child: PsiElement = element
         var current: PsiElement? = element.parent
         while (current != null) {
@@ -484,6 +544,28 @@ object KotlinImportBindingCheck {
         analyze(file) {
             val scope = findPackage(file.packageFqName)?.packageScope ?: return@analyze false
             scope.declarations.any { declaration -> declaration.declaredName() == name }
+        }
+    }.getOrDefault(false)
+
+    /**
+     * Tells whether a wildcard or default import of [file] binds [name] at [element].
+     *
+     * `import lib.*` and Kotlin's default imports introduce declarations without listing them in
+     * the file's own directives. Scope resolution is therefore consulted instead of directive
+     * text: the position's composite scope already knows which star imports apply and which
+     * declarations they contribute.
+     *
+     * @param element position whose scope is inspected
+     * @param name identifier to look for
+     * @return `true` when a wildcard or default import provides a classifier or callable of that name
+     */
+    private fun isNameBoundByWildcardImport(element: KtElement, name: String): Boolean = runCatching {
+        analyze(element) {
+            val identifier = Name.identifier(name)
+            element.containingKtFile.scopeContext(element).scopes.any { scopeWithKind ->
+                scopeWithKind.scope.classifiers(identifier).any() ||
+                    scopeWithKind.scope.callables(identifier).any()
+            }
         }
     }.getOrDefault(false)
 
@@ -745,6 +827,102 @@ object KotlinImportBindingCheck {
         if (path != null && path in movingPaths) return true
         return declaredPackage() != imported.parent()
     }
+
+    /**
+     * Tells whether [fqName] names a top-level extension callable.
+     *
+     * Only an extension can act as a convention operator, so an import of a class, property, or
+     * member callable of the same name leaves convention references and delegated properties
+     * untouched.
+     *
+     * @param fqName FQN the import binds
+     * @return `true` when the FQN denotes a top-level extension callable
+     */
+    context(_: KaSession)
+    private fun isExtensionCallable(fqName: FqName): Boolean = runCatching {
+        findTopLevelCallables(fqName.parent(), fqName.shortName()).any { symbol ->
+            symbol.isExtension && symbol.callableId?.asSingleFqName() == fqName
+        }
+    }.getOrDefault(false)
+
+    /**
+     * Returns the extension operators a delegated property implicitly selects.
+     *
+     * A delegated property spells neither `provideDelegate` nor `getValue`/`setValue`; K2 does not
+     * expose the implicit calls either, so the applicable extensions are looked up by name and
+     * receiver applicability in the property's scope. `provideDelegate` runs first and its return
+     * type is the type the accessors are selected on. A member accessor always wins over
+     * extensions, so it cannot be captured by an import and is not reported.
+     *
+     * @param name accessor name the import introduces
+     * @return applicable extension operators of that name, empty when the property does not use it
+     */
+    context(_: KaSession)
+    private fun KtProperty.delegateAccessorCandidates(name: String): List<KaCallableSymbol> {
+        val accessorNames = if (isVar) listOf("getValue", "setValue") else listOf("getValue")
+        if (name !in accessorNames) return emptyList()
+        val delegateType = runCatching { delegateExpression?.expressionType }.getOrNull() ?: return emptyList()
+        val provider = delegateOperator(delegateType, "provideDelegate")
+        val accessorTypes = provider
+            ?.let { symbol -> runCatching { symbol.returnType }.getOrNull() }
+            ?.let { providedType -> listOf(providedType) }
+            ?: listOf(delegateType)
+        return accessorTypes.flatMap { accessorType ->
+            if (accessorType.memberOperator(name) != null) {
+                emptyList()
+            } else {
+                applicableOperators(accessorType, name)
+            }
+        }
+    }
+
+    /**
+     * Finds the operator of [name] the compiler would select on [type].
+     *
+     * A member declaration always outranks an extension, so it is returned first; otherwise the
+     * first applicable extension visible at this property is used.
+     *
+     * @param type receiver type the operator is selected on
+     * @param name operator name
+     * @return the selected operator, or `null` when none applies
+     */
+    context(_: KaSession)
+    private fun KtProperty.delegateOperator(type: KaType, name: String): KaCallableSymbol? =
+        type.memberOperator(name) ?: applicableOperators(type, name).firstOrNull()
+
+    /**
+     * Returns the member declaration of [name] on this type, or `null` when it has none.
+     *
+     * @param name member name
+     * @return the declared member, regardless of its applicability
+     */
+    context(_: KaSession)
+    private fun KaType.memberOperator(name: String): KaCallableSymbol? = runCatching {
+        expandedSymbol?.memberScope?.declarations
+            ?.filterIsInstance<KaCallableSymbol>()
+            ?.firstOrNull { symbol -> (symbol as? KaNamedSymbol)?.name?.asString() == name }
+    }.getOrNull()
+
+    /**
+     * Returns the top-level extension operators of [name] applicable to [type] at this property.
+     *
+     * @param type receiver type the operator is selected on
+     * @param name operator name
+     * @return applicable extensions visible in the property's scope
+     */
+    context(_: KaSession)
+    private fun KtProperty.applicableOperators(type: KaType, name: String): List<KaCallableSymbol> = runCatching {
+        val identifier = Name.identifier(name)
+        containingKtFile.scopeContext(this).scopes.asSequence()
+            .flatMap { scopeWithKind -> scopeWithKind.scope.callables(identifier) }
+            .filter { symbol -> symbol.isExtension }
+            .filter { symbol ->
+                val receiverType = symbol.receiverParameter?.returnType ?: return@filter false
+                type.isSubtypeOf(receiverType)
+            }
+            .distinct()
+            .toList()
+    }.getOrElse { emptyList() }
 
     /**
      * Returns the innermost class or object containing this element, or `null` at file level.
