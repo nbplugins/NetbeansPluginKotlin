@@ -2642,6 +2642,242 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies a convention operator keeps the resolved callable name in its outgoing import.
+     *
+     * The operation reference spells `+` while the declaration is `plus`, so building the import
+     * from the spelled name would produce the unresolvable `import p.+`.
+     */
+    fun testApply_realSession_importsConventionOperatorByName() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-operator-import")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("p"))
+            val movedPath = temporaryRoot.resolve("p/Moved.kt")
+            Files.writeString(movedPath, "package p\n\nfun use(a: p.Box, b: p.Box) = a + b\n")
+            Files.writeString(
+                temporaryRoot.resolve("p/Box.kt"),
+                "package p\n\nclass Box\n\noperator fun Box.plus(other: Box) = Box()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-operator-import-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(movedPath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("q")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "A convention operator must be imported by its declared name",
+                "package q\n\nimport p.plus\n\nfun use(a: p.Box, b: p.Box) = a + b\n",
+                success.changedFiles[movedPath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a package wildcard stays when the package also exists in a dependency JAR.
+     *
+     * The Java dependency declares `old.source`, so the caller's `import old.source.*` keeps
+     * binding `JavaHelper` even after the last project source leaves that package. Retargeting
+     * the wildcard would leave the binary usage unresolved.
+     */
+    fun testApply_realSession_keepsPackageWildcardBindingDependencyDeclarations() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-binary-wildcard")
+        val buildRoot = Files.createTempDirectory("nbkotlin-change-package-binary-wildcard-build")
+        try {
+            val javaJar = compileJavaClassJar(buildRoot, "old.source", "JavaHelper") ?: run {
+                println("Java compiler unavailable — skipping binary wildcard test")
+                return
+            }
+            Files.createDirectories(temporaryRoot.resolve("old/source"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val movedPath = temporaryRoot.resolve("old/source/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(movedPath, "package old.source\n\nfun movedByUs() = 1\n")
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.source.*\n\n" +
+                    "fun use() = movedByUs() + JavaHelper().hashCode()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-binary-wildcard-integration",
+                binaryJars = listOf(stdlib, javaJar),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(movedPath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("new.pkg")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "A wildcard that still binds dependency declarations must stay",
+                "package usage\n\nimport new.pkg.movedByUs\nimport old.source.*\n\n" +
+                    "fun use() = movedByUs() + JavaHelper().hashCode()\n",
+                success.changedFiles[usagePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+            buildRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies an emptied package wildcard is removed when the declarations move to the root package.
+     *
+     * A root package cannot be named by a wildcard, so rendering the destination would produce the
+     * invalid `import .*`; the directive is removed and the explicit import stays.
+     */
+    fun testApply_realSession_removesObsoleteWildcardWhenTargetIsRootPackage() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-wildcard-root")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(sourcePath, "package old\n\nfun moved() = 1\n")
+            Files.writeString(usagePath, "package usage\n\nimport old.*\n\nfun use() = moved()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-wildcard-root-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName.ROOT),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "A root-package destination removes the wildcard instead of rendering `.*`",
+                "package usage\n\nimport moved\nfun use() = moved()\n",
+                success.changedFiles[usagePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies an explicit import would not silently retarget an unmoved extension overload.
+     *
+     * Both extensions are visible through the wildcard, and `1.choose()` selects the more specific
+     * `Int` extension. Importing the moved `Number` extension explicitly makes it outrank the
+     * wildcard-bound one, changing which function the call uses.
+     */
+    fun testApply_realSession_conflictsWhenImportWouldRebindUnmovedExtensionOverload() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-extension-rebind")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Number.kt")
+            Files.writeString(sourcePath, "package old\n\nfun Number.choose() = 1\n")
+            Files.writeString(temporaryRoot.resolve("old/Int.kt"), "package old\n\nfun Int.choose() = 2\n")
+            Files.writeString(
+                temporaryRoot.resolve("usage/Usage.kt"),
+                "package usage\n\nimport old.*\n\nfun use() = 1.choose() + 1.5.choose()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-extension-rebind-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected conflicts, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Conflicts)
+            val conflicts = outcome as KaChangePackageComputer.ApplyOutcome.Conflicts
+            assertTrue(
+                "The conflict must name the rebound extension call: ${conflicts.messages}",
+                conflicts.messages.any { message -> message.contains("Usage.kt") },
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a package qualifier hidden by an ordinary import falls back to an explicit import.
+     *
+     * `import other.dest` binds the name `dest` to an object, so rewriting `old.moved()` to
+     * `dest.moved()` would call that object's member. The chain is shortened instead.
+     */
+    fun testApply_realSession_importsInsteadOfQualifyingThroughImportedPackageName() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-imported-qualifier")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("other"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(sourcePath, "package old\n\nfun moved() = 1\n")
+            Files.writeString(temporaryRoot.resolve("other/Dest.kt"), "package other\n\nobject dest {\n    fun moved() = 2\n}\n")
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport other.dest\n\nfun use() = old.moved()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-imported-qualifier-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "An imported binding of the package name must fall back to an explicit import",
+                "package usage\n\nimport dest.moved\nimport other.dest\n\nfun use() = moved()\n",
+                success.changedFiles[usagePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

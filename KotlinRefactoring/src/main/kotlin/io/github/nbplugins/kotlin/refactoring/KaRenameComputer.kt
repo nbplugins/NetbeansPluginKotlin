@@ -332,14 +332,78 @@ class KaRenameComputer(
     }
 
     /**
+     * Finds a call site whose rewritten name would bind to a different declaration.
+     *
+     * Renaming `Before` to `After` rewrites every unqualified `Before` reference verbatim, so a
+     * file that also binds `After` lexically — a local, parameter, member, file-level declaration,
+     * or import — makes the rewritten text resolve to that binding instead. A constructor call
+     * then becomes a call of a member function and the code still compiles with a new meaning.
+     * Type positions are skipped because Kotlin resolves type names in a separate namespace,
+     * receiver labels because they name a labeled scope, and import directives because they follow
+     * the rename rather than capture it.
+     *
+     * @return the first file whose rewritten reference would capture, or `null` when every
+     *         rewritten reference keeps its target
+     */
+    fun findCaptureConflicts(): KtFile? {
+        if (newName.isBlank()) return null
+        val targetPsi = resolveTargetPsi() ?: return null
+        val targets = mutableSetOf(targetPsi)
+        collectOverrideTargets(targetPsi, targets)
+        for (kaFile in projectKtFiles) {
+            for (target in targets) {
+                for (element in collectReferenceElements(kaFile, target)) {
+                    if (element.isTypeReference()) continue
+                    // A receiver label such as `this@After` names a labeled scope, not a
+                    // declaration, so a local or member of that name cannot capture it.
+                    if (element is KtLabelReferenceExpression) continue
+                    if (PsiTreeUtil.getParentOfType(element, KtImportDirective::class.java) != null) continue
+                    if (KotlinImportBindingCheck.isNameBoundInScope(element, newName)) return kaFile
+                }
+            }
+        }
+        return null
+    }
+
+    /**
+     * Tells whether this name spells a type rather than a value.
+     *
+     * A type name lives in a [KtUserType]; a constructor call or a value reference does not.
+     * Kotlin resolves the two namespaces independently, so only value bindings can capture a
+     * rewritten value reference.
+     *
+     * @return `true` when this reference is part of a type usage
+     */
+    private fun KtSimpleNameExpression.isTypeReference(): Boolean = parent is KtUserType
+
+    /**
      * Returns all reference expression ranges in [kaFile] that resolve to [targetPsi].
      *
      * References bound through an import alias are excluded: `import a.Foo as Alias` binds only
      * `Alias`, so the class name changes in the import path while `Alias` references keep their
      * name.
      */
-    private fun searchFileForUsages(kaFile: KtFile, targetPsi: PsiElement): List<Pair<Int, Int>> {
-        val ranges = mutableListOf<Pair<Int, Int>>()
+    private fun searchFileForUsages(kaFile: KtFile, targetPsi: PsiElement): List<Pair<Int, Int>> =
+        collectReferenceElements(kaFile, targetPsi).map { expression ->
+            // A receiver label such as `this@Foo` spans the `@` as well; replacing the whole
+            // element would drop it and leave `thisBar`.
+            val range = if (expression is KtLabelReferenceExpression) {
+                expression.getReferencedNameElement()?.textRange ?: expression.textRange
+            } else {
+                expression.textRange
+            }
+            range.startOffset to range.endOffset
+        }
+
+    /**
+     * Collects the simple-name references in [kaFile] that resolve to [targetPsi].
+     *
+     * @param kaFile file to search
+     * @param targetPsi declaration being renamed
+     * @return reference expressions that spell and resolve to the renamed declaration
+     */
+    private fun collectReferenceElements(kaFile: KtFile, targetPsi: PsiElement): List<KtSimpleNameExpression> {
+        val elements = mutableListOf<KtSimpleNameExpression>()
         runCatching {
             analyze(kaFile) {
                 // A constructor call resolves to a constructor symbol, whose PSI is the
@@ -380,19 +444,12 @@ class KaRenameComputer(
                         val constructsTarget = targetClassId != null &&
                             (sym as? KaConstructorSymbol)?.containingClassId == targetClassId
                         if (sym.psi == targetPsi || constructsTarget) {
-                            // A receiver label such as `this@Foo` spans the `@` as well; replacing
-                            // the whole element would drop it and leave `thisBar`.
-                            val range = if (expression is KtLabelReferenceExpression) {
-                                expression.getReferencedNameElement()?.textRange ?: expression.textRange
-                            } else {
-                                expression.textRange
-                            }
-                            ranges.add(range.startOffset to range.endOffset)
+                            elements.add(simpleName)
                         }
                     }
                 })
             }
         }.onFailure { e -> LOG.warning("KaRenameComputer: search failed in ${kaFile.name}: $e") }
-        return ranges
+        return elements
     }
 }

@@ -61,18 +61,20 @@ interface KotlinMoveUsageSearchService {
     fun findWildcardImportingFiles(project: com.intellij.openapi.project.Project, classFqNames: Set<FqName>): List<KtFile> = emptyList()
 
     /**
-     * Tells whether a source file other than [excludedPaths] declares [packageFqName].
+     * Tells whether [packageFqName] keeps at least one declaration outside [excludedPaths].
      *
-     * A package wildcard import becomes unresolved when the last source file leaves its package,
-     * so the package-change pass retargets or drops such imports only when nothing remains. The
-     * default assumes declarations remain, which leaves wildcard imports untouched.
+     * A package wildcard import becomes unresolved when the last declaration leaves its package,
+     * so the package-change pass retargets or drops such imports only when nothing remains. A
+     * dependency JAR may declare a package of the same name; the wildcard keeps binding those
+     * symbols, so they count as remaining declarations. The default assumes declarations remain,
+     * which leaves wildcard imports untouched.
      *
      * @param project IntelliJ project whose standalone K2 session supplies candidate files
      * @param packageFqName package whose remaining declarations are checked
      * @param excludedPaths paths of files whose package is changing in this operation
-     * @return `true` when at least one other source file still declares [packageFqName]
+     * @return `true` when a source file or a dependency declaration still belongs to the package
      */
-    fun hasSourceFilesInPackage(
+    fun hasDeclarationsInPackage(
         project: com.intellij.openapi.project.Project,
         packageFqName: FqName,
         excludedPaths: Set<String>,

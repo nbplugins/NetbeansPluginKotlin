@@ -105,8 +105,7 @@ class KotlinRenameFilePlugin(
         val primaryClass = source.declarations.filterIsInstance<KtClass>()
             .firstOrNull { declaration -> declaration.name == refactoring.file.name }
             ?: return null
-        val files = KotlinPsiManager.getFilesByProject(project)
-            .mapNotNull { file -> session.getKtFileForPath(file.path) }
+        val files = session.fileMap.values.mapNotNull { lightFile -> session.getKtFileForPath(lightFile.path) }
         val conflict = findRenameConflict(source, primaryClass, refactoring.newName, files)
         if (conflict != null) {
             val packageName = source.packageFqName
@@ -117,11 +116,43 @@ class KotlinRenameFilePlugin(
             )
         }
         val caller = findCallerScopeConflict(source, primaryClass, refactoring.newName, files)
-            ?: return null
+            ?: return captureConflictProblem(source, primaryClass, files)
         return Problem(
             true,
             "Renaming the Kotlin class ${primaryClass.name} to ${refactoring.newName} would change " +
                 "which ${refactoring.newName} the references in ${caller.name} use.",
+        )
+    }
+
+    /**
+     * Reports a renamed reference whose new spelling would bind to another declaration.
+     *
+     * The rename rewrites unqualified references verbatim, so a file that already binds the new
+     * name lexically — a member function, property, parameter, or local — would make the rewritten
+     * reference resolve to that binding. A constructor call then becomes a call of the member
+     * function and the code still compiles with a different meaning.
+     *
+     * @param source KtFile declaring the renamed class
+     * @param primaryClass class being renamed
+     * @param files project files searched for rewritten references
+     * @return a blocking problem when a rewritten reference would capture, otherwise `null`
+     */
+    private fun captureConflictProblem(
+        source: KtFile,
+        primaryClass: KtClass,
+        files: List<KtFile>,
+    ): Problem? {
+        val offset = primaryClass.nameIdentifier?.textRange?.startOffset ?: return null
+        val capture = KaRenameComputer(
+            cursorKtFile = source,
+            offset = offset,
+            projectKtFiles = files.toSet(),
+            newName = refactoring.newName,
+        ).findCaptureConflicts() ?: return null
+        return Problem(
+            true,
+            "Renaming the Kotlin class ${primaryClass.name} to ${refactoring.newName} would make " +
+                "the rewritten references in ${capture.name} resolve to a different declaration.",
         )
     }
 }

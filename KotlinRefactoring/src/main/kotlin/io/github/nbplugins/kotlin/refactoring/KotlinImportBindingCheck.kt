@@ -18,23 +18,38 @@ package io.github.nbplugins.kotlin.refactoring
 
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
+import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.components.resolveToSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassLikeSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaPackageSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaVariableSymbol
 import org.jetbrains.kotlin.idea.references.KtReference
+import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.psi.KtBlockExpression
 import org.jetbrains.kotlin.psi.KtCallExpression
+import org.jetbrains.kotlin.psi.KtCatchClause
+import org.jetbrains.kotlin.psi.KtClassBody
 import org.jetbrains.kotlin.psi.KtClassOrObject
+import org.jetbrains.kotlin.psi.KtDeclaration
+import org.jetbrains.kotlin.psi.KtDestructuringDeclaration
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
+import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtForExpression
+import org.jetbrains.kotlin.psi.KtFunction
 import org.jetbrains.kotlin.psi.KtImportDirective
+import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtProperty
+import org.jetbrains.kotlin.psi.KtPropertyAccessor
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
 import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
+import org.jetbrains.kotlin.psi.KtTypeAlias
 import org.jetbrains.kotlin.psi.KtUserType
+import org.jetbrains.kotlin.psi.KtWhenExpression
 
 /**
  * Detects references that inserting an explicit import would silently retarget.
@@ -72,7 +87,10 @@ object KotlinImportBindingCheck {
                     super.visitSimpleNameExpression(expression)
                     if (conflicting) return
                     if (expression.getReferencedName() != name) return
-                    if (expression.isQualifiedSelector()) return
+                    // A selector resolves through its receiver, except for an extension call on
+                    // a value: an explicit import outranks the wildcard or same-package binding
+                    // that currently selects the extension.
+                    if (expression.isQualifiedSelector() && !expression.isValueReceiverExtension()) return
                     if (PsiTreeUtil.getParentOfType(expression, KtImportDirective::class.java) != null) return
                     val symbol = expression.references.filterIsInstance<KtReference>().firstOrNull()
                         ?.resolveToSymbol() ?: return
@@ -84,6 +102,84 @@ object KotlinImportBindingCheck {
             conflicting
         }
     }.getOrDefault(false)
+
+    /**
+     * Tells whether [name] is already bound to something else at [element].
+     *
+     * Used before rewriting a declaration name into a scope where the new name may already be
+     * taken. Unlike [hasConflictingReference], which asks what an *import* could capture, this
+     * asks what the rewritten *text* would resolve to: locals, parameters, members, file-level
+     * declarations, and import bindings all take part.
+     *
+     * @param element position whose rewritten text must keep its meaning
+     * @param name new simple name the position is about to spell
+     * @param ignoredImports imported FQNs that already bind the declaration being renamed, so
+     * re-spelling [name] through them is not a capture
+     * @return `true` when another declaration would win over the intended target
+     */
+    fun isNameBoundInScope(
+        element: KtElement,
+        name: String,
+        ignoredImports: Set<FqName> = emptySet(),
+    ): Boolean {
+        val file = element.containingKtFile
+        if (file.importDirectives.any { directive -> directive.bindsName(name, ignoredImports) }) return true
+        if (file.declarations.any { declaration -> declaration.declaresName(name) }) return true
+        var child: PsiElement = element
+        var current: PsiElement? = element.parent
+        while (current != null) {
+            val bound = when (current) {
+                is KtBlockExpression -> current.statements
+                    .takeWhile { statement -> statement.textRange.startOffset < child.textRange.startOffset }
+                    .any { statement -> (statement as? KtDeclaration)?.declaresName(name) == true }
+                is KtClassBody -> current.declarations.any { declaration -> declaration.declaresName(name) }
+                is KtFunction -> current.valueParameters.any { parameter -> parameter.name == name }
+                is KtPropertyAccessor ->
+                    current.parameterList?.parameters?.any { parameter -> parameter.name == name } == true
+                is KtForExpression -> current.loopParameter?.name == name
+                is KtCatchClause -> current.catchParameter?.name == name
+                is KtWhenExpression -> current.subjectVariable?.name == name
+                else -> false
+            }
+            if (bound) return true
+            child = current
+            current = current.parent
+        }
+        return false
+    }
+
+    /**
+     * Tells whether this import directive introduces [name] into its file.
+     *
+     * An alias binds only the alias; a plain directive binds the imported declaration's simple
+     * name. Wildcard directives bind nothing by name and are skipped.
+     *
+     * @param name identifier the directive may bind
+     * @param ignoredImports imported FQNs that are already the intended target
+     * @return `true` when this directive is the visible source of [name]
+     */
+    private fun KtImportDirective.bindsName(name: String, ignoredImports: Set<FqName>): Boolean {
+        if (isAllUnder) return false
+        val imported = importedFqName
+        if (imported != null && imported in ignoredImports) return false
+        val alias = aliasName
+        return if (alias != null) alias == name else imported?.shortName()?.asString() == name
+    }
+
+    /**
+     * Tells whether this statement or member declaration binds [name].
+     *
+     * @param name identifier to look for
+     * @return `true` when this declaration introduces that name in its scope
+     */
+    private fun KtDeclaration.declaresName(name: String): Boolean = when (this) {
+        is KtProperty -> this.name == name
+        is KtNamedFunction -> this.name == name
+        is KtClassOrObject -> this.name == name
+        is KtTypeAlias -> this.name == name
+        is KtDestructuringDeclaration -> entries.any { entry -> entry.name == name }
+        else -> false
+    }
 
     /**
      * Tells whether this symbol is one of the declarations whose references the import retargets.
@@ -153,5 +249,51 @@ object KotlinImportBindingCheck {
         return (parent as? KtUserType)?.let { userType ->
             userType.referenceExpression == this && userType.qualifier != null
         } == true
+    }
+
+    /**
+     * Tells whether this selector is an extension called on a value rather than on a type.
+     *
+     * `1.choose()` and `box.choose()` bind the extension through extension-overload resolution,
+     * where an explicit import of another same-named extension changes which one is chosen.
+     * `Int.choose()` and `p.choose()` name a type or package as the receiver, so an import cannot
+     * affect them.
+     *
+     * @return `true` when an import of this name could change the selected extension
+     */
+    context(_: KaSession)
+    private fun KtSimpleNameExpression.isValueReceiverExtension(): Boolean {
+        val qualified = qualifiedAccess() ?: return false
+        val symbol = references.filterIsInstance<KtReference>().firstOrNull()
+            ?.resolveToSymbol() as? KaCallableSymbol ?: return false
+        if (!symbol.isExtension) return false
+        val receiverRoot = qualified.receiverExpression.leadingReference() ?: return true
+        val receiverSymbol = runCatching {
+            receiverRoot.references.filterIsInstance<KtReference>().firstOrNull()?.resolveToSymbol()
+        }.getOrNull()
+        return receiverSymbol !is KaPackageSymbol && receiverSymbol !is KaClassLikeSymbol
+    }
+
+    /**
+     * Returns the qualified access this name selects, unwrapping a call's callee.
+     *
+     * @return the `.`-qualified expression whose selector this is, or `null` otherwise
+     */
+    private fun KtSimpleNameExpression.qualifiedAccess(): KtDotQualifiedExpression? {
+        val selector = (parent as? KtCallExpression)?.takeIf { call -> call.calleeExpression == this } ?: this
+        val qualified = selector.parent as? KtDotQualifiedExpression ?: return null
+        return qualified.takeIf { expression -> expression.selectorExpression == selector }
+    }
+
+    /**
+     * Returns the leftmost simple name of this receiver expression's qualified chain.
+     *
+     * @return the leftmost name, or `null` when the receiver is not a name-based chain
+     */
+    private fun KtElement.leadingReference(): KtSimpleNameExpression? = when (this) {
+        is KtDotQualifiedExpression -> receiverExpression.leadingReference()
+        is KtUserType -> qualifier?.leadingReference() ?: referenceExpression
+        is KtSimpleNameExpression -> this
+        else -> null
     }
 }

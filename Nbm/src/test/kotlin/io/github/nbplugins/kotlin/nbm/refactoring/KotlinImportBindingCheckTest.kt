@@ -20,6 +20,7 @@ import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.KotlinImportBindingCheck
 import org.jetbrains.kotlin.psi.KtClass
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtNamedFunction
 import utils.KotlinTestCase
 import java.nio.file.Files
 import java.nio.file.Path
@@ -106,6 +107,100 @@ class KotlinImportBindingCheckTest : KotlinTestCase("KotlinImportBindingCheckTes
             assertFalse(
                 "a local variable shadowing the name is unaffected by an import",
                 KotlinImportBindingCheck.hasConflictingReference(usage, "Bar", emptySet()),
+            )
+        }
+    }
+
+    /**
+     * Verifies an extension call on a value receiver is reported.
+     *
+     * An explicit import outranks the wildcard binding that selects the extension today, so the
+     * call would silently switch to the imported overload.
+     */
+    fun testHasConflictingReference_reportsExtensionOnValueReceiver() {
+        withSession(
+            name = "extension",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("other"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(root.resolve("other/Types.kt"), "package q\n\nfun Int.choose() = 1\n")
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package usage\n\nimport q.*\n\nfun use() = 1.choose()\n",
+                )
+            },
+        ) { session, root ->
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+
+            assertTrue(
+                "an explicit import would reselect the extension used by this call",
+                KotlinImportBindingCheck.hasConflictingReference(usage, "choose", emptySet()),
+            )
+        }
+    }
+
+    /** Verifies a member function of an enclosing class binds the name lexically. */
+    fun testIsNameBoundInScope_reportsMemberFunction() {
+        withSession(
+            name = "member",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package usage\n\nclass Caller {\n    fun After() = 1\n    fun make() = 2\n}\n",
+                )
+            },
+        ) { session, root ->
+            val make = session.ktFile(root.resolve("usage/Usage.kt"))
+                .declarations.filterIsInstance<KtClass>().single()
+                .declarations.filterIsInstance<KtNamedFunction>().single { function -> function.name == "make" }
+
+            assertTrue(
+                "the enclosing class already declares the name",
+                KotlinImportBindingCheck.isNameBoundInScope(make, "After"),
+            )
+        }
+    }
+
+    /** Verifies an ordinary import binds the imported declaration's simple name. */
+    fun testIsNameBoundInScope_reportsImportedBinding() {
+        withSession(
+            name = "imported",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("other"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(root.resolve("other/Types.kt"), "package other\n\nobject dest\n")
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package usage\n\nimport other.dest\n\nfun use() = 1\n",
+                )
+            },
+        ) { session, root ->
+            val use = session.ktFile(root.resolve("usage/Usage.kt"))
+                .declarations.filterIsInstance<KtNamedFunction>().single()
+
+            assertTrue(
+                "an import binds the name even without an alias",
+                KotlinImportBindingCheck.isNameBoundInScope(use, "dest"),
+            )
+        }
+    }
+
+    /** Verifies an unrelated name is not reported as bound. */
+    fun testIsNameBoundInScope_ignoresUnrelatedName() {
+        withSession(
+            name = "unrelated",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(root.resolve("usage/Usage.kt"), "package usage\n\nfun use() = 1\n")
+            },
+        ) { session, root ->
+            val use = session.ktFile(root.resolve("usage/Usage.kt"))
+                .declarations.filterIsInstance<KtNamedFunction>().single()
+
+            assertFalse(
+                "nothing in the file binds the requested name",
+                KotlinImportBindingCheck.isNameBoundInScope(use, "missing"),
             )
         }
     }

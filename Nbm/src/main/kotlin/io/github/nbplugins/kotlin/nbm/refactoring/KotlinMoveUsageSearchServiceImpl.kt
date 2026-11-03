@@ -21,7 +21,9 @@ import com.intellij.psi.util.PsiTreeUtil
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.compat.getClassOrObjectSymbol
+import org.jetbrains.kotlin.analysis.api.components.packageScope
 import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.findPackage
 import org.jetbrains.kotlin.idea.k2.refactoring.move.KotlinMoveUsageSearchService
 import org.jetbrains.kotlin.idea.k2.refactoring.move.MoveImport
 import org.jetbrains.kotlin.idea.references.KtReference
@@ -182,23 +184,43 @@ class KotlinMoveUsageSearchServiceImpl : KotlinMoveUsageSearchService {
     }
 
     /**
-     * Tells whether any session source outside [excludedPaths] still declares [packageFqName].
+     * Tells whether [packageFqName] keeps any declaration outside [excludedPaths].
+     *
+     * Source files are checked first because they are cheap to enumerate. A dependency JAR can
+     * declare a package of the same name, in which case a wildcard import of that package keeps
+     * resolving even after the last source file leaves it.
      *
      * @param project IntelliJ project owning the standalone K2 session
      * @param packageFqName package whose remaining declarations are checked
      * @param excludedPaths paths of files whose package is changing in this operation
-     * @return `true` when at least one other source file still declares [packageFqName]
+     * @return `true` when a source file or a dependency declaration still belongs to the package
      */
-    override fun hasSourceFilesInPackage(
+    override fun hasDeclarationsInPackage(
         project: com.intellij.openapi.project.Project,
         packageFqName: FqName,
         excludedPaths: Set<String>,
     ): Boolean {
         val session = KotlinAnalysisAPISession.forProject(project) ?: return true
-        return session.fileMap.values.any { lightFile ->
+        val sourceRemains = session.fileMap.values.any { lightFile ->
             lightFile.path !in excludedPaths &&
                 session.getKtFileForPath(lightFile.path)?.packageFqName == packageFqName
         }
+        if (sourceRemains) return true
+        val probe = session.fileMap.values
+            .firstNotNullOfOrNull { lightFile -> session.getKtFileForPath(lightFile.path) }
+            ?: return true
+        return runCatching {
+            analyze(probe) {
+                val packageSymbol = findPackage(packageFqName) ?: return@analyze false
+                // Dependency declarations carry light PSI rather than none, so a declaration is
+                // attributed to the moving files by its source path: what remains belongs either
+                // to another source file or to a dependency JAR.
+                packageSymbol.packageScope.declarations.any { declaration ->
+                    val path = declaration.psi?.containingFile?.virtualFile?.path
+                    path == null || path !in excludedPaths
+                }
+            }
+        }.getOrDefault(true)
     }
 
     /**

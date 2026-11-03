@@ -38,30 +38,22 @@ import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtArrayAccessExpression
-import org.jetbrains.kotlin.psi.KtBlockExpression
 import org.jetbrains.kotlin.psi.KtCallExpression
-import org.jetbrains.kotlin.psi.KtCatchClause
-import org.jetbrains.kotlin.psi.KtClassBody
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtDeclaration
-import org.jetbrains.kotlin.psi.KtDestructuringDeclaration
 import org.jetbrains.kotlin.psi.KtDestructuringDeclarationEntry
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.psi.KtForExpression
-import org.jetbrains.kotlin.psi.KtFunction
 import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtParameter
 import org.jetbrains.kotlin.psi.KtProperty
-import org.jetbrains.kotlin.psi.KtPropertyAccessor
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
 import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
 import org.jetbrains.kotlin.psi.KtTypeAlias
 import org.jetbrains.kotlin.psi.KtUserType
-import org.jetbrains.kotlin.psi.KtWhenExpression
 
 /**
  * Applies IDEA K2 Change Package semantics without its IDE-specific processor lifecycle.
@@ -475,15 +467,16 @@ class KaChangePackageComputer(
     }
 
     /**
-     * Tells whether any declaration named [name] appears anywhere in this file.
+     * Tells whether [name] is bound anywhere in this file.
      *
      * A package qualifier is resolved as an ordinary name in scope, so a property, parameter,
-     * local function, classifier, or import alias with the same name can hide the package. The
-     * scan is deliberately file-wide: missing a binding would silently change which declaration
-     * is called, while an unrelated match only costs a fallback to an explicit import.
+     * local function, classifier, import alias, or imported declaration with the same name can
+     * hide the package. The scan is deliberately file-wide: missing a binding would silently
+     * change which declaration is called, while an unrelated match only costs a fallback to an
+     * explicit import.
      *
      * @param name identifier to look for
-     * @return `true` when the file declares or aliases that name at any level
+     * @return `true` when the file declares, imports, or aliases that name at any level
      */
     private fun KtFile.hasDeclarationNamed(name: String): Boolean {
         var found = false
@@ -519,7 +512,14 @@ class KaChangePackageComputer(
             }
 
             override fun visitImportDirective(importDirective: KtImportDirective) {
-                if (importDirective.aliasName == name) found = true
+                // A plain import binds the imported declaration's simple name, so `import other.dest`
+                // hides a package `dest` exactly like an alias does.
+                val boundName = importDirective.aliasName
+                    ?: importDirective.importedFqName
+                        ?.takeUnless { importDirective.isAllUnder }
+                        ?.shortName()
+                        ?.asString()
+                if (boundName == name) found = true
                 super.visitImportDirective(importDirective)
             }
         })
@@ -529,51 +529,11 @@ class KaChangePackageComputer(
     /**
      * Tells whether [name] is bound to a local or member declaration visible at this element.
      *
-     * Only bindings that actually reach this position matter: a local declared later in the same
-     * block, or a member of an unrelated class, never captures the rewritten short name. Class
-     * members and import aliases are file-wide because a nested function cannot see past them.
-     *
      * @param name identifier to look for in the enclosing scopes
      * @return `true` when a value, function, or nested declaration here would win over an import
      */
-    private fun KtElement.isNameShadowedInScope(name: String): Boolean {
-        if (containingKtFile.importDirectives.any { directive -> directive.aliasName == name }) return true
-        var child: PsiElement = this
-        var current: PsiElement? = parent
-        while (current != null) {
-            val shadowed = when (current) {
-                is KtBlockExpression -> current.statements
-                    .takeWhile { statement -> statement.textRange.startOffset < child.textRange.startOffset }
-                    .any { statement -> (statement as? KtDeclaration)?.declaresName(name) == true }
-                is KtClassBody -> current.declarations.any { declaration -> declaration.declaresName(name) }
-                is KtFunction -> current.valueParameters.any { parameter -> parameter.name == name }
-                is KtPropertyAccessor -> current.parameterList?.parameters?.any { parameter -> parameter.name == name } == true
-                is KtForExpression -> current.loopParameter?.name == name
-                is KtCatchClause -> current.catchParameter?.name == name
-                is KtWhenExpression -> current.subjectVariable?.name == name
-                else -> false
-            }
-            if (shadowed) return true
-            child = current
-            current = current.parent
-        }
-        return false
-    }
-
-    /**
-     * Tells whether this statement or member declaration binds [name].
-     *
-     * @param name identifier to look for
-     * @return `true` when this declaration introduces that name in its scope
-     */
-    private fun KtDeclaration.declaresName(name: String): Boolean = when (this) {
-        is KtProperty -> this.name == name
-        is KtNamedFunction -> this.name == name
-        is KtClassOrObject -> this.name == name
-        is KtTypeAlias -> this.name == name
-        is KtDestructuringDeclaration -> entries.any { entry -> entry.name == name }
-        else -> false
-    }
+    private fun KtElement.isNameShadowedInScope(name: String): Boolean =
+        KotlinImportBindingCheck.isNameBoundInScope(this, name)
 
     /**
      * Finds declarations that stay in a moved file's former package and need an explicit import.
@@ -626,11 +586,15 @@ class KaChangePackageComputer(
                             // A call may spell a same-package type alias rather than the class it
                             // expands to: K2 reports the constructor of the underlying class, but
                             // the source keeps calling the alias, so the alias itself is imported.
+                            // Convention operators spell `+` while resolving to `plus`, and an
+                            // import of the spelled symbol would be unresolved; only classifiers
+                            // resolved through a constructor or class-like symbol can be aliases.
                             val referencedName = expression.getReferencedName()
-                            val importFqName = if (referencedName == resolvedFqName.shortName().asString()) {
-                                resolvedFqName
-                            } else {
-                                originalPackage.child(Name.identifier(referencedName))
+                            val importFqName = when {
+                                referencedName == resolvedFqName.shortName().asString() -> resolvedFqName
+                                symbol is KaConstructorSymbol || symbol is KaClassLikeSymbol ->
+                                    originalPackage.child(Name.identifier(referencedName))
+                                else -> resolvedFqName
                             }
                             if (importFqName in importedFqNames || originalPackage in starPackages) return
                             // An extension access on a value receiver can spell the package name
@@ -969,9 +933,10 @@ class KaChangePackageComputer(
      *
      * A wildcard import of a package that no longer exists is an unresolved reference even when
      * every moved usage was retargeted. When all declarations that left [imported] gathered in one
-     * new package, the wildcard follows them and keeps binding the same names. Otherwise the
-     * directive is removed; the incoming pass already captured an explicit import for every moved
-     * declaration the caller uses.
+     * new package, the wildcard follows them and keeps binding the same names. Otherwise — several
+     * destination packages, or the root package that no wildcard can name — the directive is
+     * removed; the incoming pass already captured an explicit import for every moved declaration
+     * the caller uses.
      *
      * @param file file containing the directive
      * @param directive wildcard import whose prefix is not a moved class
@@ -990,9 +955,12 @@ class KaChangePackageComputer(
         val movedFromPackage = movedDeclarations.filterKeys { oldFqName -> oldFqName.parent() == imported }
         if (movedFromPackage.isEmpty()) return null
         val service = KotlinMoveUsageSearchService.getInstance() ?: return null
-        if (service.hasSourceFilesInPackage(ktFile.project, imported, movedPaths)) return null
+        if (service.hasDeclarationsInPackage(ktFile.project, imported, movedPaths)) return null
         val targetPackages = movedFromPackage.values.map { newFqName -> newFqName.parent() }.distinct()
-        if (targetPackages.size == 1) {
+        // A root-package destination cannot be spelled as a wildcard at all: `import *` is not a
+        // valid directive, and root-package declarations need no import. Removal is the only
+        // option that keeps the file compiling.
+        if (targetPackages.size == 1 && !targetPackages.single().isRoot) {
             val pathEnd = directive.importedReference?.textRange?.endOffset ?: return null
             return TextEdit(
                 directive.textRange.startOffset + importPathStart(directive.text),
@@ -1000,8 +968,9 @@ class KaChangePackageComputer(
                 KotlinSourceNames.renderFqName(targetPackages.single()),
             )
         }
-        // The package splits into several target packages, so no single wildcard keeps the
-        // bindings. Remove the directive together with the rest of its line.
+        // The package splits into several target packages (or the declarations became root-package
+        // ones), so no single wildcard keeps the bindings. Remove the directive together with the
+        // rest of its line.
         val text = file.text
         var end = directive.textRange.endOffset
         while (end < text.length &&
