@@ -3626,6 +3626,95 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies an explicit import of a moved `get` operator does not silently retarget `n[0]`.
+     *
+     * `import old.*` binds both the `Int` operator that stays behind and the moved `Number` one,
+     * and the indexed accesses on a `Double` and an `Int` select different overloads. Adding
+     * `import dest.get` makes the explicit import outrank the wildcard, so `n[0]` would start
+     * calling the moved `Number` extension.
+     */
+    fun testApply_realSession_conflictsWhenImportWouldRebindArrayAccessOperator() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-array-conflict")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Number.kt")
+            Files.writeString(sourcePath, "package old\n\noperator fun Number.get(index: Int) = 1\n")
+            Files.writeString(temporaryRoot.resolve("old/Int.kt"), "package old\n\noperator fun Int.get(index: Int) = 2\n")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nfun use(n: Int) = (1.5).get(0) + n[0]\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-array-conflict-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected conflicts, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Conflicts)
+            val conflicts = outcome as KaChangePackageComputer.ApplyOutcome.Conflicts
+            assertTrue(
+                "The conflict must name the rebinding caller: ${conflicts.messages}",
+                conflicts.messages.any { message -> message.contains("Usage.kt") },
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies an object receiver is not mistaken for a package qualifier.
+     *
+     * `object p` in package `p` makes `p.extra()` a value-receiver extension call, so moving the
+     * caller must import both the object and its extension, not treat `p` as the package spelling.
+     */
+    fun testApply_realSession_importsObjectReceiverExtension() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-object-receiver")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("p"))
+            val sourcePath = temporaryRoot.resolve("p/Moved.kt")
+            Files.writeString(sourcePath, "package p\n\nfun use() = p.extra()\n")
+            Files.writeString(temporaryRoot.resolve("p/Helpers.kt"), "package p\n\nobject p\n\nfun p.extra() = 1\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-object-receiver-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "An object receiver keeps the extension dependent on an import",
+                "package dest\n\nimport p.p\nimport p.extra\n\nfun use() = p.extra()\n",
+                success.changedFiles[sourcePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

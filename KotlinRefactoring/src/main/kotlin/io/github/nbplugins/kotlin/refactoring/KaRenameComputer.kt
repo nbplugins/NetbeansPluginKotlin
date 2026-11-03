@@ -23,13 +23,18 @@ import com.intellij.psi.PsiField
 import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.util.PsiTreeUtil
+import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.compat.getClassOrObjectSymbol
+import org.jetbrains.kotlin.analysis.api.components.packageScope
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaTypeAliasSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.findPackage
 import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.kdoc.lexer.KDocTokens
 import org.jetbrains.kotlin.lexer.KtTokens
+import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtConstructorDelegationReferenceExpression
@@ -216,6 +221,31 @@ class KaRenameComputer(
     }
 
     /**
+     * Tells whether the spelled [name] denotes a type alias rather than the class it expands to.
+     *
+     * A constructor call through a same-spelled type alias resolves to the expanded class's
+     * constructor, so the class-id match alone cannot tell `Before()` from
+     * `typealias Before = p.Before`. The alias declaration keeps its own name when the class is
+     * renamed, so its call sites must stay untouched. Type aliases are top-level only, so the
+     * file's explicit imports and its own package scope are enough to find the declaration the
+     * name binds.
+     *
+     * @param name simple name spelled by this reference
+     * @return `true` when that name is bound to a type alias visible in this file
+     */
+    context(_: KaSession)
+    private fun KtSimpleNameExpression.spellsTypeAlias(name: String): Boolean {
+        val file = containingKtFile
+        val explicit = file.importDirectives.firstOrNull { directive ->
+            !directive.isAllUnder && directive.aliasName == null &&
+                directive.importedFqName?.shortName()?.asString() == name
+        }?.importedFqName
+        val packageName = explicit?.parent() ?: file.packageFqName
+        return findPackage(packageName)?.packageScope?.classifiers
+            ?.firstOrNull { classifier -> classifier.name?.asString() == name } is KaTypeAliasSymbol
+    }
+
+    /**
      * Adds a [TextChange] for the name identifier of [targetDecl] to [into].
      *
      * Supports both Kotlin ([KtNamedDeclaration]) and Java ([PsiMethod] / [PsiField] / [PsiClass])
@@ -351,6 +381,10 @@ class KaRenameComputer(
         val targetPsi = resolveTargetPsi() ?: return null
         val targets = mutableSetOf(targetPsi)
         collectOverrideTargets(targetPsi, targets)
+        // Declarations of the caller's own package need no import, so a sibling declaration of the
+        // new name is in scope unqualified; only a file that shares the renamed declaration's
+        // package relies on that visibility.
+        val targetPackage = (targetPsi as? KtNamedDeclaration)?.containingKtFile?.packageFqName
         for (kaFile in projectKtFiles) {
             for (target in targets) {
                 for (element in collectReferenceElements(kaFile, target)) {
@@ -367,7 +401,8 @@ class KaRenameComputer(
                     val captured = if (element.isTypeReference()) {
                         KotlinImportBindingCheck.isClassifierBoundInScope(element, newName)
                     } else {
-                        KotlinImportBindingCheck.isNameBoundInScope(element, newName)
+                        KotlinImportBindingCheck.isNameBoundInScope(element, newName) ||
+                            isDeclaredInPackageScope(kaFile, targetPackage)
                     }
                     if (captured) return kaFile
                 }
@@ -375,6 +410,24 @@ class KaRenameComputer(
         }
         return null
     }
+
+    /**
+     * Tells whether a declaration of the caller's own package binds the new name.
+     *
+     * A same-package function is visible unqualified and takes part in overload resolution, so the
+     * rewritten `After(1)` may select it instead of the renamed constructor even when the file
+     * never spells `After`. The check applies only when the file shares the package of the renamed
+     * declaration: elsewhere the rewritten reference is bound by an explicit import, which wins
+     * over same-package declarations.
+     *
+     * @param file caller being searched
+     * @param targetPackage package of the declaration being renamed, or `null` when unknown
+     * @return `true` when the file's package declares that name
+     */
+    private fun isDeclaredInPackageScope(file: KtFile, targetPackage: FqName?): Boolean =
+        targetPackage != null &&
+            file.packageFqName == targetPackage &&
+            KotlinImportBindingCheck.isDeclaredInPackage(file, newName)
 
     /**
      * Tells whether this name spells a type rather than a value.
@@ -444,10 +497,9 @@ class KaRenameComputer(
                         val simpleName = expression as? KtSimpleNameExpression ?: return
                         val targetName = (targetPsi as? KtNamedDeclaration)?.name
                         if (targetName != null && simpleName.getReferencedName() != targetName) return
-                        if (simpleName.getReferencedName() in aliasNames &&
-                            simpleName.isAliasUsage()
-                        ) {
-                            return
+                        if (simpleName.isAliasUsage()) {
+                            val referencedName = simpleName.getReferencedName()
+                            if (referencedName in aliasNames || simpleName.spellsTypeAlias(referencedName)) return
                         }
                         val sym = runCatching {
                             expression.mainReference?.resolveToSymbol()

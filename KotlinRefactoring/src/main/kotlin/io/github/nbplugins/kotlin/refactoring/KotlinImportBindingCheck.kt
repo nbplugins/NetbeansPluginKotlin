@@ -26,6 +26,7 @@ import org.jetbrains.kotlin.analysis.api.components.expandedSymbol
 import org.jetbrains.kotlin.analysis.api.components.memberScope
 import org.jetbrains.kotlin.analysis.api.components.packageScope
 import org.jetbrains.kotlin.analysis.api.components.resolveToSymbol
+import org.jetbrains.kotlin.analysis.api.components.resolveToSymbols
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassKind
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassLikeSymbol
@@ -37,6 +38,7 @@ import org.jetbrains.kotlin.analysis.api.symbols.findPackage
 import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.psi.KtArrayAccessExpression
 import org.jetbrains.kotlin.psi.KtBlockExpression
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtCatchClause
@@ -44,6 +46,7 @@ import org.jetbrains.kotlin.psi.KtClassBody
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtDeclaration
 import org.jetbrains.kotlin.psi.KtDestructuringDeclaration
+import org.jetbrains.kotlin.psi.KtDestructuringDeclarationEntry
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.KtFile
@@ -111,6 +114,31 @@ object KotlinImportBindingCheck {
                     if (symbol.belongsTo(excludedDeclarations)) return
                     if (!symbol.isTopLevelBinding()) return
                     conflicting = true
+                }
+
+                // Convention references spell no name for the callable they invoke: `n[0]` calls
+                // `get`, `val (a) = box` calls `componentN`, and `for (x in box)` calls
+                // `iterator`. An import of that name can retarget them exactly like a spelled
+                // reference, so they go through the same check.
+                override fun visitArrayAccessExpression(expression: KtArrayAccessExpression) {
+                    super.visitArrayAccessExpression(expression)
+                    if (!conflicting) {
+                        expression.capturesTopLevelName(name, excludedDeclarations) { conflicting = true }
+                    }
+                }
+
+                override fun visitDestructuringDeclarationEntry(entry: KtDestructuringDeclarationEntry) {
+                    super.visitDestructuringDeclarationEntry(entry)
+                    if (!conflicting) {
+                        entry.capturesTopLevelName(name, excludedDeclarations) { conflicting = true }
+                    }
+                }
+
+                override fun visitForExpression(expression: KtForExpression) {
+                    super.visitForExpression(expression)
+                    if (!conflicting) {
+                        expression.capturesTopLevelName(name, excludedDeclarations) { conflicting = true }
+                    }
                 }
             })
             conflicting
@@ -512,6 +540,47 @@ object KotlinImportBindingCheck {
         is KaClassLikeSymbol -> classId?.let { classId -> !classId.isLocal } == true
         is KaVariableSymbol -> psi is KtProperty && psi?.parent is KtFile
         else -> false
+    }
+
+    /**
+     * Passes every symbol resolved by the references of this element to [action].
+     *
+     * Convention constructs (`n[0]`, `val (a) = box`, `for (x in box)`) expose their callable only
+     * through the references of the whole element, and a multi-reference such as the for loop's
+     * resolves to several symbols, so all of them are reported.
+     *
+     * @param action invoked once per resolved symbol
+     */
+    context(_: KaSession)
+    private fun KtElement.forEachConventionSymbol(action: (KaSymbol) -> Unit) {
+        references.filterIsInstance<KtReference>().forEach { reference ->
+            runCatching { reference.resolveToSymbols() }.getOrNull()?.forEach(action)
+        }
+    }
+
+    /**
+     * Tells whether this convention construct would start calling a top-level [name] declaration.
+     *
+     * A convention call spells no name, so comparing reference text cannot see it; the resolved
+     * callable carries the name instead. References that already point at one of
+     * [excludedDeclarations] keep doing so and are not captures.
+     *
+     * @param name the name the import introduces
+     * @param excludedDeclarations declarations the import is meant for
+     * @param onCapture invoked when a capture is found
+     */
+    context(_: KaSession)
+    private fun KtElement.capturesTopLevelName(
+        name: String,
+        excludedDeclarations: Set<PsiElement>,
+        onCapture: () -> Unit,
+    ) {
+        forEachConventionSymbol { symbol ->
+            if (symbol.belongsTo(excludedDeclarations)) return@forEachConventionSymbol
+            if (symbol.declaredName() != name) return@forEachConventionSymbol
+            if (!symbol.isTopLevelBinding()) return@forEachConventionSymbol
+            onCapture()
+        }
     }
 
     /**

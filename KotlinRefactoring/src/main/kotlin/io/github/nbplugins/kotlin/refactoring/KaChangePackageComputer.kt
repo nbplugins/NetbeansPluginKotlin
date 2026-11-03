@@ -31,7 +31,6 @@ import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaPackageSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaTypeAliasSymbol
-import org.jetbrains.kotlin.analysis.api.symbols.KaVariableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.findPackage
 import org.jetbrains.kotlin.idea.k2.refactoring.move.KotlinMoveUsageSearchService
 import org.jetbrains.kotlin.idea.k2.refactoring.move.MoveImport
@@ -720,15 +719,18 @@ class KaChangePackageComputer(
                             }
                             if (importFqName in importedFqNames || originalPackage in starPackages) return
                             // An extension access on a value receiver can spell the package name
-                            // (`p.extra` on a parameter `p`), so a variable receiver keeps the
-                            // access dependent on an import and bypasses the spelling test.
-                            val receiverIsVariable = expression.qualifiedReceiver()?.let { receiver ->
+                            // (`p.extra` on a parameter `p`, or on a top-level `object p`), so a
+                            // resolved receiver keeps the access dependent on an import and
+                            // bypasses the spelling test. K2 resolves package references to
+                            // `null` in this position, so any concrete non-package symbol proves
+                            // the chain root is a value rather than a package.
+                            val receiverIsValue = expression.qualifiedReceiver()?.let { receiver ->
                                 val symbol = runCatching {
                                     receiver.leadingReference()?.mainReference?.resolveToSymbol()
                                 }.getOrNull()
-                                symbol is KaVariableSymbol
+                                symbol != null && symbol !is KaPackageSymbol
                             } == true
-                            if (!receiverIsVariable && expression.isPackageQualified(originalPackage)) return
+                            if (!receiverIsValue && expression.isPackageQualified(originalPackage)) return
                             missingImports += importFqName
                         }
 

@@ -755,6 +755,97 @@ class KaRenameTest : KotlinTestCase("KaRenameTest", "rename") {
     }
 
     /**
+     * Verifies a same-package function of the new name capturing a rewritten constructor call is
+     * reported.
+     *
+     * `fun After(n: Int)` is declared in the caller's package, so the rewritten `After(1)` would
+     * select the function's exact `Int` parameter instead of the constructor taking `Number`.
+     */
+    fun testFindCaptureConflicts_reportsSamePackageFunctionCapture() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-package-function")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val functionsPath = root.resolve("p/Functions.kt")
+            val callerPath = root.resolve("p/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before(val n: Number)\n")
+            Files.writeString(functionsPath, "package p\n\nfun After(n: Int) = \"other\"\n")
+            Files.writeString(callerPath, "package p\n\nfun use() = Before(1).toString()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-package-function-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val functions = session.getKtFileForPath(functionsPath.toString()) ?: error("Could not obtain functions PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, functions, caller), "After",
+            ).findCaptureConflicts()
+
+            assertEquals("The same-package function captures the rewritten constructor call", caller, conflict)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a same-spelled type alias keeps its own name when the expanded class is renamed.
+     *
+     * `typealias Before = p.Before` in another package stays named `Before`; rewriting its call
+     * site to `After()` would leave it unresolved even though the alias's right-hand side follows
+     * the rename to `p.After`.
+     */
+    fun testCompute_keepsSameSpelledTypeAliasCall() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping rename-compute test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-same-named-alias")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            Files.createDirectories(root.resolve("q"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val aliasesPath = root.resolve("q/Aliases.kt")
+            val usagePath = root.resolve("q/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before\n")
+            Files.writeString(aliasesPath, "package q\n\ntypealias Before = p.Before\n")
+            Files.writeString(usagePath, "package q\n\nfun make() = Before()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-same-named-alias-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val aliases = session.getKtFileForPath(aliasesPath.toString()) ?: error("Could not obtain aliases PSI")
+            val usage = session.getKtFileForPath(usagePath.toString()) ?: error("Could not obtain usage PSI")
+
+            val changes = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, aliases, usage), "After",
+            ).compute()
+
+            assertNotNull("compute() must return non-null for an alias declaration", changes)
+            assertEquals(
+                "Only the alias's right-hand side follows the rename",
+                "package q\n\ntypealias Before = p.After\n",
+                applyChanges(aliases.text, changes!![aliasesPath.toString()].orEmpty()),
+            )
+            assertEquals(
+                "The alias call site keeps spelling the alias",
+                "package q\n\nfun make() = Before()\n",
+                applyChanges(usage.text, changes[usagePath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies a fully qualified reference is not checked against lexical bindings.
      *
      * Renaming `Before` to `After` only changes the selector of `p.Before()`, which still names
