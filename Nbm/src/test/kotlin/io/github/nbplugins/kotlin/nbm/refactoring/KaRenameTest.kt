@@ -355,6 +355,86 @@ class KaRenameTest : KotlinTestCase("KaRenameTest", "rename") {
         }
     }
 
+    /**
+     * Verifies an instance receiver keeps the `this` keyword during a class rename.
+     *
+     * `this` resolves to the containing class, but it is an instance expression, not a reference
+     * to the class name; replacing it with the new name would produce invalid Kotlin.
+     */
+    fun testRenameClassKeepsInstanceReceiver() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping instance-receiver rename test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-instance-receiver")
+        try {
+            val sourceDirectory = root.resolve("source")
+            Files.createDirectories(sourceDirectory)
+            val sourcePath = sourceDirectory.resolve("Foo.kt")
+            Files.writeString(
+                sourcePath,
+                "package a\n\nclass Foo {\n    fun self() = this\n    fun make() = Foo()\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-instance-receiver-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val changes = KaRenameComputer(source, source.text.indexOf("Foo"), setOf(source), "Bar").compute()
+
+            assertNotNull("compute() must return non-null for an instance receiver", changes)
+            assertEquals(
+                "The this receiver must keep its keyword while constructor calls follow the rename",
+                "package a\n\nclass Bar {\n    fun self() = this\n    fun make() = Bar()\n}\n",
+                applyChanges(source.text, changes!![sourcePath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a constructor call spelled through a Kotlin type alias keeps the alias name.
+     *
+     * `IntFoo()` resolves to a constructor of `Foo`, but its referenced name is the type alias;
+     * only the alias definition's `Foo` reference follows the rename.
+     */
+    fun testRenameClassKeepsTypeAliasConstructorCall() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping type-alias rename test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-type-alias")
+        try {
+            val sourceDirectory = root.resolve("source")
+            Files.createDirectories(sourceDirectory)
+            val sourcePath = sourceDirectory.resolve("Foo.kt")
+            Files.writeString(
+                sourcePath,
+                "package a\n\nclass Foo<T>\n\ntypealias IntFoo = Foo<Int>\n\nfun make() = IntFoo()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-type-alias-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val changes = KaRenameComputer(source, source.text.indexOf("Foo"), setOf(source), "Bar").compute()
+
+            assertNotNull("compute() must return non-null for a type alias", changes)
+            assertEquals(
+                "A call through the type alias must keep the alias name",
+                "package a\n\nclass Bar<T>\n\ntypealias IntFoo = Bar<Int>\n\nfun make() = IntFoo()\n",
+                applyChanges(source.text, changes!![sourcePath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

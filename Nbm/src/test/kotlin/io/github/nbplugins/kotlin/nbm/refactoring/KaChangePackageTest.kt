@@ -1759,6 +1759,61 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
+     * Verifies a moved function does not capture imports of an unrelated subpackage.
+     *
+     * Kotlin allows a package and a top-level function to share a name (`p.tools` and `p.tools()`).
+     * Moving only the function must not rewrite a caller's `import p.tools.utility`, which belongs
+     * to the unrelated package that stays put; suffix-preserving rewrites are valid for moved
+     * classifiers only, because their nested declarations really do follow them.
+     */
+    fun testApply_realSession_keepsSubpackageImportMatchingMovedFunctionPrefix() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-callable-prefix")
+        try {
+            val sourceDirectory = temporaryRoot.resolve("source")
+            val utilityDirectory = temporaryRoot.resolve("utility")
+            val usageDirectory = temporaryRoot.resolve("usage")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(utilityDirectory)
+            Files.createDirectories(usageDirectory)
+            val sourcePath = sourceDirectory.resolve("Tools.kt")
+            val utilityPath = utilityDirectory.resolve("Utility.kt")
+            val usagePath = usageDirectory.resolve("Use.kt")
+            Files.writeString(sourcePath, "package p\n\nfun tools() = 1\n")
+            Files.writeString(utilityPath, "package p.tools\n\nfun utility() = 2\n")
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport p.tools.utility\n\nval value = utility()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-callable-prefix-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertTrue(success.changedFiles[sourcePath.toString()]?.contains("package dest") == true)
+            assertEquals(
+                "An import of the unrelated p.tools package must stay untouched",
+                "package usage\n\nimport p.tools.utility\n\nval value = utility()\n",
+                success.changedFiles[usagePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies an explicit constructor call is retargeted with its moved class.
      *
      * A constructor call resolves to a constructor symbol whose PSI is the class's primary

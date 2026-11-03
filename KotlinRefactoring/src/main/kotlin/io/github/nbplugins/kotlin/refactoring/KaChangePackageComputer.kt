@@ -628,8 +628,11 @@ class KaChangePackageComputer(
                     }
                     KotlinSourceNames.renderFqName(newPrefix) + suffixText
                 } else {
-                    rewriteImportedPath(directive.identifiersWithin(pathStart, pathEnd), mappings)
-                        ?: return@forEach
+                    rewriteImportedPath(
+                        directive.identifiersWithin(pathStart, pathEnd),
+                        mappings,
+                        movedClassFqNames,
+                    ) ?: return@forEach
                 }
                 edits.getOrPut(file, ::linkedSetOf) += TextEdit(pathStart, pathEnd, replacement)
             }
@@ -688,18 +691,26 @@ class KaChangePackageComputer(
      * source text do not affect matching. The suffix is rendered again with the escaping Kotlin
      * requires.
      *
+     * Only moved classifiers own a suffix: their nested declarations really do follow them, so
+     * `import old.Outer.Nested` becomes `import new.Outer.Nested`. A top-level function or property
+     * shares its name with packages freely (`fun tools()` and package `p.tools`), so a callable
+     * mapping matches the imported path exactly and never captures a longer path.
+     *
      * @param segments identifier names of the imported path, in source order
      * @param mappings moved declarations ordered from the longest FQN to the shortest
+     * @param classifierFqNames original FQNs of moved classes and objects
      * @return retargeted path text, or `null` when the import does not target a moved declaration
      */
     private fun rewriteImportedPath(
         segments: List<String>,
         mappings: List<Map.Entry<FqName, FqName>>,
+        classifierFqNames: Set<FqName>,
     ): String? {
         mappings.forEach { (oldFqName, newFqName) ->
             val oldSegments = oldFqName.pathSegments().map { segment -> segment.asString() }
             if (segments.size < oldSegments.size) return@forEach
             if (segments.take(oldSegments.size) != oldSegments) return@forEach
+            if (oldFqName !in classifierFqNames && segments.size != oldSegments.size) return@forEach
             val suffix = segments.drop(oldSegments.size)
             val suffixText = suffix.joinToString(separator = ".", prefix = if (suffix.isEmpty()) "" else ".") { name ->
                 KotlinSourceNames.renderIdentifier(name)

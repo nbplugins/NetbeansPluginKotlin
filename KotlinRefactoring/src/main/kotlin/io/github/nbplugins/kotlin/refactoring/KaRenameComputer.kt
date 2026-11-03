@@ -362,8 +362,13 @@ class KaRenameComputer(
                         // constructor of the renamed class, but the keyword itself is syntax and
                         // must never be rewritten into the new class name.
                         if (expression is KtConstructorDelegationReferenceExpression) return
-                        val simpleName = expression as? KtSimpleNameExpression
-                        if (simpleName != null && simpleName.getReferencedName() in aliasNames &&
+                        // Only a simple name spelling the class name can be rewritten. Instance
+                        // receivers (`this`, `super`) resolve to the class as well but are syntax,
+                        // and a type-alias call spells the alias rather than the class name.
+                        val simpleName = expression as? KtSimpleNameExpression ?: return
+                        val targetName = (targetPsi as? KtNamedDeclaration)?.name
+                        if (targetName != null && simpleName.getReferencedName() != targetName) return
+                        if (simpleName.getReferencedName() in aliasNames &&
                             simpleName.isAliasUsage()
                         ) {
                             return
