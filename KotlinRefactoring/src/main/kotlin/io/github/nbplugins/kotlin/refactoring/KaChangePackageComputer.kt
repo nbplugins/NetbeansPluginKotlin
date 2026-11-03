@@ -474,12 +474,18 @@ class KaChangePackageComputer(
             val declaration = symbol?.psi as? KtNamedDeclaration ?: return
             if (declaration in moved) found += declaration
         }
-        fun movedOperator(type: KaType, name: String): KaCallableSymbol? = visiblePackages.asSequence()
-            .mapNotNull { packageFqName -> findPackage(packageFqName)?.packageScope }
-            .flatMap { scope -> scope.declarations.asSequence() }
-            .filterIsInstance<KaCallableSymbol>()
-            .filter { symbol -> (symbol as? KaNamedSymbol)?.name?.asString() == name && symbol.isExtension }
-            .firstOrNull { symbol -> symbol.canBeCalledAsExtensionOn(type) }
+        fun movedOperator(type: KaType, name: String, arguments: List<KaType?>? = null): KaCallableSymbol? {
+            val candidates = visiblePackages.asSequence()
+                .mapNotNull { packageFqName -> findPackage(packageFqName)?.packageScope }
+                .flatMap { scope -> scope.declarations.asSequence() }
+                .filterIsInstance<KaCallableSymbol>()
+                .filter { symbol -> (symbol as? KaNamedSymbol)?.name?.asString() == name && symbol.isExtension }
+                .toList()
+            // Both `Box.set` and the more specific `SubBox.set` can be visible at once; only the
+            // one overload resolution selects may be recorded, or the caller would import a
+            // setter it does not call.
+            return selectExtension(candidates, type, arguments)
+        }
         accept(object : KtTreeVisitorVoid() {
             override fun visitArrayAccessExpression(expression: KtArrayAccessExpression) {
                 super.visitArrayAccessExpression(expression)
@@ -489,8 +495,9 @@ class KaChangePackageComputer(
                 // A member setter wins only when it accepts the actual indices and value. A
                 // misfitting overload (`set(String, Int)` for `box[0]++`) leaves the write to
                 // the applicable extension, which the caller then has to import.
-                if (!receiverType.hasApplicableMemberIndexedSetter(expression.setterArgumentTypes())) {
-                    record(movedOperator(receiverType, "set"))
+                val arguments = expression.setterArgumentTypes()
+                if (!receiverType.hasApplicableMemberIndexedSetter(arguments)) {
+                    record(movedOperator(receiverType, "set", arguments))
                 }
             }
 
@@ -1257,7 +1264,12 @@ class KaChangePackageComputer(
         movedPaths: Set<String>,
     ): FqName? {
         if (destinationNames.isEmpty()) return null
-        if (expression.qualifiedReceiver() != null) return null
+        // A qualified access resolves through its qualifier, which neither an import nor a
+        // same-package declaration can capture — with one exception: an extension call on a value
+        // receiver (`1.choose()`, `box.choose()`) selects its callee through the file's scope.
+        if (expression.qualifiedReceiver() != null && (symbol as? KaCallableSymbol)?.isExtension != true) {
+            return null
+        }
         val name = expression.getReferencedName()
         if (name !in destinationNames) return null
         val fqName = topLevelDeclarationFqName(symbol) ?: return null
@@ -1322,15 +1334,18 @@ class KaChangePackageComputer(
         movedPaths: Set<String>,
     ): FqName? {
         val receiverType = expression.arrayExpression?.expressionType ?: return null
-        return findPackage(originalPackage)?.packageScope?.declarations
+        val candidates = findPackage(originalPackage)?.packageScope?.declarations
             ?.filterIsInstance<KaCallableSymbol>()
-            ?.firstNotNullOfOrNull { symbol ->
-                if ((symbol as? KaNamedSymbol)?.name?.asString() != "set") {
-                    return@firstNotNullOfOrNull null
-                }
-                if (!symbol.canBeCalledAsExtensionOn(receiverType)) return@firstNotNullOfOrNull null
-                samePackageTopLevelName(symbol, originalPackage, movedPaths)
+            ?.filter { symbol ->
+                (symbol as? KaNamedSymbol)?.name?.asString() == "set" && symbol.isExtension
             }
+            .orEmpty()
+            .toList()
+        // The receiver alone cannot tell `Box.set` from the more specific `SubBox.set`; only the
+        // overload resolution result may be imported.
+        val selected = selectExtension(candidates, receiverType, expression.setterArgumentTypes())
+            ?: return null
+        return samePackageTopLevelName(selected, originalPackage, movedPaths)
     }
 
     /**

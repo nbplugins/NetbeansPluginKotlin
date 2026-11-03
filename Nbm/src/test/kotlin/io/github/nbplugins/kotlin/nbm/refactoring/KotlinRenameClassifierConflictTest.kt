@@ -330,6 +330,113 @@ class KotlinRenameClassifierConflictTest : KotlinTestCase("KotlinRenameClassifie
     }
 
     /**
+     * Verifies a caller of another package that imports the new name blocks the rename.
+     *
+     * `import p.After` binds the whole overload set of `p.After`, so after `Before(Int)` becomes
+     * an `After(Int)` constructor the caller's untouched `After(1)` selects the constructor
+     * instead of the `fun After(n: Number)` it currently calls.
+     */
+    fun testFindSamePackageOverloadConflict_reportsExplicitlyImportedNewName() {
+        withSession(
+            name = "external-explicit-import",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(root.resolve("source/Foo.kt"), "package p\n\nclass Foo(val n: Int)\n")
+                Files.writeString(root.resolve("source/Functions.kt"), "package p\n\nfun After(n: Number) = \"other\"\n")
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package q\n\nimport p.After\n\nfun use() = After(1).toString()\n",
+                )
+            },
+        ) { session, root ->
+            val source = session.ktFile(root.resolve("source/Foo.kt"))
+            val functions = session.ktFile(root.resolve("source/Functions.kt"))
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+
+            val conflict = findSamePackageOverloadConflict(
+                source,
+                primaryClass(source),
+                "After",
+                listOf(source, functions, usage),
+            )
+
+            assertEquals("Usage.kt", conflict?.virtualFile?.name)
+        }
+    }
+
+    /**
+     * Verifies a package-qualified call of another package blocks the rename.
+     *
+     * The caller spells `p.After(1)` without any import, so only the package-qualified form can
+     * reveal that the new constructor would win overload resolution.
+     */
+    fun testFindSamePackageOverloadConflict_reportsPackageQualifiedNewName() {
+        withSession(
+            name = "external-package-qualified",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(root.resolve("source/Foo.kt"), "package p\n\nclass Foo(val n: Int)\n")
+                Files.writeString(root.resolve("source/Functions.kt"), "package p\n\nfun After(n: Number) = \"other\"\n")
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package q\n\nfun use() = p.After(1).toString()\n",
+                )
+            },
+        ) { session, root ->
+            val source = session.ktFile(root.resolve("source/Foo.kt"))
+            val functions = session.ktFile(root.resolve("source/Functions.kt"))
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+
+            val conflict = findSamePackageOverloadConflict(
+                source,
+                primaryClass(source),
+                "After",
+                listOf(source, functions, usage),
+            )
+
+            assertEquals("Usage.kt", conflict?.virtualFile?.name)
+        }
+    }
+
+    /**
+     * Verifies a caller that binds another package's `After` is left alone.
+     *
+     * `lib.After` is not visible from `p`, so adding `p.After` cannot change the caller's
+     * overload resolution.
+     */
+    fun testFindSamePackageOverloadConflict_ignoresOtherPackageBinding() {
+        withSession(
+            name = "external-other-package",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.createDirectories(root.resolve("lib"))
+                Files.writeString(root.resolve("source/Foo.kt"), "package p\n\nclass Foo(val n: Int)\n")
+                Files.writeString(root.resolve("lib/Library.kt"), "package lib\n\nfun After(n: Number) = \"other\"\n")
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package q\n\nimport lib.After\n\nfun use() = After(1).toString()\n",
+                )
+            },
+        ) { session, root ->
+            val source = session.ktFile(root.resolve("source/Foo.kt"))
+            val library = session.ktFile(root.resolve("lib/Library.kt"))
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+
+            val conflict = findSamePackageOverloadConflict(
+                source,
+                primaryClass(source),
+                "After",
+                listOf(source, library, usage),
+            )
+
+            assertNull("another package's binding keeps winning over the added class", conflict)
+        }
+    }
+
+    /**
      * Verifies a top-level function with an equivalently spelled parameter type blocks the rename.
      *
      * `Int` and `kotlin.Int` are the same type, so `fun After(n: kotlin.Int)` collides with the

@@ -164,10 +164,12 @@ object KotlinImportBindingCheck {
                     // A compound indexed write spells only the getter; its implicit setter goes
                     // through the same check because an import of `set` outranks the wildcard.
                     if (!conflicting && name == "set") {
-                        runCatching { expression.implicitSetterCandidates() }.getOrNull()?.forEach { symbol ->
-                            if (!symbol.belongsTo(excludedDeclarations) && symbol.isTopLevelBinding()) {
-                                conflicting = true
-                            }
+                        val setter = runCatching { expression.implicitSetterCandidates() }.getOrNull()
+                        if (setter != null &&
+                            !setter.belongsTo(excludedDeclarations) &&
+                            setter.isTopLevelBinding()
+                        ) {
+                            conflicting = true
                         }
                     }
                 }
@@ -290,12 +292,12 @@ object KotlinImportBindingCheck {
                         // The setter half of a compound write is implicit; it loses the overload
                         // the rewritten directive stops importing just like the getter does.
                         if (!conflicting && importedName == "set") {
-                            runCatching { expression.implicitSetterCandidates() }.getOrNull()?.forEach { symbol ->
-                                if (symbol.isTopLevelBinding() &&
-                                    symbol.staysInOriginalPackage(imported, movingPaths)
-                                ) {
-                                    conflicting = true
-                                }
+                            val setter = runCatching { expression.implicitSetterCandidates() }.getOrNull()
+                            if (setter != null &&
+                                setter.isTopLevelBinding() &&
+                                setter.staysInOriginalPackage(imported, movingPaths)
+                            ) {
+                                conflicting = true
                             }
                         }
                     }
@@ -405,12 +407,12 @@ object KotlinImportBindingCheck {
                         // The implicit setter of a compound write keeps binding through the
                         // wildcard while the file moves; the added import would outrank it.
                         if (!conflicting && importedName == "set") {
-                            runCatching { expression.implicitSetterCandidates() }.getOrNull()?.forEach { symbol ->
-                                if (symbol.isTopLevelBinding() &&
-                                    symbol.isCapturedByOutgoingImport(imported, movingPaths)
-                                ) {
-                                    conflicting = true
-                                }
+                            val setter = runCatching { expression.implicitSetterCandidates() }.getOrNull()
+                            if (setter != null &&
+                                setter.isTopLevelBinding() &&
+                                setter.isCapturedByOutgoingImport(imported, movingPaths)
+                            ) {
+                                conflicting = true
                             }
                         }
                     }
@@ -454,20 +456,20 @@ object KotlinImportBindingCheck {
     }.getOrDefault(false)
 
     /**
-     * Tells whether [file] already refers to a same-package declaration named [name].
+     * Tells whether [file] refers to a declaration named [name] that an added declaration would
+     * outrank.
      *
-     * Adding a top-level declaration to a package changes overload resolution for unqualified
-     * references to that name, so a same-package reference that currently resolves to another
-     * top-level callable can silently bind to the added declaration. A reference bound through a
-     * star or default import is outranked by the same-package declaration in the same way. An
-     * explicit import of the name from elsewhere keeps winning over the package, so it is not a
-     * conflict.
+     * Adding a top-level declaration to a package changes overload resolution for references that
+     * can see that package: same-package references, package-qualified calls (`p.After(1)`), and
+     * names bound through a star or default import. A same-named top-level callable that currently
+     * wins can silently start binding to the added declaration. An explicit import of the name
+     * from another package keeps winning, so it is not a conflict.
      *
      * @param file caller that already names the declaration
      * @param name simple name of the declaration being added
      * @param packageName package the declaration is added to
      * @param excludedDeclarations declarations the added name is meant for
-     * @return `true` when a reference to another same-package declaration would be affected
+     * @return `true` when a reference to another declaration would be affected
      */
     fun hasSamePackageReferenceToOtherDeclaration(
         file: KtFile,
@@ -482,13 +484,19 @@ object KotlinImportBindingCheck {
                     super.visitSimpleNameExpression(expression)
                     if (conflicting) return
                     if (expression.getReferencedName() != name) return
-                    if (expression.isQualifiedSelector()) return
                     if (PsiTreeUtil.getParentOfType(expression, KtImportDirective::class.java) != null) return
                     val symbol = expression.references.filterIsInstance<KtReference>().firstOrNull()
                         ?.resolveToSymbol() ?: return
                     if (symbol.belongsTo(excludedDeclarations)) return
                     if (!symbol.isTopLevelBinding()) return
-                    // A reference that already binds a same-package declaration changes overload
+                    if (expression.isQualifiedSelector()) {
+                        // The added declaration joins the package, so a call spelled with that
+                        // package qualifier competes with it even without an import.
+                        if (expression.isPackageQualifiedCall(packageName)) conflicting = true
+                        return
+                    }
+                    if (!file.canSeeDeclarationOf(packageName, name)) return
+                    // A reference that already binds a declaration of the package changes overload
                     // resolution once the new declaration joins the package. A reference bound
                     // through a star or default import is outranked by the package in the same
                     // way, while an explicit import keeps winning, so only star-bound references
@@ -503,6 +511,47 @@ object KotlinImportBindingCheck {
             conflicting
         }
     }.getOrDefault(false)
+
+    /**
+     * Tells whether this file can bind [name] to a declaration of [packageName].
+     *
+     * The added declaration is visible through the file's own package, an explicit import of that
+     * declaration, or a wildcard import of its package. Any other import binds another declaration
+     * and keeps outranking the package.
+     *
+     * @param packageName package the declaration is added to
+     * @param name simple name of the declaration
+     * @return `true` when the file can see declarations of that package under that name
+     */
+    private fun KtFile.canSeeDeclarationOf(packageName: FqName, name: String): Boolean =
+        packageFqName == packageName || importDirectives.any { directive ->
+            if (directive.isAllUnder) return@any directive.importedFqName == packageName
+            directive.importedFqName == packageName.child(Name.identifier(name)) &&
+                (directive.aliasName == null || directive.aliasName == name)
+        }
+
+    /**
+     * Tells whether this selector is a qualified call whose receiver spells [packageName].
+     *
+     * Only a package qualifier resolves the call outside the file's scope, so a value or type
+     * named like the package has to be excluded by resolving the leftmost name.
+     *
+     * @param packageName package the qualified access may name in full
+     * @return `true` when the receiver is the package itself or a prefix of it
+     */
+    context(_: KaSession)
+    private fun KtSimpleNameExpression.isPackageQualifiedCall(packageName: FqName): Boolean {
+        val qualified = qualifiedAccess() ?: return false
+        val receiverText = qualified.receiverExpression.text
+        val packageText = packageName.asString()
+        if (receiverText != packageText && !packageText.startsWith("$receiverText.")) return false
+        val root = qualified.receiverExpression.leadingReference() ?: return false
+        // K2 resolves a package reference to `null`; a value of the same name resolves to its symbol.
+        val rootSymbol = runCatching {
+            root.references.filterIsInstance<KtReference>().firstOrNull()?.resolveToSymbol()
+        }.getOrNull()
+        return rootSymbol == null || rootSymbol is KaPackageSymbol
+    }
 
     /**
      * Tells whether [name] is already bound to a classifier at [element].
@@ -1111,23 +1160,26 @@ object KotlinImportBindingCheck {
     }
 
     /**
-     * Returns the top-level `set` extensions a compound indexed write implicitly selects.
+     * Returns the top-level `set` extension a compound indexed write implicitly selects.
      *
      * `sub[0]++` and `sub[0] += 1` spell only the getter, so K2 does not expose the setter half.
-     * The applicable `set` extensions are looked up by name and receiver applicability at the
-     * access site, mirroring the delegate accessor lookup. A member setter always wins over
+     * The selected `set` extension is looked up by name, receiver applicability and the actual
+     * indices and value, mirroring the delegate accessor lookup. A member setter always wins over
      * extensions and cannot be captured by an import.
      *
-     * @return applicable `set` extensions, empty for a plain read or a member setter
+     * @return the selected `set` extension, `null` for a plain read or a member setter
      */
     context(_: KaSession)
-    private fun KtArrayAccessExpression.implicitSetterCandidates(): List<KaCallableSymbol> {
-        if (!isCompoundWrite()) return emptyList()
-        val receiverType = runCatching { arrayExpression?.expressionType }.getOrNull() ?: return emptyList()
+    private fun KtArrayAccessExpression.implicitSetterCandidates(): KaCallableSymbol? {
+        if (!isCompoundWrite()) return null
+        val receiverType = runCatching { arrayExpression?.expressionType }.getOrNull() ?: return null
+        val arguments = setterArgumentTypes()
         // A member setter wins only when its signature accepts the actual indices and value; a
         // misfitting overload leaves the write to an applicable extension.
-        if (receiverType.hasApplicableMemberIndexedSetter(setterArgumentTypes())) return emptyList()
-        return applicableOperators(receiverType, "set")
+        if (receiverType.hasApplicableMemberIndexedSetter(arguments)) return null
+        // The caller may see a less and a more specific setter at once; only the overload
+        // resolution winner can be rebound by an import.
+        return selectExtension(applicableOperators(receiverType, "set"), receiverType, arguments)
     }
 
     /**

@@ -18,6 +18,8 @@ package io.github.nbplugins.kotlin.refactoring
 
 import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
 import org.jetbrains.kotlin.analysis.api.KaSession
+import org.jetbrains.kotlin.analysis.api.components.allSupertypes
+import org.jetbrains.kotlin.analysis.api.components.canBeCalledAsExtensionOn
 import org.jetbrains.kotlin.analysis.api.components.createSubstitutor
 import org.jetbrains.kotlin.analysis.api.components.expandedSymbol
 import org.jetbrains.kotlin.analysis.api.components.expressionType
@@ -77,6 +79,7 @@ internal fun KaCallableSymbol.returnTypeInferredFrom(receiverType: KaType): KaTy
  * @param mappings accumulator of type-parameter instantiations
  * @return `false` when the same type parameter would need two different instantiations
  */
+@OptIn(KaExperimentalApi::class)
 context(_: KaSession)
 private fun collectTypeMappings(
     declared: KaType,
@@ -97,9 +100,19 @@ private fun collectTypeMappings(
         }
         is KaClassType -> {
             val actualClassType = actualType as? KaClassType ?: return true
-            if (declaredType.classId != actualClassType.classId) return true
+            val matchingType = if (declaredType.classId == actualClassType.classId) {
+                actualClassType
+            } else {
+                // A subtype supplies the type arguments indirectly: `IntDelegate : Delegate<Int>()`
+                // is instantiated as `Provided<Int>` by a provider declared on `Delegate<T>`, so the
+                // declared supertype has to be unified instead of giving up on the class mismatch.
+                actualClassType.allSupertypes
+                    .mapNotNull { supertype -> supertype as? KaClassType }
+                    .firstOrNull { supertype -> supertype.classId == declaredType.classId }
+                    ?: return true
+            }
             val declaredArguments = declaredType.typeArguments
-            val actualArguments = actualClassType.typeArguments
+            val actualArguments = matchingType.typeArguments
             if (declaredArguments.size != actualArguments.size) return true
             declaredArguments.indices.all { index ->
                 val declaredArgument = declaredArguments[index].type ?: return@all true
@@ -184,6 +197,52 @@ context(_: KaSession)
 private fun acceptsArgument(parameterType: KaType, argument: KaType): Boolean = runCatching {
     parameterType is KaTypeParameterType || argument.isSubtypeOf(parameterType)
 }.getOrDefault(true)
+
+/**
+ * Selects the extension the compiler binds for a convention call.
+ *
+ * Every candidate is visible through the same package scopes, so overload resolution ranks them
+ * by receiver specificity: `SubBox.set` wins over `Box.set` for a `SubBox` receiver. Candidates
+ * that cannot take [arguments] are dropped first, which separates overloads declared on the same
+ * receiver type.
+ *
+ * @param candidates extensions visible under the same simple name
+ * @param receiverType type of the value the operator is invoked on
+ * @param arguments argument types of the call, or `null` when they cannot be resolved
+ * @return the selected extension, or `null` when none applies
+ */
+@OptIn(KaExperimentalApi::class)
+context(_: KaSession)
+internal fun selectExtension(
+    candidates: List<KaCallableSymbol>,
+    receiverType: KaType,
+    arguments: List<KaType?>? = null,
+): KaCallableSymbol? {
+    val applicable = candidates.filter { candidate ->
+        runCatching { candidate.canBeCalledAsExtensionOn(receiverType) }.getOrDefault(false) &&
+            (arguments == null || candidate.acceptsIndexedSetterArguments(arguments))
+    }
+    return applicable.firstOrNull { candidate ->
+        applicable.none { other -> other !== candidate && other.receiverIsMoreSpecificThan(candidate) }
+    } ?: applicable.firstOrNull()
+}
+
+/**
+ * Tells whether this callable's receiver is a proper subtype of [other]'s.
+ *
+ * The declared receiver types decide which extension overload wins when both are visible through
+ * the same scope. Equal types are not "more specific", so a tie keeps the declaration order.
+ *
+ * @param other competing callable
+ * @return `true` when this receiver fits [other]'s receiver but not the other way round
+ */
+@OptIn(KaExperimentalApi::class)
+context(_: KaSession)
+private fun KaCallableSymbol.receiverIsMoreSpecificThan(other: KaCallableSymbol): Boolean = runCatching {
+    val receiver = receiverParameter?.returnType ?: return@runCatching false
+    val otherReceiver = other.receiverParameter?.returnType ?: return@runCatching false
+    receiver.isSubtypeOf(otherReceiver) && !otherReceiver.isSubtypeOf(receiver)
+}.getOrDefault(false)
 
 /**
  * Tells whether this type declares a member `set` that accepts the indexed-write arguments.

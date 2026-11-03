@@ -657,12 +657,13 @@ private fun KtFile.hasConflictingImportBinding(name: String, newFqName: FqName, 
     }
 
 /**
- * Finds a same-package caller whose existing reference to the new name would rebind.
+ * Finds a caller whose existing reference to the new name would rebind to the renamed class.
  *
- * The renamed class adds a constructor under the new name to its package, and a same-package
- * caller needs no import for it. Overload resolution can then prefer the constructor over an
- * existing function of that name — `After(1)` with `fun After(n: Number)` switches to the newly
- * named `After(Int)` constructor — while the file still compiles.
+ * The renamed class adds a constructor under the new name to its package. Every file that can
+ * see that package — a same-package caller needs no import, while another package's caller
+ * imports `p.After` or spells `p.After(1)` — may then prefer the constructor over an existing
+ * function of that name: `After(1)` with `fun After(n: Number)` switches to the newly named
+ * `After(Int)` constructor while the file still compiles.
  *
  * @param source file whose primary class is renamed
  * @param primaryClass class renamed together with the file
@@ -678,13 +679,12 @@ internal fun findSamePackageOverloadConflict(
 ): KtFile? {
     val packageName = source.packageFqName
     return files.firstOrNull { file ->
-        file.packageFqName == packageName &&
-            KotlinImportBindingCheck.hasSamePackageReferenceToOtherDeclaration(
-                file,
-                newName,
-                packageName,
-                setOf(primaryClass),
-            )
+        KotlinImportBindingCheck.hasSamePackageReferenceToOtherDeclaration(
+            file,
+            newName,
+            packageName,
+            setOf(primaryClass),
+        )
     }
 }
 
