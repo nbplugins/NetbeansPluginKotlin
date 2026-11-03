@@ -21,6 +21,7 @@ import io.github.nbplugins.kotlin.refactoring.KotlinImportBindingCheck
 import org.jetbrains.kotlin.psi.KtClass
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNamedFunction
+import org.jetbrains.kotlin.psi.KtProperty
 import utils.KotlinTestCase
 import java.nio.file.Files
 import java.nio.file.Path
@@ -152,7 +153,7 @@ class KotlinImportBindingCheckTest : KotlinTestCase("KotlinImportBindingCheckTes
             },
         ) { session, root ->
             val make = session.ktFile(root.resolve("usage/Usage.kt"))
-                .declarations.filterIsInstance<KtClass>().single()
+                .declarations.filterIsInstance<KtClass>().single { type -> type.name == "Caller" }
                 .declarations.filterIsInstance<KtNamedFunction>().single { function -> function.name == "make" }
 
             assertTrue(
@@ -201,6 +202,59 @@ class KotlinImportBindingCheckTest : KotlinTestCase("KotlinImportBindingCheckTes
             assertFalse(
                 "nothing in the file binds the requested name",
                 KotlinImportBindingCheck.isNameBoundInScope(use, "missing"),
+            )
+        }
+    }
+
+    /**
+     * Verifies a primary-constructor parameter is reported inside a property initializer.
+     *
+     * A non-property constructor parameter is visible in initializers without being a member, so
+     * rewriting a name into the initializer would call the parameter instead of the renamed class.
+     */
+    fun testIsNameBoundInScope_reportsPrimaryConstructorParameterInInitializer() {
+        withSession(
+            name = "constructor-initializer",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package usage\n\nclass Caller(After: () -> String) {\n" +
+                        "    val value = Before().toString()\n}\n\nclass Before\n",
+                )
+            },
+        ) { session, root ->
+            val property = session.ktFile(root.resolve("usage/Usage.kt"))
+                .declarations.filterIsInstance<KtClass>().single { type -> type.name == "Caller" }
+                .declarations.filterIsInstance<KtProperty>().single()
+
+            assertTrue(
+                "the constructor parameter is visible in the initializer",
+                KotlinImportBindingCheck.isNameBoundInScope(property, "After"),
+            )
+        }
+    }
+
+    /** Verifies a primary-constructor parameter is not visible inside a member function body. */
+    fun testIsNameBoundInScope_ignoresPrimaryConstructorParameterInMemberFunction() {
+        withSession(
+            name = "constructor-member",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package usage\n\nclass Caller(After: () -> String) {\n" +
+                        "    fun make() = 1\n}\n\nclass Before\n",
+                )
+            },
+        ) { session, root ->
+            val make = session.ktFile(root.resolve("usage/Usage.kt"))
+                .declarations.filterIsInstance<KtClass>().single { type -> type.name == "Caller" }
+                .declarations.filterIsInstance<KtNamedFunction>().single { function -> function.name == "make" }
+
+            assertFalse(
+                "a member function does not see the primary-constructor parameters",
+                KotlinImportBindingCheck.isNameBoundInScope(make, "After"),
             )
         }
     }

@@ -3803,6 +3803,103 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies a rewritten import cannot drop an overload a convention reference keeps using.
+     *
+     * The caller imports `old.get`, which binds both the moved `Number.get` and the staying
+     * `Int.get`. Rewriting the directive to `dest.get` keeps only the moved overload, so `n[0]`
+     * would silently switch from `Int.get` to `Number.get`.
+     */
+    fun testApply_realSession_conflictsWhenRewrittenImportDropsUnmovedConventionOperator() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-rewritten-convention")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Number.kt")
+            Files.writeString(
+                sourcePath,
+                "package old\n\noperator fun Number.get(index: Int) = index\n",
+            )
+            Files.writeString(
+                temporaryRoot.resolve("old/Int.kt"),
+                "package old\n\noperator fun Int.get(index: Int) = -index\n",
+            )
+            Files.writeString(
+                temporaryRoot.resolve("usage/Usage.kt"),
+                "package usage\n\nimport old.get\n\nfun use(n: Int) = n[0] + (1.5).get(0)\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-rewritten-convention-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected conflicts, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Conflicts)
+            val conflicts = outcome as KaChangePackageComputer.ApplyOutcome.Conflicts
+            assertTrue(
+                "The conflict must name the caller whose convention reference loses an overload: ${conflicts.messages}",
+                conflicts.messages.any { message -> message.contains("Usage.kt") },
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a delegated property keeps the accessor operator left in the old package.
+     *
+     * `val value by Delegate()` calls the top-level `Delegate.getValue` extension implicitly, and
+     * neither reference is spelled as a simple name, so the moved file has to import it.
+     */
+    fun testApply_realSession_importsDelegateAccessorOperator() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-delegate")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Delegate.kt"),
+                "package old\n\nclass Delegate\n\n" +
+                    "operator fun Delegate.getValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 1\n",
+            )
+            Files.writeString(sourcePath, "package old\n\nval value by Delegate()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-delegate-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[sourcePath.toString()] ?: error("The moved file must change")
+            assertTrue(
+                "The moved file must import the delegate accessor: $text",
+                text.contains("import old.getValue"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

@@ -42,6 +42,7 @@ import org.jetbrains.kotlin.psi.KtArrayAccessExpression
 import org.jetbrains.kotlin.psi.KtBlockExpression
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtCatchClause
+import org.jetbrains.kotlin.psi.KtClass
 import org.jetbrains.kotlin.psi.KtClassBody
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtDeclaration
@@ -124,21 +125,30 @@ object KotlinImportBindingCheck {
                 override fun visitArrayAccessExpression(expression: KtArrayAccessExpression) {
                     super.visitArrayAccessExpression(expression)
                     if (!conflicting) {
-                        expression.capturesTopLevelName(name, excludedDeclarations) { conflicting = true }
+                        expression.capturesTopLevelName(
+                            name,
+                            { symbol -> !symbol.belongsTo(excludedDeclarations) },
+                        ) { conflicting = true }
                     }
                 }
 
                 override fun visitDestructuringDeclarationEntry(entry: KtDestructuringDeclarationEntry) {
                     super.visitDestructuringDeclarationEntry(entry)
                     if (!conflicting) {
-                        entry.capturesTopLevelName(name, excludedDeclarations) { conflicting = true }
+                        entry.capturesTopLevelName(
+                            name,
+                            { symbol -> !symbol.belongsTo(excludedDeclarations) },
+                        ) { conflicting = true }
                     }
                 }
 
                 override fun visitForExpression(expression: KtForExpression) {
                     super.visitForExpression(expression)
                     if (!conflicting) {
-                        expression.capturesTopLevelName(name, excludedDeclarations) { conflicting = true }
+                        expression.capturesTopLevelName(
+                            name,
+                            { symbol -> !symbol.belongsTo(excludedDeclarations) },
+                        ) { conflicting = true }
                     }
                 }
             })
@@ -164,6 +174,8 @@ object KotlinImportBindingCheck {
      * @param movingPaths paths of the files whose package changes
      * @param boundName name the directive binds at its call sites — the alias when the directive
      * is aliased, the declaration's simple name otherwise
+     * @param aliased `true` when the rewritten directive binds an alias; an aliased directive
+     * provides no convention operator under the declaration's own name
      * @return `true` when a reference would bind to the moved declaration instead of its own
      */
     fun hasConflictingImportRewrite(
@@ -171,14 +183,15 @@ object KotlinImportBindingCheck {
         imported: FqName,
         movingPaths: Set<String>,
         boundName: String = imported.shortName().asString(),
+        aliased: Boolean = false,
     ): Boolean = runCatching {
         analyze(file) {
             var conflicting = false
+            val importedName = imported.shortName().asString()
             file.accept(object : KtTreeVisitorVoid() {
                 override fun visitSimpleNameExpression(expression: KtSimpleNameExpression) {
                     super.visitSimpleNameExpression(expression)
                     if (conflicting) return
-                    val importedName = imported.shortName().asString()
                     val referencedName = expression.getReferencedName()
                     // A convention operator spells `plus` as `+`, so an operation reference can
                     // still bind the name the rewritten import selects. An aliased directive is
@@ -194,6 +207,39 @@ object KotlinImportBindingCheck {
                     if (!symbol.isTopLevelBinding()) return
                     if (symbol.declaredPackage() != imported.parent()) return
                     conflicting = true
+                }
+
+                // A convention call spells no name, so `n[0]` (`get`) keeps binding an overload
+                // the rewritten directive stops importing even though no reference names it.
+                // An aliased directive binds only its alias, so it provides no convention operator.
+                override fun visitArrayAccessExpression(expression: KtArrayAccessExpression) {
+                    super.visitArrayAccessExpression(expression)
+                    if (!conflicting && !aliased) {
+                        expression.capturesTopLevelName(
+                            importedName,
+                            { symbol -> symbol.staysInOriginalPackage(imported, movingPaths) },
+                        ) { conflicting = true }
+                    }
+                }
+
+                override fun visitDestructuringDeclarationEntry(entry: KtDestructuringDeclarationEntry) {
+                    super.visitDestructuringDeclarationEntry(entry)
+                    if (!conflicting && !aliased) {
+                        entry.capturesTopLevelName(
+                            importedName,
+                            { symbol -> symbol.staysInOriginalPackage(imported, movingPaths) },
+                        ) { conflicting = true }
+                    }
+                }
+
+                override fun visitForExpression(expression: KtForExpression) {
+                    super.visitForExpression(expression)
+                    if (!conflicting && !aliased) {
+                        expression.capturesTopLevelName(
+                            importedName,
+                            { symbol -> symbol.staysInOriginalPackage(imported, movingPaths) },
+                        ) { conflicting = true }
+                    }
                 }
             })
             conflicting
@@ -370,6 +416,10 @@ object KotlinImportBindingCheck {
                     .takeWhile { statement -> statement.textRange.startOffset < child.textRange.startOffset }
                     .any { statement -> (statement as? KtDeclaration)?.declaresName(name) == true }
                 is KtClassBody -> current.declarations.any { declaration -> declaration.declaresName(name) }
+                // A non-property primary-constructor parameter is not a member, but initializers
+                // and `init` blocks see it, so the rewritten text would call the parameter.
+                is KtClass -> element.isInsideClassInitializerScope(current) &&
+                    current.primaryConstructorParameters.any { parameter -> parameter.bindsName(name) }
                 is KtFunction -> current.valueParameters.any { parameter -> parameter.bindsName(name) }
                 is KtPropertyAccessor ->
                     current.parameterList?.parameters?.any { parameter -> parameter.bindsName(name) } == true
@@ -501,6 +551,27 @@ object KotlinImportBindingCheck {
             destructuringDeclaration?.entries?.any { entry -> entry.name == name } == true
 
     /**
+     * Tells whether this position sees the primary-constructor parameters of [classOrObject].
+     *
+     * Those parameters are in scope in property initializers, `init` blocks, and the constructor's
+     * own delegation call. A member function or property accessor opens a new scope that no longer
+     * sees them, and so does a nested classifier, so the walk stops there.
+     *
+     * @param classOrObject classifier whose primary constructor declares the parameters
+     * @return `true` when the element sits in an initializer scope of that classifier
+     */
+    private fun PsiElement.isInsideClassInitializerScope(classOrObject: KtClassOrObject): Boolean {
+        var current: PsiElement? = this
+        while (current != null && current != classOrObject) {
+            if (current is KtNamedFunction || current is KtPropertyAccessor || current is KtClassOrObject) {
+                return false
+            }
+            current = current.parent
+        }
+        return current == classOrObject
+    }
+
+    /**
      * Tells whether this statement or member declaration binds [name] in the type namespace.
      *
      * @param name identifier to look for
@@ -586,25 +657,43 @@ object KotlinImportBindingCheck {
      * Tells whether this convention construct would start calling a top-level [name] declaration.
      *
      * A convention call spells no name, so comparing reference text cannot see it; the resolved
-     * callable carries the name instead. References that already point at one of
-     * [excludedDeclarations] keep doing so and are not captures.
+     * callable carries the name instead. [isCapture] decides whether a resolved top-level
+     * declaration of that name is a problem for the caller — a reference that already points at
+     * an allowed declaration is not.
      *
-     * @param name the name the import introduces
-     * @param excludedDeclarations declarations the import is meant for
+     * @param name the name the import introduces or stops binding
+     * @param isCapture predicate telling whether the resolved symbol would be captured
      * @param onCapture invoked when a capture is found
      */
     context(_: KaSession)
     private fun KtElement.capturesTopLevelName(
         name: String,
-        excludedDeclarations: Set<PsiElement>,
+        isCapture: (KaSymbol) -> Boolean,
         onCapture: () -> Unit,
     ) {
         forEachConventionSymbol { symbol ->
-            if (symbol.belongsTo(excludedDeclarations)) return@forEachConventionSymbol
             if (symbol.declaredName() != name) return@forEachConventionSymbol
             if (!symbol.isTopLevelBinding()) return@forEachConventionSymbol
+            if (!isCapture(symbol)) return@forEachConventionSymbol
             onCapture()
         }
+    }
+
+    /**
+     * Tells whether this symbol is a top-level declaration the rewritten import stops binding.
+     *
+     * A convention reference resolving to a declaration that stays in the original package loses
+     * the overload the directive provided; one resolving to a moving declaration follows the
+     * rewrite and keeps working.
+     *
+     * @param imported original FQN of the moved declaration
+     * @param movingPaths paths of the files whose package changes
+     * @return `true` when the symbol stays in the directive's original package
+     */
+    private fun KaSymbol.staysInOriginalPackage(imported: FqName, movingPaths: Set<String>): Boolean {
+        val path = psi?.containingFile?.virtualFile?.path
+        if (path != null && path in movingPaths) return false
+        return declaredPackage() == imported.parent()
     }
 
     /**

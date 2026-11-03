@@ -21,6 +21,7 @@ import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectSourceGrou
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.KaChangePackageComputer
 import io.github.nbplugins.kotlin.refactoring.KaRenameComputer
+import io.github.nbplugins.kotlin.refactoring.KotlinConstructorSignatureCheck
 import io.github.nbplugins.kotlin.refactoring.KotlinImportBindingCheck
 import io.github.nbplugins.kotlin.refactoring.KotlinSourceNames
 import io.github.nbplugins.kotlin.refactoring.TextChange
@@ -580,19 +581,20 @@ internal fun findRenameConflict(
     files: Collection<KtFile>,
 ): KtNamedDeclaration? {
     val packageName = source.packageFqName
-    val constructorParameterTypes = primaryClass.primaryConstructorParameters
-        .map { parameter -> parameter.typeReference?.text }
     return files.asSequence()
         .filter { file -> file.packageFqName == packageName }
         .flatMap { file -> file.declarations.asSequence() }
-        .filter { declaration ->
-            declaration is KtClassOrObject || declaration is KtTypeAlias ||
-                (declaration is KtNamedFunction &&
-                    declaration.conflictsWithConstructor(constructorParameterTypes))
-        }
+        .filter { declaration -> declaration.name == newName }
         .map { declaration -> declaration as KtNamedDeclaration }
         .filter { declaration -> !declaration.isSameDeclaration(primaryClass) }
-        .firstOrNull { declaration -> declaration.name == newName }
+        .firstOrNull { declaration ->
+            when (declaration) {
+                is KtClassOrObject, is KtTypeAlias -> true
+                is KtNamedFunction ->
+                    KotlinConstructorSignatureCheck.conflictsWithPrimaryConstructor(primaryClass, declaration)
+                else -> false
+            }
+        }
 }
 
 /**
@@ -602,7 +604,8 @@ internal fun findRenameConflict(
  * refers to a different top-level `After` — from its own package or another import — keeps those
  * references untouched during discovery, because they do not resolve to the renamed class. The
  * rewritten import takes precedence over them afterwards, so they silently start using the
- * renamed class. The rename is rejected instead of changing unrelated call sites.
+ * renamed class. A second explicit import binding the same simple name is a conflicting import
+ * even without a call site. The rename is rejected instead of changing unrelated call sites.
  *
  * @param source file whose primary class is renamed
  * @param primaryClass class renamed together with the file
@@ -617,16 +620,40 @@ internal fun findCallerScopeConflict(
     files: Collection<KtFile>,
 ): KtFile? {
     val className = primaryClass.name ?: return null
-    val oldFqName = source.packageFqName.child(Name.identifier(className))
+    val packageName = source.packageFqName
+    val oldFqName = packageName.child(Name.identifier(className))
+    val newFqName = packageName.child(Name.identifier(newName))
     return files.firstOrNull { file ->
         file.virtualFile?.path != source.virtualFile?.path &&
             file.importDirectives.any { directive ->
                 !directive.isAllUnder && directive.aliasName == null &&
                     directive.importedFqName == oldFqName
             } &&
-            KotlinImportBindingCheck.hasConflictingReference(file, newName, setOf(primaryClass))
+            (file.hasConflictingImportBinding(newName, newFqName, oldFqName) ||
+                KotlinImportBindingCheck.hasConflictingReference(file, newName, setOf(primaryClass)))
     }
 }
+
+/**
+ * Tells whether rewriting this file's import of [oldFqName] to [newFqName] creates a conflict.
+ *
+ * Kotlin rejects two explicit imports that bind the same simple name to different declarations,
+ * whether or not either is used at a call site. A directive naming the rewritten target itself or
+ * an all-under import does not conflict.
+ *
+ * @param name simple name the rewritten directive binds
+ * @param newFqName FQN of the renamed declaration after the rename
+ * @param oldFqName FQN of the declaration before the rename
+ * @return `true` when another directive already binds [name] to a different declaration
+ */
+private fun KtFile.hasConflictingImportBinding(name: String, newFqName: FqName, oldFqName: FqName): Boolean =
+    importDirectives.any { directive ->
+        if (directive.isAllUnder) return@any false
+        val imported = directive.importedFqName ?: return@any false
+        if (imported == newFqName || imported == oldFqName) return@any false
+        val alias = directive.aliasName
+        if (alias != null) alias == name else imported.shortName().asString() == name
+    }
 
 /**
  * Finds a same-package caller whose existing reference to the new name would rebind.
@@ -657,25 +684,6 @@ internal fun findSamePackageOverloadConflict(
                 packageName,
                 setOf(primaryClass),
             )
-    }
-}
-
-/**
- * Tells whether this top-level function has the same call signature as a primary constructor.
- *
- * Matching parameter count and type spellings is what makes Kotlin report conflicting overloads.
- * An extension function has an implicit receiver and therefore cannot conflict with a constructor.
- *
- * @param constructorParameterTypes type spellings of the renamed primary constructor parameters
- * @return `true` when a call to either declaration could not be told apart
- */
-private fun KtNamedFunction.conflictsWithConstructor(constructorParameterTypes: List<String?>): Boolean {
-    if (receiverTypeReference != null) return false
-    if (valueParameters.size != constructorParameterTypes.size) return false
-    return valueParameters.indices.all { index ->
-        val functionType = valueParameters[index].typeReference?.text
-        val constructorType = constructorParameterTypes[index]
-        functionType == null || constructorType == null || functionType == constructorType
     }
 }
 

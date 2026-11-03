@@ -329,6 +329,67 @@ class KotlinRenameClassifierConflictTest : KotlinTestCase("KotlinRenameClassifie
         }
     }
 
+    /**
+     * Verifies a top-level function with an equivalently spelled parameter type blocks the rename.
+     *
+     * `Int` and `kotlin.Int` are the same type, so `fun After(n: kotlin.Int)` collides with the
+     * renamed `class Before(n: Int)` even though the spellings differ.
+     */
+    fun testFindRenameConflict_reportsFunctionWithEquivalentQualifiedSignature() {
+        withSession(
+            name = "qualified-function-signature",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.writeString(root.resolve("source/Foo.kt"), "package p\n\nclass Foo(val n: Int)\n")
+                Files.writeString(root.resolve("source/Functions.kt"), "package p\n\nfun Bar(n: kotlin.Int) = n\n")
+            },
+        ) { session, root ->
+            val source = session.ktFile(root.resolve("source/Foo.kt"))
+            val functions = session.ktFile(root.resolve("source/Functions.kt"))
+
+            val conflict = findRenameConflict(source, primaryClass(source), "Bar", listOf(source, functions))
+
+            assertEquals("Bar", conflict?.name)
+        }
+    }
+
+    /**
+     * Verifies an existing import that would conflict with the rewritten one blocks the rename.
+     *
+     * The caller imports `p.Foo` and `q.Bar` without using either. After the rename the first
+     * directive becomes `import p.Bar`, and Kotlin rejects two imports binding the same name even
+     * when neither has a call site.
+     */
+    fun testFindCallerScopeConflict_reportsExistingConflictingImport() {
+        withSession(
+            name = "caller-import-conflict",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.createDirectories(root.resolve("other"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(root.resolve("source/Foo.kt"), "package p\n\nclass Foo\n")
+                Files.writeString(root.resolve("other/Types.kt"), "package q\n\nclass Bar\n")
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package usage\n\nimport p.Foo\nimport q.Bar\n\nfun use() = 1\n",
+                )
+            },
+        ) { session, root ->
+            val source = session.ktFile(root.resolve("source/Foo.kt"))
+            val types = session.ktFile(root.resolve("other/Types.kt"))
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+
+            val conflict = findCallerScopeConflict(
+                source,
+                primaryClass(source),
+                "Bar",
+                listOf(source, types, usage),
+            )
+
+            assertEquals("Usage.kt", conflict?.virtualFile?.name)
+        }
+    }
+
     /** @return the single top-level class of [source]. */
     private fun primaryClass(source: KtFile): KtClass = source.declarations.filterIsInstance<KtClass>().single()
 

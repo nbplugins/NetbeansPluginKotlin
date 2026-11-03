@@ -35,6 +35,7 @@ import org.jetbrains.kotlin.analysis.api.symbols.KaSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaTypeAliasSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.findPackage
 import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
+import org.jetbrains.kotlin.analysis.api.types.KaType
 import org.jetbrains.kotlin.idea.k2.refactoring.move.KotlinMoveUsageSearchService
 import org.jetbrains.kotlin.idea.k2.refactoring.move.MoveImport
 import org.jetbrains.kotlin.idea.k2.refactoring.move.descriptor.K2ChangePackageDescriptor
@@ -383,7 +384,7 @@ class KaChangePackageComputer(
                 // that name when the rewritten directive loses the overloads staying behind.
                 val boundName = directive.aliasName ?: importedFqName.shortName().asString()
                 if (KotlinImportBindingCheck.hasConflictingImportRewrite(
-                        file, importedFqName, movedPaths, boundName,
+                        file, importedFqName, movedPaths, boundName, aliased = directive.aliasName != null,
                     )
                 ) {
                     conflicts += "Cannot update ${file.name}: import ${importedFqName.asString()} " +
@@ -831,6 +832,30 @@ class KaChangePackageComputer(
                                     ?.let { importFqName -> missingImports += importFqName }
                             }
                         }
+
+                        // A delegated property spells neither accessor: `val value by Delegate()`
+                        // calls a top-level `Delegate.getValue` (and `setValue` for a `var`)
+                        // through overload resolution, so that operator has to follow the file
+                        // when it leaves the package that made it visible.
+                        override fun visitProperty(property: KtProperty) {
+                            super.visitProperty(property)
+                            val delegateType = property.delegateExpression?.expressionType ?: return
+                            val accessorNames =
+                                if (property.isVar) listOf("getValue", "setValue") else listOf("getValue")
+                            accessorNames.asSequence()
+                                .mapNotNull { accessorName ->
+                                    samePackageDelegateAccessor(
+                                        delegateType,
+                                        accessorName,
+                                        originalPackage,
+                                        movedPaths,
+                                    )
+                                }
+                                .filter { importFqName ->
+                                    importFqName !in importedFqNames && originalPackage !in starPackages
+                                }
+                                .forEach { importFqName -> missingImports += importFqName }
+                        }
                     })
                 }
             }
@@ -936,6 +961,38 @@ class KaChangePackageComputer(
                     return@firstNotNullOfOrNull null
                 }
                 if (!receiverType.isSubtypeOf(receiver)) return@firstNotNullOfOrNull null
+                samePackageTopLevelName(symbol, originalPackage, movedPaths)
+            }
+    }
+
+    /**
+     * Finds a delegate accessor operator a moved file still needs from the original package.
+     *
+     * K2 does not expose the implicit `getValue`/`setValue` call of a delegated property, so the
+     * operator is looked up by name and receiver applicability on the delegate expression's type.
+     * Only a declaration that stays behind qualifies, mirroring the indexed-operator lookup.
+     *
+     * @param delegateType type of the property's delegate expression
+     * @param accessorName `getValue` for a read or `setValue` for a write
+     * @param originalPackage package the moved file declares before the change
+     * @param movedPaths paths of the files whose package changes
+     * @return FQN of the remaining accessor extension, or `null` when none applies
+     */
+    context(_: KaSession)
+    private fun samePackageDelegateAccessor(
+        delegateType: KaType,
+        accessorName: String,
+        originalPackage: FqName,
+        movedPaths: Set<String>,
+    ): FqName? {
+        return findPackage(originalPackage)?.packageScope?.declarations
+            ?.filterIsInstance<KaCallableSymbol>()
+            ?.firstNotNullOfOrNull { symbol ->
+                val receiver = symbol.receiverParameter?.returnType
+                if ((symbol as? KaNamedSymbol)?.name?.asString() != accessorName || receiver == null) {
+                    return@firstNotNullOfOrNull null
+                }
+                if (!delegateType.isSubtypeOf(receiver)) return@firstNotNullOfOrNull null
                 samePackageTopLevelName(symbol, originalPackage, movedPaths)
             }
     }
