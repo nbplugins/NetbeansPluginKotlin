@@ -845,12 +845,15 @@ class KaChangePackageComputer(
                             val delegateType = property.delegateExpression?.expressionType ?: return
                             // A member provider wins over extensions and needs no import, but its
                             // return type still decides which accessor the property selects.
+                            // A provider moving with the file is still selected by the property
+                            // after the move, so it decides the accessor type too; only its
+                            // import is skipped below.
                             val provider = delegateType.memberDelegateOperator("provideDelegate")
                                 ?: samePackageDelegateOperator(
                                     delegateType,
                                     "provideDelegate",
                                     originalPackage,
-                                    movedPaths,
+                                    movedPaths = null,
                                 )
                             // `provideDelegate` runs before the accessors and its return type is the
                             // type the accessors are selected on, so it replaces the expression type.
@@ -991,19 +994,22 @@ class KaChangePackageComputer(
     }
 
     /**
-     * Returns the member declaration of [name] on this type, or `null` when it has none.
+     * Returns the member delegate operator of [name] on this type, or `null` when it has none.
      *
      * A member always wins over an extension, so the compiler never falls back to a same-package
-     * operator when the type declares one of that name.
+     * operator when the type declares a fitting one. Matching by name alone would treat an
+     * ordinary member whose signature does not fit the delegation protocol as an accessor.
      *
-     * @param name member name
-     * @return the declared member, regardless of its applicability
+     * @param name operator name
+     * @return the applicable member operator, or `null` when the type declares none
      */
     context(_: KaSession)
     private fun KaType.memberDelegateOperator(name: String): KaCallableSymbol? = runCatching {
         expandedSymbol?.memberScope?.declarations
             ?.filterIsInstance<KaCallableSymbol>()
-            ?.firstOrNull { symbol -> (symbol as? KaNamedSymbol)?.name?.asString() == name }
+            ?.firstOrNull { symbol ->
+                (symbol as? KaNamedSymbol)?.name?.asString() == name && symbol.isDelegateOperatorShape(name)
+            }
     }.getOrNull()
 
     /**
@@ -1030,34 +1036,37 @@ class KaChangePackageComputer(
     }
 
     /**
-     * Finds a delegate operator a moved file still needs from the original package.
+     * Finds a delegate operator of the original package selected on [type].
      *
      * K2 does not expose the implicit `provideDelegate`/`getValue`/`setValue` calls of a delegated
-     * property, so the operator is looked up by name and receiver applicability on the type it is
-     * selected on. Only a declaration that stays behind qualifies, mirroring the indexed-operator
-     * lookup.
+     * property, so the operator is looked up by name, signature shape, and receiver applicability
+     * on the type it is selected on. When [movedPaths] is `null`, every declaration of the
+     * original package qualifies — a provider moving with the file still decides which accessor
+     * the property selects. Otherwise only a declaration that stays behind qualifies, mirroring
+     * the indexed-operator lookup.
      *
      * @param type type of the delegate, or of the value a `provideDelegate` returns
      * @param operatorName `provideDelegate`, `getValue`, or `setValue`
      * @param originalPackage package the moved file declares before the change
-     * @param movedPaths paths of the files whose package changes
-     * @return the remaining operator, or `null` when none applies
+     * @param movedPaths paths of the files whose package changes, or `null` to accept moving ones
+     * @return the selected operator, or `null` when none applies
      */
     context(_: KaSession)
     private fun samePackageDelegateOperator(
         type: KaType,
         operatorName: String,
         originalPackage: FqName,
-        movedPaths: Set<String>,
+        movedPaths: Set<String>?,
     ): KaCallableSymbol? {
         return findPackage(originalPackage)?.packageScope?.declarations
             ?.filterIsInstance<KaCallableSymbol>()
             ?.firstOrNull { symbol ->
                 val receiver = symbol.receiverParameter?.returnType
                 (symbol as? KaNamedSymbol)?.name?.asString() == operatorName &&
+                    symbol.isDelegateOperatorShape(operatorName) &&
                     receiver != null &&
                     type.isSubtypeOf(receiver) &&
-                    samePackageTopLevelName(symbol, originalPackage, movedPaths) != null
+                    (movedPaths == null || samePackageTopLevelName(symbol, originalPackage, movedPaths) != null)
             }
     }
 

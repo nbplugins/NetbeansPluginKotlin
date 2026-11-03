@@ -42,9 +42,11 @@ import org.jetbrains.kotlin.analysis.api.symbols.findTopLevelCallables
 import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
 import org.jetbrains.kotlin.analysis.api.types.KaType
 import org.jetbrains.kotlin.idea.references.KtReference
+import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtArrayAccessExpression
+import org.jetbrains.kotlin.psi.KtBinaryExpression
 import org.jetbrains.kotlin.psi.KtBlockExpression
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtCatchClause
@@ -70,6 +72,7 @@ import org.jetbrains.kotlin.psi.KtSimpleNameExpression
 import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
 import org.jetbrains.kotlin.psi.KtTypeAlias
 import org.jetbrains.kotlin.psi.KtTypeParameterListOwner
+import org.jetbrains.kotlin.psi.KtUnaryExpression
 import org.jetbrains.kotlin.psi.KtUserType
 import org.jetbrains.kotlin.psi.KtWhenExpression
 
@@ -154,6 +157,15 @@ object KotlinImportBindingCheck {
                             name,
                             { symbol -> !symbol.belongsTo(excludedDeclarations) },
                         ) { conflicting = true }
+                    }
+                    // A compound indexed write spells only the getter; its implicit setter goes
+                    // through the same check because an import of `set` outranks the wildcard.
+                    if (!conflicting && name == "set") {
+                        runCatching { expression.implicitSetterCandidates() }.getOrNull()?.forEach { symbol ->
+                            if (!symbol.belongsTo(excludedDeclarations) && symbol.isTopLevelBinding()) {
+                                conflicting = true
+                            }
+                        }
                     }
                 }
 
@@ -259,6 +271,17 @@ object KotlinImportBindingCheck {
                             importedName,
                             { symbol -> symbol.staysInOriginalPackage(imported, movingPaths) },
                         ) { conflicting = true }
+                        // The setter half of a compound write is implicit; it loses the overload
+                        // the rewritten directive stops importing just like the getter does.
+                        if (!conflicting && importedName == "set") {
+                            runCatching { expression.implicitSetterCandidates() }.getOrNull()?.forEach { symbol ->
+                                if (symbol.isTopLevelBinding() &&
+                                    symbol.staysInOriginalPackage(imported, movingPaths)
+                                ) {
+                                    conflicting = true
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -349,6 +372,17 @@ object KotlinImportBindingCheck {
                             importedName,
                             { symbol -> symbol.isCapturedByOutgoingImport(imported, movingPaths) },
                         ) { conflicting = true }
+                        // The implicit setter of a compound write keeps binding through the
+                        // wildcard while the file moves; the added import would outrank it.
+                        if (!conflicting && importedName == "set") {
+                            runCatching { expression.implicitSetterCandidates() }.getOrNull()?.forEach { symbol ->
+                                if (symbol.isTopLevelBinding() &&
+                                    symbol.isCapturedByOutgoingImport(imported, movingPaths)
+                                ) {
+                                    conflicting = true
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -846,33 +880,79 @@ object KotlinImportBindingCheck {
     }.getOrDefault(false)
 
     /**
-     * Returns the extension operators a delegated property implicitly selects.
+     * Returns the extension delegate operators a delegated property implicitly selects.
      *
      * A delegated property spells neither `provideDelegate` nor `getValue`/`setValue`; K2 does not
      * expose the implicit calls either, so the applicable extensions are looked up by name and
      * receiver applicability in the property's scope. `provideDelegate` runs first and its return
-     * type is the type the accessors are selected on. A member accessor always wins over
-     * extensions, so it cannot be captured by an import and is not reported.
+     * type is the type the accessors are selected on, so the provider itself is a candidate when
+     * the import introduces a provider. A member operator always wins over extensions, so it
+     * cannot be captured by an import and is not reported.
      *
-     * @param name accessor name the import introduces
+     * @param name operator name the import introduces
      * @return applicable extension operators of that name, empty when the property does not use it
      */
     context(_: KaSession)
     private fun KtProperty.delegateAccessorCandidates(name: String): List<KaCallableSymbol> {
+        val delegateType = runCatching { delegateExpression?.expressionType }.getOrNull() ?: return emptyList()
+        if (name == "provideDelegate") {
+            // The provider is selected on the delegate expression's own type, before any accessor.
+            return if (delegateType.memberDelegateOperator(name) != null) {
+                emptyList()
+            } else {
+                applicableOperators(delegateType, name)
+            }
+        }
         val accessorNames = if (isVar) listOf("getValue", "setValue") else listOf("getValue")
         if (name !in accessorNames) return emptyList()
-        val delegateType = runCatching { delegateExpression?.expressionType }.getOrNull() ?: return emptyList()
         val provider = delegateOperator(delegateType, "provideDelegate")
         val accessorTypes = provider
             ?.let { symbol -> runCatching { symbol.returnType }.getOrNull() }
             ?.let { providedType -> listOf(providedType) }
             ?: listOf(delegateType)
         return accessorTypes.flatMap { accessorType ->
-            if (accessorType.memberOperator(name) != null) {
+            if (accessorType.memberDelegateOperator(name) != null) {
                 emptyList()
             } else {
                 applicableOperators(accessorType, name)
             }
+        }
+    }
+
+    /**
+     * Returns the top-level `set` extensions a compound indexed write implicitly selects.
+     *
+     * `sub[0]++` and `sub[0] += 1` spell only the getter, so K2 does not expose the setter half.
+     * The applicable `set` extensions are looked up by name and receiver applicability at the
+     * access site, mirroring the delegate accessor lookup. A member setter always wins over
+     * extensions and cannot be captured by an import.
+     *
+     * @return applicable `set` extensions, empty for a plain read or a member setter
+     */
+    context(_: KaSession)
+    private fun KtArrayAccessExpression.implicitSetterCandidates(): List<KaCallableSymbol> {
+        if (!isCompoundWrite()) return emptyList()
+        val receiverType = runCatching { arrayExpression?.expressionType }.getOrNull() ?: return emptyList()
+        if (receiverType.memberIndexedSetter() != null) return emptyList()
+        return applicableOperators(receiverType, "set")
+    }
+
+    /**
+     * Tells whether this indexed access also writes its element.
+     *
+     * K2 exposes only the `get` convention of an indexed access; a compound assignment or
+     * increment is what makes the compiler select a `set` as well.
+     *
+     * @return `true` when the access is assigned through rather than merely read
+     */
+    private fun KtArrayAccessExpression.isCompoundWrite(): Boolean {
+        val parent = parent
+        return when (parent) {
+            is KtBinaryExpression -> parent.left == this &&
+                parent.operationToken in KtTokens.ALL_ASSIGNMENTS && parent.operationToken != KtTokens.EQ
+            is KtUnaryExpression -> parent.baseExpression == this &&
+                parent.operationToken in setOf(KtTokens.PLUSPLUS, KtTokens.MINUSMINUS)
+            else -> false
         }
     }
 
@@ -888,30 +968,54 @@ object KotlinImportBindingCheck {
      */
     context(_: KaSession)
     private fun KtProperty.delegateOperator(type: KaType, name: String): KaCallableSymbol? =
-        type.memberOperator(name) ?: applicableOperators(type, name).firstOrNull()
+        type.memberDelegateOperator(name) ?: applicableOperators(type, name).firstOrNull()
 
     /**
-     * Returns the member declaration of [name] on this type, or `null` when it has none.
+     * Returns the member delegate operator of [name] on this type, or `null` when it has none.
      *
-     * @param name member name
-     * @return the declared member, regardless of its applicability
+     * Matching by name alone would treat an ordinary member whose signature does not fit the
+     * delegation protocol as an accessor and hide the extension the property actually uses.
+     *
+     * @param name operator name
+     * @return the applicable member operator, or `null` when the type declares none
      */
     context(_: KaSession)
-    private fun KaType.memberOperator(name: String): KaCallableSymbol? = runCatching {
+    private fun KaType.memberDelegateOperator(name: String): KaCallableSymbol? = runCatching {
         expandedSymbol?.memberScope?.declarations
             ?.filterIsInstance<KaCallableSymbol>()
-            ?.firstOrNull { symbol -> (symbol as? KaNamedSymbol)?.name?.asString() == name }
+            ?.firstOrNull { symbol ->
+                (symbol as? KaNamedSymbol)?.name?.asString() == name && symbol.isDelegateOperatorShape(name)
+            }
     }.getOrNull()
 
     /**
-     * Returns the top-level extension operators of [name] applicable to [type] at this property.
+     * Returns the member `set` operator of an indexed access on this type, or `null` when absent.
+     *
+     * A member setter takes the index and the assigned value; extensions declare the receiver
+     * separately and therefore have one more value parameter.
+     *
+     * @return the member indexed setter, or `null` when there is none
+     */
+    context(_: KaSession)
+    private fun KaType.memberIndexedSetter(): KaCallableSymbol? = runCatching {
+        expandedSymbol?.memberScope?.declarations
+            ?.filterIsInstance<KaCallableSymbol>()
+            ?.firstOrNull { symbol ->
+                (symbol as? KaNamedSymbol)?.name?.asString() == "set" &&
+                    symbol is org.jetbrains.kotlin.analysis.api.symbols.KaFunctionSymbol &&
+                    symbol.valueParameters.size == 2
+            }
+    }.getOrNull()
+
+    /**
+     * Returns the top-level extension operators of [name] applicable to [type] at this element.
      *
      * @param type receiver type the operator is selected on
      * @param name operator name
-     * @return applicable extensions visible in the property's scope
+     * @return applicable extensions visible in the element's scope
      */
     context(_: KaSession)
-    private fun KtProperty.applicableOperators(type: KaType, name: String): List<KaCallableSymbol> = runCatching {
+    private fun KtElement.applicableOperators(type: KaType, name: String): List<KaCallableSymbol> = runCatching {
         val identifier = Name.identifier(name)
         containingKtFile.scopeContext(this).scopes.asSequence()
             .flatMap { scopeWithKind -> scopeWithKind.scope.callables(identifier) }

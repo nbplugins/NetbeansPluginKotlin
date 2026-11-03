@@ -204,6 +204,97 @@ class KotlinImportBindingCheckTest : KotlinTestCase("KotlinImportBindingCheckTes
         }
     }
 
+    /**
+     * Verifies an implicit `provideDelegate` of a delegated property is reported.
+     *
+     * `val value by 1` calls the `Int.provideDelegate` extension bound through the wildcard
+     * import without spelling its name. Adding an explicit import of the moving `Long.provideDelegate`
+     * overload outranks the wildcard, so the property would select the imported overload instead.
+     */
+    fun testHasConflictingReference_reportsImplicitDelegateProvider() {
+        withSession(
+            name = "implicit-provider",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("old"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(
+                    root.resolve("old/Staying.kt"),
+                    "package old\n\n" +
+                        "operator fun Int.provideDelegate(" +
+                        "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = this\n\n" +
+                        "operator fun Int.getValue(" +
+                        "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = this\n",
+                )
+                Files.writeString(
+                    root.resolve("old/Moving.kt"),
+                    "package old\n\n" +
+                        "operator fun Long.provideDelegate(" +
+                        "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Long = this\n\n" +
+                        "operator fun Long.getValue(" +
+                        "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Long = this\n",
+                )
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package usage\n\nimport old.*\n\n" +
+                        "fun use(property: kotlin.reflect.KProperty<*>) {\n" +
+                        "    val value by 1\n" +
+                        "    (1L).provideDelegate(null, property)\n}\n",
+                )
+            },
+        ) { session, root ->
+            val moving = session.ktFile(root.resolve("old/Moving.kt"))
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+            val imported = moving.declarations.filterIsInstance<KtNamedFunction>().single { it.name == "provideDelegate" }
+
+            assertTrue(
+                "the imported provider would outrank the wildcard provider of val value by 1",
+                KotlinImportBindingCheck.hasConflictingReference(usage, "provideDelegate", setOf(imported)),
+            )
+        }
+    }
+
+    /**
+     * Verifies the implicit setter of a compound indexed write is reported.
+     *
+     * `sub[0]++` spells only the getter, and K2 does not expose the setter half. Adding an explicit
+     * import of the moving `Box.set` extension outranks the wildcard import that currently selects
+     * the staying `SubBox.set`, so the write would silently switch to the imported overload.
+     */
+    fun testHasConflictingReference_reportsImplicitIndexedSetter() {
+        withSession(
+            name = "implicit-setter",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("old"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(
+                    root.resolve("old/Staying.kt"),
+                    "package old\n\n" +
+                        "open class SubBox\n\n" +
+                        "operator fun SubBox.get(index: Int): Int = 0\n\n" +
+                        "operator fun SubBox.set(index: Int, value: Int) {}\n",
+                )
+                Files.writeString(
+                    root.resolve("old/Moving.kt"),
+                    "package old\n\nclass Box\n\n" +
+                        "operator fun Box.set(index: Int, value: Int) {}\n",
+                )
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package usage\n\nimport old.*\n\nfun use(sub: SubBox) {\n    sub[0]++\n}\n",
+                )
+            },
+        ) { session, root ->
+            val moving = session.ktFile(root.resolve("old/Moving.kt"))
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+            val imported = moving.declarations.filterIsInstance<KtNamedFunction>().single { it.name == "set" }
+
+            assertTrue(
+                "the implicit setter of sub[0]++ would follow the imported set",
+                KotlinImportBindingCheck.hasConflictingReference(usage, "set", setOf(imported)),
+            )
+        }
+    }
+
     /** Verifies a member function of an enclosing class binds the name lexically. */
     fun testIsNameBoundInScope_reportsMemberFunction() {
         withSession(
