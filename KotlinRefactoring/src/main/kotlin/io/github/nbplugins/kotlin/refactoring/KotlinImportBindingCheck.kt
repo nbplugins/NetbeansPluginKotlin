@@ -21,10 +21,12 @@ import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.compat.getClassOrObjectSymbol
+import org.jetbrains.kotlin.analysis.api.components.expandedSymbol
 import org.jetbrains.kotlin.analysis.api.components.memberScope
 import org.jetbrains.kotlin.analysis.api.components.packageScope
 import org.jetbrains.kotlin.analysis.api.components.resolveToSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaClassKind
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassLikeSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaPackageSymbol
@@ -130,12 +132,15 @@ object KotlinImportBindingCheck {
      * @param file caller whose import directive is being rewritten
      * @param imported original FQN of the moved declaration
      * @param movingPaths paths of the files whose package changes
+     * @param boundName name the directive binds at its call sites — the alias when the directive
+     * is aliased, the declaration's simple name otherwise
      * @return `true` when a reference would bind to the moved declaration instead of its own
      */
     fun hasConflictingImportRewrite(
         file: KtFile,
         imported: FqName,
         movingPaths: Set<String>,
+        boundName: String = imported.shortName().asString(),
     ): Boolean = runCatching {
         analyze(file) {
             var conflicting = false
@@ -146,13 +151,14 @@ object KotlinImportBindingCheck {
                     val importedName = imported.shortName().asString()
                     val referencedName = expression.getReferencedName()
                     // A convention operator spells `plus` as `+`, so an operation reference can
-                    // still bind the name the rewritten import selects.
-                    if (referencedName != importedName && expression !is KtOperationReferenceExpression) return
+                    // still bind the name the rewritten import selects. An aliased directive is
+                    // spelled only as its alias at call sites.
+                    if (referencedName != boundName && expression !is KtOperationReferenceExpression) return
                     if (PsiTreeUtil.getParentOfType(expression, KtImportDirective::class.java) != null) return
                     if (expression.isQualifiedSelector() && !expression.isValueReceiverExtension()) return
                     val symbol = expression.references.filterIsInstance<KtReference>().firstOrNull()
                         ?.resolveToSymbol() ?: return
-                    if (referencedName != importedName && symbol.declaredName() != importedName) return
+                    if (referencedName != boundName && symbol.declaredName() != importedName) return
                     val path = symbol.psi?.containingFile?.virtualFile?.path
                     if (path != null && path in movingPaths) return
                     if (!symbol.isTopLevelBinding()) return
@@ -454,7 +460,8 @@ object KotlinImportBindingCheck {
      * `1.choose()` and `box.choose()` bind the extension through extension-overload resolution,
      * where an explicit import of another same-named extension changes which one is chosen.
      * `Int.choose()` and `p.choose()` name a type or package as the receiver, so an import cannot
-     * affect them.
+     * affect them — except for an extension on a companion object or a named object, which is
+     * spelled with a class-like receiver while still being selected by overload resolution.
      *
      * @return `true` when an import of this name could change the selected extension
      */
@@ -464,6 +471,14 @@ object KotlinImportBindingCheck {
         val symbol = references.filterIsInstance<KtReference>().firstOrNull()
             ?.resolveToSymbol() as? KaCallableSymbol ?: return false
         if (!symbol.isExtension) return false
+        // `Box.choose(1)` spells the class-like receiver `Box`, but the extension declared on
+        // `Box.Companion` is chosen by overload resolution, so an import can still rebind it.
+        val receiverClass = symbol.receiverParameter?.returnType?.expandedSymbol
+        if (receiverClass?.classKind == KaClassKind.COMPANION_OBJECT ||
+            receiverClass?.classKind == KaClassKind.OBJECT
+        ) {
+            return true
+        }
         val receiverRoot = qualified.receiverExpression.leadingReference() ?: return true
         val receiverSymbol = runCatching {
             receiverRoot.references.filterIsInstance<KtReference>().firstOrNull()?.resolveToSymbol()

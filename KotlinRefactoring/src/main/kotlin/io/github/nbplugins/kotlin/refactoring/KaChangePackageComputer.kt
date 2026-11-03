@@ -24,6 +24,7 @@ import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.components.packageScope
 import org.jetbrains.kotlin.analysis.api.components.resolveToSymbol
+import org.jetbrains.kotlin.analysis.api.components.resolveToSymbols
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassLikeSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
@@ -347,9 +348,15 @@ class KaChangePackageComputer(
         session.findImportingFiles(ktFile.project, movedImports).forEach { file ->
             file.importDirectives.forEach directives@{ directive ->
                 val importedFqName = directive.importedFqName ?: return@directives
-                if (directive.isAllUnder || directive.aliasName != null) return@directives
+                if (directive.isAllUnder) return@directives
                 if (importedFqName !in movedOldFqNames) return@directives
-                if (KotlinImportBindingCheck.hasConflictingImportRewrite(file, importedFqName, movedPaths)) {
+                // An aliased directive binds its alias, so its call sites have to be matched by
+                // that name when the rewritten directive loses the overloads staying behind.
+                val boundName = directive.aliasName ?: importedFqName.shortName().asString()
+                if (KotlinImportBindingCheck.hasConflictingImportRewrite(
+                        file, importedFqName, movedPaths, boundName,
+                    )
+                ) {
                     conflicts += "Cannot update ${file.name}: import ${importedFqName.asString()} " +
                         "also binds declarations that stay behind."
                 }
@@ -679,6 +686,28 @@ class KaChangePackageComputer(
                             } == true
                             if (!receiverIsVariable && expression.isPackageQualified(originalPackage)) return
                             missingImports += importFqName
+                        }
+
+                        // A destructuring declaration spells no name for the operator it calls:
+                        // `val (x) = box` depends on a top-level `operator fun Box.component1`
+                        // that only the original package's visibility provided, so the convention
+                        // reference has to be picked up separately. Its reference resolves to both
+                        // the entry's own property and the convention function.
+                        override fun visitDestructuringDeclarationEntry(
+                            multiDeclarationEntry: KtDestructuringDeclarationEntry,
+                        ) {
+                            super.visitDestructuringDeclarationEntry(multiDeclarationEntry)
+                            multiDeclarationEntry.references.filterIsInstance<KtReference>().forEach { reference ->
+                                val symbols = runCatching { reference.resolveToSymbols() }.getOrNull()
+                                    ?: return@forEach
+                                val importFqName = symbols.firstNotNullOfOrNull { symbol ->
+                                    samePackageTopLevelName(symbol, originalPackage, movedPaths)
+                                } ?: return@forEach
+                                if (importFqName in importedFqNames || originalPackage in starPackages) {
+                                    return@forEach
+                                }
+                                missingImports += importFqName
+                            }
                         }
 
                         // Convention operators are not spelled as simple names: `box[0]` depends

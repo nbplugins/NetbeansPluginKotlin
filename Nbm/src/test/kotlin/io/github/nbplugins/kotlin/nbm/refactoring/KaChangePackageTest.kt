@@ -3295,6 +3295,152 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies a rewritten aliased import is checked for the overloads it stops binding.
+     *
+     * `import old.choose as pick` binds the whole overload set, so retargeting it to
+     * `import dest.choose as pick` while the `Int` overload stays behind would silently make
+     * `pick(1)` select the moved `Number` overload.
+     */
+    fun testApply_realSession_conflictsWhenAliasedImportLosesUnmovedOverload() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-aliased-import")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Number.kt")
+            Files.writeString(sourcePath, "package old\n\nfun choose(n: Number) = 1\n")
+            Files.writeString(temporaryRoot.resolve("old/Int.kt"), "package old\n\nfun choose(n: Int) = 2\n")
+            Files.writeString(
+                temporaryRoot.resolve("usage/Usage.kt"),
+                "package usage\n\nimport old.choose as pick\n\nfun use() = pick(1)\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-aliased-import-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected conflicts, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Conflicts)
+            val conflicts = outcome as KaChangePackageComputer.ApplyOutcome.Conflicts
+            assertTrue(
+                "The conflict must name the caller whose aliased import loses an overload: ${conflicts.messages}",
+                conflicts.messages.any { message -> message.contains("Usage.kt") },
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a companion-object extension call is treated as import-sensitive.
+     *
+     * `Box.choose(1.5)` and `Box.choose(1)` both bind extensions through overload resolution even
+     * though the receiver spells a class name. Adding `import dest.choose` for the moved `Number`
+     * overload outranks the wildcard binding of the staying `Int` overload, so `Box.choose(1)`
+     * would silently select the moved one.
+     */
+    fun testApply_realSession_conflictsWhenCompanionExtensionLosesUnmovedOverload() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-companion-extension")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Box.kt")
+            Files.writeString(
+                sourcePath,
+                "package old\n\nclass Box {\n    companion object\n}\n\n" +
+                    "fun Box.Companion.choose(n: Number) = 1\n",
+            )
+            Files.writeString(
+                temporaryRoot.resolve("old/Int.kt"),
+                "package old\n\nfun Box.Companion.choose(n: Int) = 2\n",
+            )
+            Files.writeString(
+                temporaryRoot.resolve("usage/Usage.kt"),
+                "package usage\n\nimport old.*\n\nfun use() = Box.choose(1) + Box.choose(1.5)\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-companion-extension-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected conflicts, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Conflicts)
+            val conflicts = outcome as KaChangePackageComputer.ApplyOutcome.Conflicts
+            assertTrue(
+                "The conflict must name the caller whose companion extension would be captured: ${conflicts.messages}",
+                conflicts.messages.any { message -> message.contains("Usage.kt") },
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a destructuring declaration's `componentN` operator is imported on a package change.
+     *
+     * `val (x) = box` calls the top-level `operator fun Box.component1`, which the file only sees
+     * through same-package visibility. After the move the convention function must be imported
+     * explicitly, exactly like a named reference.
+     */
+    fun testApply_realSession_importsDestructuringOperator() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-destructuring")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("p"))
+            val sourcePath = temporaryRoot.resolve("p/Move.kt")
+            Files.writeString(sourcePath, "package p\n\nfun use(box: Box): Int {\n    val (x) = box\n    return x\n}\n")
+            Files.writeString(
+                temporaryRoot.resolve("p/Box.kt"),
+                "package p\n\nclass Box\n\noperator fun Box.component1() = 1\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-destructuring-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("q")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "The destructuring convention operator must be imported by its declared name",
+                "package q\n\nimport p.Box\nimport p.component1\n\n" +
+                    "fun use(box: Box): Int {\n    val (x) = box\n    return x\n}\n",
+                success.changedFiles[sourcePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))
