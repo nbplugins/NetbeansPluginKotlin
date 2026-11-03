@@ -36,6 +36,7 @@ import org.jetbrains.kotlin.psi.KtConstructorDelegationReferenceExpression
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtImportDirective
+import org.jetbrains.kotlin.psi.KtLabelReferenceExpression
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtProperty
@@ -379,8 +380,14 @@ class KaRenameComputer(
                         val constructsTarget = targetClassId != null &&
                             (sym as? KaConstructorSymbol)?.containingClassId == targetClassId
                         if (sym.psi == targetPsi || constructsTarget) {
-                            val tr = expression.textRange
-                            ranges.add(tr.startOffset to tr.endOffset)
+                            // A receiver label such as `this@Foo` spans the `@` as well; replacing
+                            // the whole element would drop it and leave `thisBar`.
+                            val range = if (expression is KtLabelReferenceExpression) {
+                                expression.getReferencedNameElement()?.textRange ?: expression.textRange
+                            } else {
+                                expression.textRange
+                            }
+                            ranges.add(range.startOffset to range.endOffset)
                         }
                     }
                 })

@@ -39,7 +39,7 @@ class KotlinRenameClassifierConflictTest : KotlinTestCase("KotlinRenameClassifie
             val source = session.ktFile(root.resolve("source/Foo.kt"))
             val types = session.ktFile(root.resolve("source/Types.kt"))
 
-            val conflict = findClassifierConflict(source, primaryClass(source), "Bar", listOf(source, types))
+            val conflict = findRenameConflict(source, primaryClass(source), "Bar", listOf(source, types))
 
             assertEquals("Bar", conflict?.name)
         }
@@ -59,7 +59,7 @@ class KotlinRenameClassifierConflictTest : KotlinTestCase("KotlinRenameClassifie
             val source = session.ktFile(root.resolve("source/Foo.kt"))
             val other = session.ktFile(root.resolve("other/Types.kt"))
 
-            val conflict = findClassifierConflict(source, primaryClass(source), "Bar", listOf(source, other))
+            val conflict = findRenameConflict(source, primaryClass(source), "Bar", listOf(source, other))
 
             assertNull("another package cannot collide with the renamed class", conflict)
         }
@@ -76,7 +76,7 @@ class KotlinRenameClassifierConflictTest : KotlinTestCase("KotlinRenameClassifie
         ) { session, root ->
             val source = session.ktFile(root.resolve("source/Foo.kt"))
 
-            val conflict = findClassifierConflict(source, primaryClass(source), "Foo", listOf(source))
+            val conflict = findRenameConflict(source, primaryClass(source), "Foo", listOf(source))
 
             assertNull("the declaration being renamed must not conflict with itself", conflict)
         }
@@ -95,9 +95,110 @@ class KotlinRenameClassifierConflictTest : KotlinTestCase("KotlinRenameClassifie
             val source = session.ktFile(root.resolve("source/Foo.kt"))
             val aliases = session.ktFile(root.resolve("source/Aliases.kt"))
 
-            val conflict = findClassifierConflict(source, primaryClass(source), "Bar", listOf(source, aliases))
+            val conflict = findRenameConflict(source, primaryClass(source), "Bar", listOf(source, aliases))
 
             assertEquals("Bar", conflict?.name)
+        }
+    }
+
+    /**
+     * Verifies a top-level function callable the same way as the new constructor blocks the rename.
+     *
+     * A zero-argument `fun Bar()` and a renamed `class Before` becoming `class Bar` cannot coexist
+     * in one package, since both are called as `Bar()`.
+     */
+    fun testFindRenameConflict_reportsSameSignatureFunction() {
+        withSession(
+            name = "function",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.writeString(root.resolve("source/Foo.kt"), "package p\n\nclass Foo\n")
+                Files.writeString(root.resolve("source/Functions.kt"), "package p\n\nfun Bar() = 1\n")
+            },
+        ) { session, root ->
+            val source = session.ktFile(root.resolve("source/Foo.kt"))
+            val functions = session.ktFile(root.resolve("source/Functions.kt"))
+
+            val conflict = findRenameConflict(source, primaryClass(source), "Bar", listOf(source, functions))
+
+            assertEquals("Bar", conflict?.name)
+        }
+    }
+
+    /** Verifies a function with a different signature does not conflict with the constructor. */
+    fun testFindRenameConflict_ignoresFunctionWithDifferentSignature() {
+        withSession(
+            name = "function-signature",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.writeString(root.resolve("source/Foo.kt"), "package p\n\nclass Foo\n")
+                Files.writeString(root.resolve("source/Functions.kt"), "package p\n\nfun Bar(n: Int) = n\n")
+            },
+        ) { session, root ->
+            val source = session.ktFile(root.resolve("source/Foo.kt"))
+            val functions = session.ktFile(root.resolve("source/Functions.kt"))
+
+            val conflict = findRenameConflict(source, primaryClass(source), "Bar", listOf(source, functions))
+
+            assertNull("a function taking parameters cannot collide with a no-arg constructor", conflict)
+        }
+    }
+
+    /**
+     * Verifies a caller whose existing binding would be shadowed by the rewritten import blocks
+     * the rename.
+     *
+     * The caller imports `p.Foo` and already calls `q.Bar` from its own package. After the rename
+     * its import becomes `p.Bar`, which takes precedence over `q.Bar` without rewriting those
+     * call sites.
+     */
+    fun testFindCallerScopeConflict_reportsReboundSamePackageClass() {
+        withSession(
+            name = "caller-scope",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.createDirectories(root.resolve("other"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(root.resolve("source/Foo.kt"), "package p\n\nclass Foo(val n: Int)\n")
+                Files.writeString(root.resolve("other/Types.kt"), "package q\n\nclass Bar\n")
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package q\n\nimport p.Foo\n\nfun use() = Foo(1) + Bar()\n",
+                )
+            },
+        ) { session, root ->
+            val source = session.ktFile(root.resolve("source/Foo.kt"))
+            val types = session.ktFile(root.resolve("other/Types.kt"))
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+
+            val conflict = findCallerScopeConflict(
+                source,
+                primaryClass(source),
+                "Bar",
+                listOf(source, types, usage),
+            )
+
+            assertEquals("Usage.kt", conflict?.virtualFile?.name)
+        }
+    }
+
+    /** Verifies a caller that never mentions the new name is not reported. */
+    fun testFindCallerScopeConflict_ignoresCallerWithoutNewName() {
+        withSession(
+            name = "caller-scope-clean",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(root.resolve("source/Foo.kt"), "package p\n\nclass Foo(val n: Int)\n")
+                Files.writeString(root.resolve("usage/Usage.kt"), "package q\n\nimport p.Foo\n\nfun use() = Foo(1)\n")
+            },
+        ) { session, root ->
+            val source = session.ktFile(root.resolve("source/Foo.kt"))
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+
+            val conflict = findCallerScopeConflict(source, primaryClass(source), "Bar", listOf(source, usage))
+
+            assertNull("only a caller that already names Bar can be rebound", conflict)
         }
     }
 

@@ -21,15 +21,18 @@ import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectSourceGrou
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.KaChangePackageComputer
 import io.github.nbplugins.kotlin.refactoring.KaRenameComputer
+import io.github.nbplugins.kotlin.refactoring.KotlinImportBindingCheck
 import io.github.nbplugins.kotlin.refactoring.KotlinSourceNames
 import io.github.nbplugins.kotlin.refactoring.TextChange
 import org.jetbrains.kotlin.builder.KotlinPsiManager
 import org.jetbrains.kotlin.log.KotlinLogger
 import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtClass
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
+import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtTypeAlias
 import org.jetbrains.kotlin.utils.ProjectUtils
 import org.netbeans.api.project.Project
@@ -104,13 +107,21 @@ class KotlinRenameFilePlugin(
             ?: return null
         val files = KotlinPsiManager.getFilesByProject(project)
             .mapNotNull { file -> session.getKtFileForPath(file.path) }
-        val conflict = findClassifierConflict(source, primaryClass, refactoring.newName, files)
+        val conflict = findRenameConflict(source, primaryClass, refactoring.newName, files)
+        if (conflict != null) {
+            val packageName = source.packageFqName
+            val location = if (packageName.isRoot) "the root package" else "package ${packageName.asString()}"
+            return Problem(
+                true,
+                "The Kotlin name ${refactoring.newName} is already declared in $location (${conflict.containingKtFile.name}).",
+            )
+        }
+        val caller = findCallerScopeConflict(source, primaryClass, refactoring.newName, files)
             ?: return null
-        val packageName = source.packageFqName
-        val location = if (packageName.isRoot) "the root package" else "package ${packageName.asString()}"
         return Problem(
             true,
-            "The Kotlin name ${refactoring.newName} is already declared in $location (${conflict.containingKtFile.name}).",
+            "Renaming the Kotlin class ${primaryClass.name} to ${refactoring.newName} would change " +
+                "which ${refactoring.newName} the references in ${caller.name} use.",
         )
     }
 }
@@ -179,8 +190,13 @@ class KotlinRenameFileApplyElement(
         val primaryClass = source.declarations.filterIsInstance<KtClass>()
             .firstOrNull { it.name == refactoring.file.name }
             ?: return
+        // The session knows every registered source, including custom Gradle source roots outside
+        // `src`, which `KotlinPsiManager.getFilesByProject` does not walk. Search all of them so
+        // the file's own constructor calls are retargeted as well.
+        val allKtFiles = session.fileMap.values
+            .mapNotNull { lightFile -> session.getKtFileForPath(lightFile.path) }
+            .toSet() + source
         val allFiles = KotlinPsiManager.getFilesByProject(project)
-        val allKtFiles = allFiles.mapNotNull { session.getKtFileForPath(it.path) }.toSet()
         val changes = KaRenameComputer(
             source,
             primaryClass.nameIdentifier?.textRange?.startOffset ?: return,
@@ -512,10 +528,12 @@ private fun validateClassName(name: String, updatePrimaryClass: Boolean): Proble
     }
 
 /**
- * Finds a top-level classifier that already uses [newName] in the package of [source].
+ * Finds a top-level declaration that already owns [newName] in the package of [source].
  *
  * Renaming a file together with its primary class writes the new name verbatim, so a class,
- * object, or type alias that already owns that name in the same package would be redeclared.
+ * object, or type alias that already has that name in the same package would be redeclared. A
+ * top-level function with the same call signature as the renamed primary constructor conflicts
+ * with it as well: `class Before` plus `fun After()` in one package cannot both become `After`.
  *
  * @param source file whose matching class is renamed
  * @param primaryClass top-level class renamed together with the file
@@ -523,20 +541,78 @@ private fun validateClassName(name: String, updatePrimaryClass: Boolean): Proble
  * @param files Kotlin sources of the project
  * @return the first conflicting declaration, or `null` when the name is free
  */
-internal fun findClassifierConflict(
+internal fun findRenameConflict(
     source: KtFile,
     primaryClass: KtClass,
     newName: String,
     files: Collection<KtFile>,
 ): KtNamedDeclaration? {
     val packageName = source.packageFqName
+    val constructorParameterTypes = primaryClass.primaryConstructorParameters
+        .map { parameter -> parameter.typeReference?.text }
     return files.asSequence()
         .filter { file -> file.packageFqName == packageName }
         .flatMap { file -> file.declarations.asSequence() }
-        .filter { declaration -> declaration is KtClassOrObject || declaration is KtTypeAlias }
+        .filter { declaration ->
+            declaration is KtClassOrObject || declaration is KtTypeAlias ||
+                (declaration is KtNamedFunction &&
+                    declaration.conflictsWithConstructor(constructorParameterTypes))
+        }
         .map { declaration -> declaration as KtNamedDeclaration }
         .filter { declaration -> !declaration.isSameDeclaration(primaryClass) }
         .firstOrNull { declaration -> declaration.name == newName }
+}
+
+/**
+ * Finds a caller whose existing references would resolve differently after the import rewrite.
+ *
+ * Renaming the primary class turns `import p.Before` into `import p.After`. A caller that already
+ * refers to a different top-level `After` — from its own package or another import — keeps those
+ * references untouched during discovery, because they do not resolve to the renamed class. The
+ * rewritten import takes precedence over them afterwards, so they silently start using the
+ * renamed class. The rename is rejected instead of changing unrelated call sites.
+ *
+ * @param source file whose primary class is renamed
+ * @param primaryClass class renamed together with the file
+ * @param newName requested class name
+ * @param files Kotlin sources of the project
+ * @return the first caller whose references would change their target, or `null` when none would
+ */
+internal fun findCallerScopeConflict(
+    source: KtFile,
+    primaryClass: KtClass,
+    newName: String,
+    files: Collection<KtFile>,
+): KtFile? {
+    val className = primaryClass.name ?: return null
+    val oldFqName = source.packageFqName.child(Name.identifier(className))
+    return files.firstOrNull { file ->
+        file.virtualFile?.path != source.virtualFile?.path &&
+            file.importDirectives.any { directive ->
+                !directive.isAllUnder && directive.aliasName == null &&
+                    directive.importedFqName == oldFqName
+            } &&
+            KotlinImportBindingCheck.hasConflictingReference(file, newName, setOf(primaryClass))
+    }
+}
+
+/**
+ * Tells whether this top-level function has the same call signature as a primary constructor.
+ *
+ * Matching parameter count and type spellings is what makes Kotlin report conflicting overloads.
+ * An extension function has an implicit receiver and therefore cannot conflict with a constructor.
+ *
+ * @param constructorParameterTypes type spellings of the renamed primary constructor parameters
+ * @return `true` when a call to either declaration could not be told apart
+ */
+private fun KtNamedFunction.conflictsWithConstructor(constructorParameterTypes: List<String?>): Boolean {
+    if (receiverTypeReference != null) return false
+    if (valueParameters.size != constructorParameterTypes.size) return false
+    return valueParameters.indices.all { index ->
+        val functionType = valueParameters[index].typeReference?.text
+        val constructorType = constructorParameterTypes[index]
+        functionType == null || constructorType == null || functionType == constructorType
+    }
 }
 
 /** Tells whether this declaration is [primaryClass], tolerating distinct PSI instances of it. */

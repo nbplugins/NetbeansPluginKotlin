@@ -100,11 +100,12 @@ class KotlinMoveUsageSearchServiceImpl : KotlinMoveUsageSearchService {
      *
      * A file importing `old.Outer.Nested` names the moved class `old.Outer` only as a path prefix,
      * so no `Nested` usage resolves to the moved declaration and usage search cannot discover the
-     * file. Such imports are matched here by their moved-declaration prefix.
+     * file. Such imports are matched here by their moved-declaration prefix. Aliased directives
+     * are included as well: their path still follows the moved declaration while the alias stays.
      *
      * @param project IntelliJ project owning the standalone K2 session
      * @param movedImports original package/name keys mapped to final packages
-     * @return session files with a direct non-aliased import that needs rewriting
+     * @return session files with a direct import that needs rewriting
      */
     override fun findImportingFiles(
         project: com.intellij.openapi.project.Project,
@@ -116,7 +117,7 @@ class KotlinMoveUsageSearchServiceImpl : KotlinMoveUsageSearchService {
             val file = session.getKtFileForPath(lightFile.path) ?: return@mapNotNull null
             file.takeIf { candidate ->
                 candidate.importDirectives.any { directive ->
-                    directive.aliasName == null && !directive.isAllUnder && directive.importedFqName?.let { imported ->
+                    !directive.isAllUnder && directive.importedFqName?.let { imported ->
                         importsMovedDeclaration(imported, movedImports)
                     } == true
                 }
@@ -177,6 +178,26 @@ class KotlinMoveUsageSearchServiceImpl : KotlinMoveUsageSearchService {
                     } == true
                 }
             }
+        }
+    }
+
+    /**
+     * Tells whether any session source outside [excludedPaths] still declares [packageFqName].
+     *
+     * @param project IntelliJ project owning the standalone K2 session
+     * @param packageFqName package whose remaining declarations are checked
+     * @param excludedPaths paths of files whose package is changing in this operation
+     * @return `true` when at least one other source file still declares [packageFqName]
+     */
+    override fun hasSourceFilesInPackage(
+        project: com.intellij.openapi.project.Project,
+        packageFqName: FqName,
+        excludedPaths: Set<String>,
+    ): Boolean {
+        val session = KotlinAnalysisAPISession.forProject(project) ?: return true
+        return session.fileMap.values.any { lightFile ->
+            lightFile.path !in excludedPaths &&
+                session.getKtFileForPath(lightFile.path)?.packageFqName == packageFqName
         }
     }
 

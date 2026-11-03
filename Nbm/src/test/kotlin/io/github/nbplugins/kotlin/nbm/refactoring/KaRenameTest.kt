@@ -435,6 +435,46 @@ class KaRenameTest : KotlinTestCase("KaRenameTest", "rename") {
         }
     }
 
+    /**
+     * Verifies a labeled `this` receiver keeps its `@` while the label follows the rename.
+     *
+     * The label reference spans `@Foo`, but only the identifier is replaced; otherwise the edit
+     * would produce `thisBar`.
+     */
+    fun testRenameClassKeepsLabelPrefix() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping receiver-label rename test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-receiver-label")
+        try {
+            val sourceDirectory = root.resolve("source")
+            Files.createDirectories(sourceDirectory)
+            val sourcePath = sourceDirectory.resolve("Foo.kt")
+            Files.writeString(
+                sourcePath,
+                "package a\n\nclass Foo {\n    fun self() = this@Foo\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-receiver-label-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val changes = KaRenameComputer(source, source.text.indexOf("Foo"), setOf(source), "Bar").compute()
+
+            assertNotNull("compute() must return non-null for a receiver label", changes)
+            assertEquals(
+                "Only the label identifier follows the rename, the @ prefix stays",
+                "package a\n\nclass Bar {\n    fun self() = this@Bar\n}\n",
+                applyChanges(source.text, changes!![sourcePath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

@@ -1,0 +1,150 @@
+/*******************************************************************************
+ * Copyright 2026 nbplugins contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ *******************************************************************************/
+package io.github.nbplugins.kotlin.nbm.refactoring
+
+import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
+import io.github.nbplugins.kotlin.refactoring.KotlinImportBindingCheck
+import org.jetbrains.kotlin.psi.KtClass
+import org.jetbrains.kotlin.psi.KtFile
+import utils.KotlinTestCase
+import java.nio.file.Files
+import java.nio.file.Path
+
+/** Integration tests for the import-binding collision check used by the refactorings. */
+class KotlinImportBindingCheckTest : KotlinTestCase("KotlinImportBindingCheckTest", "moveFile") {
+
+    /** Verifies an unqualified reference to another top-level declaration is reported. */
+    fun testHasConflictingReference_reportsUnqualifiedBinding() {
+        withSession(
+            name = "unqualified",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("other"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(root.resolve("other/Types.kt"), "package q\n\nclass Bar\n")
+                Files.writeString(root.resolve("usage/Usage.kt"), "package usage\n\nimport q.Bar\n\nfun use() = Bar()\n")
+            },
+        ) { session, root ->
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+
+            assertTrue(
+                "an unqualified Bar() would be rebound by the import",
+                KotlinImportBindingCheck.hasConflictingReference(usage, "Bar", emptySet()),
+            )
+        }
+    }
+
+    /** Verifies a reference the import is meant to retarget is not reported. */
+    fun testHasConflictingReference_ignoresExcludedDeclaration() {
+        withSession(
+            name = "excluded",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("other"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(root.resolve("other/Types.kt"), "package q\n\nclass Bar\n")
+                Files.writeString(root.resolve("usage/Usage.kt"), "package usage\n\nimport q.Bar\n\nfun use() = Bar()\n")
+            },
+        ) { session, root ->
+            val types = session.ktFile(root.resolve("other/Types.kt"))
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+            val declared = types.declarations.filterIsInstance<KtClass>().single()
+
+            assertFalse(
+                "the import exists to retarget this very reference",
+                KotlinImportBindingCheck.hasConflictingReference(usage, "Bar", setOf(declared)),
+            )
+        }
+    }
+
+    /** Verifies a qualified access keeps resolving through its receiver. */
+    fun testHasConflictingReference_ignoresQualifiedAccess() {
+        withSession(
+            name = "qualified",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("other"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(root.resolve("other/Types.kt"), "package q\n\nclass Bar\n")
+                Files.writeString(root.resolve("usage/Usage.kt"), "package usage\n\nfun use() = q.Bar()\n")
+            },
+        ) { session, root ->
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+
+            assertFalse(
+                "a qualified access is not rebound by an import",
+                KotlinImportBindingCheck.hasConflictingReference(usage, "Bar", emptySet()),
+            )
+        }
+    }
+
+    /** Verifies a local binding that shadows the name is not an import collision. */
+    fun testHasConflictingReference_ignoresLocalBinding() {
+        withSession(
+            name = "local",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package usage\n\nfun use(): Int { val Bar = 1; return Bar }\n",
+                )
+            },
+        ) { session, root ->
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+
+            assertFalse(
+                "a local variable shadowing the name is unaffected by an import",
+                KotlinImportBindingCheck.hasConflictingReference(usage, "Bar", emptySet()),
+            )
+        }
+    }
+
+    /** @return the session source for [path], failing the test when it is absent. */
+    private fun KotlinAnalysisAPISession.ktFile(path: Path): KtFile =
+        getKtFileForPath(path.toString()) ?: error("No Kotlin source PSI for $path")
+
+    /**
+     * Writes files through [prepare], then runs [check] against a session created afterwards.
+     *
+     * The session snapshots its source roots at creation, so files must exist before it is built.
+     */
+    private fun withSession(
+        name: String,
+        prepare: (Path) -> Unit,
+        check: (KotlinAnalysisAPISession, Path) -> Unit,
+    ) {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping import binding integration test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-import-binding-$name")
+        try {
+            prepare(root)
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "import-binding-$name-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            check(session, root)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /** Locates Kotlin stdlib supplied by the Maven test runtime. */
+    private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
+        .split(System.getProperty("path.separator"))
+        .map(Path::of)
+        .firstOrNull { it.fileName?.toString()?.startsWith("kotlin-stdlib") == true && it.toFile().exists() }
+}
