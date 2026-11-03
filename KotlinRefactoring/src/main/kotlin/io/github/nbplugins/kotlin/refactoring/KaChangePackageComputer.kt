@@ -1153,14 +1153,14 @@ class KaChangePackageComputer(
                             val accessorType = provider?.returnTypeInferredFrom(delegateType) ?: delegateType
                             val operators = buildList {
                                 if (provider != null) add(provider)
-                                samePackageDelegateAccessor(
+                                property.selectedDelegateAccessor(
                                     accessorType,
                                     "getValue",
                                     originalPackage,
                                     movedPaths,
                                 )?.let { symbol -> add(symbol) }
                                 if (property.isVar) {
-                                    samePackageDelegateAccessor(
+                                    property.selectedDelegateAccessor(
                                         accessorType,
                                         "setValue",
                                         originalPackage,
@@ -1432,26 +1432,30 @@ class KaChangePackageComputer(
     }.getOrNull()
 
     /**
-     * Finds the delegate accessor a moved file still needs from the original package.
+     * Finds the delegate accessor the property currently selects.
      *
-     * A member accessor wins over every extension, so the same-package lookup only applies when the
-     * receiver type declares no member of that name.
+     * A member accessor wins over every extension and needs no import, so the lookup only applies
+     * when the receiver type declares no member of that name. Otherwise the property's own scope
+     * decides, exactly as the compiler resolves the implicit call: a wildcard-imported accessor is
+     * found as well as a same-package one. The original package stays a fallback for scopes that
+     * do not expose its declarations.
      *
      * @param accessorType type the accessor is selected on
      * @param operatorName `getValue` or `setValue`
      * @param originalPackage package the moved file declares before the change
      * @param movedPaths paths of the files whose package changes
-     * @return the remaining accessor extension, or `null` when none applies
+     * @return the selected accessor extension, or `null` when none applies
      */
     context(_: KaSession)
-    private fun samePackageDelegateAccessor(
+    private fun KtProperty.selectedDelegateAccessor(
         accessorType: KaType,
         operatorName: String,
         originalPackage: FqName,
         movedPaths: Set<String>,
     ): KaCallableSymbol? {
         if (accessorType.memberDelegateOperator(operatorName) != null) return null
-        return samePackageDelegateOperator(accessorType, operatorName, originalPackage, movedPaths)
+        return scopeDelegateOperator(accessorType, operatorName)
+            ?: samePackageDelegateOperator(accessorType, operatorName, originalPackage, movedPaths)
     }
 
     /**

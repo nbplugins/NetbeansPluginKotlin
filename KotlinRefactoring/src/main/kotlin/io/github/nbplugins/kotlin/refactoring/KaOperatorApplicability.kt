@@ -32,6 +32,7 @@ import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaFunctionSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaTypeParameterSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.symbol
 import org.jetbrains.kotlin.analysis.api.types.KaCapturedType
 import org.jetbrains.kotlin.analysis.api.types.KaClassType
 import org.jetbrains.kotlin.analysis.api.types.KaDefinitelyNotNullType
@@ -43,6 +44,7 @@ import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtArrayAccessExpression
 import org.jetbrains.kotlin.psi.KtBinaryExpression
+import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtUnaryExpression
 
 /**
@@ -55,7 +57,10 @@ import org.jetbrains.kotlin.psi.KtUnaryExpression
  * be used directly. Unifying the declared receiver with the actual one yields the mapping.
  *
  * A callable without a receiver keeps its declared return type; unifyable structures also fall
- * back to it, because guessing an instantiation would select the wrong operator.
+ * back to it, because guessing an instantiation would select the wrong operator. A member
+ * provider has no extension receiver, so its type arguments come from the instantiated scope of
+ * the receiver type: `Delegate<T>.provideDelegate` selected on `Delegate<Int>` returns
+ * `Provided<Int>`.
  *
  * @param receiverType actual type the callable is invoked on
  * @return the return type with the inferred type arguments substituted
@@ -63,7 +68,8 @@ import org.jetbrains.kotlin.psi.KtUnaryExpression
 @OptIn(KaExperimentalApi::class)
 context(_: KaSession)
 internal fun KaCallableSymbol.returnTypeInferredFrom(receiverType: KaType): KaType {
-    val declaredReceiverType = receiverParameter?.returnType ?: return returnType
+    val declaredReceiverType = receiverParameter?.returnType
+        ?: return memberReturnTypeInferredFrom(receiverType)
     return runCatching {
         val mappings = linkedMapOf<KaTypeParameterSymbol, KaType>()
         if (!collectTypeMappings(declaredReceiverType, receiverType, mappings)) return@runCatching returnType
@@ -71,6 +77,35 @@ internal fun KaCallableSymbol.returnTypeInferredFrom(receiverType: KaType): KaTy
         createSubstitutor(mappings).substitute(returnType)
     }.getOrDefault(returnType)
 }
+
+/**
+ * Returns this member's return type with the receiver class's arguments substituted.
+ *
+ * A member symbol spells its class type parameters (`Provided<T>`), while the receiver type is
+ * the instantiated class (`Delegate<Int>`). Mapping the class declaration's parameters to the
+ * receiver's arguments gives the instantiation the accessors are selected on. A receiver that is
+ * not the declaring class (an inherited member) keeps the declared return type.
+ *
+ * @param receiverType instantiated type the member is invoked on
+ * @return the return type with the class's type arguments substituted
+ */
+@OptIn(KaExperimentalApi::class)
+context(_: KaSession)
+private fun KaCallableSymbol.memberReturnTypeInferredFrom(receiverType: KaType): KaType = runCatching {
+    val classType = receiverType as? KaClassType ?: return@runCatching returnType
+    val classParameters = (classType.expandedSymbol?.psi as? KtClassOrObject)?.typeParameters
+        ?: return@runCatching returnType
+    val typeParameters = classParameters.mapNotNull { parameter ->
+        runCatching { parameter.symbol }.getOrNull()
+    }
+    val arguments = classType.typeArguments
+    if (typeParameters.size != arguments.size) return@runCatching returnType
+    val mappings = typeParameters.mapIndexedNotNull { index, parameter ->
+        arguments[index].type?.let { argument -> parameter to argument }
+    }.toMap()
+    if (mappings.isEmpty()) return@runCatching returnType
+    createSubstitutor(mappings).substitute(returnType)
+}.getOrDefault(returnType)
 
 /**
  * Collects the type-parameter instantiations that make [actual] match [declared].
@@ -209,7 +244,8 @@ private fun acceptsArgument(parameterType: KaType, argument: KaType): Boolean = 
  * Every candidate is visible through the same package scopes, so overload resolution ranks them
  * by receiver specificity: `SubBox.set` wins over `Box.set` for a `SubBox` receiver. Candidates
  * that cannot take [arguments] are dropped first, which separates overloads declared on the same
- * receiver type.
+ * receiver type; among those, the more specific parameter tuple wins, because `Int` fits a
+ * `Number` parameter as well.
  *
  * @param candidates extensions visible under the same simple name
  * @param receiverType type of the value the operator is invoked on
@@ -228,9 +264,67 @@ internal fun selectExtension(
             (arguments == null || candidate.acceptsIndexedSetterArguments(arguments))
     }
     return applicable.firstOrNull { candidate ->
-        applicable.none { other -> other !== candidate && other.receiverIsMoreSpecificThan(candidate) }
+        applicable.none { other -> other !== candidate && other.isMoreSpecificThan(candidate) }
     } ?: applicable.firstOrNull()
 }
+
+/**
+ * Tells whether this callable's overload is preferred over [other] by the compiler.
+ *
+ * A more specific receiver wins first. When both are declared on the same receiver type, the
+ * preference falls back to the value parameters: `Box.set(Int, Int)` is more specific than
+ * `Box.set(Int, Number)` for a write whose value is an `Int`.
+ *
+ * @param other competing callable
+ * @return `true` when this callable is a strictly better overload
+ */
+@OptIn(KaExperimentalApi::class)
+context(_: KaSession)
+private fun KaCallableSymbol.isMoreSpecificThan(other: KaCallableSymbol): Boolean =
+    receiverIsMoreSpecificThan(other) ||
+        (hasSameReceiverAs(other) && parametersAreMoreSpecificThan(other))
+
+/**
+ * Tells whether both callables declare the same receiver type.
+ *
+ * @param other competing callable
+ * @return `true` when the declared receivers are equivalent
+ */
+@OptIn(KaExperimentalApi::class)
+context(_: KaSession)
+private fun KaCallableSymbol.hasSameReceiverAs(other: KaCallableSymbol): Boolean = runCatching {
+    val receiver = receiverParameter?.returnType ?: return@runCatching false
+    val otherReceiver = other.receiverParameter?.returnType ?: return@runCatching false
+    receiver.semanticallyEquals(otherReceiver)
+}.getOrDefault(false)
+
+/**
+ * Tells whether this callable's value parameters are strictly more specific than [other]'s.
+ *
+ * Every parameter must accept the other's type, and at least one must be a proper subtype:
+ * `(Int, Int)` is more specific than `(Int, Number)`. A type parameter or a differing arity
+ * leaves the comparison undecided, because the instantiation is what would decide it.
+ *
+ * @param other competing callable
+ * @return `true` when this callable takes a strictly narrower parameter tuple
+ */
+@OptIn(KaExperimentalApi::class)
+context(_: KaSession)
+private fun KaCallableSymbol.parametersAreMoreSpecificThan(other: KaCallableSymbol): Boolean = runCatching {
+    val mine = (this as? KaFunctionSymbol)?.valueParameters ?: return@runCatching false
+    val theirs = (other as? KaFunctionSymbol)?.valueParameters ?: return@runCatching false
+    if (mine.size != theirs.size || mine.isEmpty()) return@runCatching false
+    var strict = false
+    val fits = mine.indices.all { index ->
+        val mineType = mine[index].returnType
+        val theirType = theirs[index].returnType
+        if (mineType is KaTypeParameterType || theirType is KaTypeParameterType) return@all false
+        if (!mineType.isSubtypeOf(theirType)) return@all false
+        if (!theirType.isSubtypeOf(mineType)) strict = true
+        true
+    }
+    fits && strict
+}.getOrDefault(false)
 
 /**
  * Tells whether this callable's receiver is a proper subtype of [other]'s.
