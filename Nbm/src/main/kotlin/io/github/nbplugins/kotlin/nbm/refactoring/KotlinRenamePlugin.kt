@@ -565,8 +565,9 @@ private fun validateClassName(name: String, updatePrimaryClass: Boolean): Proble
  *
  * Renaming a file together with its primary class writes the new name verbatim, so a class,
  * object, or type alias that already has that name in the same package would be redeclared. A
- * top-level function with the same call signature as the renamed primary constructor conflicts
- * with it as well: `class Before` plus `fun After()` in one package cannot both become `After`.
+ * top-level function with the same call signature as any constructor of the renamed class
+ * conflicts with it as well: `class Before` plus `fun After()` in one package cannot both become
+ * `After`.
  *
  * @param source file whose matching class is renamed
  * @param primaryClass top-level class renamed together with the file
@@ -591,7 +592,7 @@ internal fun findRenameConflict(
             when (declaration) {
                 is KtClassOrObject, is KtTypeAlias -> true
                 is KtNamedFunction ->
-                    KotlinConstructorSignatureCheck.conflictsWithPrimaryConstructor(primaryClass, declaration)
+                    KotlinConstructorSignatureCheck.conflictsWithRenamedConstructor(primaryClass, declaration)
                 else -> false
             }
         }

@@ -3900,6 +3900,55 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies a delegated property keeps the `provideDelegate` operator left in the old package.
+     *
+     * `provideDelegate` runs before the accessors and can return a delegate of another type, so the
+     * moved file has to import it even when the accessors themselves are members of the returned
+     * type rather than same-package extensions.
+     */
+    fun testApply_realSession_importsProvidedDelegateOperator() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-provided-delegate")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Delegate.kt"),
+                "package old\n\nclass Delegate\n\n" +
+                    "class Provided {\n" +
+                    "    operator fun getValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 2\n}\n\n" +
+                    "operator fun Delegate.provideDelegate(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Provided = Provided()\n",
+            )
+            Files.writeString(sourcePath, "package old\n\nval value by Delegate()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-provided-delegate-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[sourcePath.toString()] ?: error("The moved file must change")
+            assertTrue(
+                "The moved file must import the delegate provider: $text",
+                text.contains("import old.provideDelegate"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

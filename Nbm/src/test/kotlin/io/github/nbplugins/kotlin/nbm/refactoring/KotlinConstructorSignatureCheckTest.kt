@@ -29,6 +29,63 @@ import java.nio.file.Path
 class KotlinConstructorSignatureCheckTest : KotlinTestCase("KotlinConstructorSignatureCheckTest", "moveFile") {
 
     /**
+     * Verifies a secondary constructor's signature is compared as well.
+     *
+     * `class Foo { constructor(n: Int) }` has no primary constructor, so checking only the primary
+     * parameter list would miss that the renamed class still offers a colliding `(Int)` overload.
+     */
+    fun testConflictsWithRenamedConstructor_reportsSecondaryConstructor() {
+        withSession(
+            name = "secondary",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.writeString(
+                    root.resolve("source/Types.kt"),
+                    "package p\n\nclass Foo {\n    constructor(n: Int) {}\n}\n",
+                )
+                Files.writeString(root.resolve("source/Functions.kt"), "package p\n\nfun Bar(n: Int) = n\n")
+            },
+        ) { session, root ->
+            val types = session.ktFile(root.resolve("source/Types.kt"))
+            val functions = session.ktFile(root.resolve("source/Functions.kt"))
+
+            assertTrue(
+                "the secondary constructor takes the same parameter",
+                KotlinConstructorSignatureCheck.conflictsWithRenamedConstructor(
+                    primaryClass(types),
+                    functions.declarations.filterIsInstance<KtNamedFunction>().single(),
+                ),
+            )
+        }
+    }
+
+    /** Verifies a secondary constructor with a different parameter type does not conflict. */
+    fun testConflictsWithRenamedConstructor_ignoresDifferentSecondaryConstructor() {
+        withSession(
+            name = "secondary-different",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.writeString(
+                    root.resolve("source/Types.kt"),
+                    "package p\n\nclass Foo {\n    constructor(n: String) {}\n}\n",
+                )
+                Files.writeString(root.resolve("source/Functions.kt"), "package p\n\nfun Bar(n: Int) = n\n")
+            },
+        ) { session, root ->
+            val types = session.ktFile(root.resolve("source/Types.kt"))
+            val functions = session.ktFile(root.resolve("source/Functions.kt"))
+
+            assertFalse(
+                "String cannot collide with an Int parameter",
+                KotlinConstructorSignatureCheck.conflictsWithRenamedConstructor(
+                    primaryClass(types),
+                    functions.declarations.filterIsInstance<KtNamedFunction>().single(),
+                ),
+            )
+        }
+    }
+
+    /**
      * Verifies a fully qualified parameter type is recognized as the constructor's type.
      *
      * `kotlin.Int` and `Int` denote the same type, so the function would collide with the renamed
@@ -48,7 +105,7 @@ class KotlinConstructorSignatureCheckTest : KotlinTestCase("KotlinConstructorSig
 
             assertTrue(
                 "Int and kotlin.Int are the same parameter type",
-                KotlinConstructorSignatureCheck.conflictsWithPrimaryConstructor(
+                KotlinConstructorSignatureCheck.conflictsWithRenamedConstructor(
                     primaryClass(types),
                     functions.declarations.filterIsInstance<KtNamedFunction>().single(),
                 ),
@@ -71,7 +128,7 @@ class KotlinConstructorSignatureCheckTest : KotlinTestCase("KotlinConstructorSig
 
             assertFalse(
                 "String cannot collide with an Int parameter",
-                KotlinConstructorSignatureCheck.conflictsWithPrimaryConstructor(
+                KotlinConstructorSignatureCheck.conflictsWithRenamedConstructor(
                     primaryClass(types),
                     functions.declarations.filterIsInstance<KtNamedFunction>().single(),
                 ),
@@ -94,7 +151,7 @@ class KotlinConstructorSignatureCheckTest : KotlinTestCase("KotlinConstructorSig
 
             assertFalse(
                 "an extension function has an implicit receiver",
-                KotlinConstructorSignatureCheck.conflictsWithPrimaryConstructor(
+                KotlinConstructorSignatureCheck.conflictsWithRenamedConstructor(
                     primaryClass(types),
                     functions.declarations.filterIsInstance<KtNamedFunction>().single(),
                 ),

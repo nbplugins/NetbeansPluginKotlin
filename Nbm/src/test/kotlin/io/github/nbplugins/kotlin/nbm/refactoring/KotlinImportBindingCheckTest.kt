@@ -18,8 +18,12 @@ package io.github.nbplugins.kotlin.nbm.refactoring
 
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.refactoring.KotlinImportBindingCheck
+import com.intellij.psi.util.PsiTreeUtil
+import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtClass
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtNameReferenceExpression
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtProperty
 import utils.KotlinTestCase
@@ -140,6 +144,66 @@ class KotlinImportBindingCheckTest : KotlinTestCase("KotlinImportBindingCheckTes
         }
     }
 
+    /**
+     * Verifies a convention reference to a moving declaration is reported for an outgoing import.
+     *
+     * `n[0]` calls the `Int.get` extension that moves with the file without spelling its name.
+     * Adding `import old.get` would make the import outrank the same-package binding and select
+     * the staying `Number.get` overload instead.
+     */
+    fun testHasConflictingOutgoingImport_reportsConventionReferenceToMovingDeclaration() {
+        withSession(
+            name = "outgoing-convention",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("old"))
+                Files.writeString(
+                    root.resolve("old/Operators.kt"),
+                    "package old\n\noperator fun Number.get(index: Int) = index\n",
+                )
+                Files.writeString(
+                    root.resolve("old/Moving.kt"),
+                    "package old\n\noperator fun Int.get(index: Int) = -index\n",
+                )
+                Files.writeString(root.resolve("old/Usage.kt"), "package old\n\nfun use(n: Int) = n[0]\n")
+            },
+        ) { session, root ->
+            val usage = session.ktFile(root.resolve("old/Usage.kt"))
+            val movingPaths = setOf(root.resolve("old/Moving.kt").toString())
+
+            assertTrue(
+                "importing old.get would reselect the staying overload for n[0]",
+                KotlinImportBindingCheck.hasConflictingOutgoingImport(usage, FqName("old.get"), movingPaths),
+            )
+        }
+    }
+
+    /** Verifies a convention reference already bound to the staying declaration is not reported. */
+    fun testHasConflictingOutgoingImport_ignoresConventionReferenceToStayingDeclaration() {
+        withSession(
+            name = "outgoing-convention-staying",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("old"))
+                Files.writeString(
+                    root.resolve("old/Operators.kt"),
+                    "package old\n\noperator fun Number.get(index: Int) = index\n",
+                )
+                Files.writeString(
+                    root.resolve("old/Moving.kt"),
+                    "package old\n\noperator fun Int.get(index: Int) = -index\n",
+                )
+                Files.writeString(root.resolve("old/Usage.kt"), "package old\n\nfun use(n: Number) = n[0]\n")
+            },
+        ) { session, root ->
+            val usage = session.ktFile(root.resolve("old/Usage.kt"))
+            val movingPaths = setOf(root.resolve("old/Moving.kt").toString())
+
+            assertFalse(
+                "the accessor already binds the declaration the import would provide",
+                KotlinImportBindingCheck.hasConflictingOutgoingImport(usage, FqName("old.get"), movingPaths),
+            )
+        }
+    }
+
     /** Verifies a member function of an enclosing class binds the name lexically. */
     fun testIsNameBoundInScope_reportsMemberFunction() {
         withSession(
@@ -255,6 +319,63 @@ class KotlinImportBindingCheckTest : KotlinTestCase("KotlinImportBindingCheckTes
             assertFalse(
                 "a member function does not see the primary-constructor parameters",
                 KotlinImportBindingCheck.isNameBoundInScope(make, "After"),
+            )
+        }
+    }
+
+    /**
+     * Verifies an implicit lambda parameter binds the name `it`.
+     *
+     * A lambda without declared parameters receives `it` implicitly, so rewriting a reference
+     * inside it to `it` would call the lambda parameter rather than the renamed declaration.
+     */
+    fun testIsNameBoundInScope_reportsImplicitLambdaParameter() {
+        withSession(
+            name = "implicit-it",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package usage\n\nfun use() = listOf({ \"other\" }).map { Before().toString() }\n\n" +
+                        "class Before\n",
+                )
+            },
+        ) { session, root ->
+            val file = session.ktFile(root.resolve("usage/Usage.kt"))
+            val reference = PsiTreeUtil.findChildrenOfType(file, KtNameReferenceExpression::class.java)
+                .single { expression ->
+                    expression.getReferencedName() == "Before" && expression.parent is KtCallExpression
+                }
+
+            assertTrue(
+                "the lambda's implicit it parameter is in scope",
+                KotlinImportBindingCheck.isNameBoundInScope(reference, "it"),
+            )
+        }
+    }
+
+    /** Verifies a lambda with declared parameters does not introduce `it`. */
+    fun testIsNameBoundInScope_ignoresLambdaWithDeclaredParameter() {
+        withSession(
+            name = "declared-parameter",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package usage\n\nfun use() = listOf(1).map { value -> Before().toString() }\n\n" +
+                        "class Before\n",
+                )
+            },
+        ) { session, root ->
+            val file = session.ktFile(root.resolve("usage/Usage.kt"))
+            val reference = PsiTreeUtil.findChildrenOfType(file, KtNameReferenceExpression::class.java)
+                .single { expression ->
+                    expression.getReferencedName() == "Before" && expression.parent is KtCallExpression
+                }
+
+            assertFalse(
+                "a lambda with a declared parameter has no implicit it",
+                KotlinImportBindingCheck.isNameBoundInScope(reference, "it"),
             )
         }
     }

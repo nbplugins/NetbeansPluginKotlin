@@ -834,22 +834,41 @@ class KaChangePackageComputer(
                         }
 
                         // A delegated property spells neither accessor: `val value by Delegate()`
-                        // calls a top-level `Delegate.getValue` (and `setValue` for a `var`)
-                        // through overload resolution, so that operator has to follow the file
-                        // when it leaves the package that made it visible.
+                        // calls a top-level `provideDelegate` and then `getValue`/`setValue`
+                        // through overload resolution, so those operators have to follow the file
+                        // when it leaves the package that made them visible.
                         override fun visitProperty(property: KtProperty) {
                             super.visitProperty(property)
                             val delegateType = property.delegateExpression?.expressionType ?: return
-                            val accessorNames =
-                                if (property.isVar) listOf("getValue", "setValue") else listOf("getValue")
-                            accessorNames.asSequence()
-                                .mapNotNull { accessorName ->
-                                    samePackageDelegateAccessor(
-                                        delegateType,
-                                        accessorName,
+                            val provider = samePackageDelegateOperator(
+                                delegateType,
+                                "provideDelegate",
+                                originalPackage,
+                                movedPaths,
+                            )
+                            // `provideDelegate` runs before the accessors and its return type is the
+                            // type the accessors are selected on, so it replaces the expression type.
+                            val accessorType = provider?.returnType ?: delegateType
+                            val operators = buildList {
+                                if (provider != null) add(provider)
+                                samePackageDelegateOperator(
+                                    accessorType,
+                                    "getValue",
+                                    originalPackage,
+                                    movedPaths,
+                                )?.let { symbol -> add(symbol) }
+                                if (property.isVar) {
+                                    samePackageDelegateOperator(
+                                        accessorType,
+                                        "setValue",
                                         originalPackage,
                                         movedPaths,
-                                    )
+                                    )?.let { symbol -> add(symbol) }
+                                }
+                            }
+                            operators.asSequence()
+                                .mapNotNull { symbol ->
+                                    samePackageTopLevelName(symbol, originalPackage, movedPaths)
                                 }
                                 .filter { importFqName ->
                                     importFqName !in importedFqNames && originalPackage !in starPackages
@@ -966,34 +985,34 @@ class KaChangePackageComputer(
     }
 
     /**
-     * Finds a delegate accessor operator a moved file still needs from the original package.
+     * Finds a delegate operator a moved file still needs from the original package.
      *
-     * K2 does not expose the implicit `getValue`/`setValue` call of a delegated property, so the
-     * operator is looked up by name and receiver applicability on the delegate expression's type.
-     * Only a declaration that stays behind qualifies, mirroring the indexed-operator lookup.
+     * K2 does not expose the implicit `provideDelegate`/`getValue`/`setValue` calls of a delegated
+     * property, so the operator is looked up by name and receiver applicability on the type it is
+     * selected on. Only a declaration that stays behind qualifies, mirroring the indexed-operator
+     * lookup.
      *
-     * @param delegateType type of the property's delegate expression
-     * @param accessorName `getValue` for a read or `setValue` for a write
+     * @param type type of the delegate, or of the value a `provideDelegate` returns
+     * @param operatorName `provideDelegate`, `getValue`, or `setValue`
      * @param originalPackage package the moved file declares before the change
      * @param movedPaths paths of the files whose package changes
-     * @return FQN of the remaining accessor extension, or `null` when none applies
+     * @return the remaining operator, or `null` when none applies
      */
     context(_: KaSession)
-    private fun samePackageDelegateAccessor(
-        delegateType: KaType,
-        accessorName: String,
+    private fun samePackageDelegateOperator(
+        type: KaType,
+        operatorName: String,
         originalPackage: FqName,
         movedPaths: Set<String>,
-    ): FqName? {
+    ): KaCallableSymbol? {
         return findPackage(originalPackage)?.packageScope?.declarations
             ?.filterIsInstance<KaCallableSymbol>()
-            ?.firstNotNullOfOrNull { symbol ->
+            ?.firstOrNull { symbol ->
                 val receiver = symbol.receiverParameter?.returnType
-                if ((symbol as? KaNamedSymbol)?.name?.asString() != accessorName || receiver == null) {
-                    return@firstNotNullOfOrNull null
-                }
-                if (!delegateType.isSubtypeOf(receiver)) return@firstNotNullOfOrNull null
-                samePackageTopLevelName(symbol, originalPackage, movedPaths)
+                (symbol as? KaNamedSymbol)?.name?.asString() == operatorName &&
+                    receiver != null &&
+                    type.isSubtypeOf(receiver) &&
+                    samePackageTopLevelName(symbol, originalPackage, movedPaths) != null
             }
     }
 

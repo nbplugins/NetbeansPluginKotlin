@@ -54,6 +54,7 @@ import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtForExpression
 import org.jetbrains.kotlin.psi.KtFunction
 import org.jetbrains.kotlin.psi.KtImportDirective
+import org.jetbrains.kotlin.psi.KtLambdaExpression
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtOperationReferenceExpression
 import org.jetbrains.kotlin.psi.KtParameter
@@ -267,11 +268,11 @@ object KotlinImportBindingCheck {
     ): Boolean = runCatching {
         analyze(file) {
             var conflicting = false
+            val importedName = imported.shortName().asString()
             file.accept(object : KtTreeVisitorVoid() {
                 override fun visitSimpleNameExpression(expression: KtSimpleNameExpression) {
                     super.visitSimpleNameExpression(expression)
                     if (conflicting) return
-                    val importedName = imported.shortName().asString()
                     val referencedName = expression.getReferencedName()
                     if (referencedName != importedName && expression !is KtOperationReferenceExpression) return
                     if (PsiTreeUtil.getParentOfType(expression, KtImportDirective::class.java) != null) return
@@ -280,12 +281,39 @@ object KotlinImportBindingCheck {
                         ?.resolveToSymbol() ?: return
                     if (referencedName != importedName && symbol.declaredName() != importedName) return
                     if (!symbol.isTopLevelBinding()) return
-                    val path = symbol.psi?.containingFile?.virtualFile?.path
-                    if (path != null && path in movingPaths) {
-                        conflicting = true
-                        return
+                    if (symbol.isCapturedByOutgoingImport(imported, movingPaths)) conflicting = true
+                }
+
+                // A convention call spells no name, so `n[0]` (`get`) keeps binding the same-package
+                // overload while the file moves; the added import would outrank it instead.
+                override fun visitArrayAccessExpression(expression: KtArrayAccessExpression) {
+                    super.visitArrayAccessExpression(expression)
+                    if (!conflicting) {
+                        expression.capturesTopLevelName(
+                            importedName,
+                            { symbol -> symbol.isCapturedByOutgoingImport(imported, movingPaths) },
+                        ) { conflicting = true }
                     }
-                    if (symbol.declaredPackage() != imported.parent()) conflicting = true
+                }
+
+                override fun visitDestructuringDeclarationEntry(entry: KtDestructuringDeclarationEntry) {
+                    super.visitDestructuringDeclarationEntry(entry)
+                    if (!conflicting) {
+                        entry.capturesTopLevelName(
+                            importedName,
+                            { symbol -> symbol.isCapturedByOutgoingImport(imported, movingPaths) },
+                        ) { conflicting = true }
+                    }
+                }
+
+                override fun visitForExpression(expression: KtForExpression) {
+                    super.visitForExpression(expression)
+                    if (!conflicting) {
+                        expression.capturesTopLevelName(
+                            importedName,
+                            { symbol -> symbol.isCapturedByOutgoingImport(imported, movingPaths) },
+                        ) { conflicting = true }
+                    }
                 }
             })
             conflicting
@@ -421,6 +449,11 @@ object KotlinImportBindingCheck {
                 is KtClass -> element.isInsideClassInitializerScope(current) &&
                     current.primaryConstructorParameters.any { parameter -> parameter.bindsName(name) }
                 is KtFunction -> current.valueParameters.any { parameter -> parameter.bindsName(name) }
+                // A lambda that declares no parameters receives the implicit `it` parameter, which
+                // the rewritten text would then call. Its function literal is a `KtFunction` with an
+                // empty parameter list, so the enclosing lambda expression carries the rule.
+                is KtLambdaExpression ->
+                    name == "it" && current.functionLiteral.valueParameters.isEmpty()
                 is KtPropertyAccessor ->
                     current.parameterList?.parameters?.any { parameter -> parameter.bindsName(name) } == true
                 is KtForExpression -> current.loopParameter?.bindsName(name) == true
@@ -694,6 +727,23 @@ object KotlinImportBindingCheck {
         val path = psi?.containingFile?.virtualFile?.path
         if (path != null && path in movingPaths) return false
         return declaredPackage() == imported.parent()
+    }
+
+    /**
+     * Tells whether adding an import of [imported] to a moved file would capture this symbol.
+     *
+     * An explicit import outranks both the same-package declarations of the moved file's new
+     * package and any wildcard or default import that currently provides the symbol. A declaration
+     * already bound through [imported] itself keeps its target.
+     *
+     * @param imported FQN of the declaration that stays behind
+     * @param movingPaths paths of the files whose package changes
+     * @return `true` when the added import would rebind the reference
+     */
+    private fun KaSymbol.isCapturedByOutgoingImport(imported: FqName, movingPaths: Set<String>): Boolean {
+        val path = psi?.containingFile?.virtualFile?.path
+        if (path != null && path in movingPaths) return true
+        return declaredPackage() != imported.parent()
     }
 
     /**
