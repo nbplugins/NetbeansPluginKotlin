@@ -3675,6 +3675,107 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
+     * Verifies a simple-name callee still contributes its implicit `invoke` dependency.
+     *
+     * `box()` where `box: Box` spells the variable, which resolves to the parameter, while the
+     * invocation reference belongs to the call expression. The moved file still needs
+     * `import p.invoke` in addition to `import p.Box`.
+     */
+    fun testApply_realSession_importsInvokeOperatorForSimpleNameCallee() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-invoke-simple")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("p"))
+            val sourcePath = temporaryRoot.resolve("p/Moved.kt")
+            Files.writeString(
+                temporaryRoot.resolve("p/Box.kt"),
+                "package p\n\nclass Box\n\noperator fun Box.invoke() = 1\n",
+            )
+            Files.writeString(sourcePath, "package p\n\nfun use(box: Box) = box()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-invoke-simple-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("q")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[sourcePath.toString()] ?: error("The moved file must change")
+            assertTrue("The moved file must import the box type: $text", text.contains("import p.Box"))
+            assertTrue("The moved file must import the implicit invoke operator: $text", text.contains("import p.invoke"))
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies the accessor type follows a provider imported from another package.
+     *
+     * The moved file keeps `import lib.provideDelegate`; that provider returns `Provided`, whose
+     * `getValue` extension stays in the old package. Searching only the old package for the
+     * provider would look for the accessor on `Delegate` and omit `import p.getValue`.
+     */
+    fun testApply_realSession_followsImportedProviderForAccessorImport() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-imported-provider")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("lib"))
+            Files.createDirectories(temporaryRoot.resolve("p"))
+            val sourcePath = temporaryRoot.resolve("p/Moved.kt")
+            Files.writeString(
+                temporaryRoot.resolve("lib/Provider.kt"),
+                "package lib\n\nclass Delegate\n\nclass Provided\n\n" +
+                    "operator fun Delegate.provideDelegate(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Provided = Provided()\n",
+            )
+            Files.writeString(
+                temporaryRoot.resolve("p/Accessors.kt"),
+                "package p\n\nimport lib.Provided\n\n" +
+                    "operator fun Provided.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 1\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package p\n\nimport lib.Delegate\nimport lib.provideDelegate\n\n" +
+                    "fun make(): Int {\n    val value by Delegate()\n    return value\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-imported-provider-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("q")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[sourcePath.toString()] ?: error("The moved file must change")
+            assertTrue(
+                "The accessor type follows the imported provider: $text",
+                text.contains("import p.getValue"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies a type alias whose name equals the expanded class is still imported.
      *
      * `typealias Impl = other.Impl` is invisible after the move, so `Impl()` needs `import p.Impl`

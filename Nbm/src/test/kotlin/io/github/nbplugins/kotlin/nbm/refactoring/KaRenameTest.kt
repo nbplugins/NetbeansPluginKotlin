@@ -930,6 +930,62 @@ class KaRenameTest : KotlinTestCase("KaRenameTest", "rename") {
     }
 
     /**
+     * Verifies a qualified call through a same-spelled type alias keeps the alias's name.
+     *
+     * Package `q` declares `typealias Before = p.Before`, and the caller spells `q.Before(1)`.
+     * The alias stays named `Before`, so only its right-hand side follows the class rename; the
+     * qualified call site must keep spelling `q.Before`.
+     */
+    fun testCompute_keepsQualifiedSameSpelledTypeAliasCall() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping rename-compute test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-qualified-alias")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            Files.createDirectories(root.resolve("q"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val aliasesPath = root.resolve("q/Aliases.kt")
+            val usagePath = root.resolve("q/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before(val n: Int)\n")
+            Files.writeString(aliasesPath, "package q\n\ntypealias Before = p.Before\n")
+            Files.writeString(usagePath, "package q\n\nfun make(other: q.Before): q.Before = q.Before(1)\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-qualified-alias-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val aliases = session.getKtFileForPath(aliasesPath.toString()) ?: error("Could not obtain aliases PSI")
+            val usage = session.getKtFileForPath(usagePath.toString()) ?: error("Could not obtain usage PSI")
+
+            val changes = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, aliases, usage), "After",
+            ).compute()
+
+            assertNotNull("compute() must return non-null for a class rename", changes)
+            assertEquals(
+                "The class declaration follows the rename",
+                "package p\n\nclass After(val n: Int)\n",
+                applyChanges(source.text, changes!![sourcePath.toString()].orEmpty()),
+            )
+            assertEquals(
+                "Only the alias's right-hand side follows the rename",
+                "package q\n\ntypealias Before = p.After\n",
+                applyChanges(aliases.text, changes[aliasesPath.toString()].orEmpty()),
+            )
+            assertEquals(
+                "The qualified alias call and type keep spelling the alias",
+                "package q\n\nfun make(other: q.Before): q.Before = q.Before(1)\n",
+                applyChanges(usage.text, changes[usagePath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies a call of a renamed function that shares a type alias's name is still rewritten.
      *
      * The file declares `typealias Before = Impl` and `fun Before(n: Int)`, and `Before(1)` calls
@@ -973,6 +1029,7 @@ class KaRenameTest : KotlinTestCase("KaRenameTest", "rename") {
             root.toFile().deleteRecursively()
         }
     }
+
 
     /**
      * Verifies a fully qualified reference is not checked against lexical bindings.

@@ -29,6 +29,7 @@ import org.jetbrains.kotlin.analysis.api.components.memberScope
 import org.jetbrains.kotlin.analysis.api.components.packageScope
 import org.jetbrains.kotlin.analysis.api.components.resolveToSymbol
 import org.jetbrains.kotlin.analysis.api.components.resolveToSymbols
+import org.jetbrains.kotlin.analysis.api.components.scopeContext
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassLikeSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
@@ -764,13 +765,15 @@ class KaChangePackageComputer(
                         }
 
                         // A call on a value spells no name for the convention it invokes:
-                        // `(box)()` depends on a top-level `operator fun Box.invoke` that only the
-                        // original package's visibility provided, and the implicit invocation
-                        // reference belongs to the call expression rather than to any spelled
-                        // name. Spelled callees are handled by visitSimpleNameExpression.
+                        // `(box)()` and `box()` both depend on a top-level `operator fun Box.invoke`
+                        // that only the original package's visibility provided. The implicit
+                        // invocation reference belongs to the call expression rather than to any
+                        // spelled name, so it is collected here for simple-name callees too:
+                        // `box` resolves to the parameter, never to the operator. Spelled
+                        // declarations are still handled by visitSimpleNameExpression, and the
+                        // accumulator deduplicates the overlap.
                         override fun visitCallExpression(expression: KtCallExpression) {
                             super.visitCallExpression(expression)
-                            if (expression.calleeExpression is KtSimpleNameExpression) return
                             expression.references.filterIsInstance<KtReference>()
                                 .flatMap { reference ->
                                     runCatching { reference.resolveToSymbols() }.getOrNull().orEmpty()
@@ -870,8 +873,11 @@ class KaChangePackageComputer(
                             // return type still decides which accessor the property selects.
                             // A provider moving with the file is still selected by the property
                             // after the move, so it decides the accessor type too; only its
-                            // import is skipped below.
+                            // import is skipped below. A provider imported from another package
+                            // survives the move unchanged and is found through the property's
+                            // scope, not through the old package.
                             val provider = delegateType.memberDelegateOperator("provideDelegate")
+                                ?: property.scopeDelegateProvider(delegateType)
                                 ?: samePackageDelegateOperator(
                                     delegateType,
                                     "provideDelegate",
@@ -1057,6 +1063,31 @@ class KaChangePackageComputer(
         if (accessorType.memberDelegateOperator(operatorName) != null) return null
         return samePackageDelegateOperator(accessorType, operatorName, originalPackage, movedPaths)
     }
+
+    /**
+     * Finds the `provideDelegate` extension the property's scope selects on [type].
+     *
+     * Unlike [samePackageDelegateOperator], this lookup follows the property's real visibility:
+     * a provider imported from another package stays bound to the property after the move, and
+     * its return type still decides which `getValue`/`setValue` accessor applies. Only the
+     * provider's own import is unaffected; ignoring it would search the accessors on the
+     * delegate expression's type instead.
+     *
+     * @param type type of the property's delegate expression
+     * @return the applicable extension provider, or `null` when none is in scope
+     */
+    context(_: KaSession)
+    private fun KtProperty.scopeDelegateProvider(type: KaType): KaCallableSymbol? = runCatching {
+        val identifier = Name.identifier("provideDelegate")
+        containingKtFile.scopeContext(this).scopes.asSequence()
+            .flatMap { scopeWithKind -> scopeWithKind.scope.callables(identifier) }
+            .filter { symbol -> symbol.isExtension }
+            .filter { symbol -> symbol.isDelegateOperatorShape("provideDelegate") }
+            .firstOrNull { symbol ->
+                val receiverType = symbol.receiverParameter?.returnType
+                receiverType != null && type.isSubtypeOf(receiverType)
+            }
+    }.getOrNull()
 
     /**
      * Finds a delegate operator of the original package selected on [type].
