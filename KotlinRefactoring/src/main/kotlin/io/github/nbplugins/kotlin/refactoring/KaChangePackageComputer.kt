@@ -22,6 +22,8 @@ import com.intellij.refactoring.util.MoveRenameUsageInfo
 import com.intellij.usageView.UsageInfo
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
+import org.jetbrains.kotlin.analysis.api.components.expressionType
+import org.jetbrains.kotlin.analysis.api.components.isSubtypeOf
 import org.jetbrains.kotlin.analysis.api.components.packageScope
 import org.jetbrains.kotlin.analysis.api.components.resolveToSymbol
 import org.jetbrains.kotlin.analysis.api.components.resolveToSymbols
@@ -32,6 +34,7 @@ import org.jetbrains.kotlin.analysis.api.symbols.KaPackageSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaTypeAliasSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.findPackage
+import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
 import org.jetbrains.kotlin.idea.k2.refactoring.move.KotlinMoveUsageSearchService
 import org.jetbrains.kotlin.idea.k2.refactoring.move.MoveImport
 import org.jetbrains.kotlin.idea.k2.refactoring.move.descriptor.K2ChangePackageDescriptor
@@ -42,6 +45,7 @@ import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtArrayAccessExpression
+import org.jetbrains.kotlin.psi.KtBinaryExpression
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtDeclaration
@@ -58,6 +62,7 @@ import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
 import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
 import org.jetbrains.kotlin.psi.KtTypeAlias
+import org.jetbrains.kotlin.psi.KtUnaryExpression
 import org.jetbrains.kotlin.psi.KtUserType
 
 /**
@@ -159,6 +164,27 @@ class KaChangePackageComputer(
             } else {
                 emptyList()
             }
+            val movedPaths = files.mapNotNull { file -> file.virtualFile?.path }.toSet()
+            // A caller whose only reference to the old package is an unused `import old.*` is
+            // invisible to both usage and direct-import search. Once no declaration stays in the
+            // package the directive becomes unresolved, so the importing file has to join the
+            // participants and let the wildcard cleanup pass drop it.
+            val vacatedWildcardImportFiles = if (updateReferences) {
+                KotlinMoveUsageSearchService.getInstance()?.let { service ->
+                    val vacatedPackages = files.map { file -> file.packageFqName }.toSet()
+                        .filterNot { packageFqName ->
+                            service.hasDeclarationsInPackage(ktFile.project, packageFqName, movedPaths)
+                        }
+                        .toSet()
+                    if (vacatedPackages.isEmpty()) {
+                        emptyList()
+                    } else {
+                        service.findPackageWildcardImportingFiles(ktFile.project, vacatedPackages)
+                    }
+                }.orEmpty()
+            } else {
+                emptyList()
+            }
             val samePackageImportUpdates = (incoming.imports.keys + outgoingImports.keys).associateWith { file ->
                 incoming.imports[file].orEmpty() + outgoingImports[file].orEmpty()
             }
@@ -174,13 +200,13 @@ class KaChangePackageComputer(
             } else {
                 emptyList()
             }
-            val participants = (files + filesWithUsages(usages) + importOnlyUsageFiles + wildcardImportFiles + samePackageImportUpdates.keys + incoming.edits.keys)
+            val participants = (files + filesWithUsages(usages) + importOnlyUsageFiles + wildcardImportFiles +
+                vacatedWildcardImportFiles + samePackageImportUpdates.keys + incoming.edits.keys)
                 .distinct()
             // Capture replacement ranges while PSI is still valid. Only import directives that
             // target a moved declaration and references that K2 resolved to one are retargeted, so
             // text that merely spells a moved FQN (comments, strings, unrelated chains) is untouched.
             val textEdits = if (updateReferences) {
-                val movedPaths = files.mapNotNull { file -> file.virtualFile?.path }.toSet()
                 val importEdits = captureImportEdits(
                     participants,
                     movedDeclarations,
@@ -777,18 +803,32 @@ class KaChangePackageComputer(
 
                         // Convention operators are not spelled as simple names: `box[0]` depends
                         // on a top-level `operator fun Box.get` that same-package visibility
-                        // provided, so its reference has to be captured separately.
+                        // provided, so its reference has to be captured separately. A compound
+                        // indexed write (`box[0]++`, `box[0] += 1`) exposes only `get`; its
+                        // setter half is resolved implicitly and is looked up separately below.
                         override fun visitArrayAccessExpression(expression: KtArrayAccessExpression) {
                             super.visitArrayAccessExpression(expression)
-                            expression.references.filterIsInstance<KtReference>().forEach { reference ->
-                                val symbol = runCatching { reference.resolveToSymbol() }.getOrNull()
-                                    ?: return@forEach
-                                val importFqName = samePackageTopLevelName(symbol, originalPackage, movedPaths)
-                                    ?: return@forEach
-                                if (importFqName in importedFqNames || originalPackage in starPackages) {
-                                    return@forEach
+                            val resolvedOperators = expression.references
+                                .filterIsInstance<KtReference>()
+                                .flatMap { reference ->
+                                    runCatching { reference.resolveToSymbols() }.getOrNull().orEmpty()
                                 }
-                                missingImports += importFqName
+                            val retainedOperators = resolvedOperators.mapNotNull { symbol ->
+                                samePackageTopLevelName(symbol, originalPackage, movedPaths)
+                            }
+                            retainedOperators
+                                .filter { importFqName ->
+                                    importFqName !in importedFqNames && originalPackage !in starPackages
+                                }
+                                .forEach { importFqName -> missingImports += importFqName }
+                            // Only a convention that stays behind needs the companion setter, so a
+                            // member operator keeps its resolution untouched.
+                            if (expression.isCompoundWrite() && retainedOperators.isNotEmpty()) {
+                                samePackageIndexedSetter(expression, originalPackage, movedPaths)
+                                    ?.takeIf { importFqName ->
+                                        importFqName !in importedFqNames && originalPackage !in starPackages
+                                    }
+                                    ?.let { importFqName -> missingImports += importFqName }
                             }
                         }
                     })
@@ -847,6 +887,57 @@ class KaChangePackageComputer(
         if (psi.parent !is KtFile) return null
         val name = psi.name ?: return null
         return originalPackage.child(Name.identifier(name))
+    }
+
+    /**
+     * Tells whether this indexed access is updated implicitly, not merely assigned or read.
+     *
+     * A plain assignment (`box[0] = 1`) resolves its `set` through the array-access reference, but
+     * an increment or compound assignment (`box[0]++`, `box[0] += 1`) lowers to `get` then `set`
+     * and exposes only `get`.
+     *
+     * @return `true` when the compiler resolves a setter for this access implicitly
+     */
+    private fun KtArrayAccessExpression.isCompoundWrite(): Boolean {
+        val parent = parent
+        return when (parent) {
+            is KtBinaryExpression -> parent.left == this &&
+                parent.operationToken in KtTokens.ALL_ASSIGNMENTS && parent.operationToken != KtTokens.EQ
+            is KtUnaryExpression -> parent.baseExpression == this &&
+                parent.operationToken in setOf(KtTokens.PLUSPLUS, KtTokens.MINUSMINUS)
+            else -> false
+        }
+    }
+
+    /**
+     * Finds the `set` extension a compound indexed write needs from the original package.
+     *
+     * K2 does not expose the implicit setter, so it is looked up by name and applicability on the
+     * receiver expression's type. Only a declaration that stays behind qualifies, mirroring the
+     * `get` operator of the same access.
+     *
+     * @param expression indexed access in a compound write position
+     * @param originalPackage package the moved file declares before the change
+     * @param movedPaths paths of the files whose package changes
+     * @return FQN of the remaining `set` extension, or `null` when none applies
+     */
+    context(_: KaSession)
+    private fun samePackageIndexedSetter(
+        expression: KtArrayAccessExpression,
+        originalPackage: FqName,
+        movedPaths: Set<String>,
+    ): FqName? {
+        val receiverType = expression.arrayExpression?.expressionType ?: return null
+        return findPackage(originalPackage)?.packageScope?.declarations
+            ?.filterIsInstance<KaCallableSymbol>()
+            ?.firstNotNullOfOrNull { symbol ->
+                val receiver = symbol.receiverParameter?.returnType
+                if ((symbol as? KaNamedSymbol)?.name?.asString() != "set" || receiver == null) {
+                    return@firstNotNullOfOrNull null
+                }
+                if (!receiverType.isSubtypeOf(receiver)) return@firstNotNullOfOrNull null
+                samePackageTopLevelName(symbol, originalPackage, movedPaths)
+            }
     }
 
     /**

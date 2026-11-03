@@ -184,6 +184,32 @@ class KotlinMoveUsageSearchServiceImpl : KotlinMoveUsageSearchService {
     }
 
     /**
+     * Finds Kotlin files whose package wildcard imports one of [packageFqNames].
+     *
+     * The whole session is scanned because such a caller references no moved declaration; the
+     * import directive itself is the only evidence that it depends on the old package.
+     *
+     * @param project IntelliJ project owning the standalone K2 session
+     * @param packageFqNames packages named by wildcard import directives
+     * @return session files with a package-level wildcard import of one of those packages
+     */
+    override fun findPackageWildcardImportingFiles(
+        project: com.intellij.openapi.project.Project,
+        packageFqNames: Set<FqName>,
+    ): List<KtFile> {
+        if (packageFqNames.isEmpty()) return emptyList()
+        val session = KotlinAnalysisAPISession.forProject(project) ?: return emptyList()
+        return session.fileMap.values.mapNotNull { lightFile ->
+            val file = session.getKtFileForPath(lightFile.path) ?: return@mapNotNull null
+            file.takeIf { candidate ->
+                candidate.importDirectives.any { directive ->
+                    directive.isAllUnder && directive.importedFqName in packageFqNames
+                }
+            }
+        }
+    }
+
+    /**
      * Tells whether [packageFqName] keeps any declaration outside [excludedPaths].
      *
      * Source files are checked first because they are cheap to enumerate. A dependency JAR can

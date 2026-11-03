@@ -260,6 +260,75 @@ class KotlinRenameClassifierConflictTest : KotlinTestCase("KotlinRenameClassifie
         }
     }
 
+    /**
+     * Verifies a star-imported `After` of another package blocks the rename.
+     *
+     * A same-package declaration outranks a star import, so the caller's unchanged `After()`
+     * would start constructing the renamed `p.After` instead of `lib.After`.
+     */
+    fun testFindSamePackageOverloadConflict_reportsStarImportedNewName() {
+        withSession(
+            name = "same-package-star-import",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.createDirectories(root.resolve("lib"))
+                Files.writeString(root.resolve("source/Foo.kt"), "package p\n\nclass Foo(val n: Int)\n")
+                Files.writeString(root.resolve("lib/Library.kt"), "package lib\n\nclass After\n")
+                Files.writeString(root.resolve("usage/Usage.kt"), "package p\n\nimport lib.*\n\nfun use() = After()\n")
+            },
+        ) { session, root ->
+            val source = session.ktFile(root.resolve("source/Foo.kt"))
+            val library = session.ktFile(root.resolve("lib/Library.kt"))
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+
+            val conflict = findSamePackageOverloadConflict(
+                source,
+                primaryClass(source),
+                "After",
+                listOf(source, library, usage),
+            )
+
+            assertEquals("Usage.kt", conflict?.virtualFile?.name)
+        }
+    }
+
+    /**
+     * Verifies an explicitly imported `After` of another package is left alone.
+     *
+     * An explicit import outranks a same-package declaration, so the caller keeps constructing
+     * `lib.After` after the rename and no conflict is reported.
+     */
+    fun testFindSamePackageOverloadConflict_ignoresExplicitlyImportedNewName() {
+        withSession(
+            name = "same-package-explicit-import",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.createDirectories(root.resolve("lib"))
+                Files.writeString(root.resolve("source/Foo.kt"), "package p\n\nclass Foo(val n: Int)\n")
+                Files.writeString(root.resolve("lib/Library.kt"), "package lib\n\nclass After\n")
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package p\n\nimport lib.After\n\nfun use() = After()\n",
+                )
+            },
+        ) { session, root ->
+            val source = session.ktFile(root.resolve("source/Foo.kt"))
+            val library = session.ktFile(root.resolve("lib/Library.kt"))
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+
+            val conflict = findSamePackageOverloadConflict(
+                source,
+                primaryClass(source),
+                "After",
+                listOf(source, library, usage),
+            )
+
+            assertNull("an explicit import keeps winning over the package", conflict)
+        }
+    }
+
     /** @return the single top-level class of [source]. */
     private fun primaryClass(source: KtFile): KtClass = source.declarations.filterIsInstance<KtClass>().single()
 

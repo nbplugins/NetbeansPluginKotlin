@@ -61,6 +61,23 @@ interface KotlinMoveUsageSearchService {
     fun findWildcardImportingFiles(project: com.intellij.openapi.project.Project, classFqNames: Set<FqName>): List<KtFile> = emptyList()
 
     /**
+     * Finds session files whose package wildcard imports one of [packageFqNames].
+     *
+     * Such a file may reference no moved declaration at all: its wildcard directive is the only
+     * place the old package is named. Once the package loses every declaration the directive is
+     * unresolved, so the file must take part in the cleanup pass even though neither usage search
+     * nor direct-import search reports it.
+     *
+     * @param project IntelliJ project whose standalone K2 session supplies candidate files
+     * @param packageFqNames packages named by wildcard import directives
+     * @return Kotlin files with a package-level wildcard import of one of those packages
+     */
+    fun findPackageWildcardImportingFiles(
+        project: com.intellij.openapi.project.Project,
+        packageFqNames: Set<FqName>,
+    ): List<KtFile> = emptyList()
+
+    /**
      * Tells whether [packageFqName] keeps at least one declaration outside [excludedPaths].
      *
      * A package wildcard import becomes unresolved when the last declaration leaves its package,

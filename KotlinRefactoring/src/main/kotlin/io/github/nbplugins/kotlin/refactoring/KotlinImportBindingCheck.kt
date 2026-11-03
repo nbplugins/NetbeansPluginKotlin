@@ -55,6 +55,7 @@ import org.jetbrains.kotlin.psi.KtFunction
 import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtOperationReferenceExpression
+import org.jetbrains.kotlin.psi.KtParameter
 import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtPropertyAccessor
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
@@ -250,8 +251,10 @@ object KotlinImportBindingCheck {
      *
      * Adding a top-level declaration to a package changes overload resolution for unqualified
      * references to that name, so a same-package reference that currently resolves to another
-     * top-level callable can silently bind to the added declaration. An explicit import of the
-     * name from elsewhere keeps winning over the package, so it is not a conflict.
+     * top-level callable can silently bind to the added declaration. A reference bound through a
+     * star or default import is outranked by the same-package declaration in the same way. An
+     * explicit import of the name from elsewhere keeps winning over the package, so it is not a
+     * conflict.
      *
      * @param file caller that already names the declaration
      * @param name simple name of the declaration being added
@@ -278,8 +281,16 @@ object KotlinImportBindingCheck {
                         ?.resolveToSymbol() ?: return
                     if (symbol.belongsTo(excludedDeclarations)) return
                     if (!symbol.isTopLevelBinding()) return
-                    if (symbol.declaredPackage() != packageName) return
-                    conflicting = true
+                    // A reference that already binds a same-package declaration changes overload
+                    // resolution once the new declaration joins the package. A reference bound
+                    // through a star or default import is outranked by the package in the same
+                    // way, while an explicit import keeps winning, so only star-bound references
+                    // without an explicit import are affected.
+                    if (symbol.declaredPackage() == packageName ||
+                        file.importDirectives.none { directive -> directive.bindsName(name, emptySet()) }
+                    ) {
+                        conflicting = true
+                    }
                 }
             })
             conflicting
@@ -359,11 +370,11 @@ object KotlinImportBindingCheck {
                     .takeWhile { statement -> statement.textRange.startOffset < child.textRange.startOffset }
                     .any { statement -> (statement as? KtDeclaration)?.declaresName(name) == true }
                 is KtClassBody -> current.declarations.any { declaration -> declaration.declaresName(name) }
-                is KtFunction -> current.valueParameters.any { parameter -> parameter.name == name }
+                is KtFunction -> current.valueParameters.any { parameter -> parameter.bindsName(name) }
                 is KtPropertyAccessor ->
-                    current.parameterList?.parameters?.any { parameter -> parameter.name == name } == true
-                is KtForExpression -> current.loopParameter?.name == name
-                is KtCatchClause -> current.catchParameter?.name == name
+                    current.parameterList?.parameters?.any { parameter -> parameter.bindsName(name) } == true
+                is KtForExpression -> current.loopParameter?.bindsName(name) == true
+                is KtCatchClause -> current.catchParameter?.bindsName(name) == true
                 is KtWhenExpression -> current.subjectVariable?.name == name
                 else -> false
             }
@@ -475,6 +486,19 @@ object KotlinImportBindingCheck {
         is KtDestructuringDeclaration -> entries.any { entry -> entry.name == name }
         else -> false
     }
+
+    /**
+     * Tells whether this parameter binds [name], including its destructured entries.
+     *
+     * `{ (After, _) -> ... }` introduces `After` through the parameter's destructuring declaration
+     * rather than the parameter's own name, so checking `getName` alone misses it.
+     *
+     * @param name identifier to look for
+     * @return `true` when the parameter or one of its destructured entries introduces that name
+     */
+    private fun KtParameter.bindsName(name: String): Boolean =
+        this.name == name ||
+            destructuringDeclaration?.entries?.any { entry -> entry.name == name } == true
 
     /**
      * Tells whether this statement or member declaration binds [name] in the type namespace.

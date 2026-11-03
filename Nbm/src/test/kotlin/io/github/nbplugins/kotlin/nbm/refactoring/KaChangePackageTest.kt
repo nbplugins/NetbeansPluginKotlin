@@ -3715,6 +3715,94 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies both operators of an indexed update follow the moved file.
+     *
+     * `box[0]++` calls `get` and `set` through one convention reference, and neither name is
+     * spelled in the source. Both extensions stay in the former package, so the moved file needs
+     * an import for each of them.
+     */
+    fun testApply_realSession_importsBothIndexedAccessOperators() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-indexed-update")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("p"))
+            val sourcePath = temporaryRoot.resolve("p/Moved.kt")
+            Files.writeString(sourcePath, "package p\n\nfun bump(box: Box) { box[0]++; box[0] += 1 }\n")
+            Files.writeString(
+                temporaryRoot.resolve("p/Box.kt"),
+                "package p\n\nclass Box\n\noperator fun Box.get(index: Int) = 0\n\n" +
+                    "operator fun Box.set(index: Int, value: Int) {}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-indexed-update-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val movedText = success.changedFiles[sourcePath.toString()].orEmpty()
+            assertTrue("The indexed update needs both operators imported:\n$movedText", "import p.get" in movedText)
+            assertTrue("The indexed update needs both operators imported:\n$movedText", "import p.set" in movedText)
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies an unused wildcard import of a vacated package is discovered and removed.
+     *
+     * The caller references no moved declaration, so usage search never reports it and only the
+     * wildcard directive itself names the old package. Leaving it in place produces an unresolved
+     * import once the last declaration leaves the package.
+     */
+    fun testApply_realSession_removesUnusedOldPackageWildcard() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-obsolete-wildcard")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(sourcePath, "package old\n\nfun moved() = 1\n")
+            Files.writeString(usagePath, "package usage\n\nimport old.*\n\nfun use() = 2\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-obsolete-wildcard-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "The wildcard import of a package that lost every declaration must be removed",
+                "package usage\n\nfun use() = 2\n",
+                success.changedFiles[usagePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))
