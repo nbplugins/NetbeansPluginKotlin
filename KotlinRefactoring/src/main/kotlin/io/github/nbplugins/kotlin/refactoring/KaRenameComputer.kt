@@ -339,8 +339,9 @@ class KaRenameComputer(
      * or import — makes the rewritten text resolve to that binding instead. A constructor call
      * then becomes a call of a member function and the code still compiles with a new meaning.
      * Type positions are checked against classifiers only, because Kotlin resolves type names in a
-     * separate namespace; receiver labels are skipped because they name a labeled scope, and
-     * import directives because they follow the rename rather than capture it.
+     * separate namespace; receiver labels are skipped because they name a labeled scope, qualified
+     * selectors because they keep resolving through their receiver, and import directives because
+     * they follow the rename rather than capture it.
      *
      * @return the first file whose rewritten reference would capture, or `null` when every
      *         rewritten reference keeps its target
@@ -357,6 +358,10 @@ class KaRenameComputer(
                     // declaration, so a local or member of that name cannot capture it.
                     if (element is KtLabelReferenceExpression) continue
                     if (PsiTreeUtil.getParentOfType(element, KtImportDirective::class.java) != null) continue
+                    // A qualified selector keeps resolving through its receiver: `p.Before()`
+                    // becomes `p.After()` and still names the constructor, so no lexical binding
+                    // of the new name can capture it.
+                    if (KotlinImportBindingCheck.isQualifiedReference(element)) continue
                     // Kotlin resolves types and values in separate namespaces: a type position is
                     // only captured by another classifier, a value position only by another value.
                     val captured = if (element.isTypeReference()) {

@@ -337,8 +337,9 @@ class KaChangePackageComputer(
         }
         // A rewritten direct import follows the moved declaration, but the overload set it bound
         // stays behind: a caller that used one of the remaining overloads would silently switch to
-        // the moved declaration. Only files whose package also changes lose same-package visibility
-        // of those overloads, so files staying in the old package are unaffected.
+        // the moved declaration. An explicit import outranks both a wildcard of the old package and
+        // the caller's own package, so keeping those overloads visible does not preserve which one
+        // a call selects — every rewritten import has to be checked.
         val movedPaths = movedFiles.mapNotNull { file -> file.virtualFile?.path }.toSet()
         val movedImports = movedDeclarations.values.associate { (oldFqName, newFqName) ->
             MoveImport(oldFqName.parent(), oldFqName.shortName().asString()) to newFqName.parent()
@@ -348,21 +349,6 @@ class KaChangePackageComputer(
                 val importedFqName = directive.importedFqName ?: return@directives
                 if (directive.isAllUnder || directive.aliasName != null) return@directives
                 if (importedFqName !in movedOldFqNames) return@directives
-                // A file that stays in the old package keeps every remaining overload visible
-                // there, so the rewritten import cannot change what its calls resolve to.
-                if (file.packageFqName == importedFqName.parent() &&
-                    file.virtualFile?.path !in movedPaths
-                ) {
-                    return@directives
-                }
-                // A wildcard of the old package keeps every remaining overload visible, so the
-                // rewritten direct import cannot change what a call resolves to.
-                if (file.importDirectives.any { candidate ->
-                        candidate.isAllUnder && candidate.importedFqName == importedFqName.parent()
-                    }
-                ) {
-                    return@directives
-                }
                 if (KotlinImportBindingCheck.hasConflictingImportRewrite(file, importedFqName, movedPaths)) {
                     conflicts += "Cannot update ${file.name}: import ${importedFqName.asString()} " +
                         "also binds declarations that stay behind."
@@ -496,7 +482,11 @@ class KaChangePackageComputer(
             return QualifiedRewrite.NEEDS_IMPORT
         }
         val packageHead = newFqName.parent().pathSegments().first().asString()
-        if (file.hasDeclarationNamed(packageHead)) {
+        // Same-package declarations are visible without an import, so a sibling file's
+        // `object dest` hides the package just like a declaration of the caller file does.
+        if (file.hasDeclarationNamed(packageHead) ||
+            KotlinImportBindingCheck.isDeclaredInPackage(file, packageHead)
+        ) {
             // The new package's first segment would resolve to a local declaration instead of
             // the package, so the chain is shortened and the declaration imported instead.
             val shortName = newFqName.shortName().asString()
@@ -650,20 +640,28 @@ class KaChangePackageComputer(
                             val referencedName = expression.getReferencedName()
                             val topLevelFqName = samePackageTopLevelName(symbol, originalPackage, movedPaths)
                             // A call may spell a same-package type alias rather than the class it
-                            // expands to: K2 reports the constructor of the underlying class, but
-                            // the source keeps calling the alias, so the alias itself is imported.
-                            // Convention operators spell `+` while resolving to `plus`, and an
-                            // import of the spelled symbol would be unresolved; only classifiers
-                            // resolved through a constructor or class-like symbol can be aliases.
+                            // expands to: K2 can report the constructor of the underlying class,
+                            // but the source keeps calling the alias, so the alias itself is
+                            // imported. Convention operators spell `+` while resolving to `plus`,
+                            // and an import of the spelled symbol would be unresolved; only a
+                            // spelled name that resolves to a type alias of the original package
+                            // may be imported, never one synthesized from a class reference.
                             val importFqName = if (topLevelFqName != null) {
                                 // The reference may already be bound through an import alias of
                                 // the resolved declaration; the alias directive stays valid.
                                 if (expression.isAliasBound(topLevelFqName)) return
-                                when {
-                                    referencedName == topLevelFqName.shortName().asString() -> topLevelFqName
-                                    symbol is KaConstructorSymbol || symbol is KaClassLikeSymbol ->
-                                        originalPackage.child(Name.identifier(referencedName))
-                                    else -> topLevelFqName
+                                if (referencedName == topLevelFqName.shortName().asString()) {
+                                    topLevelFqName
+                                } else if (symbol is KaConstructorSymbol || symbol is KaClassLikeSymbol) {
+                                    // A differently spelled class reference denotes a type alias;
+                                    // only an alias declared in the original package can be
+                                    // imported by that name.
+                                    samePackageTypeAliasName(expression, symbol, originalPackage, movedPaths)
+                                        ?: return
+                                } else {
+                                    // A convention operator spells `+` while resolving to `plus`;
+                                    // the resolved callable id is the only usable spelling.
+                                    topLevelFqName
                                 }
                             } else {
                                 samePackageTypeAliasName(expression, symbol, originalPackage, movedPaths)

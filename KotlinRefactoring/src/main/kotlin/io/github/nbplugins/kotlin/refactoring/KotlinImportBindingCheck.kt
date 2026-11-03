@@ -20,6 +20,9 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
+import org.jetbrains.kotlin.analysis.api.compat.getClassOrObjectSymbol
+import org.jetbrains.kotlin.analysis.api.components.memberScope
+import org.jetbrains.kotlin.analysis.api.components.packageScope
 import org.jetbrains.kotlin.analysis.api.components.resolveToSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassLikeSymbol
@@ -27,6 +30,8 @@ import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaPackageSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaVariableSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.findPackage
+import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.psi.KtBlockExpression
@@ -43,6 +48,7 @@ import org.jetbrains.kotlin.psi.KtForExpression
 import org.jetbrains.kotlin.psi.KtFunction
 import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNamedFunction
+import org.jetbrains.kotlin.psi.KtOperationReferenceExpression
 import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtPropertyAccessor
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
@@ -87,7 +93,10 @@ object KotlinImportBindingCheck {
                 override fun visitSimpleNameExpression(expression: KtSimpleNameExpression) {
                     super.visitSimpleNameExpression(expression)
                     if (conflicting) return
-                    if (expression.getReferencedName() != name) return
+                    val referencedName = expression.getReferencedName()
+                    // A convention operator spells `plus` as `+`, so an operation reference can
+                    // still bind the name the import introduces even though its text differs.
+                    if (referencedName != name && expression !is KtOperationReferenceExpression) return
                     // A selector resolves through its receiver, except for an extension call on
                     // a value: an explicit import outranks the wildcard or same-package binding
                     // that currently selects the extension.
@@ -95,6 +104,7 @@ object KotlinImportBindingCheck {
                     if (PsiTreeUtil.getParentOfType(expression, KtImportDirective::class.java) != null) return
                     val symbol = expression.references.filterIsInstance<KtReference>().firstOrNull()
                         ?.resolveToSymbol() ?: return
+                    if (referencedName != name && symbol.declaredName() != name) return
                     if (symbol.belongsTo(excludedDeclarations)) return
                     if (!symbol.isTopLevelBinding()) return
                     conflicting = true
@@ -133,11 +143,16 @@ object KotlinImportBindingCheck {
                 override fun visitSimpleNameExpression(expression: KtSimpleNameExpression) {
                     super.visitSimpleNameExpression(expression)
                     if (conflicting) return
-                    if (expression.getReferencedName() != imported.shortName().asString()) return
+                    val importedName = imported.shortName().asString()
+                    val referencedName = expression.getReferencedName()
+                    // A convention operator spells `plus` as `+`, so an operation reference can
+                    // still bind the name the rewritten import selects.
+                    if (referencedName != importedName && expression !is KtOperationReferenceExpression) return
                     if (PsiTreeUtil.getParentOfType(expression, KtImportDirective::class.java) != null) return
                     if (expression.isQualifiedSelector() && !expression.isValueReceiverExtension()) return
                     val symbol = expression.references.filterIsInstance<KtReference>().firstOrNull()
                         ?.resolveToSymbol() ?: return
+                    if (referencedName != importedName && symbol.declaredName() != importedName) return
                     val path = symbol.psi?.containingFile?.virtualFile?.path
                     if (path != null && path in movingPaths) return
                     if (!symbol.isTopLevelBinding()) return
@@ -175,7 +190,7 @@ object KotlinImportBindingCheck {
             if (bound) return true
             current = current.parent
         }
-        return false
+        return isNameBoundByInheritedMember(element, name, typesOnly = true)
     }
 
     /**
@@ -184,7 +199,7 @@ object KotlinImportBindingCheck {
      * Used before rewriting a declaration name into a scope where the new name may already be
      * taken. Unlike [hasConflictingReference], which asks what an *import* could capture, this
      * asks what the rewritten *text* would resolve to: locals, parameters, members, file-level
-     * declarations, and import bindings all take part.
+     * declarations, import bindings, and inherited members all take part.
      *
      * @param element position whose rewritten text must keep its meaning
      * @param name new simple name the position is about to spell
@@ -225,8 +240,65 @@ object KotlinImportBindingCheck {
             child = current
             current = current.parent
         }
-        return false
+        return isNameBoundByInheritedMember(element, name, typesOnly = false)
     }
+
+    /**
+     * Tells whether a declaration of the same package is visible under [name] in [file].
+     *
+     * Same-package declarations need no import, so a package qualifier can resolve to a
+     * classifier or callable declared in another file of the caller's own package. Treating such
+     * a name as a free package segment would silently change which declaration a rewritten
+     * qualified reference calls.
+     *
+     * @param file file whose declared package is searched
+     * @param name identifier to look for
+     * @return `true` when a declaration of the same package introduces that name
+     */
+    fun isDeclaredInPackage(file: KtFile, name: String): Boolean = runCatching {
+        analyze(file) {
+            val scope = findPackage(file.packageFqName)?.packageScope ?: return@analyze false
+            scope.declarations.any { declaration -> declaration.declaredName() == name }
+        }
+    }.getOrDefault(false)
+
+    /**
+     * Tells whether a member inherited into an enclosing class binds [name].
+     *
+     * Only declarations physically present in the enclosing class bodies are visible through
+     * PSI; a superclass member (`class Caller : Base()` calling an inherited `fun After()`) lives
+     * in another file but is still in scope unqualified, so the resolved member scope must be
+     * consulted instead.
+     *
+     * @param element position whose rewritten text must keep its meaning
+     * @param name identifier to look for
+     * @param typesOnly `true` to search the type namespace only, `false` to include values
+     * @return `true` when an inherited member of that name is in scope
+     */
+    private fun isNameBoundByInheritedMember(
+        element: KtElement,
+        name: String,
+        typesOnly: Boolean,
+    ): Boolean = runCatching {
+        analyze(element) {
+            var current: PsiElement? = element.parent
+            while (current != null && current !is KtFile) {
+                if (current is KtClassOrObject) {
+                    val scope = current.getClassOrObjectSymbol()?.memberScope
+                    if (scope != null) {
+                        val bound = if (typesOnly) {
+                            scope.classifiers.any { classifier -> classifier.name?.asString() == name }
+                        } else {
+                            scope.declarations.any { declaration -> declaration.declaredName() == name }
+                        }
+                        if (bound) return@analyze true
+                    }
+                }
+                current = current.parent
+            }
+            false
+        }
+    }.getOrDefault(false)
 
     /**
      * Tells whether this import directive introduces [name] into its file.
@@ -272,6 +344,16 @@ object KotlinImportBindingCheck {
         is KtTypeAlias -> this.name == name
         else -> false
     }
+
+    /**
+     * Returns the simple name this symbol declares, or `null` when it has none.
+     *
+     * A convention operator reference is spelled by its operator (`+`), so comparing the
+     * reference text alone misses references whose resolved callable carries the imported name.
+     *
+     * @return the declared name, or `null` for anonymous declarations and constructors
+     */
+    private fun KaSymbol.declaredName(): String? = (this as? KaNamedSymbol)?.name?.asString()
 
     /**
      * Returns the package this symbol is declared in, or `null` for members and locals.
@@ -330,6 +412,17 @@ object KotlinImportBindingCheck {
         }
         return null
     }
+
+    /**
+     * Tells whether [expression] is the selector of a qualified access.
+     *
+     * Such a name keeps resolving through its receiver, so neither an import nor a rename can
+     * rebind it to a lexical declaration of the same name.
+     *
+     * @param expression reference expression to inspect
+     * @return `true` when the expression follows a dot or a type qualifier
+     */
+    fun isQualifiedReference(expression: KtSimpleNameExpression): Boolean = expression.isQualifiedSelector()
 
     /**
      * Tells whether this name is the selector of a qualified access.

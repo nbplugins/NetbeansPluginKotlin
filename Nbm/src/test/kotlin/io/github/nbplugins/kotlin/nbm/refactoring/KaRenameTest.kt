@@ -633,6 +633,87 @@ class KaRenameTest : KotlinTestCase("KaRenameTest", "rename") {
         }
     }
 
+    /**
+     * Verifies an inherited member capturing the new name is reported as a conflict.
+     *
+     * `class Caller : Base()` inherits `Base.After`, which is in scope unqualified. Renaming
+     * `Before` to `After` rewrites `Before()` to `After()`, turning the constructor call into a
+     * call of the inherited function while the file keeps compiling.
+     */
+    fun testFindCaptureConflicts_reportsInheritedMemberCapture() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-inherited")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("p/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before\n")
+            Files.writeString(
+                callerPath,
+                "package p\n\nopen class Base {\n    fun After() = \"other\"\n}\n\n" +
+                    "class Caller : Base() {\n    fun make() = Before().toString()\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-inherited-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "After",
+            ).findCaptureConflicts()
+
+            assertEquals("The inherited member function captures the rewritten constructor call", caller, conflict)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a fully qualified reference is not checked against lexical bindings.
+     *
+     * Renaming `Before` to `After` only changes the selector of `p.Before()`, which still names
+     * the constructor as `p.After()`; an unrelated member named `After` cannot capture it.
+     */
+    fun testFindCaptureConflicts_ignoresQualifiedReference() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-qualified")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("p/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before\n")
+            Files.writeString(
+                callerPath,
+                "package p\n\nclass Caller {\n    fun After() = \"other\"\n" +
+                    "    fun make() = p.Before().toString()\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-qualified-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "After",
+            ).findCaptureConflicts()
+
+            assertNull("A qualified selector keeps resolving through its receiver", conflict)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))
