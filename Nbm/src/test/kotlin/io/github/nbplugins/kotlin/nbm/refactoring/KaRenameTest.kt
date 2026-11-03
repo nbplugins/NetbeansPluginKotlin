@@ -930,6 +930,51 @@ class KaRenameTest : KotlinTestCase("KaRenameTest", "rename") {
     }
 
     /**
+     * Verifies a call of a renamed function that shares a type alias's name is still rewritten.
+     *
+     * The file declares `typealias Before = Impl` and `fun Before(n: Int)`, and `Before(1)` calls
+     * the function. The type-alias exemption only protects constructor calls spelled through the
+     * alias; applying it to the function's own call would leave the reference untouched, and it
+     * would silently become an alias-constructor call after the rename.
+     */
+    fun testCompute_renamesFunctionCallSharingTypeAliasName() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping rename-compute test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-function-alias-name")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Use.kt")
+            Files.writeString(
+                sourcePath,
+                "package p\n\nclass Impl(val n: Number)\n\ntypealias Before = Impl\n\n" +
+                    "fun Before(n: Int) = \"other\"\n\nfun use() = Before(1).toString()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-function-alias-name-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val changes = KaRenameComputer(
+                source, source.text.indexOf("fun Before") + "fun ".length, setOf(source), "After",
+            ).compute()
+
+            assertNotNull("compute() must return non-null for a function rename", changes)
+            assertEquals(
+                "The function declaration and its call follow the rename",
+                "package p\n\nclass Impl(val n: Number)\n\ntypealias Before = Impl\n\n" +
+                    "fun After(n: Int) = \"other\"\n\nfun use() = After(1).toString()\n",
+                applyChanges(source.text, changes!![sourcePath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies a fully qualified reference is not checked against lexical bindings.
      *
      * Renaming `Before` to `After` only changes the selector of `p.Before()`, which still names

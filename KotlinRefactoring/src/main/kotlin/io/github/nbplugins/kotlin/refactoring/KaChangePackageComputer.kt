@@ -806,23 +806,25 @@ class KaChangePackageComputer(
                             }
                         }
 
-                        // A for loop spells no name for the convention it calls: `for (x in box)`
-                        // depends on a top-level `operator fun Box.iterator` that only the
-                        // original package's visibility provided. Its reference resolves to both
-                        // the loop variable's property and the convention function.
+                        // A for loop spells no name for the conventions it calls: `for (x in box)`
+                        // depends on top-level `operator fun Box.iterator`, `Cursor.hasNext`, and
+                        // `Cursor.next` that only the original package's visibility provided. Its
+                        // reference resolves to every one of them — and to the loop variable's
+                        // own property — so all retained callables are collected.
                         override fun visitForExpression(expression: KtForExpression) {
                             super.visitForExpression(expression)
-                            expression.references.filterIsInstance<KtReference>().forEach { reference ->
-                                val symbols = runCatching { reference.resolveToSymbols() }.getOrNull()
-                                    ?: return@forEach
-                                val importFqName = symbols.firstNotNullOfOrNull { symbol ->
-                                    samePackageTopLevelName(symbol, originalPackage, movedPaths)
-                                } ?: return@forEach
-                                if (importFqName in importedFqNames || originalPackage in starPackages) {
-                                    return@forEach
+                            expression.references
+                                .filterIsInstance<KtReference>()
+                                .flatMap { reference ->
+                                    runCatching { reference.resolveToSymbols() }.getOrNull().orEmpty()
                                 }
-                                missingImports += importFqName
-                            }
+                                .mapNotNull { symbol ->
+                                    samePackageTopLevelName(symbol, originalPackage, movedPaths)
+                                }
+                                .filter { importFqName ->
+                                    importFqName !in importedFqNames && originalPackage !in starPackages
+                                }
+                                .forEach { importFqName -> missingImports += importFqName }
                         }
 
                         // Convention operators are not spelled as simple names: `box[0]` depends

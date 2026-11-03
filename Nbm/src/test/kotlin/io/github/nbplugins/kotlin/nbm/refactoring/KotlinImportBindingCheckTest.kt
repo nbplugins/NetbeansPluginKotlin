@@ -296,6 +296,159 @@ class KotlinImportBindingCheckTest : KotlinTestCase("KotlinImportBindingCheckTes
     }
 
     /**
+     * Verifies an implicit `invoke` call is reported.
+     *
+     * `(n)()` spells no name for the convention it calls, so the call-site reference cannot be
+     * matched by text. Adding an explicit import of the moving `Number.invoke` extension outranks
+     * the wildcard import that currently selects the staying `Int.invoke`, and the call would
+     * silently switch overloads.
+     */
+    fun testHasConflictingReference_reportsImplicitInvoke() {
+        withSession(
+            name = "implicit-invoke",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("old"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(
+                    root.resolve("old/Staying.kt"),
+                    "package old\n\noperator fun Int.invoke(): Int = 1\n",
+                )
+                Files.writeString(
+                    root.resolve("old/Moving.kt"),
+                    "package old\n\noperator fun Number.invoke(): Int = 2\n",
+                )
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package usage\n\nimport old.*\n\nfun use(n: Int) = (n)()\n",
+                )
+            },
+        ) { session, root ->
+            val moving = session.ktFile(root.resolve("old/Moving.kt"))
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+            val imported = moving.declarations.filterIsInstance<KtNamedFunction>().single { it.name == "invoke" }
+
+            assertTrue(
+                "the imported Number.invoke would outrank the wildcard Int.invoke of (n)()",
+                KotlinImportBindingCheck.hasConflictingReference(usage, "invoke", setOf(imported)),
+            )
+        }
+    }
+
+    /**
+     * Verifies an implicit `invoke` call keeps an overload the rewritten import stops binding.
+     *
+     * `(box)()` resolves to the staying `Box.invoke`; rewriting `import old.invoke` to the moved
+     * `Number.invoke` drops that overload, so the call would change its target while still
+     * compiling.
+     */
+    fun testHasConflictingImportRewrite_reportsImplicitInvoke() {
+        withSession(
+            name = "implicit-invoke-rewrite",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("old"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(
+                    root.resolve("old/Staying.kt"),
+                    "package old\n\nclass Box\n\noperator fun Box.invoke(): Int = 1\n",
+                )
+                Files.writeString(
+                    root.resolve("old/Moving.kt"),
+                    "package old\n\noperator fun Number.invoke(): Int = 2\n",
+                )
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package usage\n\nimport old.invoke\n\nfun use(box: Box) = (box)()\n",
+                )
+            },
+        ) { session, root ->
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+            val movingPaths = setOf(root.resolve("old/Moving.kt").toString())
+
+            assertTrue(
+                "the rewritten import stops binding the Box.invoke of (box)()",
+                KotlinImportBindingCheck.hasConflictingImportRewrite(
+                    usage,
+                    FqName("old.invoke"),
+                    movingPaths,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Verifies an implicit `invoke` call would be captured by an outgoing import.
+     *
+     * The moved file's `(box)()` resolves to the `Box.invoke` that moves with it; adding an import
+     * of the staying `old.invoke` outranks it and silently retargets the call.
+     */
+    fun testHasConflictingOutgoingImport_reportsImplicitInvoke() {
+        withSession(
+            name = "implicit-invoke-outgoing",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("old"))
+                Files.writeString(
+                    root.resolve("old/Staying.kt"),
+                    "package old\n\noperator fun Number.invoke(): Int = 2\n",
+                )
+                Files.writeString(
+                    root.resolve("old/Movers.kt"),
+                    "package old\n\nclass Box\n\noperator fun Box.invoke(): Int = 1\n\n" +
+                        "fun use(box: Box) = (box)()\n",
+                )
+            },
+        ) { session, root ->
+            val movers = session.ktFile(root.resolve("old/Movers.kt"))
+            val movingPaths = setOf(root.resolve("old/Movers.kt").toString())
+
+            assertTrue(
+                "the outgoing import would retarget the Box.invoke of (box)()",
+                KotlinImportBindingCheck.hasConflictingOutgoingImport(
+                    movers,
+                    FqName("old.invoke"),
+                    movingPaths,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Verifies the composite-scope lookup honors the caller's ignore sets.
+     *
+     * The file's own `import old.moved` is reported by scope resolution like any other binding,
+     * but it is exactly the import being rewritten, so `moved` is not a competing declaration.
+     */
+    fun testIsNameBoundInScope_ignoresListedImport() {
+        withSession(
+            name = "ignored-import",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("old"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(root.resolve("old/Moved.kt"), "package old\n\nfun moved() = 1\n")
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package usage\n\nimport old.moved\n\nfun use() = old.moved()\n",
+                )
+            },
+        ) { session, root ->
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+            val function = usage.declarations.filterIsInstance<KtNamedFunction>().single { it.name == "use" }
+
+            assertTrue(
+                "without exclusions the import is a binding",
+                KotlinImportBindingCheck.isNameBoundInScope(function, "moved"),
+            )
+            assertFalse(
+                "the import being rewritten is not a competing binding",
+                KotlinImportBindingCheck.isNameBoundInScope(
+                    function,
+                    "moved",
+                    ignoredImports = setOf(FqName("old.moved")),
+                ),
+            )
+        }
+    }
+
+    /**
      * Verifies an extension called on a named object is treated as a value receiver.
      *
      * `singleton.choose()` resolves the extension on `Derived`, the object's supertype, not on the

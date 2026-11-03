@@ -501,18 +501,23 @@ class KaRenameComputer(
                         val simpleName = expression as? KtSimpleNameExpression ?: return
                         val targetName = (targetPsi as? KtNamedDeclaration)?.name
                         if (targetName != null && simpleName.getReferencedName() != targetName) return
-                        if (simpleName.isAliasUsage()) {
-                            val referencedName = simpleName.getReferencedName()
-                            if (referencedName in aliasNames || simpleName.spellsTypeAlias(referencedName)) return
-                        }
                         val sym = runCatching {
                             expression.mainReference?.resolveToSymbol()
                         }.getOrNull() ?: return
                         val constructsTarget = targetClassId != null &&
                             (sym as? KaConstructorSymbol)?.containingClassId == targetClassId
-                        if (sym.psi == targetPsi || constructsTarget) {
-                            elements.add(simpleName)
+                        val refersDirectlyToTarget = sym.psi == targetPsi
+                        if (!refersDirectlyToTarget && !constructsTarget) return
+                        // A constructor call through a same-spelled type alias resolves to the
+                        // expanded class's constructor, so the class match alone cannot tell
+                        // `Before()` from `typealias Before = p.Before`. Only such an alias
+                        // expansion is exempt: a reference resolving to the renamed declaration
+                        // itself (a function or the type alias) must still be rewritten.
+                        if (!refersDirectlyToTarget && simpleName.isAliasUsage()) {
+                            val referencedName = simpleName.getReferencedName()
+                            if (referencedName in aliasNames || simpleName.spellsTypeAlias(referencedName)) return
                         }
+                        elements.add(simpleName)
                     }
                 })
             }

@@ -3584,6 +3584,97 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
+     * Verifies every convention operator of a for loop is imported, not just the first one.
+     *
+     * `for (x in box)` spells none of `iterator`, `hasNext`, or `next`; all three are top-level
+     * extensions that same-package visibility provided. The loop reference resolves to more than
+     * one of them, so keeping only the first would leave the loop unresolved after the move.
+     */
+    fun testApply_realSession_importsEveryForLoopConvention() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-for-loop-all")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("p"))
+            val sourcePath = temporaryRoot.resolve("p/Moved.kt")
+            Files.writeString(sourcePath, "package p\n\nfun use(box: Box) {\n    for (x in box) println(x)\n}\n")
+            Files.writeString(
+                temporaryRoot.resolve("p/Box.kt"),
+                "package p\n\nclass Box\n\nclass Cursor\n\n" +
+                    "operator fun Box.iterator(): Cursor = Cursor()\n\n" +
+                    "operator fun Cursor.hasNext(): Boolean = false\n\n" +
+                    "operator fun Cursor.next(): Int = 0\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-for-loop-all-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("q")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[sourcePath.toString()] ?: error("The moved file must change")
+            assertTrue("The for loop must import iterator: $text", text.contains("import p.iterator"))
+            assertTrue("The for loop must import hasNext: $text", text.contains("import p.hasNext"))
+            assertTrue("The for loop must import next: $text", text.contains("import p.next"))
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a qualified call whose declaration is already imported can still be shortened.
+     *
+     * The caller already has `import old.moved` and spells `old.moved()`; moving the declaration
+     * to the root package needs the import rewritten to `import moved` and the call shortened.
+     * The existing import binds the very name being shortened, so it is not a shadowing conflict.
+     */
+    fun testApply_realSession_shortensQualifiedCallWithExistingImportForRootTarget() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-root-target-imported")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(sourcePath, "package old\n\nfun moved() = 1\n")
+            Files.writeString(usagePath, "package usage\n\nimport old.moved\n\nfun use() = old.moved()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-root-target-imported-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName.ROOT),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            assertEquals(
+                "The existing import follows the declaration and the call is shortened",
+                "package usage\n\nimport moved\n\nfun use() = moved()\n",
+                success.changedFiles[usagePath.toString()],
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies a type alias whose name equals the expanded class is still imported.
      *
      * `typealias Impl = other.Impl` is invisible after the move, so `Impl()` needs `import p.Impl`

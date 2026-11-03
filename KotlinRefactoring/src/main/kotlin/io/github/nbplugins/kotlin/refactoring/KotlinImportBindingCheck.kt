@@ -190,6 +190,19 @@ object KotlinImportBindingCheck {
                         ) { conflicting = true }
                     }
                 }
+
+                // An implicit invocation `(n)()` spells no name for the `invoke` operator it
+                // calls: the invocation reference belongs to the call expression rather than to
+                // any spelled name. An explicit callee is already handled above.
+                override fun visitCallExpression(expression: KtCallExpression) {
+                    super.visitCallExpression(expression)
+                    if (!conflicting && name == "invoke") {
+                        expression.capturesTopLevelName(
+                            name,
+                            { symbol -> !symbol.belongsTo(excludedDeclarations) },
+                        ) { conflicting = true }
+                    }
+                }
             })
             conflicting
         }
@@ -306,6 +319,20 @@ object KotlinImportBindingCheck {
                         ) { conflicting = true }
                     }
                 }
+
+                // An implicit invocation `(n)()` spells no name for the `invoke` operator it
+                // calls: the invocation reference belongs to the call expression rather than to
+                // any spelled name. An aliased directive binds only its alias, so it provides no
+                // convention operator.
+                override fun visitCallExpression(expression: KtCallExpression) {
+                    super.visitCallExpression(expression)
+                    if (!conflicting && !aliased && importedName == "invoke") {
+                        expression.capturesTopLevelName(
+                            importedName,
+                            { symbol -> symbol.staysInOriginalPackage(imported, movingPaths) },
+                        ) { conflicting = true }
+                    }
+                }
             })
             conflicting
         }
@@ -401,6 +428,19 @@ object KotlinImportBindingCheck {
                 override fun visitForExpression(expression: KtForExpression) {
                     super.visitForExpression(expression)
                     if (!conflicting) {
+                        expression.capturesTopLevelName(
+                            importedName,
+                            { symbol -> symbol.isCapturedByOutgoingImport(imported, movingPaths) },
+                        ) { conflicting = true }
+                    }
+                }
+
+                // An implicit invocation `(n)()` spells no name for the `invoke` operator it
+                // calls: the invocation reference belongs to the call expression rather than to
+                // any spelled name. An explicit callee is already handled above.
+                override fun visitCallExpression(expression: KtCallExpression) {
+                    super.visitCallExpression(expression)
+                    if (!conflicting && importedName == "invoke") {
                         expression.capturesTopLevelName(
                             importedName,
                             { symbol -> symbol.isCapturedByOutgoingImport(imported, movingPaths) },
@@ -530,8 +570,9 @@ object KotlinImportBindingCheck {
             }) return true
         // A wildcard or default import binds names without spelling any directive of this file, so
         // a classifier or callable it provides hides a same-named package segment or declaration
-        // exactly like an explicit import does.
-        if (isNameBoundByWildcardImport(element, name)) return true
+        // exactly like an explicit import does. The composite scope also contains the explicit
+        // import this check deliberately ignores, so the ignore sets have to follow along.
+        if (isNameBoundByWildcardImport(element, name, ignoredImports, ignoredDeclarations)) return true
         var child: PsiElement = element
         var current: PsiElement? = element.parent
         while (current != null) {
@@ -669,19 +710,64 @@ object KotlinImportBindingCheck {
      * text: the position's composite scope already knows which star imports apply and which
      * declarations they contribute.
      *
+     * The composite scope also exposes the explicit imports of the file, so [ignoredImports] and
+     * [ignoredDeclarations] are filtered out here: a binding the caller deliberately excludes —
+     * the moved declaration's own import, or the moved declaration itself — is not a competing
+     * declaration even though scope resolution reports it.
+     *
      * @param element position whose scope is inspected
      * @param name identifier to look for
+     * @param ignoredImports imported FQNs that already bind the declaration being renamed
+     * @param ignoredDeclarations declarations that are the intended target themselves
      * @return `true` when a wildcard or default import provides a classifier or callable of that name
      */
-    private fun isNameBoundByWildcardImport(element: KtElement, name: String): Boolean = runCatching {
+    private fun isNameBoundByWildcardImport(
+        element: KtElement,
+        name: String,
+        ignoredImports: Set<FqName> = emptySet(),
+        ignoredDeclarations: Set<PsiElement> = emptySet(),
+    ): Boolean = runCatching {
         analyze(element) {
             val identifier = Name.identifier(name)
             element.containingKtFile.scopeContext(element).scopes.any { scopeWithKind ->
-                scopeWithKind.scope.classifiers(identifier).any() ||
-                    scopeWithKind.scope.callables(identifier).any()
+                scopeWithKind.scope.classifiers(identifier)
+                    .any { symbol -> !symbol.isIgnoredBinding(ignoredImports, ignoredDeclarations) } ||
+                    scopeWithKind.scope.callables(identifier)
+                        .any { symbol -> !symbol.isIgnoredBinding(ignoredImports, ignoredDeclarations) }
             }
         }
     }.getOrDefault(false)
+
+    /**
+     * Tells whether this resolved symbol is one the caller deliberately excludes from a check.
+     *
+     * A scope reports every binding it holds, including the explicit import that is being
+     * rewritten and the declaration being moved. The declaration is matched by PSI identity
+     * (including a constructor's enclosing class), the import by the symbol's FQN.
+     *
+     * @param ignoredImports imported FQNs that already bind the declaration being renamed
+     * @param ignoredDeclarations declarations that are the intended target themselves
+     * @return `true` when the symbol is one of the excluded bindings
+     */
+    private fun KaSymbol.isIgnoredBinding(
+        ignoredImports: Set<FqName>,
+        ignoredDeclarations: Set<PsiElement>,
+    ): Boolean {
+        val element = psi
+        if (element != null) {
+            if (element in ignoredDeclarations) return true
+            val enclosingClass = element.enclosingClassOrObject()
+            if (enclosingClass != null && enclosingClass in ignoredDeclarations) return true
+        }
+        if (ignoredImports.isEmpty()) return false
+        val fqName = when (this) {
+            is KaConstructorSymbol -> containingClassId?.asSingleFqName()
+            is KaClassLikeSymbol -> classId?.asSingleFqName()
+            is KaCallableSymbol -> callableId?.asSingleFqName()
+            else -> null
+        }
+        return fqName != null && fqName in ignoredImports
+    }
 
     /**
      * Tells whether a member of an enclosing or implicit receiver binds [name].
