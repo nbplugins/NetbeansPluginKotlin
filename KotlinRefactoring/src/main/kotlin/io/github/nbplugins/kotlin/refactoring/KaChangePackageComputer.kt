@@ -989,13 +989,24 @@ class KaChangePackageComputer(
                         // accumulator deduplicates the overlap.
                         override fun visitCallExpression(expression: KtCallExpression) {
                             super.visitCallExpression(expression)
-                            expression.references.filterIsInstance<KtReference>()
+                            val symbols = expression.references.filterIsInstance<KtReference>()
                                 .flatMap { reference ->
                                     runCatching { reference.resolveToSymbols() }.getOrNull().orEmpty()
                                 }
-                                .mapNotNull { symbol ->
-                                    samePackageTopLevelName(symbol, originalPackage, movedPaths)
-                                }
+                            // A destination declaration of the same name outranks the wildcard or
+                            // default import that currently binds the operator.
+                            symbols.forEach { symbol ->
+                                file.shadowedDependency(
+                                    symbol,
+                                    destination,
+                                    destinationNames,
+                                    importedFqNames,
+                                    movedPaths,
+                                )?.let { importFqName -> missingImports += importFqName }
+                            }
+                            symbols.mapNotNull { symbol ->
+                                samePackageTopLevelName(symbol, originalPackage, movedPaths)
+                            }
                                 .filter { importFqName ->
                                     importFqName !in importedFqNames && originalPackage !in starPackages
                                 }
@@ -1014,6 +1025,15 @@ class KaChangePackageComputer(
                             multiDeclarationEntry.references.filterIsInstance<KtReference>().forEach { reference ->
                                 val symbols = runCatching { reference.resolveToSymbols() }.getOrNull()
                                     ?: return@forEach
+                                symbols.forEach { symbol ->
+                                    file.shadowedDependency(
+                                        symbol,
+                                        destination,
+                                        destinationNames,
+                                        importedFqNames,
+                                        movedPaths,
+                                    )?.let { importFqName -> missingImports += importFqName }
+                                }
                                 val importFqName = symbols.firstNotNullOfOrNull { symbol ->
                                     samePackageTopLevelName(symbol, originalPackage, movedPaths)
                                 } ?: return@forEach
@@ -1031,14 +1051,23 @@ class KaChangePackageComputer(
                         // own property — so all retained callables are collected.
                         override fun visitForExpression(expression: KtForExpression) {
                             super.visitForExpression(expression)
-                            expression.references
+                            val symbols = expression.references
                                 .filterIsInstance<KtReference>()
                                 .flatMap { reference ->
                                     runCatching { reference.resolveToSymbols() }.getOrNull().orEmpty()
                                 }
-                                .mapNotNull { symbol ->
-                                    samePackageTopLevelName(symbol, originalPackage, movedPaths)
-                                }
+                            symbols.forEach { symbol ->
+                                file.shadowedDependency(
+                                    symbol,
+                                    destination,
+                                    destinationNames,
+                                    importedFqNames,
+                                    movedPaths,
+                                )?.let { importFqName -> missingImports += importFqName }
+                            }
+                            symbols.mapNotNull { symbol ->
+                                samePackageTopLevelName(symbol, originalPackage, movedPaths)
+                            }
                                 .filter { importFqName ->
                                     importFqName !in importedFqNames && originalPackage !in starPackages
                                 }
@@ -1057,6 +1086,15 @@ class KaChangePackageComputer(
                                 .flatMap { reference ->
                                     runCatching { reference.resolveToSymbols() }.getOrNull().orEmpty()
                                 }
+                            resolvedOperators.forEach { symbol ->
+                                file.shadowedDependency(
+                                    symbol,
+                                    destination,
+                                    destinationNames,
+                                    importedFqNames,
+                                    movedPaths,
+                                )?.let { importFqName -> missingImports += importFqName }
+                            }
                             val retainedOperators = resolvedOperators.mapNotNull { symbol ->
                                 samePackageTopLevelName(symbol, originalPackage, movedPaths)
                             }
@@ -1069,6 +1107,15 @@ class KaChangePackageComputer(
                             // getter is a member: the array reference exposes only `get`, so a
                             // staying top-level `set` would otherwise be lost without an import.
                             if (expression.isCompoundWrite()) {
+                                expression.selectedIndexedSetter()?.let { setter ->
+                                    file.shadowedDependency(
+                                        setter,
+                                        destination,
+                                        destinationNames,
+                                        importedFqNames,
+                                        movedPaths,
+                                    )?.let { importFqName -> missingImports += importFqName }
+                                }
                                 samePackageIndexedSetter(expression, originalPackage, movedPaths)
                                     ?.takeIf { importFqName ->
                                         importFqName !in importedFqNames && originalPackage !in starPackages
@@ -1120,6 +1167,15 @@ class KaChangePackageComputer(
                                         movedPaths,
                                     )?.let { symbol -> add(symbol) }
                                 }
+                            }
+                            operators.forEach { symbol ->
+                                file.shadowedDependency(
+                                    symbol,
+                                    destination,
+                                    destinationNames,
+                                    importedFqNames,
+                                    movedPaths,
+                                )?.let { importFqName -> missingImports += importFqName }
                             }
                             operators.asSequence()
                                 .mapNotNull { symbol ->
@@ -1272,10 +1328,38 @@ class KaChangePackageComputer(
         }
         val name = expression.getReferencedName()
         if (name !in destinationNames) return null
-        val fqName = topLevelDeclarationFqName(symbol) ?: return null
         // A type alias is spelled by its own name; a declaration of another package that only
         // expands the alias cannot be imported under the spelled name.
+        val fqName = topLevelDeclarationFqName(symbol) ?: return null
         if (fqName.shortName().asString() != name) return null
+        return shadowedDependency(symbol, destination, destinationNames, importedFqNames, movedPaths)
+    }
+
+    /**
+     * Returns the import that keeps an implicitly selected declaration bound after the move.
+     *
+     * Convention operators (`component1`, `iterator`, `get`, `getValue`) spell no name, so a
+     * destination declaration of the same name would outrank the wildcard or default import that
+     * currently selects them. The resolved declaration's explicit import keeps its priority.
+     *
+     * @param symbol declaration the reference currently resolves to
+     * @param destination package the moved file changes to
+     * @param destinationNames top-level names the destination package will contain
+     * @param importedFqNames unaliased imports already present in the file
+     * @param movedPaths paths of the files whose package changes
+     * @return FQN to import, or `null` when the binding is unaffected
+     */
+    private fun KtFile.shadowedDependency(
+        symbol: KaSymbol,
+        destination: FqName,
+        destinationNames: Set<String>,
+        importedFqNames: Set<FqName>,
+        movedPaths: Set<String>,
+    ): FqName? {
+        if (destinationNames.isEmpty()) return null
+        val fqName = topLevelDeclarationFqName(symbol) ?: return null
+        val name = fqName.shortName().asString()
+        if (name !in destinationNames) return null
         // A declaration moving with its file follows it and no import can express that.
         if (symbol.psi?.containingFile?.virtualFile?.path in movedPaths) return null
         // A declaration of the destination package is already bound through the package itself.
@@ -1292,26 +1376,6 @@ class KaChangePackageComputer(
         // package, a wildcard import, or Kotlin's default imports — all outranked by the
         // destination's same-package declaration.
         return fqName
-    }
-
-    /**
-     * Tells whether this indexed access is updated implicitly, not merely assigned or read.
-     *
-     * A plain assignment (`box[0] = 1`) resolves its `set` through the array-access reference, but
-     * an increment or compound assignment (`box[0]++`, `box[0] += 1`) lowers to `get` then `set`
-     * and exposes only `get`.
-     *
-     * @return `true` when the compiler resolves a setter for this access implicitly
-     */
-    private fun KtArrayAccessExpression.isCompoundWrite(): Boolean {
-        val parent = parent
-        return when (parent) {
-            is KtBinaryExpression -> parent.left == this &&
-                parent.operationToken in KtTokens.ALL_ASSIGNMENTS && parent.operationToken != KtTokens.EQ
-            is KtUnaryExpression -> parent.baseExpression == this &&
-                parent.operationToken in setOf(KtTokens.PLUSPLUS, KtTokens.MINUSMINUS)
-            else -> false
-        }
     }
 
     /**
@@ -1406,10 +1470,16 @@ class KaChangePackageComputer(
     context(_: KaSession)
     private fun KtElement.scopeDelegateOperator(type: KaType, operatorName: String): KaCallableSymbol? = runCatching {
         val identifier = Name.identifier(operatorName)
-        containingKtFile.scopeContext(this).scopes.asSequence()
-            .flatMap { scopeWithKind -> scopeWithKind.scope.callables(identifier) }
-            .filter { symbol -> symbol.isExtension && symbol.isDelegateOperatorShape(operatorName) }
-            .firstOrNull { symbol -> symbol.canBeCalledAsExtensionOn(type) }
+        // Scopes follow import priority, so the first one that provides an applicable operator
+        // decides; inside it, the most specific receiver wins (`Int.getValue` over
+        // `Number.getValue`), exactly as overload resolution does.
+        containingKtFile.scopeContext(this).scopes.forEach { scopeWithKind ->
+            val candidates = scopeWithKind.scope.callables(identifier)
+                .filter { symbol -> symbol.isExtension && symbol.isDelegateOperatorShape(operatorName) }
+                .toList()
+            selectExtension(candidates, type)?.let { selected -> return@runCatching selected }
+        }
+        null
     }.getOrNull()
 
     /**
@@ -1436,14 +1506,19 @@ class KaChangePackageComputer(
         originalPackage: FqName,
         movedPaths: Set<String>?,
     ): KaCallableSymbol? {
-        return findPackage(originalPackage)?.packageScope?.declarations
+        val candidates = findPackage(originalPackage)?.packageScope?.declarations
             ?.filterIsInstance<KaCallableSymbol>()
-            ?.firstOrNull { symbol ->
+            ?.filter { symbol ->
                 (symbol as? KaNamedSymbol)?.name?.asString() == operatorName &&
                     symbol.isDelegateOperatorShape(operatorName) &&
                     symbol.canBeCalledAsExtensionOn(type) &&
                     (movedPaths == null || samePackageTopLevelName(symbol, originalPackage, movedPaths) != null)
             }
+            .orEmpty()
+            .toList()
+        // A package can declare several overloads of the operator; only the most specific
+        // applicable one is selected for this receiver.
+        return selectExtension(candidates, type)
     }
 
     /**

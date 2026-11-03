@@ -33,6 +33,7 @@ import org.jetbrains.kotlin.analysis.api.types.KaIntersectionType
 import org.jetbrains.kotlin.analysis.api.types.KaSubstitutor
 import org.jetbrains.kotlin.analysis.api.types.KaType
 import org.jetbrains.kotlin.analysis.api.types.KaTypeParameterType
+import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtClass
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtParameter
@@ -58,7 +59,8 @@ object KotlinConstructorSignatureCheck {
      * implicit no-argument primary constructor. An extension function has an implicit receiver and
      * therefore cannot conflict with a constructor. A parameter whose type cannot be resolved makes
      * the comparison inconclusive, which is reported as a conflict so the rename is rejected
-     * instead of producing uncompilable code.
+     * instead of producing uncompilable code. The vararg status of each parameter is part of the
+     * signature, because Kotlin treats `(vararg Int)` and `(Int)` as distinct overloads.
      *
      * @param primaryClass class whose constructors the rename would introduce
      * @param function same-package function that would share the class's new name
@@ -72,6 +74,14 @@ object KotlinConstructorSignatureCheck {
         return analyze(function) {
             val substitutor = typeParameterSubstitutor(primaryClass, function)
             matching.any { parameters ->
+                // A vararg and a fixed parameter of the same type are distinct overloads in
+                // Kotlin, so a constructor cannot collide with a function whose vararg status
+                // differs at that position.
+                val varargsMatch = parameters.indices.all { index ->
+                    parameters[index].hasModifier(KtTokens.VARARG_KEYWORD) ==
+                        function.valueParameters[index].hasModifier(KtTokens.VARARG_KEYWORD)
+                }
+                if (!varargsMatch) return@any false
                 val typesMatch = parameters.indices.all { index ->
                     val constructorType = runCatching { parameters[index].typeReference?.type }.getOrNull()
                     val functionType = runCatching { function.valueParameters[index].typeReference?.type }.getOrNull()

@@ -301,6 +301,66 @@ class KotlinConstructorSignatureCheckTest : KotlinTestCase("KotlinConstructorSig
         }
     }
 
+    /**
+     * Verifies a vararg constructor does not collide with a scalar function.
+     *
+     * `class Foo(vararg val values: Int)` and `fun After(value: Int)` are distinct Kotlin
+     * overloads, so the rename must not be rejected for them.
+     */
+    fun testConflictsWithRenamedConstructor_ignoresVarargMismatch() {
+        withSession(
+            name = "vararg-mismatch",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.writeString(
+                    root.resolve("source/Types.kt"),
+                    "package p\n\nclass Foo(vararg val values: Int)\n",
+                )
+                Files.writeString(root.resolve("source/Functions.kt"), "package p\n\nfun After(value: Int) = \"factory\"\n")
+            },
+        ) { session, root ->
+            val types = session.ktFile(root.resolve("source/Types.kt"))
+            val functions = session.ktFile(root.resolve("source/Functions.kt"))
+
+            assertFalse(
+                "a vararg constructor and a scalar function are distinct overloads",
+                KotlinConstructorSignatureCheck.conflictsWithRenamedConstructor(
+                    primaryClass(types),
+                    functions.declarations.filterIsInstance<KtNamedFunction>().single(),
+                ),
+            )
+        }
+    }
+
+    /** Verifies two vararg signatures of the same element type still collide. */
+    fun testConflictsWithRenamedConstructor_reportsMatchingVararg() {
+        withSession(
+            name = "vararg-match",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.writeString(
+                    root.resolve("source/Types.kt"),
+                    "package p\n\nclass Foo(vararg val values: Int)\n",
+                )
+                Files.writeString(
+                    root.resolve("source/Functions.kt"),
+                    "package p\n\nfun After(vararg value: Int) = \"factory\"\n",
+                )
+            },
+        ) { session, root ->
+            val types = session.ktFile(root.resolve("source/Types.kt"))
+            val functions = session.ktFile(root.resolve("source/Functions.kt"))
+
+            assertTrue(
+                "two vararg signatures of the same element type collide",
+                KotlinConstructorSignatureCheck.conflictsWithRenamedConstructor(
+                    primaryClass(types),
+                    functions.declarations.filterIsInstance<KtNamedFunction>().single(),
+                ),
+            )
+        }
+    }
+
     /** @return the single top-level class of [file]. */
     private fun primaryClass(file: KtFile): KtClass = file.declarations.filterIsInstance<KtClass>().single()
 

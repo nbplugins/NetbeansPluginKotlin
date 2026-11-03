@@ -5104,6 +5104,116 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies a wildcard-bound convention operator is preserved against the destination package.
+     *
+     * The moved file destructures `1` through `lib.component1`. After it joins `dest`, which
+     * declares its own `Number.component1`, that same-package operator outranks the wildcard, so
+     * the declaration needs an explicit `lib.component1` import even though no name is spelled.
+     */
+    fun testApply_realSession_preservesWildcardBoundConventionAgainstDestinationDeclaration() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-convention-shadow")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("lib"))
+            Files.createDirectories(temporaryRoot.resolve("dest"))
+            Files.createDirectories(temporaryRoot.resolve("source"))
+            val sourcePath = temporaryRoot.resolve("source/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("lib/Lib.kt"),
+                "package lib\n\noperator fun Int.component1(): Int = 1\n",
+            )
+            Files.writeString(
+                temporaryRoot.resolve("dest/Dest.kt"),
+                "package dest\n\noperator fun Number.component1(): Int = 2\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package source\n\nimport lib.*\n\nfun read(): Int {\n    val (value) = 1\n    return value\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-convention-shadow-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[sourcePath.toString()] ?: error("The moved file must change")
+            assertTrue(
+                "The moved file must keep binding lib.component1 explicitly: $text",
+                text.contains("import lib.component1"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies the moved usage discovers the most specific delegate accessor overload.
+     *
+     * `Number.getValue` stays in the old package while the more specific `Int.getValue` moves.
+     * Selecting the first applicable accessor by receiver alone records the staying overload, so
+     * the caller silently switches to it; only the overload resolution winner keeps the import.
+     */
+    fun testApply_realSession_importsMostSpecificMovedDelegateAccessor() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-specific-accessor")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Stays.kt"),
+                "package old\n\noperator fun Number.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 1\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\noperator fun Int.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 2\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nval value by 1\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-specific-accessor-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the moved accessor selected for Int: $text",
+                text.contains("import dest.getValue"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

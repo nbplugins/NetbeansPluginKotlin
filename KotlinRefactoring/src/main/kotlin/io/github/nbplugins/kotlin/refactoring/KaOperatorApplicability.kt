@@ -26,6 +26,7 @@ import org.jetbrains.kotlin.analysis.api.components.expressionType
 import org.jetbrains.kotlin.analysis.api.components.isSubtypeOf
 import org.jetbrains.kotlin.analysis.api.components.memberScope
 import org.jetbrains.kotlin.analysis.api.components.resolveToSymbols
+import org.jetbrains.kotlin.analysis.api.components.scopeContext
 import org.jetbrains.kotlin.analysis.api.components.semanticallyEquals
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaFunctionSymbol
@@ -38,7 +39,11 @@ import org.jetbrains.kotlin.analysis.api.types.KaFlexibleType
 import org.jetbrains.kotlin.analysis.api.types.KaType
 import org.jetbrains.kotlin.analysis.api.types.KaTypeParameterType
 import org.jetbrains.kotlin.idea.references.KtReference
+import org.jetbrains.kotlin.lexer.KtTokens
+import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtArrayAccessExpression
+import org.jetbrains.kotlin.psi.KtBinaryExpression
+import org.jetbrains.kotlin.psi.KtUnaryExpression
 
 /**
  * Returns this callable's return type with its type arguments inferred from [receiverType].
@@ -243,6 +248,55 @@ private fun KaCallableSymbol.receiverIsMoreSpecificThan(other: KaCallableSymbol)
     val otherReceiver = other.receiverParameter?.returnType ?: return@runCatching false
     receiver.isSubtypeOf(otherReceiver) && !otherReceiver.isSubtypeOf(receiver)
 }.getOrDefault(false)
+
+/**
+ * Tells whether this indexed access is updated implicitly, not merely assigned or read.
+ *
+ * A plain assignment (`box[0] = 1`) resolves its `set` through the array-access reference, but
+ * an increment or compound assignment (`box[0]++`, `box[0] += 1`) lowers to `get` then `set`
+ * and exposes only `get`.
+ *
+ * @return `true` when the compiler resolves a setter for this access implicitly
+ */
+internal fun KtArrayAccessExpression.isCompoundWrite(): Boolean {
+    val parent = parent
+    return when (parent) {
+        is KtBinaryExpression -> parent.left == this &&
+            parent.operationToken in KtTokens.ALL_ASSIGNMENTS && parent.operationToken != KtTokens.EQ
+        is KtUnaryExpression -> parent.baseExpression == this &&
+            parent.operationToken in setOf(KtTokens.PLUSPLUS, KtTokens.MINUSMINUS)
+        else -> false
+    }
+}
+
+/**
+ * Returns the `set` extension a compound indexed write implicitly selects.
+ *
+ * The access exposes only `get`, so the setter is looked up through the file's real scope. Scopes
+ * are visited in priority order and the most specific applicable `set` wins inside each of them,
+ * mirroring overload resolution. A member setter always wins over extensions and cannot be
+ * captured by an import.
+ *
+ * @return the selected `set` extension, `null` for a plain read or a member setter
+ */
+@OptIn(KaExperimentalApi::class)
+context(_: KaSession)
+internal fun KtArrayAccessExpression.selectedIndexedSetter(): KaCallableSymbol? {
+    if (!isCompoundWrite()) return null
+    val receiverType = runCatching { arrayExpression?.expressionType }.getOrNull() ?: return null
+    val arguments = setterArgumentTypes()
+    // A member setter wins only when its signature accepts the actual indices and value; a
+    // misfitting overload leaves the write to an applicable extension.
+    if (receiverType.hasApplicableMemberIndexedSetter(arguments)) return null
+    val identifier = Name.identifier("set")
+    containingKtFile.scopeContext(this).scopes.forEach { scopeWithKind ->
+        val candidates = scopeWithKind.scope.callables(identifier)
+            .filter { symbol -> symbol.isExtension }
+            .toList()
+        selectExtension(candidates, receiverType, arguments)?.let { return it }
+    }
+    return null
+}
 
 /**
  * Tells whether this type declares a member `set` that accepts the indexed-write arguments.

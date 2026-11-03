@@ -23,7 +23,6 @@ import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.compat.getClassOrObjectSymbol
 import org.jetbrains.kotlin.analysis.api.components.KaScopeImplicitReceiverValue
-import org.jetbrains.kotlin.analysis.api.components.canBeCalledAsExtensionOn
 import org.jetbrains.kotlin.analysis.api.components.expandedSymbol
 import org.jetbrains.kotlin.analysis.api.components.expressionType
 import org.jetbrains.kotlin.analysis.api.components.memberScope
@@ -164,7 +163,7 @@ object KotlinImportBindingCheck {
                     // A compound indexed write spells only the getter; its implicit setter goes
                     // through the same check because an import of `set` outranks the wildcard.
                     if (!conflicting && name == "set") {
-                        val setter = runCatching { expression.implicitSetterCandidates() }.getOrNull()
+                        val setter = runCatching { expression.selectedIndexedSetter() }.getOrNull()
                         if (setter != null &&
                             !setter.belongsTo(excludedDeclarations) &&
                             setter.isTopLevelBinding()
@@ -292,7 +291,7 @@ object KotlinImportBindingCheck {
                         // The setter half of a compound write is implicit; it loses the overload
                         // the rewritten directive stops importing just like the getter does.
                         if (!conflicting && importedName == "set") {
-                            val setter = runCatching { expression.implicitSetterCandidates() }.getOrNull()
+                            val setter = runCatching { expression.selectedIndexedSetter() }.getOrNull()
                             if (setter != null &&
                                 setter.isTopLevelBinding() &&
                                 setter.staysInOriginalPackage(imported, movingPaths)
@@ -407,7 +406,7 @@ object KotlinImportBindingCheck {
                         // The implicit setter of a compound write keeps binding through the
                         // wildcard while the file moves; the added import would outrank it.
                         if (!conflicting && importedName == "set") {
-                            val setter = runCatching { expression.implicitSetterCandidates() }.getOrNull()
+                            val setter = runCatching { expression.selectedIndexedSetter() }.getOrNull()
                             if (setter != null &&
                                 setter.isTopLevelBinding() &&
                                 setter.isCapturedByOutgoingImport(imported, movingPaths)
@@ -1140,7 +1139,7 @@ object KotlinImportBindingCheck {
             return if (delegateType.memberDelegateOperator(name) != null) {
                 emptyList()
             } else {
-                applicableOperators(delegateType, name)
+                listOfNotNull(selectedOperator(delegateType, name))
             }
         }
         val accessorNames = if (isVar) listOf("getValue", "setValue") else listOf("getValue")
@@ -1150,62 +1149,23 @@ object KotlinImportBindingCheck {
             ?.let { symbol -> runCatching { symbol.returnTypeInferredFrom(delegateType) }.getOrNull() }
             ?.let { providedType -> listOf(providedType) }
             ?: listOf(delegateType)
-        return accessorTypes.flatMap { accessorType ->
+        return accessorTypes.mapNotNull { accessorType ->
             if (accessorType.memberDelegateOperator(name) != null) {
-                emptyList()
+                null
             } else {
-                applicableOperators(accessorType, name)
+                selectedOperator(accessorType, name)
             }
-        }
-    }
-
-    /**
-     * Returns the top-level `set` extension a compound indexed write implicitly selects.
-     *
-     * `sub[0]++` and `sub[0] += 1` spell only the getter, so K2 does not expose the setter half.
-     * The selected `set` extension is looked up by name, receiver applicability and the actual
-     * indices and value, mirroring the delegate accessor lookup. A member setter always wins over
-     * extensions and cannot be captured by an import.
-     *
-     * @return the selected `set` extension, `null` for a plain read or a member setter
-     */
-    context(_: KaSession)
-    private fun KtArrayAccessExpression.implicitSetterCandidates(): KaCallableSymbol? {
-        if (!isCompoundWrite()) return null
-        val receiverType = runCatching { arrayExpression?.expressionType }.getOrNull() ?: return null
-        val arguments = setterArgumentTypes()
-        // A member setter wins only when its signature accepts the actual indices and value; a
-        // misfitting overload leaves the write to an applicable extension.
-        if (receiverType.hasApplicableMemberIndexedSetter(arguments)) return null
-        // The caller may see a less and a more specific setter at once; only the overload
-        // resolution winner can be rebound by an import.
-        return selectExtension(applicableOperators(receiverType, "set"), receiverType, arguments)
-    }
-
-    /**
-     * Tells whether this indexed access also writes its element.
-     *
-     * K2 exposes only the `get` convention of an indexed access; a compound assignment or
-     * increment is what makes the compiler select a `set` as well.
-     *
-     * @return `true` when the access is assigned through rather than merely read
-     */
-    private fun KtArrayAccessExpression.isCompoundWrite(): Boolean {
-        val parent = parent
-        return when (parent) {
-            is KtBinaryExpression -> parent.left == this &&
-                parent.operationToken in KtTokens.ALL_ASSIGNMENTS && parent.operationToken != KtTokens.EQ
-            is KtUnaryExpression -> parent.baseExpression == this &&
-                parent.operationToken in setOf(KtTokens.PLUSPLUS, KtTokens.MINUSMINUS)
-            else -> false
         }
     }
 
     /**
      * Finds the operator of [name] the compiler would select on [type].
      *
-     * A member declaration always outranks an extension, so it is returned first; otherwise the
-     * first applicable extension visible at this property is used.
+     * A member declaration always outranks an extension, so it wins; otherwise only the extension
+     * overload resolution selects counts. Reporting every applicable extension would make an
+     * import look conflicting even when the original selection is the very declaration it binds:
+     * with `Int.getValue` and `Number.getValue` visible, `val value by 1` selects the more specific
+     * `Int` one, so the staying `Number` overload cannot be rebound by that import.
      *
      * @param type receiver type the operator is selected on
      * @param name operator name
@@ -1213,7 +1173,7 @@ object KotlinImportBindingCheck {
      */
     context(_: KaSession)
     private fun KtProperty.delegateOperator(type: KaType, name: String): KaCallableSymbol? =
-        type.memberDelegateOperator(name) ?: applicableOperators(type, name).firstOrNull()
+        type.memberDelegateOperator(name) ?: selectedOperator(type, name)
 
     /**
      * Returns the member delegate operator of [name] on this type, or `null` when it has none.
@@ -1234,27 +1194,30 @@ object KotlinImportBindingCheck {
     }.getOrNull()
 
     /**
-     * Returns the top-level extension operators of [name] applicable to [type] at this element.
+     * Returns the extension operator of [name] that overload resolution selects on [type].
      *
      * Applicability goes through the analysis API's extension check rather than a raw subtype
      * test: a declared receiver may be generic (`Box<T>.getValue`), and only constraint inference
-     * can tell that `Box<Int>` satisfies it.
+     * can tell that `Box<Int>` satisfies it. Scopes are visited in priority order, so the first
+     * one declaring an applicable overload decides; inside a scope the most specific receiver
+     * wins, exactly as the compiler resolves it.
      *
      * @param type receiver type the operator is selected on
      * @param name operator name
-     * @return applicable extensions visible in the element's scope
+     * @return the selected extension, or `null` when none is visible at this element
      */
     @OptIn(KaExperimentalApi::class)
     context(_: KaSession)
-    private fun KtElement.applicableOperators(type: KaType, name: String): List<KaCallableSymbol> = runCatching {
+    private fun KtElement.selectedOperator(type: KaType, name: String): KaCallableSymbol? = runCatching {
         val identifier = Name.identifier(name)
-        containingKtFile.scopeContext(this).scopes.asSequence()
-            .flatMap { scopeWithKind -> scopeWithKind.scope.callables(identifier) }
-            .filter { symbol -> symbol.isExtension }
-            .filter { symbol -> symbol.canBeCalledAsExtensionOn(type) }
-            .distinct()
-            .toList()
-    }.getOrElse { emptyList() }
+        containingKtFile.scopeContext(this).scopes.forEach { scopeWithKind ->
+            val candidates = scopeWithKind.scope.callables(identifier)
+                .filter { symbol -> symbol.isExtension }
+                .toList()
+            selectExtension(candidates, type)?.let { selected -> return@runCatching selected }
+        }
+        null
+    }.getOrNull()
 
     /**
      * Returns the innermost class or object containing this element, or `null` at file level.
