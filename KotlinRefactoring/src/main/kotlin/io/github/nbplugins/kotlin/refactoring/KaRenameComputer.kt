@@ -392,13 +392,17 @@ class KaRenameComputer(
                     // declaration, so a local or member of that name cannot capture it.
                     if (element is KtLabelReferenceExpression) continue
                     if (PsiTreeUtil.getParentOfType(element, KtImportDirective::class.java) != null) continue
-                    // A qualified selector keeps resolving through its receiver: `p.Before()`
-                    // becomes `p.After()` and still names the constructor, so no lexical binding
-                    // of the new name can capture it.
-                    if (KotlinImportBindingCheck.isQualifiedReference(element)) continue
                     // Kotlin resolves types and values in separate namespaces: a type position is
                     // only captured by another classifier, a value position only by another value.
-                    val captured = if (element.isTypeReference()) {
+                    val typePosition = element.isTypeReference()
+                    val captured = if (KotlinImportBindingCheck.isQualifiedReference(element)) {
+                        // A qualified selector keeps resolving through its receiver: `p.Before()`
+                        // becomes `p.After()`, so no lexical binding can capture it. A package
+                        // receiver is different: the rewritten selector is resolved inside that
+                        // package, where a sibling declaration of the new name takes part in
+                        // overload resolution and can replace the renamed declaration.
+                        KotlinImportBindingCheck.isDeclaredInQualifiedPackage(element, newName, typePosition)
+                    } else if (typePosition) {
                         KotlinImportBindingCheck.isClassifierBoundInScope(element, newName)
                     } else {
                         KotlinImportBindingCheck.isNameBoundInScope(element, newName) ||

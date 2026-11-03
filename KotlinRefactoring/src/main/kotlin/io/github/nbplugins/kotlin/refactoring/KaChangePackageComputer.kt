@@ -763,6 +763,27 @@ class KaChangePackageComputer(
                             missingImports += importFqName
                         }
 
+                        // A call on a value spells no name for the convention it invokes:
+                        // `(box)()` depends on a top-level `operator fun Box.invoke` that only the
+                        // original package's visibility provided, and the implicit invocation
+                        // reference belongs to the call expression rather than to any spelled
+                        // name. Spelled callees are handled by visitSimpleNameExpression.
+                        override fun visitCallExpression(expression: KtCallExpression) {
+                            super.visitCallExpression(expression)
+                            if (expression.calleeExpression is KtSimpleNameExpression) return
+                            expression.references.filterIsInstance<KtReference>()
+                                .flatMap { reference ->
+                                    runCatching { reference.resolveToSymbols() }.getOrNull().orEmpty()
+                                }
+                                .mapNotNull { symbol ->
+                                    samePackageTopLevelName(symbol, originalPackage, movedPaths)
+                                }
+                                .filter { importFqName ->
+                                    importFqName !in importedFqNames && originalPackage !in starPackages
+                                }
+                                .forEach { importFqName -> missingImports += importFqName }
+                        }
+
                         // A destructuring declaration spells no name for the operator it calls:
                         // `val (x) = box` depends on a top-level `operator fun Box.component1`
                         // that only the original package's visibility provided, so the convention

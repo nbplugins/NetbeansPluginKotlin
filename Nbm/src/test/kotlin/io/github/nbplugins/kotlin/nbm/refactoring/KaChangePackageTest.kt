@@ -4259,6 +4259,51 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies a moved file keeps the implicit `invoke` operator it left behind.
+     *
+     * `(box)()` spells no name for the convention it calls; the implicit invocation reference
+     * belongs to the call expression rather than to the `box` reference. The moved file still needs
+     * `import p.invoke`, otherwise the call becomes unresolved after the package change.
+     */
+    fun testApply_realSession_importsInvokeOperatorForMovedFile() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-invoke")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("p"))
+            val sourcePath = temporaryRoot.resolve("p/Moved.kt")
+            Files.writeString(
+                temporaryRoot.resolve("p/Box.kt"),
+                "package p\n\nclass Box\n\noperator fun Box.invoke() = 1\n",
+            )
+            Files.writeString(sourcePath, "package p\n\nfun use(box: Box) = (box)()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-invoke-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[sourcePath.toString()] ?: error("The moved file must change")
+            assertTrue(
+                "The moved file must import the implicit invoke operator: $text",
+                text.contains("import p.invoke"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

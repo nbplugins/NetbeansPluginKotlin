@@ -295,6 +295,53 @@ class KotlinImportBindingCheckTest : KotlinTestCase("KotlinImportBindingCheckTes
         }
     }
 
+    /**
+     * Verifies an extension called on a named object is treated as a value receiver.
+     *
+     * `singleton.choose()` resolves the extension on `Derived`, the object's supertype, not on the
+     * object declaration itself. K2 reports the receiver name as a class-like symbol, so the
+     * class-qualifier shortcut would skip it; an import of a `Base.choose` overload would then be
+     * approved even though extension overload resolution would reselect it for `singleton`.
+     */
+    fun testHasConflictingImportRewrite_reportsObjectValueReceiver() {
+        withSession(
+            name = "object-receiver",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("old"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(
+                    root.resolve("old/Staying.kt"),
+                    "package old\n\n" +
+                        "open class Base\n\n" +
+                        "open class Derived : Base()\n\n" +
+                        "object singleton : Derived()\n\n" +
+                        "fun Derived.choose() = 2\n",
+                )
+                Files.writeString(
+                    root.resolve("old/Moving.kt"),
+                    "package old\n\nfun Base.choose() = 1\n",
+                )
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package usage\n\nimport old.choose\nimport old.singleton\n\n" +
+                        "fun use() = singleton.choose()\n",
+                )
+            },
+        ) { session, root ->
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+            val movingPaths = setOf(root.resolve("old/Moving.kt").toString())
+
+            assertTrue(
+                "an explicit import of the moved overload would reselect it for singleton.choose()",
+                KotlinImportBindingCheck.hasConflictingImportRewrite(
+                    usage,
+                    FqName("old.choose"),
+                    movingPaths,
+                ),
+            )
+        }
+    }
+
     /** Verifies a member function of an enclosing class binds the name lexically. */
     fun testIsNameBoundInScope_reportsMemberFunction() {
         withSession(

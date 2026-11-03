@@ -516,6 +516,51 @@ class KaRenameTest : KotlinTestCase("KaRenameTest", "rename") {
     }
 
     /**
+     * Verifies a qualified constructor call is validated against the referenced package.
+     *
+     * `p.Before(1)` is rewritten to `p.After(1)`, and package `p` also declares
+     * `fun After(n: Int)`. A qualified selector cannot be captured lexically, but the rewritten
+     * name is still resolved inside package `p`, where the function is more specific than the
+     * renamed constructor and would silently replace it.
+     */
+    fun testFindCaptureConflicts_reportsQualifiedPackageOverload() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-qualified")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("p/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before(val n: Number)\n")
+            Files.writeString(
+                callerPath,
+                "package p\n\nfun After(n: Int) = \"other\"\n\nfun use() = p.Before(1).toString()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-qualified-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "After",
+            ).findCaptureConflicts()
+
+            assertEquals(
+                "The same-package function is more specific than the renamed constructor",
+                caller,
+                conflict,
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies a rewrite with no competing binding reports no capture conflict.
      *
      * The caller has no declaration or import named `After`, so the rewritten constructor call

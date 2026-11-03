@@ -33,6 +33,7 @@ import org.jetbrains.kotlin.analysis.api.components.scopeContext
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassKind
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassLikeSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaClassSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaPackageSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaSymbol
@@ -58,6 +59,7 @@ import org.jetbrains.kotlin.psi.KtDestructuringDeclaration
 import org.jetbrains.kotlin.psi.KtDestructuringDeclarationEntry
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtElement
+import org.jetbrains.kotlin.psi.KtExpression
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtForExpression
 import org.jetbrains.kotlin.psi.KtFunction
@@ -580,6 +582,84 @@ object KotlinImportBindingCheck {
             scope.declarations.any { declaration -> declaration.declaredName() == name }
         }
     }.getOrDefault(false)
+
+    /**
+     * Tells whether the package a qualified reference points into declares [name].
+     *
+     * A qualified selector keeps resolving through its receiver, so a lexical binding of the new
+     * name cannot capture it. A package receiver is different: the rewritten selector is looked up
+     * in that package's member scope, where a sibling declaration of the new name takes part in
+     * overload resolution and can silently replace the referenced declaration.
+     *
+     * @param expression qualified reference about to be rewritten
+     * @param name identifier the rewritten selector will spell
+     * @param classifier `true` for a type position, `false` for a value position
+     * @return `true` when the referenced package declares a conflicting declaration
+     */
+    fun isDeclaredInQualifiedPackage(
+        expression: KtSimpleNameExpression,
+        name: String,
+        classifier: Boolean,
+    ): Boolean = runCatching {
+        analyze(expression) {
+            val packageFqName = expression.qualifiedPackageFqName() ?: return@analyze false
+            val scope = findPackage(packageFqName)?.packageScope ?: return@analyze false
+            if (classifier) {
+                scope.classifiers.any { symbol -> symbol.name?.asString() == name }
+            } else {
+                scope.callables(Name.identifier(name)).any()
+            }
+        }
+    }.getOrDefault(false)
+
+    /**
+     * Resolves the package this qualified reference is resolved in, or `null` for a value receiver.
+     *
+     * A dot-qualified call resolves its receiver symbol first; the source spelling is used as a
+     * fallback because K2 does not resolve every package segment. A qualified type spells its
+     * qualifier as a nested [KtUserType] instead.
+     *
+     * @return FQN of the package named by the qualifier, or `null` when it is not a package
+     */
+    context(_: KaSession)
+    private fun KtSimpleNameExpression.qualifiedPackageFqName(): FqName? {
+        qualifiedAccess()?.let { qualified ->
+            val receiver = qualified.receiverExpression
+            val symbol = receiver.dottedSelectorReference()?.resolveToSymbol()
+            val fromSymbol = (symbol as? KaPackageSymbol)?.fqName
+            if (fromSymbol != null) return fromSymbol
+            return receiver.text.asPackageFqName()
+        }
+        val userType = parent as? KtUserType ?: return null
+        if (userType.referenceExpression != this) return null
+        return userType.qualifier?.text?.asPackageFqName()
+    }
+
+    /**
+     * Returns the reference whose resolution names the last segment of this qualifier chain.
+     *
+     * @return the selector reference of a dot access, the name reference itself, or `null`
+     */
+    private fun KtExpression.dottedSelectorReference(): KtReference? = when (this) {
+        is KtDotQualifiedExpression -> selectorExpression?.references
+            ?.filterIsInstance<KtReference>()?.firstOrNull()
+        is KtSimpleNameExpression -> references.filterIsInstance<KtReference>().firstOrNull()
+        else -> null
+    }
+
+    /**
+     * Converts a dotted source spelling to a package FQN when that package exists.
+     *
+     * @return the package FQN, or `null` when the text is not a dotted identifier chain or the
+     *         package is unknown
+     */
+    context(_: KaSession)
+    private fun String.asPackageFqName(): FqName? {
+        val segments = split('.')
+        if (segments.isEmpty() || !segments.all { segment -> Name.isValidIdentifier(segment) }) return null
+        val fqName = FqName(this)
+        return fqName.takeIf { packageName -> findPackage(packageName) != null }
+    }
 
     /**
      * Tells whether a wildcard or default import of [file] binds [name] at [element].
@@ -1106,7 +1186,12 @@ object KotlinImportBindingCheck {
         val receiverSymbol = runCatching {
             receiverRoot.references.filterIsInstance<KtReference>().firstOrNull()?.resolveToSymbol()
         }.getOrNull()
-        return receiverSymbol !is KaPackageSymbol && receiverSymbol !is KaClassLikeSymbol
+        // A named object is a value even though K2 reports it as a class-like symbol: extensions
+        // declared on the object's supertypes are selected by overload resolution for
+        // `singleton.choose()`, so an import can still rebind the call. A class or package name in
+        // the same position is a qualifier, which an import cannot affect.
+        if (receiverSymbol is KaClassSymbol) return receiverSymbol.classKind == KaClassKind.OBJECT
+        return receiverSymbol !is KaPackageSymbol
     }
 
     /**
