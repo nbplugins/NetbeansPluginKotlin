@@ -520,6 +520,10 @@ object KotlinImportBindingCheck {
         val file = element.containingKtFile
         if (file.importDirectives.any { directive -> directive.bindsName(name, emptySet()) }) return true
         if (file.declarations.any { declaration -> declaration.declaresClassifierName(name) }) return true
+        // A sibling file of the caller's package, a wildcard import, and Kotlin's default imports
+        // bind a classifier without any directive of this file, so the composite scope has to be
+        // consulted as well: the rewritten type reference would resolve to that classifier.
+        if (isClassifierBoundByScope(element, name)) return true
         var child: PsiElement = element
         var current: PsiElement? = element.parent
         while (current != null) {
@@ -541,6 +545,26 @@ object KotlinImportBindingCheck {
         }
         return isNameBoundByInheritedMember(element, name, typesOnly = true)
     }
+
+    /**
+     * Tells whether a classifier of [name] is visible at [element] through its composite scope.
+     *
+     * Same-package declarations of sibling files, wildcard imports, and Kotlin's default imports
+     * bind names without any directive of this file and without a PSI ancestor, so directive text
+     * and the lexical walk miss them.
+     *
+     * @param element position whose classifier scope is inspected
+     * @param name identifier to look for
+     * @return `true` when some visible classifier has that name
+     */
+    private fun isClassifierBoundByScope(element: KtElement, name: String): Boolean = runCatching {
+        analyze(element) {
+            val identifier = Name.identifier(name)
+            element.containingKtFile.scopeContext(element).scopes.any { scopeWithKind ->
+                scopeWithKind.scope.classifiers(identifier).any()
+            }
+        }
+    }.getOrDefault(false)
 
     /**
      * Tells whether [name] is already bound to something else at [element].
@@ -1074,7 +1098,7 @@ object KotlinImportBindingCheck {
         if (name !in accessorNames) return emptyList()
         val provider = delegateOperator(delegateType, "provideDelegate")
         val accessorTypes = provider
-            ?.let { symbol -> runCatching { symbol.returnType }.getOrNull() }
+            ?.let { symbol -> runCatching { symbol.returnTypeInferredFrom(delegateType) }.getOrNull() }
             ?.let { providedType -> listOf(providedType) }
             ?: listOf(delegateType)
         return accessorTypes.flatMap { accessorType ->
@@ -1100,7 +1124,9 @@ object KotlinImportBindingCheck {
     private fun KtArrayAccessExpression.implicitSetterCandidates(): List<KaCallableSymbol> {
         if (!isCompoundWrite()) return emptyList()
         val receiverType = runCatching { arrayExpression?.expressionType }.getOrNull() ?: return emptyList()
-        if (receiverType.memberIndexedSetter() != null) return emptyList()
+        // A member setter wins only when its signature accepts the actual indices and value; a
+        // misfitting overload leaves the write to an applicable extension.
+        if (receiverType.hasApplicableMemberIndexedSetter(setterArgumentTypes())) return emptyList()
         return applicableOperators(receiverType, "set")
     }
 
@@ -1152,25 +1178,6 @@ object KotlinImportBindingCheck {
             ?.filterIsInstance<KaCallableSymbol>()
             ?.firstOrNull { symbol ->
                 (symbol as? KaNamedSymbol)?.name?.asString() == name && symbol.isDelegateOperatorShape(name)
-            }
-    }.getOrNull()
-
-    /**
-     * Returns the member `set` operator of an indexed access on this type, or `null` when absent.
-     *
-     * A member setter takes the index and the assigned value; extensions declare the receiver
-     * separately and therefore have one more value parameter.
-     *
-     * @return the member indexed setter, or `null` when there is none
-     */
-    context(_: KaSession)
-    private fun KaType.memberIndexedSetter(): KaCallableSymbol? = runCatching {
-        expandedSymbol?.memberScope?.declarations
-            ?.filterIsInstance<KaCallableSymbol>()
-            ?.firstOrNull { symbol ->
-                (symbol as? KaNamedSymbol)?.name?.asString() == "set" &&
-                    symbol is org.jetbrains.kotlin.analysis.api.symbols.KaFunctionSymbol &&
-                    symbol.valueParameters.size == 2
             }
     }.getOrNull()
 

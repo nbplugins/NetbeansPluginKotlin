@@ -486,11 +486,12 @@ class KaChangePackageComputer(
                 expression.conventionSymbols().forEach(::record)
                 if (!expression.isCompoundWrite()) return
                 val receiverType = expression.arrayExpression?.expressionType ?: return
-                val hasMemberSetter = receiverType.expandedSymbol?.memberScope?.declarations
-                    .orEmpty()
-                    .filterIsInstance<KaCallableSymbol>()
-                    .any { symbol -> (symbol as? KaNamedSymbol)?.name?.asString() == "set" }
-                if (!hasMemberSetter) record(movedOperator(receiverType, "set"))
+                // A member setter wins only when it accepts the actual indices and value. A
+                // misfitting overload (`set(String, Int)` for `box[0]++`) leaves the write to
+                // the applicable extension, which the caller then has to import.
+                if (!receiverType.hasApplicableMemberIndexedSetter(expression.setterArgumentTypes())) {
+                    record(movedOperator(receiverType, "set"))
+                }
             }
 
             // The implicit invocation reference belongs to the call expression, not to the
@@ -551,7 +552,9 @@ class KaChangePackageComputer(
             type.memberDelegateOperator(name) ?: scopeDelegateOperator(type, name)
         val provider = selectedOperator(delegateType, "provideDelegate")
         record(provider)
-        val accessorType = provider?.returnType ?: delegateType
+        // The provider's return type is declared in terms of its own type parameters; only the
+        // instantiation inferred from the delegate receiver selects the real accessor.
+        val accessorType = provider?.returnTypeInferredFrom(delegateType) ?: delegateType
         listOf("getValue", "setValue").forEach { name ->
             if (name == "setValue" && !isVar) return@forEach
             record(selectedOperator(accessorType, name))
@@ -898,6 +901,13 @@ class KaChangePackageComputer(
                 .filter { it.isAllUnder }
                 .mapNotNull { it.importedFqName }
                 .toSet()
+            val destination = targets.getValue(file)
+            // A same-package declaration outranks a wildcard or default import, so a reference
+            // that is bound through one of those has to become an explicit import when the
+            // destination package declares the same name.
+            val destinationNames = runCatching {
+                analyze(file) { destinationDeclarationNames(destination, movedFiles, targets) }
+            }.getOrDefault(emptySet())
             val missingImports = linkedSetOf<FqName>()
             runCatching {
                 analyze(file) {
@@ -908,6 +918,14 @@ class KaChangePackageComputer(
                             val reference = expression.references.filterIsInstance<KtReference>().firstOrNull() ?: return
                             val symbol = reference.resolveToSymbol() ?: return
                             val referencedName = expression.getReferencedName()
+                            file.shadowedWildcardImport(
+                                expression,
+                                symbol,
+                                destination,
+                                destinationNames,
+                                importedFqNames,
+                                movedPaths,
+                            )?.let { importFqName -> missingImports += importFqName }
                             val topLevelFqName = samePackageTopLevelName(symbol, originalPackage, movedPaths)
                             // A call may spell a same-package type alias rather than the class it
                             // expands to: K2 can report the constructor of the underlying class,
@@ -1075,8 +1093,10 @@ class KaChangePackageComputer(
                                     movedPaths = null,
                                 )
                             // `provideDelegate` runs before the accessors and its return type is the
-                            // type the accessors are selected on, so it replaces the expression type.
-                            val accessorType = provider?.returnType ?: delegateType
+                            // type the accessors are selected on, so it replaces the expression
+                            // type. A generic provider returns `Provided<T>`, so the type has to
+                            // be instantiated from the delegate receiver first.
+                            val accessorType = provider?.returnTypeInferredFrom(delegateType) ?: delegateType
                             val operators = buildList {
                                 if (provider != null) add(provider)
                                 samePackageDelegateAccessor(
@@ -1131,6 +1151,24 @@ class KaChangePackageComputer(
         originalPackage: FqName,
         movedPaths: Set<String>,
     ): FqName? {
+        val fqName = topLevelDeclarationFqName(symbol) ?: return null
+        if (fqName.parent() != originalPackage) return null
+        // A declaration that moves with its file follows the file, so it needs no import.
+        if (symbol.psi?.containingFile?.virtualFile?.path in movedPaths) return null
+        return fqName
+    }
+
+    /**
+     * Returns the fully qualified name of a top-level declaration, or `null` for members and locals.
+     *
+     * Class-like and constructor symbols are matched through their class id; callables through
+     * their callable id, which also covers dependency JARs without source PSI. Remaining Kotlin
+     * top-level declarations are recognized by having a [KtFile] as their parent.
+     *
+     * @param symbol symbol resolved for a reference
+     * @return the declaration's FQN, or `null` when it is not a top-level declaration
+     */
+    private fun topLevelDeclarationFqName(symbol: KaSymbol): FqName? {
         val psi = symbol.psi
         val classId = when (symbol) {
             is KaConstructorSymbol -> symbol.containingClassId
@@ -1139,26 +1177,109 @@ class KaChangePackageComputer(
         }
         if (classId != null) {
             if (classId.isLocal || classId.isNestedClass) return null
-            if (classId.packageFqName != originalPackage) return null
-            if (psi?.containingFile?.virtualFile?.path in movedPaths) return null
             return classId.asSingleFqName()
         }
         // A callable from a Kotlin dependency JAR has no source PSI; its id is the only way to
-        // tell that it is a top-level declaration of the package the moved file is leaving.
+        // tell that it is a top-level declaration.
         if (symbol is KaCallableSymbol) {
             val callableId = symbol.callableId ?: return null
             if (callableId.className != null) return null
-            if (callableId.packageName != originalPackage) return null
-            if (psi?.containingFile?.virtualFile?.path in movedPaths) return null
             return callableId.asSingleFqName()
         }
         if (psi !is KtNamedDeclaration) return null
-        val containingFile = psi.containingKtFile
-        if (containingFile.virtualFile?.path in movedPaths) return null
-        if (containingFile.packageFqName != originalPackage) return null
         if (psi.parent !is KtFile) return null
         val name = psi.name ?: return null
-        return originalPackage.child(Name.identifier(name))
+        return psi.containingKtFile.packageFqName.child(Name.identifier(name))
+    }
+
+    /**
+     * Collects the top-level names the destination package declares after the move.
+     *
+     * A same-package declaration outranks a wildcard or default import, so a reference bound by
+     * one of those needs an explicit import once the file changes into that package. Declarations
+     * living in files that leave the destination in the same operation are excluded, while those
+     * arriving with the moved files are included.
+     *
+     * @param destination package the current file is changing to
+     * @param movedFiles Kotlin sources whose declared package changes
+     * @param targets mapped files with their final declared packages
+     * @return top-level simple names the destination package will contain
+     */
+    @OptIn(KaExperimentalApi::class)
+    context(_: KaSession)
+    private fun destinationDeclarationNames(
+        destination: FqName,
+        movedFiles: Collection<KtFile>,
+        targets: Map<KtFile, FqName>,
+    ): Set<String> {
+        val names = linkedSetOf<String>()
+        val leavingPaths = movedFiles
+            .filter { movedFile -> targets[movedFile] != destination }
+            .mapNotNull { movedFile -> movedFile.virtualFile?.path }
+            .toSet()
+        findPackage(destination)?.packageScope?.declarations.orEmpty().forEach { symbol ->
+            val path = symbol.psi?.containingFile?.virtualFile?.path
+            if (path != null && path in leavingPaths) return@forEach
+            (symbol as? KaNamedSymbol)?.name?.asString()?.let(names::add)
+        }
+        movedFiles.forEach { movedFile ->
+            if (targets[movedFile] != destination) return@forEach
+            movedFile.declarations.forEach { declaration ->
+                (declaration as? KtNamedDeclaration)?.name?.let(names::add)
+            }
+        }
+        return names
+    }
+
+    /**
+     * Returns the import a wildcard- or default-import binding needs after the move, if any.
+     *
+     * The reference currently resolves to a top-level declaration of another package through a
+     * star or default import. If the destination package declares the same simple name, that
+     * declaration outranks the import and would silently take over the reference. An explicit
+     * import of the resolved declaration preserves the meaning; when the file already binds the
+     * name explicitly, nothing changes and the rewrite is safe.
+     *
+     * @param expression simple-name reference inside the moved file
+     * @param symbol declaration the reference currently resolves to
+     * @param originalPackage package the moved file declares before the change
+     * @param destination package the moved file changes to
+     * @param destinationNames top-level names the destination package will contain
+     * @param importedFqNames unaliased imports already present in the file
+     * @return FQN to import, or `null` when the binding is unaffected
+     */
+    private fun KtFile.shadowedWildcardImport(
+        expression: KtSimpleNameExpression,
+        symbol: KaSymbol,
+        destination: FqName,
+        destinationNames: Set<String>,
+        importedFqNames: Set<FqName>,
+        movedPaths: Set<String>,
+    ): FqName? {
+        if (destinationNames.isEmpty()) return null
+        if (expression.qualifiedReceiver() != null) return null
+        val name = expression.getReferencedName()
+        if (name !in destinationNames) return null
+        val fqName = topLevelDeclarationFqName(symbol) ?: return null
+        // A type alias is spelled by its own name; a declaration of another package that only
+        // expands the alias cannot be imported under the spelled name.
+        if (fqName.shortName().asString() != name) return null
+        // A declaration moving with its file follows it and no import can express that.
+        if (symbol.psi?.containingFile?.virtualFile?.path in movedPaths) return null
+        // A declaration of the destination package is already bound through the package itself.
+        if (fqName.parent() == destination) return null
+        if (fqName in importedFqNames) return null
+        // An explicit import, aliased or not, keeps its priority over same-package declarations.
+        val explicitlyBound = importDirectives.any { directive ->
+            if (directive.isAllUnder) return@any false
+            val alias = directive.aliasName
+            if (alias != null) alias == name else directive.importedFqName?.shortName()?.asString() == name
+        }
+        if (explicitlyBound) return null
+        // Without an explicit import, a resolved top-level name is visible through the file's own
+        // package, a wildcard import, or Kotlin's default imports — all outranked by the
+        // destination's same-package declaration.
+        return fqName
     }
 
     /**

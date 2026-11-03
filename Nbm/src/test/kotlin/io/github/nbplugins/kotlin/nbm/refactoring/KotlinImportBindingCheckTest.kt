@@ -759,6 +759,95 @@ class KotlinImportBindingCheckTest : KotlinTestCase("KotlinImportBindingCheckTes
         }
     }
 
+    /**
+     * Verifies a classifier declared in a sibling file of the caller's package is reported.
+     *
+     * Rewriting a type reference to `After` in package `q` resolves to the sibling `q.After`
+     * rather than the renamed `p.After`, even though the caller file itself declares neither.
+     */
+    fun testIsClassifierBoundInScope_reportsSiblingClassifierInCallerPackage() {
+        withSession(
+            name = "classifier-sibling-package",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("p"))
+                Files.createDirectories(root.resolve("q"))
+                Files.writeString(root.resolve("p/Before.kt"), "package p\n\nclass Before\n")
+                Files.writeString(root.resolve("q/After.kt"), "package q\n\nclass After\n")
+                Files.writeString(
+                    root.resolve("q/Caller.kt"),
+                    "package q\n\nimport p.*\n\nfun consume(x: Before) = x.toString()\n",
+                )
+            },
+        ) { session, root ->
+            val caller = session.ktFile(root.resolve("q/Caller.kt"))
+            val typeElement = caller.declarations.filterIsInstance<KtNamedFunction>().single()
+                .valueParameters.single().typeReference?.typeElement ?: error("No type element")
+
+            assertTrue(
+                "a sibling classifier of the caller's package would capture the rewritten type",
+                KotlinImportBindingCheck.isClassifierBoundInScope(typeElement, "After"),
+            )
+        }
+    }
+
+    /**
+     * Verifies a classifier supplied by a wildcard import is reported.
+     *
+     * Neither `lib.After` nor `p.*` is spelled by a directive that binds the name directly, but
+     * the composite scope resolves `After` through `import lib.*`, so the rewritten type would
+     * bind it instead of the renamed declaration.
+     */
+    fun testIsClassifierBoundInScope_reportsClassifierFromWildcardImport() {
+        withSession(
+            name = "classifier-wildcard-package",
+            prepare = { root ->
+                for (directory in listOf("p", "lib", "r")) {
+                    Files.createDirectories(root.resolve(directory))
+                }
+                Files.writeString(root.resolve("p/Before.kt"), "package p\n\nclass Before\n")
+                Files.writeString(root.resolve("lib/After.kt"), "package lib\n\nclass After\n")
+                Files.writeString(
+                    root.resolve("r/Caller.kt"),
+                    "package r\n\nimport lib.*\nimport p.*\n\nfun consume(x: Before) = x.toString()\n",
+                )
+            },
+        ) { session, root ->
+            val caller = session.ktFile(root.resolve("r/Caller.kt"))
+            val typeElement = caller.declarations.filterIsInstance<KtNamedFunction>().single()
+                .valueParameters.single().typeReference?.typeElement ?: error("No type element")
+
+            assertTrue(
+                "a wildcard-imported classifier would capture the rewritten type",
+                KotlinImportBindingCheck.isClassifierBoundInScope(typeElement, "After"),
+            )
+        }
+    }
+
+    /** Verifies a name no scope binds is not reported as a capture. */
+    fun testIsClassifierBoundInScope_ignoresUnboundName() {
+        withSession(
+            name = "classifier-unbound-package",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("p"))
+                Files.createDirectories(root.resolve("q"))
+                Files.writeString(root.resolve("p/Before.kt"), "package p\n\nclass Before\n")
+                Files.writeString(
+                    root.resolve("q/Caller.kt"),
+                    "package q\n\nimport p.*\n\nfun consume(x: Before) = x.toString()\n",
+                )
+            },
+        ) { session, root ->
+            val caller = session.ktFile(root.resolve("q/Caller.kt"))
+            val typeElement = caller.declarations.filterIsInstance<KtNamedFunction>().single()
+                .valueParameters.single().typeReference?.typeElement ?: error("No type element")
+
+            assertFalse(
+                "no scope binds the new name, so the rename is safe",
+                KotlinImportBindingCheck.isClassifierBoundInScope(typeElement, "After"),
+            )
+        }
+    }
+
     /** @return the session source for [path], failing the test when it is absent. */
     private fun KotlinAnalysisAPISession.ktFile(path: Path): KtFile =
         getKtFileForPath(path.toString()) ?: error("No Kotlin source PSI for $path")
