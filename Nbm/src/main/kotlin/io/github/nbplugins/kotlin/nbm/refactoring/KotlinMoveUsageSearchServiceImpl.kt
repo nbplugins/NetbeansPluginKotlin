@@ -94,6 +94,17 @@ class KotlinMoveUsageSearchServiceImpl : KotlinMoveUsageSearchService {
     }
 
     /**
+     * Enumerates every Kotlin source file of the standalone session.
+     *
+     * @param project IntelliJ project owning the standalone K2 session
+     * @return session source files, or an empty list when no session exists
+     */
+    override fun findSourceFiles(project: com.intellij.openapi.project.Project): List<KtFile> {
+        val session = KotlinAnalysisAPISession.forProject(project) ?: return emptyList()
+        return session.fileMap.values.mapNotNull { lightFile -> session.getKtFileForPath(lightFile.path) }
+    }
+
+    /**
      * Finds Kotlin files that directly import a moved declaration or one nested inside it.
      *
      * Import directives are intentionally absent from [findUsages] because K2 semantic rebinding

@@ -16,10 +16,13 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.refactoring
 
+import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
 import org.jetbrains.kotlin.analysis.api.KaSession
-import org.jetbrains.kotlin.analysis.api.components.expandedSymbol
+import org.jetbrains.kotlin.analysis.api.components.defaultTypeWithStarProjections
+import org.jetbrains.kotlin.analysis.api.components.isSubtypeOf
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaFunctionSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.findClass
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.FqName
 
@@ -32,16 +35,22 @@ import org.jetbrains.kotlin.name.FqName
  * parameterless `fun getValue()` is therefore an ordinary member and must not hide the extension
  * the property actually uses.
  *
+ * Kotlin passes a `KProperty` instance to the property parameter, which may be declared with any
+ * supertype of it (`Any?`, for example), so the parameter is matched by assignability rather than
+ * by its classifier.
+ *
  * @param operatorName `provideDelegate`, `getValue`, or `setValue`
  * @return `true` when this callable can be selected as that delegate operator
  */
+@OptIn(KaExperimentalApi::class)
 context(_: KaSession)
 internal fun KaCallableSymbol.isDelegateOperatorShape(operatorName: String): Boolean {
     val function = this as? KaFunctionSymbol ?: return false
     val expectedParameters = if (operatorName == "setValue") 3 else 2
     if (function.valueParameters.size != expectedParameters) return false
     return runCatching {
-        function.valueParameters[1].returnType.expandedSymbol?.classId == K_PROPERTY_CLASS_ID
+        val propertyType = findClass(K_PROPERTY_CLASS_ID)?.defaultTypeWithStarProjections ?: return@runCatching false
+        propertyType.isSubtypeOf(function.valueParameters[1].returnType)
     }.getOrDefault(false)
 }
 

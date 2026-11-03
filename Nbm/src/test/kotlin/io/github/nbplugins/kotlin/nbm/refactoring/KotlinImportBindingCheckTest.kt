@@ -671,6 +671,94 @@ class KotlinImportBindingCheckTest : KotlinTestCase("KotlinImportBindingCheckTes
         }
     }
 
+    /**
+     * Verifies a retained delegate accessor with a generic receiver is reported.
+     *
+     * The staying `Box<T>.getValue` accepts `Box<Int>` only after inferring `T`. A raw subtype
+     * test rejects it, so the added import of the moving `Any.getValue` would look harmless even
+     * though an explicit import outranks the wildcard binding the property uses today.
+     */
+    fun testHasConflictingReference_reportsGenericDelegateAccessor() {
+        withSession(
+            name = "generic-delegate-accessor",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("old"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(
+                    root.resolve("old/Staying.kt"),
+                    "package old\n\nclass Box<T>\n\n" +
+                        "operator fun <T> Box<T>.getValue(" +
+                        "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 1\n",
+                )
+                Files.writeString(
+                    root.resolve("old/Moving.kt"),
+                    "package old\n\n" +
+                        "operator fun Any.getValue(" +
+                        "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 2\n",
+                )
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package usage\n\nimport old.*\n\n" +
+                        "fun use() {\n    val value by Box<Int>()\n    value\n}\n",
+                )
+            },
+        ) { session, root ->
+            val moving = session.ktFile(root.resolve("old/Moving.kt"))
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+            val imported = moving.declarations.filterIsInstance<KtNamedFunction>().single { it.name == "getValue" }
+
+            assertTrue(
+                "the imported accessor would outrank the generic wildcard accessor",
+                KotlinImportBindingCheck.hasConflictingReference(usage, "getValue", setOf(imported)),
+            )
+        }
+    }
+
+    /**
+     * Verifies a generic retained accessor blocks rewriting a direct import.
+     *
+     * `import old.getValue` binds both the staying `Box<T>.getValue` and the moving
+     * `Any.getValue`. Rewriting the directive to the new package keeps only the latter, so the
+     * property would silently select the moved declaration.
+     */
+    fun testHasConflictingImportRewrite_reportsGenericDelegateAccessor() {
+        withSession(
+            name = "generic-delegate-rewrite",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("old"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(
+                    root.resolve("old/Staying.kt"),
+                    "package old\n\nclass Box<T>\n\n" +
+                        "operator fun <T> Box<T>.getValue(" +
+                        "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 1\n",
+                )
+                Files.writeString(
+                    root.resolve("old/Moving.kt"),
+                    "package old\n\n" +
+                        "operator fun Any.getValue(" +
+                        "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 2\n",
+                )
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package usage\n\nimport old.Box\nimport old.getValue\n\n" +
+                        "fun use() {\n    val value by Box<Int>()\n    value\n}\n",
+                )
+            },
+        ) { session, root ->
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+
+            assertTrue(
+                "rewriting the import would drop the generic accessor the property uses",
+                KotlinImportBindingCheck.hasConflictingImportRewrite(
+                    usage,
+                    FqName("old.getValue"),
+                    setOf(root.resolve("old/Moving.kt").toString()),
+                ),
+            )
+        }
+    }
+
     /** @return the session source for [path], failing the test when it is absent. */
     private fun KotlinAnalysisAPISession.ktFile(path: Path): KtFile =
         getKtFileForPath(path.toString()) ?: error("No Kotlin source PSI for $path")

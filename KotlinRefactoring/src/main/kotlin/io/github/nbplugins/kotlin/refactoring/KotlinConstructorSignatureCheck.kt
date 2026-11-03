@@ -22,11 +22,21 @@ import org.jetbrains.kotlin.analysis.api.components.buildTypeParameterType
 import org.jetbrains.kotlin.analysis.api.components.createSubstitutor
 import org.jetbrains.kotlin.analysis.api.components.semanticallyEquals
 import org.jetbrains.kotlin.analysis.api.components.type
+import org.jetbrains.kotlin.analysis.api.symbols.KaTypeParameterSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.symbol
+import org.jetbrains.kotlin.analysis.api.types.KaCapturedType
+import org.jetbrains.kotlin.analysis.api.types.KaClassType
+import org.jetbrains.kotlin.analysis.api.types.KaDefinitelyNotNullType
+import org.jetbrains.kotlin.analysis.api.types.KaFlexibleType
+import org.jetbrains.kotlin.analysis.api.types.KaFunctionType
+import org.jetbrains.kotlin.analysis.api.types.KaIntersectionType
 import org.jetbrains.kotlin.analysis.api.types.KaSubstitutor
+import org.jetbrains.kotlin.analysis.api.types.KaType
+import org.jetbrains.kotlin.analysis.api.types.KaTypeParameterType
 import org.jetbrains.kotlin.psi.KtClass
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtParameter
+import org.jetbrains.kotlin.psi.KtTypeParameter
 
 /**
  * Decides whether a top-level function would collide with a constructor of a renamed class.
@@ -35,7 +45,8 @@ import org.jetbrains.kotlin.psi.KtParameter
  * matches a constructor becomes a conflicting overload that Kotlin rejects. Parameter types are
  * compared as resolved types, because `Int` and a fully qualified `kotlin.Int` are the same Kotlin
  * type even though their source spellings differ. Type parameters are compared by position after
- * substituting the function's parameters with the class's, and their bounds are compared as well.
+ * substituting the function's parameters with the class's, and the bounds of those the value
+ * parameters actually use are compared as well.
  */
 object KotlinConstructorSignatureCheck {
 
@@ -60,14 +71,18 @@ object KotlinConstructorSignatureCheck {
         if (matching.isEmpty()) return false
         return analyze(function) {
             val substitutor = typeParameterSubstitutor(primaryClass, function)
-            typeParametersMatch(primaryClass, function, substitutor) && matching.any { parameters ->
-                parameters.indices.all { index ->
+            matching.any { parameters ->
+                val typesMatch = parameters.indices.all { index ->
                     val constructorType = runCatching { parameters[index].typeReference?.type }.getOrNull()
                     val functionType = runCatching { function.valueParameters[index].typeReference?.type }.getOrNull()
                     constructorType == null || functionType == null || runCatching {
                         substitutor.substitute(functionType).semanticallyEquals(constructorType)
                     }.getOrDefault(false)
                 }
+                // Bounds are part of the signature only for the type parameters the matched value
+                // parameters actually use; an unused parameter cannot tell two calls apart even
+                // when its bounds differ, so it must not hide a real conflict.
+                typesMatch && typeParametersMatch(primaryClass, function, substitutor, parameters)
             }
         }
     }
@@ -99,35 +114,134 @@ object KotlinConstructorSignatureCheck {
     }
 
     /**
-     * Tells whether corresponding type parameters have equivalent bounds.
+     * Tells whether corresponding type parameters of a matched signature have equivalent bounds.
      *
-     * Two signatures are conflicting only when their type parameters also allow the same type
-     * arguments; a function accepting any `T` would not collide with a constructor restricted to
-     * `T : Number`.
+     * Two signatures conflict only when their type parameters also allow the same type arguments;
+     * a function accepting any `T` would not collide with a constructor restricted to
+     * `T : Number`. Only the type parameters the matched value parameters use take part in that
+     * comparison: a parameter that never appears in a value parameter cannot distinguish calls,
+     * so its bounds must not hide a conflict. A type parameter reached only through another
+     * parameter's bound still counts, because a differing bound there narrows the accepted type
+     * arguments as well.
      *
      * @param classOrObject class whose type parameter bounds are compared
      * @param function function whose type parameter bounds are compared
      * @param substitutor maps the function's type parameters to the class's
-     * @return `true` when every corresponding bound is equivalent
+     * @param parameters matched value parameters of the compared signature
+     * @return `true` when every relevant corresponding bound is equivalent
      */
     context(_: KaSession)
     private fun typeParametersMatch(
         classOrObject: KtClass,
         function: KtNamedFunction,
         substitutor: KaSubstitutor,
+        parameters: List<KtParameter>,
     ): Boolean {
         val classParameters = classOrObject.typeParameters
-        return function.typeParameters.indices.all { index ->
-            val classParameter = classParameters.getOrNull(index) ?: return@all true
-            val functionBounds = function.typeParameters[index].symbol.upperBounds
-            val classBounds = classParameter.symbol.upperBounds
-            functionBounds.size == classBounds.size &&
-                functionBounds.zip(classBounds).all { (functionBound, classBound) ->
-                    runCatching {
-                        substitutor.substitute(functionBound).semanticallyEquals(classBound)
-                    }.getOrDefault(false)
-                }
+        val indexBySymbol = classParameters.mapIndexedNotNull { index, parameter ->
+            runCatching { parameter.symbol }.getOrNull()?.let { symbol -> symbol to index }
+        }.toMap()
+        val usedIndices = usedTypeParameterIndices(parameters, indexBySymbol)
+            ?: return classParameters.indices.all { index ->
+                boundsMatch(classParameters[index], function.typeParameters.getOrNull(index), substitutor)
+            }
+        val pending = ArrayDeque(usedIndices)
+        while (pending.isNotEmpty()) {
+            val index = pending.removeFirst()
+            val bounds = runCatching { classParameters[index].symbol.upperBounds }.getOrNull().orEmpty()
+            bounds.flatMap { bound -> typeParameterIndices(bound, indexBySymbol) }
+                .filter { discovered -> usedIndices.add(discovered) }
+                .forEach(pending::addLast)
         }
+        return usedIndices.all { index ->
+            boundsMatch(classParameters[index], function.typeParameters.getOrNull(index), substitutor)
+        }
+    }
+
+    /**
+     * Collects the type parameters the value parameters' types mention directly.
+     *
+     * @param parameters value parameters of the compared signature
+     * @param indexBySymbol class type parameter symbols mapped to their positional index
+     * @return mentioned indices, or `null` when a parameter type cannot be resolved
+     */
+    context(_: KaSession)
+    private fun usedTypeParameterIndices(
+        parameters: List<KtParameter>,
+        indexBySymbol: Map<KaTypeParameterSymbol, Int>,
+    ): MutableSet<Int>? {
+        val used = mutableSetOf<Int>()
+        parameters.forEach { parameter ->
+            val type = runCatching { parameter.typeReference?.type }.getOrNull() ?: return null
+            used.addAll(typeParameterIndices(type, indexBySymbol))
+        }
+        return used
+    }
+
+    /**
+     * Collects the class type parameters a type mentions anywhere in its structure.
+     *
+     * @param type type to inspect, including nested arguments and function signatures
+     * @param indexBySymbol class type parameter symbols mapped to their positional index
+     * @return indices of the mentioned class type parameters
+     */
+    context(_: KaSession)
+    private fun typeParameterIndices(
+        type: KaType,
+        indexBySymbol: Map<KaTypeParameterSymbol, Int>,
+    ): Set<Int> {
+        val indices = mutableSetOf<Int>()
+        fun visit(current: KaType) {
+            when (current) {
+                is KaFunctionType -> {
+                    current.receiverType?.let(::visit)
+                    current.parameterTypes.forEach(::visit)
+                    visit(current.returnType)
+                }
+                is KaClassType -> current.typeArguments.forEach { projection ->
+                    projection.type?.let(::visit)
+                }
+                is KaTypeParameterType -> indexBySymbol[current.symbol]?.let(indices::add)
+                is KaCapturedType -> current.projection.type?.let(::visit)
+                is KaDefinitelyNotNullType -> visit(current.original)
+                is KaFlexibleType -> {
+                    visit(current.lowerBound)
+                    visit(current.upperBound)
+                }
+                is KaIntersectionType -> current.conjuncts.forEach(::visit)
+                else -> {}
+            }
+        }
+        visit(type)
+        return indices
+    }
+
+    /**
+     * Tells whether a class type parameter and its function counterpart allow the same arguments.
+     *
+     * A missing function counterpart or unreadable bounds leave the comparison inconclusive, which
+     * keeps the conflict decision conservative instead of hiding a real collision.
+     *
+     * @param classParameter type parameter of the class being renamed
+     * @param functionParameter corresponding type parameter of the function, if any
+     * @param substitutor maps the function's type parameters to the class's
+     * @return `true` when the bounds are equivalent or cannot be compared
+     */
+    context(_: KaSession)
+    private fun boundsMatch(
+        classParameter: KtTypeParameter,
+        functionParameter: KtTypeParameter?,
+        substitutor: KaSubstitutor,
+    ): Boolean {
+        functionParameter ?: return true
+        val functionBounds = runCatching { functionParameter.symbol.upperBounds }.getOrNull() ?: return true
+        val classBounds = runCatching { classParameter.symbol.upperBounds }.getOrNull() ?: return true
+        return functionBounds.size == classBounds.size &&
+            functionBounds.zip(classBounds).all { (functionBound, classBound) ->
+                runCatching {
+                    substitutor.substitute(functionBound).semanticallyEquals(classBound)
+                }.getOrDefault(false)
+            }
     }
 
     /**

@@ -4496,6 +4496,302 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies an incoming caller imports an indexed-access operator it never spelled.
+     *
+     * `n[0]` binds `Int.get` through the wildcard import of the old package while the operator
+     * lives there. Once it moves, the caller would fall back to the staying `Number.get` overload,
+     * so the moved declaration has to be imported explicitly even though usage search reports no
+     * simple-name reference for it.
+     */
+    fun testApply_realSession_addsIncomingImportForArrayAccessOperator() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-incoming-array")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Int.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(sourcePath, "package old\n\noperator fun Int.get(index: Int) = 1\n")
+            Files.writeString(
+                temporaryRoot.resolve("old/Number.kt"),
+                "package old\n\noperator fun Number.get(index: Int) = 2\n",
+            )
+            Files.writeString(usagePath, "package usage\n\nimport old.*\n\nfun use(n: Int) = n[0]\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-incoming-array-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the moved indexed-access operator: $text",
+                text.contains("import dest.get"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies an incoming caller imports an implicitly invoked operator.
+     *
+     * `(box)()` spells no name for the `Box.invoke` it calls, so only convention discovery can
+     * notice that the caller loses the operator when it moves.
+     */
+    fun testApply_realSession_addsIncomingImportForInvokeOperator() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-incoming-invoke")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Box.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                sourcePath,
+                "package old\n\nclass Box\n\noperator fun Box.invoke() = 1\n",
+            )
+            Files.writeString(usagePath, "package usage\n\nimport old.*\n\nfun use(box: Box) = (box)()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-incoming-invoke-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the moved invoke operator: $text",
+                text.contains("import dest.invoke"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies an incoming caller imports a destructuring operator.
+     *
+     * `val (x) = box` spells neither the entry nor `component1`; the reference belongs to the
+     * destructuring entry, so usage search cannot report the call site.
+     */
+    fun testApply_realSession_addsIncomingImportForDestructuringOperator() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-incoming-destructuring")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Ops.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(temporaryRoot.resolve("old/Box.kt"), "package old\n\nclass Box\n")
+            Files.writeString(sourcePath, "package old\n\noperator fun Box.component1() = 1\n")
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nfun use(box: Box) {\n    val (x) = box\n    x\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-incoming-destructuring-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the moved destructuring operator: $text",
+                text.contains("import dest.component1"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /** Verifies an incoming caller imports every loop convention the moved file declares. */
+    fun testApply_realSession_addsIncomingImportsForForLoopConventions() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-incoming-for")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Ops.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Box.kt"),
+                "package old\n\nclass Box\n\nclass Cursor\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\n" +
+                    "operator fun Box.iterator() = Cursor()\n\n" +
+                    "operator fun Cursor.hasNext() = false\n\n" +
+                    "operator fun Cursor.next() = 1\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nfun use(box: Box) {\n    for (x in box) x\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-incoming-for-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            listOf("iterator", "hasNext", "next").forEach { operatorName ->
+                assertTrue(
+                    "The caller must import the moved $operatorName operator: $text",
+                    text.contains("import dest.$operatorName"),
+                )
+            }
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies an incoming caller imports the accessor of a delegated property.
+     *
+     * `val value by Delegate()` spells neither `getValue` nor `provideDelegate`; the accessor is
+     * selected by overload resolution, so only convention discovery can notice that the caller
+     * loses the operator when it moves.
+     */
+    fun testApply_realSession_addsIncomingImportForDelegateAccessor() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-incoming-delegate")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Ops.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(temporaryRoot.resolve("old/Delegate.kt"), "package old\n\nclass Delegate\n")
+            Files.writeString(
+                sourcePath,
+                "package old\n\noperator fun Delegate.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 7\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nfun use() {\n    val value by Delegate()\n    value\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-incoming-delegate-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the moved delegate accessor: $text",
+                text.contains("import dest.getValue"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a delegate operator accepting a `KProperty` supertype is recognized.
+     *
+     * Kotlin passes a `KProperty` value to the operator's property parameter, which may be
+     * declared with any supertype. A `Any?` parameter therefore still selects the operator, and a
+     * moved file leaving its package must import it.
+     */
+    fun testApply_realSession_importsDelegateOperatorWithPropertySupertype() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-property-supertype")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("p"))
+            val sourcePath = temporaryRoot.resolve("p/Moved.kt")
+            Files.writeString(
+                temporaryRoot.resolve("p/Delegate.kt"),
+                "package p\n\nclass Delegate\n\n" +
+                    "operator fun Delegate.getValue(thisRef: Any?, property: Any?): Int = 7\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package p\n\nfun use() {\n    val value by Delegate()\n    value\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-property-supertype-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[sourcePath.toString()] ?: error("The moved file must change")
+            assertTrue(
+                "The moved file must import the accessor accepting a property supertype: $text",
+                text.contains("import p.getValue"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

@@ -18,13 +18,14 @@ package io.github.nbplugins.kotlin.refactoring
 
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
+import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.compat.getClassOrObjectSymbol
 import org.jetbrains.kotlin.analysis.api.components.KaScopeImplicitReceiverValue
+import org.jetbrains.kotlin.analysis.api.components.canBeCalledAsExtensionOn
 import org.jetbrains.kotlin.analysis.api.components.expandedSymbol
 import org.jetbrains.kotlin.analysis.api.components.expressionType
-import org.jetbrains.kotlin.analysis.api.components.isSubtypeOf
 import org.jetbrains.kotlin.analysis.api.components.memberScope
 import org.jetbrains.kotlin.analysis.api.components.packageScope
 import org.jetbrains.kotlin.analysis.api.components.resolveToSymbol
@@ -1176,20 +1177,22 @@ object KotlinImportBindingCheck {
     /**
      * Returns the top-level extension operators of [name] applicable to [type] at this element.
      *
+     * Applicability goes through the analysis API's extension check rather than a raw subtype
+     * test: a declared receiver may be generic (`Box<T>.getValue`), and only constraint inference
+     * can tell that `Box<Int>` satisfies it.
+     *
      * @param type receiver type the operator is selected on
      * @param name operator name
      * @return applicable extensions visible in the element's scope
      */
+    @OptIn(KaExperimentalApi::class)
     context(_: KaSession)
     private fun KtElement.applicableOperators(type: KaType, name: String): List<KaCallableSymbol> = runCatching {
         val identifier = Name.identifier(name)
         containingKtFile.scopeContext(this).scopes.asSequence()
             .flatMap { scopeWithKind -> scopeWithKind.scope.callables(identifier) }
             .filter { symbol -> symbol.isExtension }
-            .filter { symbol ->
-                val receiverType = symbol.receiverParameter?.returnType ?: return@filter false
-                type.isSubtypeOf(receiverType)
-            }
+            .filter { symbol -> symbol.canBeCalledAsExtensionOn(type) }
             .distinct()
             .toList()
     }.getOrElse { emptyList() }

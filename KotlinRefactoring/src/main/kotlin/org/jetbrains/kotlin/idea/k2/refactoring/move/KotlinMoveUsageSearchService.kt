@@ -40,6 +40,18 @@ interface KotlinMoveUsageSearchService {
     fun findUsages(declaration: KtNamedDeclaration): List<PsiReference>
 
     /**
+     * Enumerates the Kotlin source files the project's standalone session knows about.
+     *
+     * Convention usages—indexed access, implicit invocation, destructuring, loops, and delegated
+     * properties—bind a top-level operator without spelling its name, so [findUsages] cannot
+     * report them. Callers that need those usages scan the session files themselves.
+     *
+     * @param project IntelliJ project whose standalone K2 session supplies the files
+     * @return session source files in an unspecified order
+     */
+    fun findSourceFiles(project: com.intellij.openapi.project.Project): List<KtFile> = emptyList()
+
+    /**
      * Finds session files that directly import one of [movedImports]' old declaration paths.
      *
      * @param project IntelliJ project whose standalone K2 session supplies candidate files

@@ -211,6 +211,96 @@ class KotlinConstructorSignatureCheckTest : KotlinTestCase("KotlinConstructorSig
         }
     }
 
+    /**
+     * Verifies differing bounds of type parameters unused by the parameters do not differentiate.
+     *
+     * Neither signature uses its type parameter, so both are callable as `(Int)`. Kotlin rejects
+     * the resulting overloads as conflicting even though their bounds differ.
+     */
+    fun testConflictsWithRenamedConstructor_reportsUnusedTypeParameterWithDifferentBounds() {
+        withSession(
+            name = "unused-type-parameter-bounds",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.writeString(root.resolve("source/Types.kt"), "package p\n\nclass Before<T : Number>(val n: Int)\n")
+                Files.writeString(root.resolve("source/Functions.kt"), "package p\n\nfun <T : CharSequence> After(n: Int) = \"other\"\n")
+            },
+        ) { session, root ->
+            val types = session.ktFile(root.resolve("source/Types.kt"))
+            val functions = session.ktFile(root.resolve("source/Functions.kt"))
+
+            assertTrue(
+                "unused type parameters cannot distinguish the (Int) signatures",
+                KotlinConstructorSignatureCheck.conflictsWithRenamedConstructor(
+                    primaryClass(types),
+                    functions.declarations.filterIsInstance<KtNamedFunction>().single(),
+                ),
+            )
+        }
+    }
+
+    /**
+     * Verifies differing bounds of a type parameter used by the parameters do differentiate.
+     *
+     * The constructor accepts only `T : Number` while the function accepts `T : CharSequence`, so
+     * no call could be ambiguous and the rename must stay allowed.
+     */
+    fun testConflictsWithRenamedConstructor_ignoresDifferentBoundsOnUsedTypeParameter() {
+        withSession(
+            name = "used-type-parameter-bounds",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.writeString(root.resolve("source/Types.kt"), "package p\n\nclass Before<T : Number>(val n: T)\n")
+                Files.writeString(root.resolve("source/Functions.kt"), "package p\n\nfun <T : CharSequence> After(n: T) = n\n")
+            },
+        ) { session, root ->
+            val types = session.ktFile(root.resolve("source/Types.kt"))
+            val functions = session.ktFile(root.resolve("source/Functions.kt"))
+
+            assertFalse(
+                "different bounds on a used type parameter keep the signatures apart",
+                KotlinConstructorSignatureCheck.conflictsWithRenamedConstructor(
+                    primaryClass(types),
+                    functions.declarations.filterIsInstance<KtNamedFunction>().single(),
+                ),
+            )
+        }
+    }
+
+    /**
+     * Verifies a type parameter reached only through another bound still counts as used.
+     *
+     * `R : List<T>` uses `T` inside its bound, so a differing bound on `T` keeps the signatures
+     * apart even though no value parameter spells `T` directly.
+     */
+    fun testConflictsWithRenamedConstructor_ignoresDifferentBoundOfTransitivelyUsedTypeParameter() {
+        withSession(
+            name = "transitive-type-parameter-bounds",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.writeString(
+                    root.resolve("source/Types.kt"),
+                    "package p\n\nclass Before<T : Number, R : List<T>>(val n: R)\n",
+                )
+                Files.writeString(
+                    root.resolve("source/Functions.kt"),
+                    "package p\n\nfun <T : CharSequence, R : List<T>> After(n: R) = n\n",
+                )
+            },
+        ) { session, root ->
+            val types = session.ktFile(root.resolve("source/Types.kt"))
+            val functions = session.ktFile(root.resolve("source/Functions.kt"))
+
+            assertFalse(
+                "a bound reached through another bound still distinguishes the signatures",
+                KotlinConstructorSignatureCheck.conflictsWithRenamedConstructor(
+                    primaryClass(types),
+                    functions.declarations.filterIsInstance<KtNamedFunction>().single(),
+                ),
+            )
+        }
+    }
+
     /** @return the single top-level class of [file]. */
     private fun primaryClass(file: KtFile): KtClass = file.declarations.filterIsInstance<KtClass>().single()
 

@@ -20,11 +20,12 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.refactoring.util.MoveRenameUsageInfo
 import com.intellij.usageView.UsageInfo
+import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
+import org.jetbrains.kotlin.analysis.api.components.canBeCalledAsExtensionOn
 import org.jetbrains.kotlin.analysis.api.components.expandedSymbol
 import org.jetbrains.kotlin.analysis.api.components.expressionType
-import org.jetbrains.kotlin.analysis.api.components.isSubtypeOf
 import org.jetbrains.kotlin.analysis.api.components.memberScope
 import org.jetbrains.kotlin.analysis.api.components.packageScope
 import org.jetbrains.kotlin.analysis.api.components.resolveToSymbol
@@ -354,6 +355,7 @@ class KaChangePackageComputer(
                 imports.getOrPut(file, ::linkedSetOf) += newFqName
             }
         }
+        collectIncomingConventionImports(session, movedDeclarations, targets, imports)
         // An explicit import takes precedence over wildcard imports and same-package
         // declarations, so it may capture references that point elsewhere today.
         val movedPsi = movedDeclarations.keys
@@ -400,6 +402,194 @@ class KaChangePackageComputer(
             edits.mapValues { (_, fileEdits) -> fileEdits.toList() },
             conflicts,
         )
+    }
+
+    /**
+     * Adds imports for callers whose reference to a moved declaration is a convention usage.
+     *
+     * Usage search resolves simple-name references only, but an indexed access (`n[0]`), an
+     * implicit invocation (`(box)()`), a destructuring declaration, a loop, and a delegated
+     * property all bind top-level operators without spelling their names. A caller that shared
+     * the old package or wildcard-imported it loses those bindings when the operator moves, so
+     * the operator has to be imported explicitly.
+     *
+     * Only files that can currently see one of the old packages are analyzed: an explicit import
+     * of the moved declaration is retargeted with its directive instead, and a caller outside
+     * that visibility could not have bound the operator in the first place.
+     *
+     * @param session service enumerating the files of the analysis session
+     * @param movedDeclarations moved declarations with their old and new fully qualified names
+     * @param targets files whose declared package changes mapped to their final packages
+     * @param imports accumulator receiving the imports each caller needs
+     */
+    private fun collectIncomingConventionImports(
+        session: KotlinMoveUsageSearchService,
+        movedDeclarations: Map<KtNamedDeclaration, Pair<FqName, FqName>>,
+        targets: Map<KtFile, FqName>,
+        imports: MutableMap<KtFile, MutableSet<FqName>>,
+    ) {
+        val movedPackages = movedDeclarations.values.mapTo(linkedSetOf()) { (oldFqName, _) -> oldFqName.parent() }
+        if (movedPackages.isEmpty()) return
+        val finalPackages = targets.entries.mapNotNull { (file, packageFqName) ->
+            file.virtualFile?.path?.let { path -> path to packageFqName }
+        }.toMap()
+        val moved = movedDeclarations.keys
+        session.findSourceFiles(ktFile.project).forEach { file ->
+            val visiblePackages = movedPackages.filter { packageFqName ->
+                packageFqName == file.packageFqName || file.importDirectives.any { directive ->
+                    directive.isAllUnder && directive.importedFqName == packageFqName
+                }
+            }
+            if (visiblePackages.isEmpty()) return@forEach
+            val used = runCatching { analyze(file) { file.movedConventionUsages(visiblePackages, moved) } }
+                .getOrDefault(emptySet())
+            used.forEach { declaration ->
+                val (oldFqName, newFqName) = movedDeclarations.getValue(declaration)
+                if (!file.needsIncomingImport(declaration, oldFqName, newFqName, finalPackages)) return@forEach
+                imports.getOrPut(file, ::linkedSetOf) += newFqName
+            }
+        }
+    }
+
+    /**
+     * Collects moved declarations this file uses through conventions that spell no name.
+     *
+     * An operator can only have been bound through a visible old package, so the delegate
+     * lookups search the caller's own scope. The setter half of a compound indexed write is not
+     * exposed by K2 either; it is selected on the receiver type and skipped when a member setter
+     * wins.
+     *
+     * @param visiblePackages old packages this file can currently see
+     * @param moved declarations whose move the operation performs
+     * @return moved declarations this file selects implicitly
+     */
+    @OptIn(KaExperimentalApi::class)
+    context(_: KaSession)
+    private fun KtFile.movedConventionUsages(
+        visiblePackages: List<FqName>,
+        moved: Set<KtNamedDeclaration>,
+    ): Set<KtNamedDeclaration> {
+        val found = linkedSetOf<KtNamedDeclaration>()
+        fun record(symbol: KaSymbol?) {
+            val declaration = symbol?.psi as? KtNamedDeclaration ?: return
+            if (declaration in moved) found += declaration
+        }
+        fun movedOperator(type: KaType, name: String): KaCallableSymbol? = visiblePackages.asSequence()
+            .mapNotNull { packageFqName -> findPackage(packageFqName)?.packageScope }
+            .flatMap { scope -> scope.declarations.asSequence() }
+            .filterIsInstance<KaCallableSymbol>()
+            .filter { symbol -> (symbol as? KaNamedSymbol)?.name?.asString() == name && symbol.isExtension }
+            .firstOrNull { symbol -> symbol.canBeCalledAsExtensionOn(type) }
+        accept(object : KtTreeVisitorVoid() {
+            override fun visitArrayAccessExpression(expression: KtArrayAccessExpression) {
+                super.visitArrayAccessExpression(expression)
+                expression.conventionSymbols().forEach(::record)
+                if (!expression.isCompoundWrite()) return
+                val receiverType = expression.arrayExpression?.expressionType ?: return
+                val hasMemberSetter = receiverType.expandedSymbol?.memberScope?.declarations
+                    .orEmpty()
+                    .filterIsInstance<KaCallableSymbol>()
+                    .any { symbol -> (symbol as? KaNamedSymbol)?.name?.asString() == "set" }
+                if (!hasMemberSetter) record(movedOperator(receiverType, "set"))
+            }
+
+            // The implicit invocation reference belongs to the call expression, not to the
+            // spelled callee, so `(box)()` is collected here for simple-name callees too.
+            override fun visitCallExpression(expression: KtCallExpression) {
+                super.visitCallExpression(expression)
+                expression.conventionSymbols().forEach(::record)
+            }
+
+            override fun visitDestructuringDeclarationEntry(multiDeclarationEntry: KtDestructuringDeclarationEntry) {
+                super.visitDestructuringDeclarationEntry(multiDeclarationEntry)
+                multiDeclarationEntry.conventionSymbols().forEach(::record)
+            }
+
+            override fun visitForExpression(expression: KtForExpression) {
+                super.visitForExpression(expression)
+                expression.conventionSymbols().forEach(::record)
+            }
+
+            override fun visitProperty(property: KtProperty) {
+                super.visitProperty(property)
+                property.movedDelegateOperators(moved).forEach { declaration -> found += declaration }
+            }
+        })
+        return found
+    }
+
+    /**
+     * Returns the symbols the convention references of this element resolve to.
+     *
+     * @return every resolved symbol, including the operator a convention invokes
+     */
+    context(_: KaSession)
+    private fun KtElement.conventionSymbols(): List<KaSymbol> =
+        references.filterIsInstance<KtReference>()
+            .flatMap { reference -> runCatching { reference.resolveToSymbols() }.getOrNull().orEmpty() }
+
+    /**
+     * Collects the moved delegate operators this property selects implicitly.
+     *
+     * `provideDelegate` runs first and its return type decides which accessor is selected, so the
+     * provider and both accessors of a `var` are looked up. A member operator always wins over
+     * an extension and cannot be captured by an import, so the member is checked first.
+     *
+     * @param moved declarations whose move the operation performs
+     * @return moved operators this property selects
+     */
+    @OptIn(KaExperimentalApi::class)
+    context(_: KaSession)
+    private fun KtProperty.movedDelegateOperators(moved: Set<KtNamedDeclaration>): Set<KtNamedDeclaration> {
+        val delegateType = runCatching { delegateExpression?.expressionType }.getOrNull() ?: return emptySet()
+        val operators = linkedSetOf<KtNamedDeclaration>()
+        fun record(symbol: KaCallableSymbol?) {
+            val declaration = symbol?.psi as? KtNamedDeclaration ?: return
+            if (declaration in moved) operators += declaration
+        }
+        fun selectedOperator(type: KaType, name: String): KaCallableSymbol? =
+            type.memberDelegateOperator(name) ?: scopeDelegateOperator(type, name)
+        val provider = selectedOperator(delegateType, "provideDelegate")
+        record(provider)
+        val accessorType = provider?.returnType ?: delegateType
+        listOf("getValue", "setValue").forEach { name ->
+            if (name == "setValue" && !isVar) return@forEach
+            record(selectedOperator(accessorType, name))
+        }
+        return operators
+    }
+
+    /**
+     * Tells whether [file] loses its implicit or wildcard binding to a moved declaration.
+     *
+     * A direct import is retargeted with its own directive, and a file ending in the declaration's
+     * new package still sees it without an import. Everything else that shared the old package or
+     * wildcard-imported it needs an explicit import once the declaration moves.
+     *
+     * @param declaration moved declaration the convention usage resolves to
+     * @param oldFqName declaration's fully qualified name before the change
+     * @param newFqName declaration's fully qualified name after the change
+     * @param finalPackages paths of the moving files mapped to their final packages
+     * @return `true` when the caller has to import [newFqName]
+     */
+    private fun KtFile.needsIncomingImport(
+        declaration: KtNamedDeclaration,
+        oldFqName: FqName,
+        newFqName: FqName,
+        finalPackages: Map<String, FqName>,
+    ): Boolean {
+        val path = virtualFile?.path
+        if (path != null && path == declaration.containingKtFile.virtualFile?.path) return false
+        val finalPackage = path?.let(finalPackages::get) ?: packageFqName
+        if (finalPackage == newFqName.parent()) return false
+        val importsDirectly = importDirectives.any { directive ->
+            !directive.isAllUnder && directive.aliasName == null && directive.importedFqName == oldFqName
+        }
+        if (importsDirectly) return false
+        if (packageFqName == oldFqName.parent()) return true
+        return importDirectives.any { directive ->
+            directive.isAllUnder && directive.importedFqName == oldFqName.parent()
+        }
     }
 
     /**
@@ -877,7 +1067,7 @@ class KaChangePackageComputer(
                             // survives the move unchanged and is found through the property's
                             // scope, not through the old package.
                             val provider = delegateType.memberDelegateOperator("provideDelegate")
-                                ?: property.scopeDelegateProvider(delegateType)
+                                ?: property.scopeDelegateOperator(delegateType, "provideDelegate")
                                 ?: samePackageDelegateOperator(
                                     delegateType,
                                     "provideDelegate",
@@ -1003,6 +1193,7 @@ class KaChangePackageComputer(
      * @param movedPaths paths of the files whose package changes
      * @return FQN of the remaining `set` extension, or `null` when none applies
      */
+    @OptIn(KaExperimentalApi::class)
     context(_: KaSession)
     private fun samePackageIndexedSetter(
         expression: KtArrayAccessExpression,
@@ -1013,11 +1204,10 @@ class KaChangePackageComputer(
         return findPackage(originalPackage)?.packageScope?.declarations
             ?.filterIsInstance<KaCallableSymbol>()
             ?.firstNotNullOfOrNull { symbol ->
-                val receiver = symbol.receiverParameter?.returnType
-                if ((symbol as? KaNamedSymbol)?.name?.asString() != "set" || receiver == null) {
+                if ((symbol as? KaNamedSymbol)?.name?.asString() != "set") {
                     return@firstNotNullOfOrNull null
                 }
-                if (!receiverType.isSubtypeOf(receiver)) return@firstNotNullOfOrNull null
+                if (!symbol.canBeCalledAsExtensionOn(receiverType)) return@firstNotNullOfOrNull null
                 samePackageTopLevelName(symbol, originalPackage, movedPaths)
             }
     }
@@ -1065,28 +1255,25 @@ class KaChangePackageComputer(
     }
 
     /**
-     * Finds the `provideDelegate` extension the property's scope selects on [type].
+     * Finds the delegate operator of [name] the file's scope selects on [type].
      *
-     * Unlike [samePackageDelegateOperator], this lookup follows the property's real visibility:
-     * a provider imported from another package stays bound to the property after the move, and
-     * its return type still decides which `getValue`/`setValue` accessor applies. Only the
-     * provider's own import is unaffected; ignoring it would search the accessors on the
-     * delegate expression's type instead.
+     * Unlike [samePackageDelegateOperator], this lookup follows the element's real visibility: an
+     * operator imported from any package stays bound after the move, and a provider's return type
+     * still decides which `getValue`/`setValue` accessor applies. Receiver applicability goes
+     * through the analysis API's extension check so a generic receiver is inferred.
      *
-     * @param type type of the property's delegate expression
-     * @return the applicable extension provider, or `null` when none is in scope
+     * @param type type the operator is selected on
+     * @param operatorName `provideDelegate`, `getValue`, or `setValue`
+     * @return the selected extension, or `null` when none is in scope
      */
+    @OptIn(KaExperimentalApi::class)
     context(_: KaSession)
-    private fun KtProperty.scopeDelegateProvider(type: KaType): KaCallableSymbol? = runCatching {
-        val identifier = Name.identifier("provideDelegate")
+    private fun KtElement.scopeDelegateOperator(type: KaType, operatorName: String): KaCallableSymbol? = runCatching {
+        val identifier = Name.identifier(operatorName)
         containingKtFile.scopeContext(this).scopes.asSequence()
             .flatMap { scopeWithKind -> scopeWithKind.scope.callables(identifier) }
-            .filter { symbol -> symbol.isExtension }
-            .filter { symbol -> symbol.isDelegateOperatorShape("provideDelegate") }
-            .firstOrNull { symbol ->
-                val receiverType = symbol.receiverParameter?.returnType
-                receiverType != null && type.isSubtypeOf(receiverType)
-            }
+            .filter { symbol -> symbol.isExtension && symbol.isDelegateOperatorShape(operatorName) }
+            .firstOrNull { symbol -> symbol.canBeCalledAsExtensionOn(type) }
     }.getOrNull()
 
     /**
@@ -1105,6 +1292,7 @@ class KaChangePackageComputer(
      * @param movedPaths paths of the files whose package changes, or `null` to accept moving ones
      * @return the selected operator, or `null` when none applies
      */
+    @OptIn(KaExperimentalApi::class)
     context(_: KaSession)
     private fun samePackageDelegateOperator(
         type: KaType,
@@ -1115,11 +1303,9 @@ class KaChangePackageComputer(
         return findPackage(originalPackage)?.packageScope?.declarations
             ?.filterIsInstance<KaCallableSymbol>()
             ?.firstOrNull { symbol ->
-                val receiver = symbol.receiverParameter?.returnType
                 (symbol as? KaNamedSymbol)?.name?.asString() == operatorName &&
                     symbol.isDelegateOperatorShape(operatorName) &&
-                    receiver != null &&
-                    type.isSubtypeOf(receiver) &&
+                    symbol.canBeCalledAsExtensionOn(type) &&
                     (movedPaths == null || samePackageTopLevelName(symbol, originalPackage, movedPaths) != null)
             }
     }
