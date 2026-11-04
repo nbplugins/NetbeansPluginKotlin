@@ -35,6 +35,7 @@ import org.jetbrains.kotlin.analysis.api.symbols.KaClassKind
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassLikeSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaNamedClassSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaPackageSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaVariableSymbol
@@ -1343,10 +1344,11 @@ object KotlinImportBindingCheck {
      *
      * `Holder.box.choose()` passes the value of the `box` property, even though its leftmost name
      * is a class, so the whole receiver chain has to be classified rather than its leading name.
-     * Only a bare class or package name used as a qualifier (`Int.choose()`) cannot be affected
-     * by an import. A named object is a value even though K2 reports it as a class-like symbol:
-     * extensions declared on the object's supertypes are selected by overload resolution for
-     * `singleton.choose()`, so an import can still rebind the call.
+     * Only a bare class or package name without an implicit value (`Int.choose()`) is a qualifier
+     * an import cannot affect. A named object is a value even though K2 reports it as a class-like
+     * symbol, and so is a class name whose companion object supplies the receiver for
+     * `Holder.choose()`: extensions declared on the object's or companion's supertypes are
+     * selected by overload resolution, so an import can still rebind the call.
      *
      * @return `true` when the expression evaluates to a value
      */
@@ -1358,7 +1360,12 @@ object KotlinImportBindingCheck {
                 references.filterIsInstance<KtReference>().firstOrNull()?.resolveToSymbol()
             }.getOrNull()
             when (symbol) {
-                is KaClassSymbol -> symbol.classKind == KaClassKind.OBJECT
+                is KaClassSymbol -> {
+                    val companion = (symbol as? KaNamedClassSymbol)?.companionObject
+                    symbol.classKind == KaClassKind.OBJECT ||
+                        symbol.classKind == KaClassKind.COMPANION_OBJECT ||
+                        companion != null
+                }
                 is KaPackageSymbol -> false
                 else -> true
             }

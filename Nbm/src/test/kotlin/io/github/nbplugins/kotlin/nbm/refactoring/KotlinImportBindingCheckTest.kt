@@ -490,6 +490,48 @@ class KotlinImportBindingCheckTest : KotlinTestCase("KotlinImportBindingCheckTes
     }
 
     /**
+     * Verifies the companion shorthand of a class is treated as a value receiver.
+     *
+     * `Holder.choose()` passes the companion instance, which may extend the extension's declared
+     * receiver (`companion object : Derived()`), even though the spelled name is the class itself.
+     * K2 reports `Holder` as a class-like symbol, so the class-qualifier shortcut skips it, and an
+     * import of a `Base.choose` overload would be approved even though the explicit import outranks
+     * the same-package `Derived.choose` and reselects it.
+     */
+    fun testHasConflictingReference_reportsCompanionShorthandValueReceiver() {
+        withSession(
+            name = "companion-shorthand-receiver",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("old"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(
+                    root.resolve("old/Staying.kt"),
+                    "package old\n\n" +
+                        "open class Base\n\n" +
+                        "open class Derived : Base()\n\n" +
+                        "class Holder {\n    companion object : Derived()\n}\n\n" +
+                        "fun Derived.choose() = 2\n",
+                )
+                Files.writeString(
+                    root.resolve("old/Moving.kt"),
+                    "package old\n\nfun Base.choose() = 1\n",
+                )
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package usage\n\nimport old.*\n\nfun use() = Holder.choose()\n",
+                )
+            },
+        ) { session, root ->
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+
+            assertTrue(
+                "an import of the moved overload would reselect it for Holder.choose()",
+                KotlinImportBindingCheck.hasConflictingReference(usage, "choose", emptySet()),
+            )
+        }
+    }
+
+    /**
      * Verifies an extension called on a named object is treated as a value receiver.
      *
      * `singleton.choose()` resolves the extension on `Derived`, the object's supertype, not on the

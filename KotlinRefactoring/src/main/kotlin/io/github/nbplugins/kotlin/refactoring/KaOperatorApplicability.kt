@@ -35,6 +35,7 @@ import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaFunctionSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaTypeParameterSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaVariableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.symbol
 import org.jetbrains.kotlin.analysis.api.types.KaCapturedType
@@ -187,11 +188,13 @@ private fun unwrapType(type: KaType): KaType = when (type) {
  * Returns the argument types a compound indexed write passes to `set`.
  *
  * The write passes its indices and then the value produced by the getter and the compound
- * operation. The getter's return type stands in for that value: for the integer and boxed types
- * the operators produce the same type, and the member-setter applicability check only needs
- * enough precision to reject a signature whose index or value type cannot fit.
+ * operation. That value is the compound operator's result, not the getter's result: for a member
+ * `get(Int): Initial` and an extension `Initial.plus(Int): Updated`, `box[0] += 1` passes
+ * `Updated`, which selects a different setter overload than `Initial` would. When the operator
+ * cannot be resolved, the getter's type stands in for it, which still distinguishes index and
+ * genuinely unrelated value types.
  *
- * @return index types followed by the getter's return type, or `null` when unresolved
+ * @return index types followed by the type of the assigned value, or `null` when unresolved
  */
 @OptIn(KaExperimentalApi::class)
 context(_: KaSession)
@@ -204,7 +207,44 @@ internal fun KtArrayAccessExpression.setterArgumentTypes(): List<KaType?>? {
         .filterIsInstance<KaCallableSymbol>()
         .firstOrNull { symbol -> (symbol as? KaNamedSymbol)?.name?.asString() == "get" }
         ?: return null
-    return indices + runCatching { getter.returnType }.getOrNull()
+    val receiverType = runCatching { arrayExpression?.expressionType }.getOrNull()
+    val getterType = receiverType
+        ?.let { type -> runCatching { getter.returnTypeInferredFrom(type) }.getOrNull() }
+        ?: runCatching { getter.returnType }.getOrNull()
+    return indices + assignedValueType(getterType)
+}
+
+/**
+ * Returns the type of the value a compound indexed write assigns through `set`.
+ *
+ * A binary compound assignment is resolved as the implicit `set` call, so the resolved operation is
+ * the selected setter and its value parameter type is the one the argument was accepted by. A
+ * prefix or postfix increment resolves to `inc`/`dec` instead, whose instantiated return type is
+ * the assigned value. The getter's type stands in only when the operation cannot be resolved.
+ *
+ * @param getterType return type of the getter the write reads
+ * @return type of the assigned value, or `null` when it cannot be resolved
+ */
+context(_: KaSession)
+private fun KtArrayAccessExpression.assignedValueType(getterType: KaType?): KaType? {
+    val operationReference = when (val parent = parent) {
+        is KtBinaryExpression -> parent.operationReference.takeIf { parent.left == this }
+        is KtUnaryExpression -> parent.operationReference.takeIf { parent.baseExpression == this }
+        else -> null
+    } ?: return getterType
+    val operation = runCatching {
+        operationReference.references.filterIsInstance<KtReference>()
+            .flatMap { reference -> reference.resolveToSymbols().orEmpty() }
+            .filterIsInstance<KaCallableSymbol>()
+            .firstOrNull()
+    }.getOrNull() ?: return getterType
+    if ((operation as? KaNamedSymbol)?.name?.asString() == "set") {
+        return (operation as? KaFunctionSymbol)?.valueParameters?.lastOrNull()?.returnType
+            ?: getterType
+    }
+    return getterType
+        ?.let { type -> runCatching { operation.returnTypeInferredFrom(type) }.getOrNull() }
+        ?: getterType
 }
 
 /**
@@ -257,9 +297,9 @@ private fun KtProperty.enclosingInstanceType(): KaType? =
  * Returns the argument types a delegated property passes to one of its operators.
  *
  * `provideDelegate` and `getValue` receive `thisRef` and the `KProperty` instance; `setValue` also
- * receives the assigned value. The value's type is unknown here, so it is left unchecked, while
- * the `thisRef` type decides which overloads the compiler can select at all. The provider is the
- * one operator that never receives an extension receiver.
+ * receives the assigned value, whose type is the property's own type. The `thisRef` and the value
+ * decide which overloads the compiler can select at all. The provider is the one operator that
+ * never receives an extension receiver.
  *
  * @param operatorName `provideDelegate`, `getValue`, or `setValue`
  * @return argument types in call order; `null` entries are unresolved expressions
@@ -268,8 +308,21 @@ context(_: KaSession)
 internal fun KtProperty.delegationArgumentTypes(operatorName: String): List<KaType?> {
     val thisRef =
         if (operatorName == "provideDelegate") providerThisRefType() else delegationThisRefType()
-    return if (operatorName == "setValue") listOf(thisRef, null, null) else listOf(thisRef, null)
+    return if (operatorName == "setValue") listOf(thisRef, null, propertyValueType()) else listOf(thisRef, null)
 }
+
+/**
+ * Returns the type of the value assigned through this property.
+ *
+ * A delegated setter receives exactly the property type, so an accessor declared with an
+ * unrelated value type (`setValue(..., Int)` for a `String` property) is inapplicable and must not
+ * hide the applicable extension.
+ *
+ * @return declared or inferred property type, or `null` when it cannot be resolved
+ */
+context(_: KaSession)
+private fun KtProperty.propertyValueType(): KaType? =
+    runCatching { (symbol as? KaVariableSymbol)?.returnType }.getOrNull()
 
 /**
  * Tells whether this callable accepts the arguments of an indexed write or a delegate call.

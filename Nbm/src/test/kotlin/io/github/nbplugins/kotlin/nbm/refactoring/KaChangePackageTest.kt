@@ -5505,6 +5505,130 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
+     * Verifies setter filtering uses the compound operation's result, not the getter's result.
+     *
+     * `box[0] += 1` passes the result of `plus` to `set`. A member `get(Int): Initial` and an
+     * extension `Initial.plus(Int): Updated` make the assigned value `Updated`, so the moving
+     * `Box.set(Int, Updated)` is what Kotlin selects while `Box.set(Int, Any?)` stays. Supplying
+     * the getter's `Initial` instead rejects the moving overload and plans no import, and the
+     * write silently falls back to the staying `Any?` one after the change.
+     */
+    fun testApply_realSession_usesCompoundOperationResultForSetterArguments() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-compound-result")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Box.kt"),
+                "package old\n\n" +
+                    "open class Initial\n\n" +
+                    "class Updated\n\n" +
+                    "open class Box {\n    operator fun get(index: Int): Initial = Initial()\n}\n\n" +
+                    "operator fun Initial.plus(other: Int): Updated = Updated()\n\n" +
+                    "operator fun Box.set(index: Int, value: Any?) {}\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\noperator fun Box.set(index: Int, value: Updated) {}\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nfun use(box: Box) {\n    box[0] += 1\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-compound-result-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the setter selected for the compound result: $text",
+                text.contains("import dest.set"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies delegated setter filtering uses the property's value type.
+     *
+     * For `var value: String by Box()`, Kotlin passes a `String` to `setValue`, so the staying
+     * member `Box.setValue(..., Int)` is inapplicable and the moving extension
+     * `Box.setValue(..., Any?)` is selected. Leaving the value type unknown keeps the `Int` member
+     * applicable, records no moved setter, and lets a staying `Any.setValue` fallback take over.
+     */
+    fun testApply_realSession_filtersDelegateSetterByPropertyType() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-delegate-setter-type")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Box.kt"),
+                "package old\n\nclass Box {\n" +
+                    "    operator fun getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): String = \"\"\n\n" +
+                    "    operator fun setValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>, value: Int) {}\n" +
+                    "}\n\n" +
+                    "operator fun Any.setValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>, value: Any?) {}\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\noperator fun Box.setValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>, value: Any?) {}\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nvar value: String by Box()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-delegate-setter-type-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the setter applicable to the property type: $text",
+                text.contains("import dest.setValue"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies setter overloads declared on the same receiver are ranked by parameter specificity.
      *
      * `Box.set(Int, Number)` stays while the more specific `Box.set(Int, Int)` moves. Argument
