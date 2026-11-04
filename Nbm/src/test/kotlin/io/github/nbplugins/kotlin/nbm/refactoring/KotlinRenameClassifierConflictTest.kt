@@ -366,6 +366,43 @@ class KotlinRenameClassifierConflictTest : KotlinTestCase("KotlinRenameClassifie
     }
 
     /**
+     * Verifies a caller that imports the new name under an alias blocks the rename.
+     *
+     * `import p.After as make` binds the whole overload set of `p.After` under `make`, so the
+     * caller's untouched `make(1)` selects the newly named `After(Int)` constructor instead of the
+     * `fun After(n: Number)` it currently calls. A reference spelling only the alias must therefore
+     * count as a reference to the destination name.
+     */
+    fun testFindSamePackageOverloadConflict_reportsAliasedImportedNewName() {
+        withSession(
+            name = "external-aliased-import",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(root.resolve("source/Foo.kt"), "package p\n\nclass Foo(val n: Int)\n")
+                Files.writeString(root.resolve("source/Functions.kt"), "package p\n\nfun After(n: Number) = \"other\"\n")
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package q\n\nimport p.After as make\n\nfun use() = make(1).toString()\n",
+                )
+            },
+        ) { session, root ->
+            val source = session.ktFile(root.resolve("source/Foo.kt"))
+            val functions = session.ktFile(root.resolve("source/Functions.kt"))
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+
+            val conflict = findSamePackageOverloadConflict(
+                source,
+                primaryClass(source),
+                "After",
+                listOf(source, functions, usage),
+            )
+
+            assertEquals("Usage.kt", conflict?.virtualFile?.name)
+        }
+    }
+
+    /**
      * Verifies a package-qualified call of another package blocks the rename.
      *
      * The caller spells `p.After(1)` without any import, so only the package-qualified form can

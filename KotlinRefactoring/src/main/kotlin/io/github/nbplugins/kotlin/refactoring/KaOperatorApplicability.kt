@@ -19,8 +19,10 @@ package io.github.nbplugins.kotlin.refactoring
 import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.components.allSupertypes
+import org.jetbrains.kotlin.analysis.api.components.builtinTypes
 import org.jetbrains.kotlin.analysis.api.components.canBeCalledAsExtensionOn
 import org.jetbrains.kotlin.analysis.api.components.createSubstitutor
+import org.jetbrains.kotlin.analysis.api.components.defaultType
 import org.jetbrains.kotlin.analysis.api.components.expandedSymbol
 import org.jetbrains.kotlin.analysis.api.components.expressionType
 import org.jetbrains.kotlin.analysis.api.components.isSubtypeOf
@@ -28,7 +30,9 @@ import org.jetbrains.kotlin.analysis.api.components.memberScope
 import org.jetbrains.kotlin.analysis.api.components.resolveToSymbols
 import org.jetbrains.kotlin.analysis.api.components.scopeContext
 import org.jetbrains.kotlin.analysis.api.components.semanticallyEquals
+import org.jetbrains.kotlin.analysis.api.components.type
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaClassSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaFunctionSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaTypeParameterSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
@@ -45,7 +49,9 @@ import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtArrayAccessExpression
 import org.jetbrains.kotlin.psi.KtBinaryExpression
 import org.jetbrains.kotlin.psi.KtClassOrObject
+import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtUnaryExpression
+import org.jetbrains.kotlin.psi.psiUtil.containingClassOrObject
 
 /**
  * Returns this callable's return type with its type arguments inferred from [receiverType].
@@ -199,6 +205,40 @@ internal fun KtArrayAccessExpression.setterArgumentTypes(): List<KaType?>? {
         .firstOrNull { symbol -> (symbol as? KaNamedSymbol)?.name?.asString() == "get" }
         ?: return null
     return indices + runCatching { getter.returnType }.getOrNull()
+}
+
+/**
+ * Returns the type of the implicit `thisRef` argument a delegated property passes.
+ *
+ * A member property passes its enclosing instance, an extension property passes its extension
+ * receiver, and a top-level or local property passes `null`. The compiler ignores accessor and
+ * provider overloads whose first parameter cannot take that argument, so selecting an operator on
+ * the receiver type alone can pick an inapplicable overload.
+ *
+ * @return static type of the implicit `thisRef` argument
+ */
+context(_: KaSession)
+internal fun KtProperty.delegationThisRefType(): KaType =
+    receiverTypeReference?.type
+        ?: containingClassOrObject?.let { enclosing ->
+            runCatching { (enclosing.symbol as? KaClassSymbol)?.defaultType }.getOrNull()
+        }
+        ?: builtinTypes.nullableNothing
+
+/**
+ * Returns the argument types a delegated property passes to one of its operators.
+ *
+ * `provideDelegate` and `getValue` receive `thisRef` and the `KProperty` instance; `setValue` also
+ * receives the assigned value. The value's type is unknown here, so it is left unchecked, while
+ * the `thisRef` type decides which overloads the compiler can select at all.
+ *
+ * @param operatorName `provideDelegate`, `getValue`, or `setValue`
+ * @return argument types in call order; `null` entries are unresolved expressions
+ */
+context(_: KaSession)
+internal fun KtProperty.delegationArgumentTypes(operatorName: String): List<KaType?> {
+    val thisRef = delegationThisRefType()
+    return if (operatorName == "setValue") listOf(thisRef, null, null) else listOf(thisRef, null)
 }
 
 /**

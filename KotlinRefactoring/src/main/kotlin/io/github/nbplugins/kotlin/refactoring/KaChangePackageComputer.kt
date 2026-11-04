@@ -62,6 +62,7 @@ import org.jetbrains.kotlin.psi.KtForExpression
 import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
 import org.jetbrains.kotlin.psi.KtNamedFunction
+import org.jetbrains.kotlin.psi.KtOperationReferenceExpression
 import org.jetbrains.kotlin.psi.KtParameter
 import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
@@ -556,7 +557,8 @@ class KaChangePackageComputer(
             if (declaration in moved) operators += declaration
         }
         fun selectedOperator(type: KaType, name: String): KaCallableSymbol? =
-            type.memberDelegateOperator(name) ?: scopeDelegateOperator(type, name)
+            type.memberDelegateOperator(name)
+                ?: scopeDelegateOperator(type, name, delegationArgumentTypes(name))
         val provider = selectedOperator(delegateType, "provideDelegate")
         record(provider)
         // The provider's return type is declared in terms of its own type parameters; only the
@@ -1139,12 +1141,17 @@ class KaChangePackageComputer(
                             // survives the move unchanged and is found through the property's
                             // scope, not through the old package.
                             val provider = delegateType.memberDelegateOperator("provideDelegate")
-                                ?: property.scopeDelegateOperator(delegateType, "provideDelegate")
+                                ?: property.scopeDelegateOperator(
+                                    delegateType,
+                                    "provideDelegate",
+                                    property.delegationArgumentTypes("provideDelegate"),
+                                )
                                 ?: samePackageDelegateOperator(
                                     delegateType,
                                     "provideDelegate",
                                     originalPackage,
                                     movedPaths = null,
+                                    arguments = property.delegationArgumentTypes("provideDelegate"),
                                 )
                             // `provideDelegate` runs before the accessors and its return type is the
                             // type the accessors are selected on, so it replaces the expression
@@ -1326,7 +1333,9 @@ class KaChangePackageComputer(
         if (expression.qualifiedReceiver() != null && (symbol as? KaCallableSymbol)?.isExtension != true) {
             return null
         }
-        val name = expression.getReferencedName()
+        // An operation reference spells the operator token (`+`, `in`) rather than the function it
+        // selects, so only the resolved callable's name can be compared with the destination names.
+        val name = expression.boundDeclarationName(symbol)
         if (name !in destinationNames) return null
         // A type alias is spelled by its own name; a declaration of another package that only
         // expands the alias cannot be imported under the spelled name.
@@ -1334,6 +1343,23 @@ class KaChangePackageComputer(
         if (fqName.shortName().asString() != name) return null
         return shadowedDependency(symbol, destination, destinationNames, importedFqNames, movedPaths)
     }
+
+    /**
+     * Returns the simple name under which this reference binds [symbol].
+     *
+     * A regular reference spells the declaration's name. An operation reference (`+`, `==`, `in`)
+     * spells only the operator token, so the resolved callable's name is the declaration name the
+     * reference actually selects.
+     *
+     * @param symbol declaration the reference resolves to
+     * @return name used for destination-shadowing comparisons
+     */
+    private fun KtSimpleNameExpression.boundDeclarationName(symbol: KaSymbol): String =
+        if (this is KtOperationReferenceExpression) {
+            (symbol as? KaNamedSymbol)?.name?.asString() ?: getReferencedName()
+        } else {
+            getReferencedName()
+        }
 
     /**
      * Returns the import that keeps an implicitly selected declaration bound after the move.
@@ -1454,8 +1480,9 @@ class KaChangePackageComputer(
         movedPaths: Set<String>,
     ): KaCallableSymbol? {
         if (accessorType.memberDelegateOperator(operatorName) != null) return null
-        return scopeDelegateOperator(accessorType, operatorName)
-            ?: samePackageDelegateOperator(accessorType, operatorName, originalPackage, movedPaths)
+        val arguments = delegationArgumentTypes(operatorName)
+        return scopeDelegateOperator(accessorType, operatorName, arguments)
+            ?: samePackageDelegateOperator(accessorType, operatorName, originalPackage, movedPaths, arguments)
     }
 
     /**
@@ -1468,11 +1495,16 @@ class KaChangePackageComputer(
      *
      * @param type type the operator is selected on
      * @param operatorName `provideDelegate`, `getValue`, or `setValue`
+     * @param arguments argument types of the implicit call, or `null` when they cannot be resolved
      * @return the selected extension, or `null` when none is in scope
      */
     @OptIn(KaExperimentalApi::class)
     context(_: KaSession)
-    private fun KtElement.scopeDelegateOperator(type: KaType, operatorName: String): KaCallableSymbol? = runCatching {
+    private fun KtElement.scopeDelegateOperator(
+        type: KaType,
+        operatorName: String,
+        arguments: List<KaType?>? = null,
+    ): KaCallableSymbol? = runCatching {
         val identifier = Name.identifier(operatorName)
         // Scopes follow import priority, so the first one that provides an applicable operator
         // decides; inside it, the most specific receiver wins (`Int.getValue` over
@@ -1481,7 +1513,7 @@ class KaChangePackageComputer(
             val candidates = scopeWithKind.scope.callables(identifier)
                 .filter { symbol -> symbol.isExtension && symbol.isDelegateOperatorShape(operatorName) }
                 .toList()
-            selectExtension(candidates, type)?.let { selected -> return@runCatching selected }
+            selectExtension(candidates, type, arguments)?.let { selected -> return@runCatching selected }
         }
         null
     }.getOrNull()
@@ -1500,6 +1532,7 @@ class KaChangePackageComputer(
      * @param operatorName `provideDelegate`, `getValue`, or `setValue`
      * @param originalPackage package the moved file declares before the change
      * @param movedPaths paths of the files whose package changes, or `null` to accept moving ones
+     * @param arguments argument types of the implicit call, or `null` when they cannot be resolved
      * @return the selected operator, or `null` when none applies
      */
     @OptIn(KaExperimentalApi::class)
@@ -1509,6 +1542,7 @@ class KaChangePackageComputer(
         operatorName: String,
         originalPackage: FqName,
         movedPaths: Set<String>?,
+        arguments: List<KaType?>? = null,
     ): KaCallableSymbol? {
         val candidates = findPackage(originalPackage)?.packageScope?.declarations
             ?.filterIsInstance<KaCallableSymbol>()
@@ -1521,8 +1555,8 @@ class KaChangePackageComputer(
             .orEmpty()
             .toList()
         // A package can declare several overloads of the operator; only the most specific
-        // applicable one is selected for this receiver.
-        return selectExtension(candidates, type)
+        // applicable one is selected for this receiver and these arguments.
+        return selectExtension(candidates, type, arguments)
     }
 
     /**

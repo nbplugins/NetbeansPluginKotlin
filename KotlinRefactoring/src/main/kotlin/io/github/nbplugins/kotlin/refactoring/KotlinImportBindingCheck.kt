@@ -482,7 +482,14 @@ object KotlinImportBindingCheck {
                 override fun visitSimpleNameExpression(expression: KtSimpleNameExpression) {
                     super.visitSimpleNameExpression(expression)
                     if (conflicting) return
-                    if (expression.getReferencedName() != name) return
+                    val referencedName = expression.getReferencedName()
+                    // An aliased import of the destination name binds the whole overload set under
+                    // its alias, so a reference spelling only the alias is affected as well.
+                    if (referencedName != name &&
+                        !file.bindsAliasOf(packageName.child(Name.identifier(name)), referencedName)
+                    ) {
+                        return
+                    }
                     if (PsiTreeUtil.getParentOfType(expression, KtImportDirective::class.java) != null) return
                     val symbol = expression.references.filterIsInstance<KtReference>().firstOrNull()
                         ?.resolveToSymbol() ?: return
@@ -494,7 +501,7 @@ object KotlinImportBindingCheck {
                         if (expression.isPackageQualifiedCall(packageName)) conflicting = true
                         return
                     }
-                    if (!file.canSeeDeclarationOf(packageName, name)) return
+                    if (!file.canSeeDeclarationOf(packageName, name, referencedName)) return
                     // A reference that already binds a declaration of the package changes overload
                     // resolution once the new declaration joins the package. A reference bound
                     // through a star or default import is outranked by the package in the same
@@ -512,21 +519,39 @@ object KotlinImportBindingCheck {
     }.getOrDefault(false)
 
     /**
-     * Tells whether this file can bind [name] to a declaration of [packageName].
+     * Tells whether this file binds [name] to a declaration of [packageName].
      *
      * The added declaration is visible through the file's own package, an explicit import of that
      * declaration, or a wildcard import of its package. Any other import binds another declaration
      * and keeps outranking the package.
      *
+     * An aliased import of the declaration binds its overload set under the alias, so a reference
+     * spelling the alias sees the declaration just as one spelling its own name does.
+     *
      * @param packageName package the declaration is added to
      * @param name simple name of the declaration
+     * @param referencedName name the reference actually spells
      * @return `true` when the file can see declarations of that package under that name
      */
-    private fun KtFile.canSeeDeclarationOf(packageName: FqName, name: String): Boolean =
-        packageFqName == packageName || importDirectives.any { directive ->
-            if (directive.isAllUnder) return@any directive.importedFqName == packageName
+    private fun KtFile.canSeeDeclarationOf(packageName: FqName, name: String, referencedName: String): Boolean =
+        (packageFqName == packageName && referencedName == name) || importDirectives.any { directive ->
+            if (directive.isAllUnder) {
+                return@any directive.importedFqName == packageName && referencedName == name
+            }
             directive.importedFqName == packageName.child(Name.identifier(name)) &&
-                (directive.aliasName == null || directive.aliasName == name)
+                (directive.aliasName ?: name) == referencedName
+        }
+
+    /**
+     * Tells whether this file imports [fqName] under [alias].
+     *
+     * @param fqName fully qualified name the directive imports
+     * @param alias name the directive binds the declaration to
+     * @return `true` when an aliased import binds that name
+     */
+    private fun KtFile.bindsAliasOf(fqName: FqName, alias: String): Boolean =
+        importDirectives.any { directive ->
+            !directive.isAllUnder && directive.importedFqName == fqName && directive.aliasName == alias
         }
 
     /**
@@ -1139,7 +1164,7 @@ object KotlinImportBindingCheck {
             return if (delegateType.memberDelegateOperator(name) != null) {
                 emptyList()
             } else {
-                listOfNotNull(selectedOperator(delegateType, name))
+                listOfNotNull(selectedOperator(delegateType, name, delegationArgumentTypes(name)))
             }
         }
         val accessorNames = if (isVar) listOf("getValue", "setValue") else listOf("getValue")
@@ -1153,7 +1178,7 @@ object KotlinImportBindingCheck {
             if (accessorType.memberDelegateOperator(name) != null) {
                 null
             } else {
-                selectedOperator(accessorType, name)
+                selectedOperator(accessorType, name, delegationArgumentTypes(name))
             }
         }
     }
@@ -1173,7 +1198,7 @@ object KotlinImportBindingCheck {
      */
     context(_: KaSession)
     private fun KtProperty.delegateOperator(type: KaType, name: String): KaCallableSymbol? =
-        type.memberDelegateOperator(name) ?: selectedOperator(type, name)
+        type.memberDelegateOperator(name) ?: selectedOperator(type, name, delegationArgumentTypes(name))
 
     /**
      * Returns the member delegate operator of [name] on this type, or `null` when it has none.
@@ -1204,17 +1229,22 @@ object KotlinImportBindingCheck {
      *
      * @param type receiver type the operator is selected on
      * @param name operator name
+     * @param arguments argument types of the implicit call, or `null` when they cannot be resolved
      * @return the selected extension, or `null` when none is visible at this element
      */
     @OptIn(KaExperimentalApi::class)
     context(_: KaSession)
-    private fun KtElement.selectedOperator(type: KaType, name: String): KaCallableSymbol? = runCatching {
+    private fun KtElement.selectedOperator(
+        type: KaType,
+        name: String,
+        arguments: List<KaType?>? = null,
+    ): KaCallableSymbol? = runCatching {
         val identifier = Name.identifier(name)
         containingKtFile.scopeContext(this).scopes.forEach { scopeWithKind ->
             val candidates = scopeWithKind.scope.callables(identifier)
                 .filter { symbol -> symbol.isExtension }
                 .toList()
-            selectExtension(candidates, type)?.let { selected -> return@runCatching selected }
+            selectExtension(candidates, type, arguments)?.let { selected -> return@runCatching selected }
         }
         null
     }.getOrNull()
