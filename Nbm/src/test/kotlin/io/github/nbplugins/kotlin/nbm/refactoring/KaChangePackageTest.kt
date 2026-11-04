@@ -5329,6 +5329,182 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
+     * Verifies member delegate operators are filtered by the actual arguments before suppressing
+     * extension lookup.
+     *
+     * `Box` declares a member `getValue(Host, KProperty<*>)`, but a top-level `val value by Box()`
+     * passes `null` as `thisRef`, so the member is inapplicable and the moving extension
+     * `Box.getValue(Any?, KProperty<*>)` is selected instead. Treating the member as a match by
+     * shape alone records no moved accessor, and the property silently falls back to
+     * `Any.getValue` after the move.
+     */
+    fun testApply_realSession_filtersMemberDelegateOperatorByArguments() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-member-delegate-args")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Box.kt"),
+                "package old\n\nclass Host\n\nclass Box {\n    operator fun getValue(" +
+                    "thisRef: Host, property: kotlin.reflect.KProperty<*>): Int = 1\n}\n\n" +
+                    "operator fun Any.getValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 3\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\noperator fun Box.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 2\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nval value by Box()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-member-delegate-args-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the extension the inapplicable member leaves in charge: $text",
+                text.contains("import dest.getValue"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies `provideDelegate` is filtered by a null `thisRef` for extension properties.
+     *
+     * For a top-level `val String.value by Delegate()`, Kotlin passes `null` to `provideDelegate`
+     * and the extension receiver only to the accessor. Supplying the receiver type for every
+     * operator selects the inapplicable staying `Delegate.provideDelegate(String, ...)` and plans
+     * no import for the actually selected `Delegate.provideDelegate(Any?, ...)`.
+     */
+    fun testApply_realSession_filtersProviderByNullThisRef() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-provider-thisref")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Stays.kt"),
+                "package old\n\nclass Delegate\n\n" +
+                    "operator fun Delegate.provideDelegate(" +
+                    "thisRef: String, property: kotlin.reflect.KProperty<*>): Delegate = this\n\n" +
+                    "operator fun Delegate.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 7\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\noperator fun Delegate.provideDelegate(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Delegate = this\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nval String.value: Int by Delegate()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-provider-thisref-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the moved provider applicable to a null thisRef: $text",
+                text.contains("import dest.provideDelegate"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a setter with a non-final vararg parameter stays applicable to an indexed write.
+     *
+     * `operator fun Box.set(vararg indices: Int, value: Int)` declares two parameters but accepts
+     * any number of indices, so `box[0, 1]++` passes three arguments. Treating only a final vararg
+     * as variable-arity rejects the setter the compiler selects, and the moved declaration is not
+     * imported; a staying `Any.set` fallback then silently takes over the write.
+     */
+    fun testApply_realSession_importsSetterWithNonFinalVararg() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-non-final-vararg")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Box.kt"),
+                "package old\n\nclass Box {\n    operator fun get(vararg indices: Int): Int = 0\n}\n\n" +
+                    "operator fun Any.set(vararg indices: Int, value: Int) {}\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\noperator fun Box.set(vararg indices: Int, value: Int) {}\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nfun use(box: Box) {\n    box[0, 1]++\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-non-final-vararg-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the moved vararg setter: $text",
+                text.contains("import dest.set"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies setter overloads declared on the same receiver are ranked by parameter specificity.
      *
      * `Box.set(Int, Number)` stays while the more specific `Box.set(Int, Int)` moves. Argument

@@ -208,45 +208,79 @@ internal fun KtArrayAccessExpression.setterArgumentTypes(): List<KaType?>? {
 }
 
 /**
- * Returns the type of the implicit `thisRef` argument a delegated property passes.
+ * Returns the type of the implicit `thisRef` argument a delegated property's accessors receive.
  *
- * A member property passes its enclosing instance, an extension property passes its extension
- * receiver, and a top-level or local property passes `null`. The compiler ignores accessor and
- * provider overloads whose first parameter cannot take that argument, so selecting an operator on
- * the receiver type alone can pick an inapplicable overload.
+ * An extension property passes its extension receiver, a member property passes its enclosing
+ * instance, and a top-level or local property passes `null`. The compiler ignores accessor
+ * overloads whose first parameter cannot take that argument, so selecting an operator on the
+ * receiver type alone can pick an inapplicable overload.
  *
  * @return static type of the implicit `thisRef` argument
  */
 context(_: KaSession)
 internal fun KtProperty.delegationThisRefType(): KaType =
-    receiverTypeReference?.type
-        ?: containingClassOrObject?.let { enclosing ->
+    receiverTypeReference?.type ?: enclosingInstanceType() ?: builtinTypes.nullableNothing
+
+/**
+ * Returns the type of the implicit `thisRef` argument `provideDelegate` receives.
+ *
+ * The provider runs while the delegate is created, before any extension receiver exists: the
+ * compiler passes the dispatch receiver only, so a top-level or extension property passes `null`
+ * where its accessors would pass the extension receiver. Member properties still pass their
+ * enclosing instance.
+ *
+ * @return static type of the implicit provider `thisRef` argument
+ */
+context(_: KaSession)
+internal fun KtProperty.providerThisRefType(): KaType =
+    enclosingInstanceType() ?: builtinTypes.nullableNothing
+
+/**
+ * Returns the type of the instance a member property passes as `thisRef`.
+ *
+ * A local property is not a member of the class that lexically contains it: the compiler passes
+ * `null` for it even though [containingClassOrObject] finds that class.
+ *
+ * @return type of the enclosing instance, or `null` when the property passes none
+ */
+context(_: KaSession)
+private fun KtProperty.enclosingInstanceType(): KaType? =
+    if (isLocal) {
+        null
+    } else {
+        containingClassOrObject?.let { enclosing ->
             runCatching { (enclosing.symbol as? KaClassSymbol)?.defaultType }.getOrNull()
         }
-        ?: builtinTypes.nullableNothing
+    }
 
 /**
  * Returns the argument types a delegated property passes to one of its operators.
  *
  * `provideDelegate` and `getValue` receive `thisRef` and the `KProperty` instance; `setValue` also
  * receives the assigned value. The value's type is unknown here, so it is left unchecked, while
- * the `thisRef` type decides which overloads the compiler can select at all.
+ * the `thisRef` type decides which overloads the compiler can select at all. The provider is the
+ * one operator that never receives an extension receiver.
  *
  * @param operatorName `provideDelegate`, `getValue`, or `setValue`
  * @return argument types in call order; `null` entries are unresolved expressions
  */
 context(_: KaSession)
 internal fun KtProperty.delegationArgumentTypes(operatorName: String): List<KaType?> {
-    val thisRef = delegationThisRefType()
+    val thisRef =
+        if (operatorName == "provideDelegate") providerThisRefType() else delegationThisRefType()
     return if (operatorName == "setValue") listOf(thisRef, null, null) else listOf(thisRef, null)
 }
 
 /**
- * Tells whether this callable accepts the arguments of an indexed write.
+ * Tells whether this callable accepts the arguments of an indexed write or a delegate call.
  *
- * An indexed write passes the indices and then the assigned value. A parameter whose type is a
- * type parameter or cannot be compared is accepted, because the alternative — treating it as
- * inapplicable — would import an extension the member already shadows.
+ * An indexed write passes the indices and then the assigned value. Kotlin allows `vararg` in any
+ * parameter position (`fun set(vararg indices: Int, value: Int)`), so every argument takes the
+ * type of the parameter it lands on: arguments before the vararg match their own parameter,
+ * arguments after it match the trailing fixed parameters, and the rest match the vararg element
+ * type. A parameter whose type is a type parameter or cannot be compared is accepted, because the
+ * alternative — treating it as inapplicable — would import an extension the member already
+ * shadows.
  *
  * @param arguments argument types in call order; `null` entries are unresolved expressions
  * @return `true` when the callable can be selected for those arguments
@@ -256,12 +290,24 @@ internal fun KaCallableSymbol.acceptsIndexedSetterArguments(arguments: List<KaTy
     val function = this as? KaFunctionSymbol ?: return@runCatching false
     val parameters = function.valueParameters
     if (parameters.isEmpty()) return@runCatching false
-    val lastParameter = parameters.last()
-    val fixedCount = if (lastParameter.isVararg) parameters.size - 1 else parameters.size
-    if (arguments.size < fixedCount) return@runCatching false
-    if (!lastParameter.isVararg && arguments.size != parameters.size) return@runCatching false
+    val varargIndex = parameters.indexOfFirst { it.isVararg }
+    if (varargIndex < 0) {
+        if (arguments.size != parameters.size) return@runCatching false
+        return@runCatching arguments.withIndex().all { (index, argument) ->
+            argument == null || acceptsArgument(parameters[index].returnType, argument)
+        }
+    }
+    // The vararg may take any number of arguments, including none, so only the fixed parameters
+    // constrain the argument count.
+    if (arguments.size < parameters.size - 1) return@runCatching false
+    val trailingCount = parameters.size - varargIndex - 1
+    val varargEnd = arguments.size - trailingCount
     arguments.withIndex().all { (index, argument) ->
-        val parameter = parameters.getOrNull(index) ?: lastParameter
+        val parameter = when {
+            index < varargIndex -> parameters[index]
+            index >= varargEnd -> parameters[index - varargEnd + varargIndex + 1]
+            else -> parameters[varargIndex]
+        }
         argument == null || acceptsArgument(parameter.returnType, argument)
     }
 }.getOrDefault(false)

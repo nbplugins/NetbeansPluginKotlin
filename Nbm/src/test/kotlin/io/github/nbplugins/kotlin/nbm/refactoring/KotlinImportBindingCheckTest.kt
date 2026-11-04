@@ -449,6 +449,47 @@ class KotlinImportBindingCheckTest : KotlinTestCase("KotlinImportBindingCheckTes
     }
 
     /**
+     * Verifies an extension called on a property-valued receiver is treated as a value receiver.
+     *
+     * `Holder.box` is a property access whose type is `Derived`, so `Holder.box.choose()` selects
+     * `Derived.choose` by extension overload resolution even though the chain starts with the
+     * class-like `Holder`. Classifying the receiver by its leftmost name treats the call as a
+     * type-qualified access and approves an import of `Base.choose` that would reselect it.
+     */
+    fun testHasConflictingReference_reportsPropertyChainValueReceiver() {
+        withSession(
+            name = "property-chain-receiver",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("old"))
+                Files.createDirectories(root.resolve("usage"))
+                Files.writeString(
+                    root.resolve("old/Staying.kt"),
+                    "package old\n\n" +
+                        "open class Base\n\n" +
+                        "open class Derived : Base()\n\n" +
+                        "class Holder {\n    companion object {\n        val box: Derived = Derived()\n    }\n}\n\n" +
+                        "fun Derived.choose() = 2\n",
+                )
+                Files.writeString(
+                    root.resolve("old/Moving.kt"),
+                    "package old\n\nfun Base.choose() = 1\n",
+                )
+                Files.writeString(
+                    root.resolve("usage/Usage.kt"),
+                    "package usage\n\nimport old.*\n\nfun use() = Holder.box.choose()\n",
+                )
+            },
+        ) { session, root ->
+            val usage = session.ktFile(root.resolve("usage/Usage.kt"))
+
+            assertTrue(
+                "an import of the moved overload would reselect it for Holder.box.choose()",
+                KotlinImportBindingCheck.hasConflictingReference(usage, "choose", emptySet()),
+            )
+        }
+    }
+
+    /**
      * Verifies an extension called on a named object is treated as a value receiver.
      *
      * `singleton.choose()` resolves the extension on `Derived`, the object's supertype, not on the

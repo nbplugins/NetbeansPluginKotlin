@@ -556,9 +556,11 @@ class KaChangePackageComputer(
             val declaration = symbol?.psi as? KtNamedDeclaration ?: return
             if (declaration in moved) operators += declaration
         }
-        fun selectedOperator(type: KaType, name: String): KaCallableSymbol? =
-            type.memberDelegateOperator(name)
-                ?: scopeDelegateOperator(type, name, delegationArgumentTypes(name))
+        fun selectedOperator(type: KaType, name: String): KaCallableSymbol? {
+            val arguments = delegationArgumentTypes(name)
+            return type.memberDelegateOperator(name, arguments)
+                ?: scopeDelegateOperator(type, name, arguments)
+        }
         val provider = selectedOperator(delegateType, "provideDelegate")
         record(provider)
         // The provider's return type is declared in terms of its own type parameters; only the
@@ -1140,18 +1142,23 @@ class KaChangePackageComputer(
                             // import is skipped below. A provider imported from another package
                             // survives the move unchanged and is found through the property's
                             // scope, not through the old package.
-                            val provider = delegateType.memberDelegateOperator("provideDelegate")
+                            val providerArguments =
+                                property.delegationArgumentTypes("provideDelegate")
+                            val provider = delegateType.memberDelegateOperator(
+                                "provideDelegate",
+                                providerArguments,
+                            )
                                 ?: property.scopeDelegateOperator(
                                     delegateType,
                                     "provideDelegate",
-                                    property.delegationArgumentTypes("provideDelegate"),
+                                    providerArguments,
                                 )
                                 ?: samePackageDelegateOperator(
                                     delegateType,
                                     "provideDelegate",
                                     originalPackage,
                                     movedPaths = null,
-                                    arguments = property.delegationArgumentTypes("provideDelegate"),
+                                    arguments = providerArguments,
                                 )
                             // `provideDelegate` runs before the accessors and its return type is the
                             // type the accessors are selected on, so it replaces the expression
@@ -1443,17 +1450,26 @@ class KaChangePackageComputer(
      *
      * A member always wins over an extension, so the compiler never falls back to a same-package
      * operator when the type declares a fitting one. Matching by name alone would treat an
-     * ordinary member whose signature does not fit the delegation protocol as an accessor.
+     * ordinary member whose signature does not fit the delegation protocol as an accessor, and a
+     * member that matches the shape but not the actual arguments does not win either: the
+     * compiler skips a `getValue(Host, KProperty<*>)` member for a property passing a null
+     * `thisRef` and uses the extension accessor instead.
      *
      * @param name operator name
+     * @param arguments argument types of the implicit call
      * @return the applicable member operator, or `null` when the type declares none
      */
     context(_: KaSession)
-    private fun KaType.memberDelegateOperator(name: String): KaCallableSymbol? = runCatching {
+    private fun KaType.memberDelegateOperator(
+        name: String,
+        arguments: List<KaType?>,
+    ): KaCallableSymbol? = runCatching {
         expandedSymbol?.memberScope?.declarations
             ?.filterIsInstance<KaCallableSymbol>()
             ?.firstOrNull { symbol ->
-                (symbol as? KaNamedSymbol)?.name?.asString() == name && symbol.isDelegateOperatorShape(name)
+                (symbol as? KaNamedSymbol)?.name?.asString() == name &&
+                    symbol.isDelegateOperatorShape(name) &&
+                    symbol.acceptsIndexedSetterArguments(arguments)
             }
     }.getOrNull()
 
@@ -1479,8 +1495,8 @@ class KaChangePackageComputer(
         originalPackage: FqName,
         movedPaths: Set<String>,
     ): KaCallableSymbol? {
-        if (accessorType.memberDelegateOperator(operatorName) != null) return null
         val arguments = delegationArgumentTypes(operatorName)
+        if (accessorType.memberDelegateOperator(operatorName, arguments) != null) return null
         return scopeDelegateOperator(accessorType, operatorName, arguments)
             ?: samePackageDelegateOperator(accessorType, operatorName, originalPackage, movedPaths, arguments)
     }

@@ -1161,10 +1161,11 @@ object KotlinImportBindingCheck {
         val delegateType = runCatching { delegateExpression?.expressionType }.getOrNull() ?: return emptyList()
         if (name == "provideDelegate") {
             // The provider is selected on the delegate expression's own type, before any accessor.
-            return if (delegateType.memberDelegateOperator(name) != null) {
+            val arguments = delegationArgumentTypes(name)
+            return if (delegateType.memberDelegateOperator(name, arguments) != null) {
                 emptyList()
             } else {
-                listOfNotNull(selectedOperator(delegateType, name, delegationArgumentTypes(name)))
+                listOfNotNull(selectedOperator(delegateType, name, arguments))
             }
         }
         val accessorNames = if (isVar) listOf("getValue", "setValue") else listOf("getValue")
@@ -1174,11 +1175,12 @@ object KotlinImportBindingCheck {
             ?.let { symbol -> runCatching { symbol.returnTypeInferredFrom(delegateType) }.getOrNull() }
             ?.let { providedType -> listOf(providedType) }
             ?: listOf(delegateType)
+        val arguments = delegationArgumentTypes(name)
         return accessorTypes.mapNotNull { accessorType ->
-            if (accessorType.memberDelegateOperator(name) != null) {
+            if (accessorType.memberDelegateOperator(name, arguments) != null) {
                 null
             } else {
-                selectedOperator(accessorType, name, delegationArgumentTypes(name))
+                selectedOperator(accessorType, name, arguments)
             }
         }
     }
@@ -1197,24 +1199,34 @@ object KotlinImportBindingCheck {
      * @return the selected operator, or `null` when none applies
      */
     context(_: KaSession)
-    private fun KtProperty.delegateOperator(type: KaType, name: String): KaCallableSymbol? =
-        type.memberDelegateOperator(name) ?: selectedOperator(type, name, delegationArgumentTypes(name))
+    private fun KtProperty.delegateOperator(type: KaType, name: String): KaCallableSymbol? {
+        val arguments = delegationArgumentTypes(name)
+        return type.memberDelegateOperator(name, arguments) ?: selectedOperator(type, name, arguments)
+    }
 
     /**
      * Returns the member delegate operator of [name] on this type, or `null` when it has none.
      *
      * Matching by name alone would treat an ordinary member whose signature does not fit the
-     * delegation protocol as an accessor and hide the extension the property actually uses.
+     * delegation protocol as an accessor and hide the extension the property actually uses. A
+     * member that fits the shape but not the actual arguments does not win either, so the
+     * applicability of the implicit call is checked as well.
      *
      * @param name operator name
+     * @param arguments argument types of the implicit call
      * @return the applicable member operator, or `null` when the type declares none
      */
     context(_: KaSession)
-    private fun KaType.memberDelegateOperator(name: String): KaCallableSymbol? = runCatching {
+    private fun KaType.memberDelegateOperator(
+        name: String,
+        arguments: List<KaType?>,
+    ): KaCallableSymbol? = runCatching {
         expandedSymbol?.memberScope?.declarations
             ?.filterIsInstance<KaCallableSymbol>()
             ?.firstOrNull { symbol ->
-                (symbol as? KaNamedSymbol)?.name?.asString() == name && symbol.isDelegateOperatorShape(name)
+                (symbol as? KaNamedSymbol)?.name?.asString() == name &&
+                    symbol.isDelegateOperatorShape(name) &&
+                    symbol.acceptsIndexedSetterArguments(arguments)
             }
     }.getOrNull()
 
@@ -1323,16 +1335,35 @@ object KotlinImportBindingCheck {
         ) {
             return true
         }
-        val receiverRoot = qualified.receiverExpression.leadingReference() ?: return true
-        val receiverSymbol = runCatching {
-            receiverRoot.references.filterIsInstance<KtReference>().firstOrNull()?.resolveToSymbol()
-        }.getOrNull()
-        // A named object is a value even though K2 reports it as a class-like symbol: extensions
-        // declared on the object's supertypes are selected by overload resolution for
-        // `singleton.choose()`, so an import can still rebind the call. A class or package name in
-        // the same position is a qualifier, which an import cannot affect.
-        if (receiverSymbol is KaClassSymbol) return receiverSymbol.classKind == KaClassKind.OBJECT
-        return receiverSymbol !is KaPackageSymbol
+        return qualified.receiverExpression.bindsToValue()
+    }
+
+    /**
+     * Tells whether this expression denotes a value rather than a type or package qualifier.
+     *
+     * `Holder.box.choose()` passes the value of the `box` property, even though its leftmost name
+     * is a class, so the whole receiver chain has to be classified rather than its leading name.
+     * Only a bare class or package name used as a qualifier (`Int.choose()`) cannot be affected
+     * by an import. A named object is a value even though K2 reports it as a class-like symbol:
+     * extensions declared on the object's supertypes are selected by overload resolution for
+     * `singleton.choose()`, so an import can still rebind the call.
+     *
+     * @return `true` when the expression evaluates to a value
+     */
+    context(_: KaSession)
+    private fun KtExpression.bindsToValue(): Boolean = when (this) {
+        is KtDotQualifiedExpression, is KtCallExpression -> true
+        is KtSimpleNameExpression -> {
+            val symbol = runCatching {
+                references.filterIsInstance<KtReference>().firstOrNull()?.resolveToSymbol()
+            }.getOrNull()
+            when (symbol) {
+                is KaClassSymbol -> symbol.classKind == KaClassKind.OBJECT
+                is KaPackageSymbol -> false
+                else -> true
+            }
+        }
+        else -> true
     }
 
     /**
