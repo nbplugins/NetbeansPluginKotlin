@@ -21,15 +21,20 @@ import org.openide.filesystems.FileObject
 import org.openide.util.lookup.Lookups
 
 /**
- * Carries one explicit physical Kotlin-file rename through the NetBeans refactoring lifecycle.
+ * Carries one Kotlin-file rename through the NetBeans refactoring lifecycle.
  *
  * This carrier deliberately differs from [org.netbeans.modules.refactoring.api.RenameRefactoring]:
- * the ordinary Rename refactoring remains responsible for caret-based declaration renames.
+ * the ordinary Rename refactoring remains responsible for caret-based declaration renames. When
+ * [updatePrimaryClass] is `true`, generic Rename also renames a top-level Kotlin class whose name
+ * matches the original file basename, together with its supported Kotlin references.
  *
  * @param file physical Kotlin source file to rename
  * @param newName target basename without the `.kt` extension
+ * @param updatePrimaryClass whether a matching top-level Kotlin class and its references follow
+ *   this physical file rename
  */
 class KotlinRenameFileRefactoring(
     val file: FileObject,
     var newName: String,
+    val updatePrimaryClass: Boolean = false,
 ) : AbstractRefactoring(Lookups.fixed(file))

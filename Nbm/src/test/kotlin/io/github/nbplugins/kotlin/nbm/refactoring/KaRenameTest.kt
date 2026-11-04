@@ -22,6 +22,8 @@ import io.github.nbplugins.kotlin.refactoring.KaRenameComputer
 import io.github.nbplugins.kotlin.refactoring.TextChange
 import org.jetbrains.kotlin.builder.isKotlinFile
 import utils.KotlinTestCase
+import java.nio.file.Files
+import java.nio.file.Path
 
 /**
  * Unit tests for [KaRenameComputer].
@@ -146,6 +148,934 @@ class KaRenameTest : KotlinTestCase("KaRenameTest", "rename") {
 
     /** Renames a class declaration and all its constructor call sites. */
     fun testRenameClass() = runFixture("classrename")
+
+    /** Renames a class with an explicit primary constructor and its constructor call sites. */
+    fun testRenameClassWithExplicitConstructor() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping explicit-constructor rename test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-constructor")
+        try {
+            val sourceDirectory = root.resolve("source")
+            val callerDirectory = root.resolve("caller")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(callerDirectory)
+            val sourcePath = sourceDirectory.resolve("Foo.kt")
+            val callerPath = callerDirectory.resolve("Use.kt")
+            Files.writeString(sourcePath, "package a\n\nclass Foo(val x: Int)\n")
+            Files.writeString(callerPath, "package b\n\nimport a.Foo\n\nfun use() = Foo(1)\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-constructor-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val changes = KaRenameComputer(source, source.text.indexOf("Foo"), setOf(source, caller), "Bar").compute()
+
+            assertNotNull("compute() must return non-null for an explicit primary constructor", changes)
+            assertEquals(
+                "An explicit constructor call must follow the renamed class",
+                "package b\n\nimport a.Bar\n\nfun use() = Bar(1)\n",
+                applyChanges(caller.text, changes!![callerPath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a constructor call bound through an import alias keeps the alias.
+     *
+     * `import a.Foo as Alias` binds only `Alias`; the class name changes in the import path, but
+     * rewriting the call to the new class name would leave it unresolved in the caller's package.
+     */
+    fun testRenameClassWithAliasedConstructorCall() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping aliased-constructor rename test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-alias-constructor")
+        try {
+            val sourceDirectory = root.resolve("source")
+            val callerDirectory = root.resolve("caller")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(callerDirectory)
+            val sourcePath = sourceDirectory.resolve("Foo.kt")
+            val callerPath = callerDirectory.resolve("Use.kt")
+            Files.writeString(sourcePath, "package a\n\nclass Foo(val x: Int)\n")
+            Files.writeString(callerPath, "package b\n\nimport a.Foo as Alias\n\nfun use() = Alias(1)\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-alias-constructor-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val changes = KaRenameComputer(source, source.text.indexOf("Foo"), setOf(source, caller), "Bar").compute()
+
+            assertNotNull("compute() must return non-null for an aliased constructor call", changes)
+            assertEquals(
+                "An aliased constructor call must keep the alias while the import path follows the class",
+                "package b\n\nimport a.Bar as Alias\n\nfun use() = Alias(1)\n",
+                applyChanges(caller.text, changes!![callerPath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies qualified references stay renamed when a redundant alias has the class's own name.
+     *
+     * `import p.Foo as Foo` makes the alias name indistinguishable from the class name, but
+     * `p.Foo(1)` and `p.Foo` are spelled through the package, so they must still follow the rename.
+     */
+    fun testRenameClassKeepsQualifiedReferencesWithRedundantAlias() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping redundant-alias rename test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-redundant-alias")
+        try {
+            val sourceDirectory = root.resolve("source")
+            val callerDirectory = root.resolve("caller")
+            Files.createDirectories(sourceDirectory)
+            Files.createDirectories(callerDirectory)
+            val sourcePath = sourceDirectory.resolve("Foo.kt")
+            val callerPath = callerDirectory.resolve("Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Foo(val x: Int)\n")
+            Files.writeString(
+                callerPath,
+                "package b\n\nimport p.Foo as Foo\n\nfun use(): p.Foo = p.Foo(1)\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-redundant-alias-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val changes = KaRenameComputer(source, source.text.indexOf("Foo"), setOf(source, caller), "Bar").compute()
+
+            assertNotNull("compute() must return non-null for a redundant alias", changes)
+            assertEquals(
+                "Qualified references must follow the rename even when an alias reuses the class name",
+                "package b\n\nimport p.Bar as Foo\n\nfun use(): p.Bar = p.Bar(1)\n",
+                applyChanges(caller.text, changes!![callerPath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a secondary constructor's `this(...)` delegation is not renamed with its class.
+     *
+     * The delegation call resolves to a constructor of the same class, but its `this` keyword is
+     * syntax, not a reference to the class name.
+     */
+    fun testRenameClassKeepsThisConstructorDelegation() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping constructor-delegation rename test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-this-delegation")
+        try {
+            val sourceDirectory = root.resolve("source")
+            Files.createDirectories(sourceDirectory)
+            val sourcePath = sourceDirectory.resolve("Foo.kt")
+            Files.writeString(
+                sourcePath,
+                "package a\n\nclass Foo(val n: Int) {\n    constructor() : this(0)\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-this-delegation-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val changes = KaRenameComputer(source, source.text.indexOf("Foo"), setOf(source), "Bar").compute()
+
+            assertNotNull("compute() must return non-null for a delegated constructor", changes)
+            assertEquals(
+                "A this(...) delegation must keep its keyword",
+                "package a\n\nclass Bar(val n: Int) {\n    constructor() : this(0)\n}\n",
+                applyChanges(source.text, changes!![sourcePath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a base class rename does not rewrite a subclass's `super(...)` delegation.
+     *
+     * `super(0)` resolves to the renamed base constructor, but the keyword must stay while the
+     * supertype reference in the class header does follow the rename.
+     */
+    fun testRenameBaseClassKeepsSuperConstructorDelegation() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping super-delegation rename test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-super-delegation")
+        try {
+            val baseDirectory = root.resolve("base")
+            val derivedDirectory = root.resolve("derived")
+            Files.createDirectories(baseDirectory)
+            Files.createDirectories(derivedDirectory)
+            val basePath = baseDirectory.resolve("Base.kt")
+            val derivedPath = derivedDirectory.resolve("Derived.kt")
+            Files.writeString(basePath, "package a\n\nopen class Base(val n: Int)\n")
+            Files.writeString(derivedPath, "package a\n\nclass Derived : Base {\n    constructor() : super(0)\n}\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-super-delegation-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val base = session.getKtFileForPath(basePath.toString()) ?: error("Could not obtain source PSI")
+            val derived = session.getKtFileForPath(derivedPath.toString()) ?: error("Could not obtain derived PSI")
+
+            val changes = KaRenameComputer(base, base.text.indexOf("Base"), setOf(base, derived), "Renamed").compute()
+
+            assertNotNull("compute() must return non-null for a subclass", changes)
+            assertEquals(
+                "The supertype must follow the rename while super(...) keeps its keyword",
+                "package a\n\nclass Derived : Renamed {\n    constructor() : super(0)\n}\n",
+                applyChanges(derived.text, changes!![derivedPath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies an instance receiver keeps the `this` keyword during a class rename.
+     *
+     * `this` resolves to the containing class, but it is an instance expression, not a reference
+     * to the class name; replacing it with the new name would produce invalid Kotlin.
+     */
+    fun testRenameClassKeepsInstanceReceiver() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping instance-receiver rename test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-instance-receiver")
+        try {
+            val sourceDirectory = root.resolve("source")
+            Files.createDirectories(sourceDirectory)
+            val sourcePath = sourceDirectory.resolve("Foo.kt")
+            Files.writeString(
+                sourcePath,
+                "package a\n\nclass Foo {\n    fun self() = this\n    fun make() = Foo()\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-instance-receiver-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val changes = KaRenameComputer(source, source.text.indexOf("Foo"), setOf(source), "Bar").compute()
+
+            assertNotNull("compute() must return non-null for an instance receiver", changes)
+            assertEquals(
+                "The this receiver must keep its keyword while constructor calls follow the rename",
+                "package a\n\nclass Bar {\n    fun self() = this\n    fun make() = Bar()\n}\n",
+                applyChanges(source.text, changes!![sourcePath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a constructor call spelled through a Kotlin type alias keeps the alias name.
+     *
+     * `IntFoo()` resolves to a constructor of `Foo`, but its referenced name is the type alias;
+     * only the alias definition's `Foo` reference follows the rename.
+     */
+    fun testRenameClassKeepsTypeAliasConstructorCall() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping type-alias rename test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-type-alias")
+        try {
+            val sourceDirectory = root.resolve("source")
+            Files.createDirectories(sourceDirectory)
+            val sourcePath = sourceDirectory.resolve("Foo.kt")
+            Files.writeString(
+                sourcePath,
+                "package a\n\nclass Foo<T>\n\ntypealias IntFoo = Foo<Int>\n\nfun make() = IntFoo()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-type-alias-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val changes = KaRenameComputer(source, source.text.indexOf("Foo"), setOf(source), "Bar").compute()
+
+            assertNotNull("compute() must return non-null for a type alias", changes)
+            assertEquals(
+                "A call through the type alias must keep the alias name",
+                "package a\n\nclass Bar<T>\n\ntypealias IntFoo = Bar<Int>\n\nfun make() = IntFoo()\n",
+                applyChanges(source.text, changes!![sourcePath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a labeled `this` receiver keeps its `@` while the label follows the rename.
+     *
+     * The label reference spans `@Foo`, but only the identifier is replaced; otherwise the edit
+     * would produce `thisBar`.
+     */
+    fun testRenameClassKeepsLabelPrefix() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping receiver-label rename test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-receiver-label")
+        try {
+            val sourceDirectory = root.resolve("source")
+            Files.createDirectories(sourceDirectory)
+            val sourcePath = sourceDirectory.resolve("Foo.kt")
+            Files.writeString(
+                sourcePath,
+                "package a\n\nclass Foo {\n    fun self() = this@Foo\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-receiver-label-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val changes = KaRenameComputer(source, source.text.indexOf("Foo"), setOf(source), "Bar").compute()
+
+            assertNotNull("compute() must return non-null for a receiver label", changes)
+            assertEquals(
+                "Only the label identifier follows the rename, the @ prefix stays",
+                "package a\n\nclass Bar {\n    fun self() = this@Bar\n}\n",
+                applyChanges(source.text, changes!![sourcePath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a rewrite that would bind to a member function is reported as a conflict.
+     *
+     * Renaming `Before` to `After` rewrites `Before()` to `After()`. Inside `Caller`, that name
+     * already resolves to the member function, so the constructor call would silently become a
+     * call of `Caller.After`.
+     */
+    fun testFindCaptureConflicts_reportsMemberFunctionCapture() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-member")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("p/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before\n")
+            Files.writeString(
+                callerPath,
+                "package p\n\nclass Caller {\n    fun After() = \"other\"\n    fun make() = Before().toString()\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-member-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "After",
+            ).findCaptureConflicts()
+
+            assertEquals("The caller's member function captures the rewritten constructor call", caller, conflict)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a qualified constructor call is validated against the referenced package.
+     *
+     * `p.Before(1)` is rewritten to `p.After(1)`, and package `p` also declares
+     * `fun After(n: Int)`. A qualified selector cannot be captured lexically, but the rewritten
+     * name is still resolved inside package `p`, where the function is more specific than the
+     * renamed constructor and would silently replace it.
+     */
+    fun testFindCaptureConflicts_reportsQualifiedPackageOverload() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-qualified")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("p/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before(val n: Number)\n")
+            Files.writeString(
+                callerPath,
+                "package p\n\nfun After(n: Int) = \"other\"\n\nfun use() = p.Before(1).toString()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-qualified-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "After",
+            ).findCaptureConflicts()
+
+            assertEquals(
+                "The same-package function is more specific than the renamed constructor",
+                caller,
+                conflict,
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a rewrite with no competing binding reports no capture conflict.
+     *
+     * The caller has no declaration or import named `After`, so the rewritten constructor call
+     * keeps constructing the renamed class.
+     */
+    fun testFindCaptureConflicts_ignoresFilesWithoutTheNewName() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-clean")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("p/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before\n")
+            Files.writeString(
+                callerPath,
+                "package p\n\nclass Caller {\n    fun make() = Before().toString()\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-clean-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "After",
+            ).findCaptureConflicts()
+
+            assertNull("No binding of the new name exists, so the rewrite is safe", conflict)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a type-position reference is not treated as a capture.
+     *
+     * `val value: Before?` becomes `val value: After?`; a member function named `After` does not
+     * participate in type-name resolution, so it cannot capture the rewritten type.
+     */
+    fun testFindCaptureConflicts_ignoresTypePositions() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-type")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("p/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before\n")
+            Files.writeString(
+                callerPath,
+                "package p\n\nclass Caller {\n    fun After() = \"other\"\n    val value: Before? = null\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-type-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "After",
+            ).findCaptureConflicts()
+
+            assertNull("A member function cannot capture a type-name rewrite", conflict)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a type-position rewrite that would bind to a nested classifier is reported.
+     *
+     * Renaming `Before` to `After` rewrites `val value: Before?` to `After?`; inside `Caller` that
+     * name already denotes the nested class `Caller.After`, so the property type would silently
+     * change while the file keeps compiling.
+     */
+    fun testFindCaptureConflicts_reportsNestedClassifierCapture() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-classifier")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("p/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before\n")
+            Files.writeString(
+                callerPath,
+                "package p\n\nclass Caller {\n    class After\n    val value: Before? = null\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-classifier-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "After",
+            ).findCaptureConflicts()
+
+            assertEquals("The caller's nested class captures the rewritten type", caller, conflict)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies an inherited member capturing the new name is reported as a conflict.
+     *
+     * `class Caller : Base()` inherits `Base.After`, which is in scope unqualified. Renaming
+     * `Before` to `After` rewrites `Before()` to `After()`, turning the constructor call into a
+     * call of the inherited function while the file keeps compiling.
+     */
+    fun testFindCaptureConflicts_reportsInheritedMemberCapture() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-inherited")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("p/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before\n")
+            Files.writeString(
+                callerPath,
+                "package p\n\nopen class Base {\n    fun After() = \"other\"\n}\n\n" +
+                    "class Caller : Base() {\n    fun make() = Before().toString()\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-inherited-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "After",
+            ).findCaptureConflicts()
+
+            assertEquals("The inherited member function captures the rewritten constructor call", caller, conflict)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a member of an extension receiver capturing the new name is reported.
+     *
+     * Inside `fun Receiver.make()`, the receiver's members are in scope unqualified. Renaming
+     * `Before` to `After` rewrites `Before()` to `After()`, which the receiver's member function
+     * would capture while the file keeps compiling.
+     */
+    fun testFindCaptureConflicts_reportsExtensionReceiverCapture() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-receiver")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("p/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before\n")
+            Files.writeString(
+                callerPath,
+                "package p\n\nclass Receiver {\n    fun After() = \"other\"\n}\n\n" +
+                    "fun Receiver.make() = Before().toString()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-receiver-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "After",
+            ).findCaptureConflicts()
+
+            assertEquals("The extension receiver's member captures the rewritten constructor call", caller, conflict)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a block-local classifier capturing a rewritten type is reported.
+     *
+     * `class After` declared earlier in the function body is visible unqualified, so rewriting
+     * `x is Before` to `x is After` would silently test the local class instead.
+     */
+    fun testFindCaptureConflicts_reportsBlockLocalClassifierCapture() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-block-classifier")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("p/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before\n")
+            Files.writeString(
+                callerPath,
+                "package p\n\nfun accepts(x: Any): Boolean {\n    class After\n    return x is Before\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-block-classifier-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "After",
+            ).findCaptureConflicts()
+
+            assertEquals("The block-local class captures the rewritten type", caller, conflict)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a same-package function of the new name capturing a rewritten constructor call is
+     * reported.
+     *
+     * `fun After(n: Int)` is declared in the caller's package, so the rewritten `After(1)` would
+     * select the function's exact `Int` parameter instead of the constructor taking `Number`.
+     */
+    fun testFindCaptureConflicts_reportsSamePackageFunctionCapture() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-package-function")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val functionsPath = root.resolve("p/Functions.kt")
+            val callerPath = root.resolve("p/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before(val n: Number)\n")
+            Files.writeString(functionsPath, "package p\n\nfun After(n: Int) = \"other\"\n")
+            Files.writeString(callerPath, "package p\n\nfun use() = Before(1).toString()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-package-function-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val functions = session.getKtFileForPath(functionsPath.toString()) ?: error("Could not obtain functions PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, functions, caller), "After",
+            ).findCaptureConflicts()
+
+            assertEquals("The same-package function captures the rewritten constructor call", caller, conflict)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a destructured lambda parameter captures the rewritten constructor call.
+     *
+     * `map { (After, _) -> Before() }` binds `After` to a destructured entry, so the rewritten
+     * `After()` would invoke that value instead of constructing the class.
+     */
+    fun testFindCaptureConflicts_reportsDestructuredLambdaParameter() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-destructured-lambda")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("p/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before\n")
+            Files.writeString(
+                callerPath,
+                "package p\n\nfun use() = listOf({ \"other\" } to 0).map { (After, _) -> Before().toString() }\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-destructured-lambda-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "After",
+            ).findCaptureConflicts()
+
+            assertEquals("The destructured lambda entry captures the rewritten constructor call", caller, conflict)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a same-spelled type alias keeps its own name when the expanded class is renamed.
+     *
+     * `typealias Before = p.Before` in another package stays named `Before`; rewriting its call
+     * site to `After()` would leave it unresolved even though the alias's right-hand side follows
+     * the rename to `p.After`.
+     */
+    fun testCompute_keepsSameSpelledTypeAliasCall() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping rename-compute test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-same-named-alias")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            Files.createDirectories(root.resolve("q"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val aliasesPath = root.resolve("q/Aliases.kt")
+            val usagePath = root.resolve("q/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before\n")
+            Files.writeString(aliasesPath, "package q\n\ntypealias Before = p.Before\n")
+            Files.writeString(usagePath, "package q\n\nfun make() = Before()\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-same-named-alias-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val aliases = session.getKtFileForPath(aliasesPath.toString()) ?: error("Could not obtain aliases PSI")
+            val usage = session.getKtFileForPath(usagePath.toString()) ?: error("Could not obtain usage PSI")
+
+            val changes = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, aliases, usage), "After",
+            ).compute()
+
+            assertNotNull("compute() must return non-null for an alias declaration", changes)
+            assertEquals(
+                "Only the alias's right-hand side follows the rename",
+                "package q\n\ntypealias Before = p.After\n",
+                applyChanges(aliases.text, changes!![aliasesPath.toString()].orEmpty()),
+            )
+            assertEquals(
+                "The alias call site keeps spelling the alias",
+                "package q\n\nfun make() = Before()\n",
+                applyChanges(usage.text, changes[usagePath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a qualified call through a same-spelled type alias keeps the alias's name.
+     *
+     * Package `q` declares `typealias Before = p.Before`, and the caller spells `q.Before(1)`.
+     * The alias stays named `Before`, so only its right-hand side follows the class rename; the
+     * qualified call site must keep spelling `q.Before`.
+     */
+    fun testCompute_keepsQualifiedSameSpelledTypeAliasCall() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping rename-compute test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-qualified-alias")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            Files.createDirectories(root.resolve("q"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val aliasesPath = root.resolve("q/Aliases.kt")
+            val usagePath = root.resolve("q/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before(val n: Int)\n")
+            Files.writeString(aliasesPath, "package q\n\ntypealias Before = p.Before\n")
+            Files.writeString(usagePath, "package q\n\nfun make(other: q.Before): q.Before = q.Before(1)\n")
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-qualified-alias-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val aliases = session.getKtFileForPath(aliasesPath.toString()) ?: error("Could not obtain aliases PSI")
+            val usage = session.getKtFileForPath(usagePath.toString()) ?: error("Could not obtain usage PSI")
+
+            val changes = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, aliases, usage), "After",
+            ).compute()
+
+            assertNotNull("compute() must return non-null for a class rename", changes)
+            assertEquals(
+                "The class declaration follows the rename",
+                "package p\n\nclass After(val n: Int)\n",
+                applyChanges(source.text, changes!![sourcePath.toString()].orEmpty()),
+            )
+            assertEquals(
+                "Only the alias's right-hand side follows the rename",
+                "package q\n\ntypealias Before = p.After\n",
+                applyChanges(aliases.text, changes[aliasesPath.toString()].orEmpty()),
+            )
+            assertEquals(
+                "The qualified alias call and type keep spelling the alias",
+                "package q\n\nfun make(other: q.Before): q.Before = q.Before(1)\n",
+                applyChanges(usage.text, changes[usagePath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a call of a renamed function that shares a type alias's name is still rewritten.
+     *
+     * The file declares `typealias Before = Impl` and `fun Before(n: Int)`, and `Before(1)` calls
+     * the function. The type-alias exemption only protects constructor calls spelled through the
+     * alias; applying it to the function's own call would leave the reference untouched, and it
+     * would silently become an alias-constructor call after the rename.
+     */
+    fun testCompute_renamesFunctionCallSharingTypeAliasName() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping rename-compute test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-function-alias-name")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Use.kt")
+            Files.writeString(
+                sourcePath,
+                "package p\n\nclass Impl(val n: Number)\n\ntypealias Before = Impl\n\n" +
+                    "fun Before(n: Int) = \"other\"\n\nfun use() = Before(1).toString()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-function-alias-name-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val changes = KaRenameComputer(
+                source, source.text.indexOf("fun Before") + "fun ".length, setOf(source), "After",
+            ).compute()
+
+            assertNotNull("compute() must return non-null for a function rename", changes)
+            assertEquals(
+                "The function declaration and its call follow the rename",
+                "package p\n\nclass Impl(val n: Number)\n\ntypealias Before = Impl\n\n" +
+                    "fun After(n: Int) = \"other\"\n\nfun use() = After(1).toString()\n",
+                applyChanges(source.text, changes!![sourcePath.toString()].orEmpty()),
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+
+    /**
+     * Verifies a fully qualified reference is not checked against lexical bindings.
+     *
+     * Renaming `Before` to `After` only changes the selector of `p.Before()`, which still names
+     * the constructor as `p.After()`; an unrelated member named `After` cannot capture it.
+     */
+    fun testFindCaptureConflicts_ignoresQualifiedReference() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-qualified")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("p/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before\n")
+            Files.writeString(
+                callerPath,
+                "package p\n\nclass Caller {\n    fun After() = \"other\"\n" +
+                    "    fun make() = p.Before().toString()\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-qualified-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "After",
+            ).findCaptureConflicts()
+
+            assertNull("A qualified selector keeps resolving through its receiver", conflict)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /** Locates Kotlin stdlib supplied by the Maven test runtime. */
+    private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
+        .split(System.getProperty("path.separator"))
+        .map(Path::of)
+        .firstOrNull { it.fileName?.toString()?.startsWith("kotlin-stdlib") == true && it.toFile().exists() }
 
     /** Renames a method declaration and the single call site in the same file. */
     fun testRenameFunction() = runFixture("function", newName = "fooFunc")

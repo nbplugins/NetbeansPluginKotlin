@@ -66,12 +66,16 @@ object KotlinProjectFolderRenameSelection {
     /**
      * Resolves [folder] against explicitly supplied roots.
      *
+     * A source root itself is rejected because generic Rename also renames the package derived from
+     * the path, and a root has no package segment. The explicit "Rename Kotlin Package
+     * Directory..." action uses a separate selection path and remains available for roots.
+     *
      * @param folder physical package folder selected by the user
      * @param roots conventional Kotlin roots belonging to the selected folder's project
-     * @return non-empty directory selection, or `null` when [folder] is outside [roots]
+     * @return non-empty directory selection, or `null` when [folder] is a root or is outside [roots]
      */
     fun resolve(folder: FileObject, roots: Collection<KotlinProjectSourceRoot>): KotlinMoveSourceSelection? {
-        if (roots.none { root -> folder == root.folder || FileUtil.isParentOf(root.folder, folder) }) {
+        if (roots.none { root -> FileUtil.isParentOf(root.folder, folder) }) {
             return null
         }
         return KotlinMoveSourceSelection.from(folder)?.takeIf(KotlinMoveSourceSelection::isDirectory)

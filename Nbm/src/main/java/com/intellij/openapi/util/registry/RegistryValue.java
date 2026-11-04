@@ -18,6 +18,14 @@ public class RegistryValue {
     public void setValue(String v) { this.value = v; }
     public void setValue(boolean v, com.intellij.openapi.Disposable d) { setValue(v); }
 
+    /**
+     * Registers a listener for compatibility with the IntelliJ registry API.
+     *
+     * @param listener registry value listener
+     * @param parentDisposable lifecycle owner for the listener
+     */
+    public void addListener(RegistryValueListener listener, com.intellij.openapi.Disposable parentDisposable) {}
+
     // Used by RegistryManager implementations
     public int get(int defaultValue) { return asInteger(); }
     public boolean get(boolean defaultValue) { return asBoolean(); }

@@ -797,13 +797,22 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
     - Adds an explicit **Refactor → Rename Kotlin File...** command for the active `.kt` file.
       It uses `KotlinRefactoringTransaction` to rename only the physical basename and supports
       **Undo Last Refactoring**; package declarations and Java file-facade references are deliberately
-      unchanged.
-    - Adds folder-node **Rename Kotlin Package Directory...**. The transaction renames the folder
-      first so real final `PsiDirectory` targets exist, refreshes the standalone K2 session, then
-      invokes the already ported `K2MoveFilesHandler` through `KaMoveFileComputer`. The K2 adapter
-      performs eligible package-directive rewrites, portable conflict detection, and supported Kotlin
-      reference retargeting; the transaction stages its text results and rolls both text and folder
-      paths back if any later step fails.
+      unchanged. The generic file **Rename** additionally renames a matching top-level Kotlin class
+      and its supported Kotlin references through K2 before renaming the file.
+    - Adds folder-node **Rename Kotlin Package Directory...**, which renames only the physical
+      directory and its descendants while leaving package directives and references unchanged.
+    - The generic folder **Rename** (available for package folders below a conventional source root,
+      not for `src/main/kotlin`/`src/test/kotlin` themselves) renames the directory together with its
+      Kotlin packages. Every descendant receives the package derived from its post-rename path
+      (including files whose directive did not match the directory), and `KaChangePackageComputer`
+      retargets supported Kotlin imports and references. Reference retargeting works on the captured
+      source text: in standalone mode rewriting a package directive invalidates every PSI smart
+      pointer held by K2 `UsageInfo`, so imports and fully qualified references are rewritten by FQN
+      token and callers that lose an implicit same-package binding receive an explicit import. The semantic pass runs on the original
+      paths first, stages minimal hunk texts through `KotlinRefactoringTransaction`, and lets the
+      single commit write those documents before renaming the folder, so conflicts are reported
+      before any physical change and Undo Last Refactoring restores paths, texts, and open-editor
+      carets together. **Change Kotlin Package...** remains the package-only operation.
     - The generic IDEA rename UI/lifecycle remains intentionally unported because it depends on
       writable IntelliJ VFS, indexed Java/file-facade search, automatic-renamer extensions, and
       action/command infrastructure unavailable in standalone NetBeans. Unicode/quoted names,

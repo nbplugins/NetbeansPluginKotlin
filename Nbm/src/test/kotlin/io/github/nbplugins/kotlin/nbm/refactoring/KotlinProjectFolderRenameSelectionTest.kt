@@ -30,8 +30,8 @@ import org.openide.util.lookup.Lookups
 /** Unit tests for [KotlinProjectFolderRenameSelection]. */
 class KotlinProjectFolderRenameSelectionTest : NbTestCase("KotlinProjectFolderRenameSelectionTest") {
 
-    /** Verifies conventional main and test Kotlin roots and their package descendants are eligible. */
-    fun testResolve_acceptsConventionalKotlinRootsAndDescendants() {
+    /** Verifies package descendants of conventional Kotlin roots are eligible but the roots are not. */
+    fun testResolve_acceptsKotlinPackageDescendantsAndRejectsRoots() {
         val project = FileUtil.createMemoryFileSystem().root
         val mainRoot = FileUtil.createFolder(project, "src/main/kotlin")
         val mainPackage = FileUtil.createFolder(mainRoot, "sample/main")
@@ -41,9 +41,9 @@ class KotlinProjectFolderRenameSelectionTest : NbTestCase("KotlinProjectFolderRe
         testPackage.createData("Test.kt")
         val roots = roots(mainRoot, testRoot)
 
-        assertEquals(mainRoot, resolve(node(mainRoot), roots)?.selectedDirectory)
+        assertNull("generic Rename must not rename a source root", resolve(node(mainRoot), roots))
+        assertNull("generic Rename must not rename a test source root", resolve(node(testRoot), roots))
         assertEquals(mainPackage, resolve(node(mainPackage), roots)?.selectedDirectory)
-        assertEquals(testRoot, resolve(node(testRoot), roots)?.selectedDirectory)
         assertEquals(testPackage, resolve(node(testPackage), roots)?.selectedDirectory)
     }
 

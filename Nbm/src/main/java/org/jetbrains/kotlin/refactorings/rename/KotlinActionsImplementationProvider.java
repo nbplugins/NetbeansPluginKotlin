@@ -121,7 +121,7 @@ public class KotlinActionsImplementationProvider extends ActionsImplementationPr
     private void openFileRename(FileObject file) {
         EventQueue.invokeLater(() -> UI.openRefactoringUI(
                 new KotlinFilesystemRenameUI(
-                        new io.github.nbplugins.kotlin.nbm.refactoring.KotlinRenameFileRefactoring(file, file.getName()),
+                        new io.github.nbplugins.kotlin.nbm.refactoring.KotlinRenameFileRefactoring(file, file.getName(), true),
                         false,
                         file.getNameExt()),
                 TopComponent.getRegistry().getActivated()));
@@ -195,7 +195,7 @@ public class KotlinActionsImplementationProvider extends ActionsImplementationPr
         String initialName = KotlinProjectFolderRenameSelection.INSTANCE.initialName(directory, requestedName);
         EventQueue.invokeLater(() -> UI.openRefactoringUI(
                 new KotlinFilesystemRenameUI(
-                        new KotlinRenameDirectoryRefactoring(directory, initialName, selection),
+                        new KotlinRenameDirectoryRefactoring(directory, initialName, selection, true),
                         true,
                         directory.getName()),
                 TopComponent.getRegistry().getActivated()));

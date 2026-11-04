@@ -76,6 +76,21 @@ internal fun restoreAfterEditorUpdate(restore: () -> Unit) {
     SwingUtilities.invokeLater { SwingUtilities.invokeLater(restore) }
 }
 
+/**
+ * Reads the caret offset from an already-open editor pane for [file] without opening a new editor.
+ *
+ * Refactorings capture this before editing so native undo and Undo Last Refactoring can put each
+ * modified open editor back where the user triggered the operation. Files without an open pane have
+ * no user-visible caret and deliberately return `null`.
+ *
+ * @param file source file whose open editor pane should be inspected
+ * @return the current caret offset, or `null` when no editor pane is open
+ */
+internal fun openCaretOffset(file: FileObject): Int? = runCatching {
+    val cookie = DataObject.find(file).lookup.lookup(EditorCookie::class.java) ?: return null
+    cookie.openedPanes?.firstOrNull()?.caretPosition
+}.getOrNull()
+
 /** Sets the caret of [fo]'s first opened editor pane to [offset], clamped to the document. */
 internal fun restoreCaret(fo: FileObject, offset: Int) {
     runCatching {
