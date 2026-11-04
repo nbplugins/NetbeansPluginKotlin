@@ -56,7 +56,8 @@ object KotlinConstructorSignatureCheck {
      *
      * Every constructor counts, not only the primary one: a class that declares only secondary
      * constructors has no primary constructor at all, while a class that declares none gets an
-     * implicit no-argument primary constructor. An extension function has an implicit receiver and
+     * implicit no-argument primary constructor. An interface declares no constructors, so no
+     * function can collide with it. An extension function has an implicit receiver and
      * therefore cannot conflict with a constructor. A parameter whose type cannot be resolved makes
      * the comparison inconclusive, which is reported as a conflict so the rename is rejected
      * instead of producing uncompilable code. The vararg status of each parameter is part of the
@@ -258,8 +259,9 @@ object KotlinConstructorSignatureCheck {
      * Returns the parameter list of every constructor the renamed class would expose.
      *
      * A class with a primary constructor uses its parameters; one that declares only secondary
-     * constructors has no primary constructor, and one that declares none gets the implicit
-     * no-argument constructor.
+     * constructors has no primary constructor, and a class that declares none gets the implicit
+     * no-argument constructor. An interface declares no constructors at all, so it exposes no
+     * signature that a same-name function could collide with.
      *
      * @param classOrObject class whose constructors are being compared
      * @return one parameter list per constructor
@@ -269,7 +271,8 @@ object KotlinConstructorSignatureCheck {
         val primaryConstructor = classOrObject.primaryConstructor
         when {
             primaryConstructor != null -> signatures += primaryConstructor.valueParameters
-            classOrObject.secondaryConstructors.isEmpty() -> signatures.add(emptyList())
+            classOrObject.secondaryConstructors.isEmpty() &&
+                !classOrObject.isInterface() -> signatures.add(emptyList())
         }
         classOrObject.secondaryConstructors.forEach { constructor -> signatures.add(constructor.valueParameters) }
         return signatures

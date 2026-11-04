@@ -798,6 +798,51 @@ class KotlinImportBindingCheckTest : KotlinTestCase("KotlinImportBindingCheckTes
     }
 
     /**
+     * Verifies the binding helper follows the member provider overload resolution selects.
+     *
+     * `Box` declares `provideDelegate(Any?, ...)` returning the staying `General` and
+     * `provideDelegate(Host, ...)` returning the moving `Specific`. The property inside `Host`
+     * binds `Specific.getValue`, so importing that moved accessor captures nothing and must not be
+     * reported. Matching the first declared member would bind `General.getValue` and report a
+     * false conflict.
+     */
+    fun testHasConflictingReference_usesSelectedMemberProviderOverload() {
+        withSession(
+            name = "member-provider-overload-selection",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("old"))
+                Files.writeString(
+                    root.resolve("old/Staying.kt"),
+                    "package old\n\nclass General\n\n" +
+                        "operator fun General.getValue(" +
+                        "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 1\n\n" +
+                        "class Host {\n    val value: Int by Box()\n}\n",
+                )
+                Files.writeString(
+                    root.resolve("old/Moving.kt"),
+                    "package old\n\nclass Specific\n\nclass Box {\n" +
+                        "    operator fun provideDelegate(" +
+                        "thisRef: Any?, property: kotlin.reflect.KProperty<*>): General = General()\n" +
+                        "    operator fun provideDelegate(" +
+                        "thisRef: Host, property: kotlin.reflect.KProperty<*>): Specific = Specific()\n" +
+                        "}\n\n" +
+                        "operator fun Specific.getValue(" +
+                        "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 2\n",
+                )
+            },
+        ) { session, root ->
+            val staying = session.ktFile(root.resolve("old/Staying.kt"))
+            val moving = session.ktFile(root.resolve("old/Moving.kt"))
+            val accessor = moving.declarations.filterIsInstance<KtNamedFunction>().single { it.name == "getValue" }
+
+            assertFalse(
+                "the property already binds the moved accessor, so importing it captures nothing",
+                KotlinImportBindingCheck.hasConflictingReference(staying, "getValue", setOf(accessor)),
+            )
+        }
+    }
+
+    /**
      * Verifies a generic retained accessor blocks rewriting a direct import.
      *
      * `import old.getValue` binds both the staying `Box<T>.getValue` and the moving

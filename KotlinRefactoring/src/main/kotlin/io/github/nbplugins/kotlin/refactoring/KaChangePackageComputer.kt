@@ -1453,7 +1453,9 @@ class KaChangePackageComputer(
      * ordinary member whose signature does not fit the delegation protocol as an accessor, and a
      * member that matches the shape but not the actual arguments does not win either: the
      * compiler skips a `getValue(Host, KProperty<*>)` member for a property passing a null
-     * `thisRef` and uses the extension accessor instead.
+     * `thisRef` and uses the extension accessor instead. When several members fit, overload
+     * resolution prefers the more specific parameter tuple, and that overload's result type is
+     * what the accessor lookup must use.
      *
      * @param name operator name
      * @param arguments argument types of the implicit call
@@ -1464,13 +1466,15 @@ class KaChangePackageComputer(
         name: String,
         arguments: List<KaType?>,
     ): KaCallableSymbol? = runCatching {
-        expandedSymbol?.memberScope?.declarations
+        val candidates = expandedSymbol?.memberScope?.declarations
             ?.filterIsInstance<KaCallableSymbol>()
-            ?.firstOrNull { symbol ->
+            ?.filter { symbol ->
                 (symbol as? KaNamedSymbol)?.name?.asString() == name &&
-                    symbol.isDelegateOperatorShape(name) &&
-                    symbol.acceptsIndexedSetterArguments(arguments)
+                    symbol.isDelegateOperatorShape(name)
             }
+            ?.toList()
+            .orEmpty()
+        selectMember(candidates, arguments)
     }.getOrNull()
 
     /**

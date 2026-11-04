@@ -5389,6 +5389,126 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
+     * Verifies a delegate accessor argument must satisfy the parameter's type-parameter bounds.
+     *
+     * A top-level property passes `null` (the `Nothing?` type) as `thisRef`, so
+     * `operator fun <T : Host> Box.getValue(thisRef: T, ...)` cannot take part in the call.
+     * Treating every type-parameter parameter as applicable selects this staying overload through
+     * its more specific `Box` receiver instead of the moving `Base.getValue(Any?, ...)`, and the
+     * destination import the compiler needs is never planned.
+     */
+    fun testApply_realSession_filtersDelegateAccessorByTypeParameterBounds() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-type-parameter-bound")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Stays.kt"),
+                "package old\n\nclass Host\n\nopen class Base\n\nclass Box : Base()\n\n" +
+                    "operator fun <T : Host> Box.getValue(" +
+                    "thisRef: T, property: kotlin.reflect.KProperty<*>): Int = 1\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\noperator fun Base.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 2\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nval value by Box()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-type-parameter-bound-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the moved accessor whose bounds fit a null thisRef: $text",
+                text.contains("import dest.getValue"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies the member provider overload is selected by its parameters, not by declaration order.
+     *
+     * `Box` declares `provideDelegate(Any?, ...)` returning the staying `General` and
+     * `provideDelegate(Host, ...)` returning the moving `Specific`. For a property inside `Host`
+     * the compiler prefers the more specific overload, so the moving `Specific.getValue` is the
+     * accessor the caller has to import. Using the first matching member instead selects `General`
+     * and plans no import, leaving the property uncompilable after the change.
+     */
+    fun testApply_realSession_selectsMemberProviderOverloadByArguments() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-member-provider-overload")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val staysPath = temporaryRoot.resolve("old/Stays.kt")
+            Files.writeString(
+                staysPath,
+                "package old\n\nclass General\n\n" +
+                    "operator fun General.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 1\n\n" +
+                    "class Host {\n    val value: Int by Box()\n}\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\nclass Specific\n\nclass Box {\n" +
+                    "    operator fun provideDelegate(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): General = General()\n" +
+                    "    operator fun provideDelegate(" +
+                    "thisRef: Host, property: kotlin.reflect.KProperty<*>): Specific = Specific()\n" +
+                    "}\n\n" +
+                    "operator fun Specific.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 2\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-member-provider-overload-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[staysPath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the accessor of the selected provider overload: $text",
+                text.contains("import dest.getValue"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies `provideDelegate` is filtered by a null `thisRef` for extension properties.
      *
      * For a top-level `val String.value by Delegate()`, Kotlin passes `null` to `provideDelegate`

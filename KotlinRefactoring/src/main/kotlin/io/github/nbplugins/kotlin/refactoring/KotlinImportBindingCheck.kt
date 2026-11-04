@@ -1211,7 +1211,9 @@ object KotlinImportBindingCheck {
      * Matching by name alone would treat an ordinary member whose signature does not fit the
      * delegation protocol as an accessor and hide the extension the property actually uses. A
      * member that fits the shape but not the actual arguments does not win either, so the
-     * applicability of the implicit call is checked as well.
+     * applicability of the implicit call is checked as well. When several members fit, overload
+     * resolution prefers the more specific parameter tuple, and that overload's result type is
+     * what the accessor lookup must use.
      *
      * @param name operator name
      * @param arguments argument types of the implicit call
@@ -1222,13 +1224,15 @@ object KotlinImportBindingCheck {
         name: String,
         arguments: List<KaType?>,
     ): KaCallableSymbol? = runCatching {
-        expandedSymbol?.memberScope?.declarations
+        val candidates = expandedSymbol?.memberScope?.declarations
             ?.filterIsInstance<KaCallableSymbol>()
-            ?.firstOrNull { symbol ->
+            ?.filter { symbol ->
                 (symbol as? KaNamedSymbol)?.name?.asString() == name &&
-                    symbol.isDelegateOperatorShape(name) &&
-                    symbol.acceptsIndexedSetterArguments(arguments)
+                    symbol.isDelegateOperatorShape(name)
             }
+            ?.toList()
+            .orEmpty()
+        selectMember(candidates, arguments)
     }.getOrNull()
 
     /**

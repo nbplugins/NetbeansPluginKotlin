@@ -42,6 +42,8 @@ import org.jetbrains.kotlin.analysis.api.types.KaCapturedType
 import org.jetbrains.kotlin.analysis.api.types.KaClassType
 import org.jetbrains.kotlin.analysis.api.types.KaDefinitelyNotNullType
 import org.jetbrains.kotlin.analysis.api.types.KaFlexibleType
+import org.jetbrains.kotlin.analysis.api.types.KaFunctionType
+import org.jetbrains.kotlin.analysis.api.types.KaIntersectionType
 import org.jetbrains.kotlin.analysis.api.types.KaType
 import org.jetbrains.kotlin.analysis.api.types.KaTypeParameterType
 import org.jetbrains.kotlin.idea.references.KtReference
@@ -368,14 +370,75 @@ internal fun KaCallableSymbol.acceptsIndexedSetterArguments(arguments: List<KaTy
 /**
  * Tells whether a value parameter of [parameterType] takes [argument].
  *
+ * A type parameter is not a wildcard: `T : Host` accepts only arguments that satisfy `Host`, so
+ * its bounds decide applicability. Treating every type parameter as applicable selects an
+ * overload the compiler skips and hides the one that is actually bound. A bound that itself
+ * mentions a type parameter (`T : Comparable<R>`) cannot be compared without instantiating it, so
+ * that bound stays inconclusive instead of rejecting a possibly valid argument.
+ *
  * @param parameterType declared parameter type
  * @param argument actual argument type
  * @return `true` when assignability holds or cannot be decided
  */
 context(_: KaSession)
 private fun acceptsArgument(parameterType: KaType, argument: KaType): Boolean = runCatching {
-    parameterType is KaTypeParameterType || argument.isSubtypeOf(parameterType)
+    if (parameterType is KaTypeParameterType) {
+        parameterType.symbol.upperBounds.all { bound ->
+            bound.mentionsTypeParameter() || acceptsArgument(bound, argument)
+        }
+    } else {
+        argument.isSubtypeOf(parameterType)
+    }
 }.getOrDefault(true)
+
+/**
+ * Tells whether a type parameter appears anywhere in this type's structure.
+ *
+ * A bound such as `Comparable<T>` cannot be checked against a concrete argument without
+ * instantiating `T`; a raw subtype test would reject a valid argument, so such a bound is treated
+ * as inconclusive.
+ *
+ * @return `true` when this type mentions a type parameter
+ */
+private fun KaType.mentionsTypeParameter(): Boolean = when (this) {
+    is KaTypeParameterType -> true
+    is KaClassType -> typeArguments.any { projection -> projection.type?.mentionsTypeParameter() == true }
+    is KaFunctionType -> receiverType?.mentionsTypeParameter() == true ||
+        parameterTypes.any { it.mentionsTypeParameter() } ||
+        returnType.mentionsTypeParameter()
+    is KaCapturedType -> projection.type?.mentionsTypeParameter() == true
+    is KaDefinitelyNotNullType -> original.mentionsTypeParameter()
+    is KaFlexibleType -> lowerBound.mentionsTypeParameter() || upperBound.mentionsTypeParameter()
+    is KaIntersectionType -> conjuncts.any { it.mentionsTypeParameter() }
+    else -> false
+}
+
+/**
+ * Selects the member overload the compiler binds for a convention call.
+ *
+ * Members have no extension receiver, so overload resolution compares their value parameter
+ * tuples: `provideDelegate(Host, KProperty<*>)` is preferred over
+ * `provideDelegate(Any?, KProperty<*>)` for a `Host` thisRef. The selected overload decides the
+ * provider's result type and therefore the accessor lookup, so returning the first declared match
+ * would make the accessor selection use an unrelated type.
+ *
+ * @param candidates member callables visible under the same simple name
+ * @param arguments argument types of the implicit call
+ * @return the selected member, or `null` when none applies
+ */
+@OptIn(KaExperimentalApi::class)
+context(_: KaSession)
+internal fun selectMember(
+    candidates: List<KaCallableSymbol>,
+    arguments: List<KaType?>,
+): KaCallableSymbol? {
+    val applicable = candidates.filter { candidate ->
+        candidate.acceptsIndexedSetterArguments(arguments)
+    }
+    return applicable.firstOrNull { candidate ->
+        applicable.none { other -> other !== candidate && other.parametersAreMoreSpecificThan(candidate) }
+    } ?: applicable.firstOrNull()
+}
 
 /**
  * Selects the extension the compiler binds for a convention call.

@@ -361,6 +361,35 @@ class KotlinConstructorSignatureCheckTest : KotlinTestCase("KotlinConstructorSig
         }
     }
 
+    /**
+     * Verifies renaming an interface to a function's name does not report a constructor collision.
+     *
+     * An interface declares no constructors, so `interface After` and the same-package
+     * `fun After()` coexist. Inventing an implicit no-argument constructor for the interface
+     * would reject a valid rename.
+     */
+    fun testConflictsWithRenamedConstructor_ignoresInterfaceWithoutConstructors() {
+        withSession(
+            name = "interface-without-constructors",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.writeString(root.resolve("source/Types.kt"), "package p\n\ninterface Before\n")
+                Files.writeString(root.resolve("source/Functions.kt"), "package p\n\nfun After() = 1\n")
+            },
+        ) { session, root ->
+            val types = session.ktFile(root.resolve("source/Types.kt"))
+            val functions = session.ktFile(root.resolve("source/Functions.kt"))
+
+            assertFalse(
+                "an interface has no constructor to collide with",
+                KotlinConstructorSignatureCheck.conflictsWithRenamedConstructor(
+                    primaryClass(types),
+                    functions.declarations.filterIsInstance<KtNamedFunction>().single(),
+                ),
+            )
+        }
+    }
+
     /** @return the single top-level class of [file]. */
     private fun primaryClass(file: KtFile): KtClass = file.declarations.filterIsInstance<KtClass>().single()
 
