@@ -16,6 +16,7 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.refactoring
 
+import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.components.allSupertypes
@@ -35,7 +36,9 @@ import org.jetbrains.kotlin.analysis.api.components.semanticallyEquals
 import org.jetbrains.kotlin.analysis.api.components.type
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaDeclarationSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaFunctionSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaSymbolVisibility
 import org.jetbrains.kotlin.analysis.api.symbols.KaTypeParameterSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaValueParameterSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaVariableSymbol
@@ -58,6 +61,8 @@ import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtArrayAccessExpression
 import org.jetbrains.kotlin.psi.KtBinaryExpression
 import org.jetbrains.kotlin.psi.KtClassOrObject
+import org.jetbrains.kotlin.psi.KtDeclaration
+import org.jetbrains.kotlin.psi.KtExpression
 import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtUnaryExpression
 import org.jetbrains.kotlin.psi.psiUtil.containingClassOrObject
@@ -648,7 +653,7 @@ internal fun selectMember(
     }
     return applicable.firstOrNull { candidate ->
         applicable.none { other ->
-            other !== candidate && other.compareParameterPreference(candidate, arguments, indexedWrite) < 0
+            other !== candidate && other.compareParameterPreference(candidate, arguments, indexedWrite, substitutor) < 0
         }
     } ?: applicable.firstOrNull()
 }
@@ -776,19 +781,29 @@ private fun KaCallableSymbol.compareOverloadPreference(
             if (preference != 0) return@runCatching preference
         }
     }
-    compareParameterPreference(other, arguments, indexedWrite)
+    compareParameterPreference(
+        other,
+        arguments,
+        indexedWrite,
+        receiverTypeSubstitutor(receiverType),
+        other.receiverTypeSubstitutor(receiverType),
+    )
 }.getOrDefault(0)
 
 /**
  * Orders this callable against [other] by the parameters [arguments] bind to.
  *
  * Used on its own for member overloads, which all have the same receiver and are separated by
- * their value parameters alone.
+ * their value parameters alone. The parameter types are compared as [substitutor] instantiates
+ * them, because that is what the compiler sees: for `Delegate<Local>`, the `provideDelegate(T, …)`
+ * of `Delegate<T>` takes a `Local`, not an unconstrained type parameter.
  *
  * @param other competing callable
  * @param arguments argument types of the call, or `null` when they cannot be resolved
  * @param indexedWrite `true` when [arguments] belong to an indexed write, whose defaulted index
  *   parameters may be omitted
+ * @param substitutor instantiates this callable's declaring class, or `null` when it is not generic
+ * @param otherSubstitutor the same for [other]
  * @return a negative value when this callable is preferred, a positive one when [other] is, and
  *   `0` when neither is strictly preferred
  */
@@ -798,9 +813,11 @@ private fun KaCallableSymbol.compareParameterPreference(
     other: KaCallableSymbol,
     arguments: List<KaType?>?,
     indexedWrite: Boolean,
+    substitutor: KaSubstitutor? = null,
+    otherSubstitutor: KaSubstitutor? = substitutor,
 ): Int = runCatching {
-    val ownBoundTypes = boundParameterTypes(arguments, indexedWrite)
-    val otherBoundTypes = other.boundParameterTypes(arguments, indexedWrite)
+    val ownBoundTypes = boundParameterTypes(arguments, indexedWrite)?.substituted(substitutor)
+    val otherBoundTypes = other.boundParameterTypes(arguments, indexedWrite)?.substituted(otherSubstitutor)
     if (ownBoundTypes != null && otherBoundTypes != null) {
         compareParameterTuples(ownBoundTypes, otherBoundTypes).let { preference ->
             if (preference != 0) return@runCatching preference
@@ -818,11 +835,26 @@ private fun KaCallableSymbol.compareParameterPreference(
     }
     // Without resolved arguments nothing binds, so the declared tuples are all that remains.
     if (ownBoundTypes == null || otherBoundTypes == null) {
-        compareParameterTuples(declaredParameterTypes(), other.declaredParameterTypes())
+        compareParameterTuples(
+            declaredParameterTypes().substituted(substitutor),
+            other.declaredParameterTypes().substituted(otherSubstitutor),
+        )
     } else {
         0
     }
 }.getOrDefault(0)
+
+/**
+ * Instantiates these types with [substitutor], keeping each one unchanged when it cannot be.
+ *
+ * @param substitutor class or receiver instantiation, or `null` when there is none
+ * @return the instantiated types
+ */
+context(_: KaSession)
+private fun List<KaType>.substituted(substitutor: KaSubstitutor?): List<KaType> {
+    if (substitutor == null) return this
+    return map { type -> runCatching { substitutor.substitute(type) }.getOrDefault(type) }
+}
 
 /**
  * Compares two types as overload-resolution candidates.
@@ -1009,7 +1041,7 @@ internal fun KtArrayAccessExpression.selectedIndexedSetter(): KaCallableSymbol? 
     val arguments = setterArgumentTypes()
     // A member setter wins only when its signature accepts the actual indices and value; a
     // misfitting overload leaves the write to an applicable extension.
-    if (receiverType.hasApplicableMemberIndexedSetter(arguments)) return null
+    if (receiverType.hasApplicableMemberIndexedSetter(arguments, this)) return null
     val identifier = Name.identifier("set")
     containingKtFile.scopeContext(this).scopes.forEach { scopeWithKind ->
         val candidates = scopeWithKind.scope.callables(identifier)
@@ -1021,19 +1053,27 @@ internal fun KtArrayAccessExpression.selectedIndexedSetter(): KaCallableSymbol? 
 }
 
 /**
- * Tells whether this type declares a member `set` that accepts the indexed-write arguments.
+ * Tells whether this type declares a member `set` the use site can select for indexed writes.
  *
  * A member setter always wins over an extension, but only when Kotlin can select it: it must be
  * [operator-eligible][isOperatorEligible] — a plain `fun set(i: Int, value: Int)` never serves
- * `box[0] = 1`, so it cannot hide an extension — and its signature must actually fit, because a
- * `set(String, Int)` member does not shadow `box[0]++`, which needs `set(Int, Int)`. An unknown
- * argument list keeps the member as applicable, preserving the previous conservative behavior.
+ * `box[0] = 1`, so it cannot hide an extension — its signature must actually fit, because a
+ * `set(String, Int)` member does not shadow `box[0]++`, which needs `set(Int, Int)`, and it must be
+ * visible at the use site. A `private operator fun set` is a candidate only inside its own class;
+ * a caller elsewhere binds the same write to an extension, which therefore still has to be looked
+ * up at that caller. An unknown argument list keeps the member as applicable, preserving the
+ * previous conservative behavior.
  *
  * @param arguments argument types of the write, or `null` when they cannot be resolved
- * @return `true` when a member setter of this type can be selected
+ * @param useSite expression performing the write, or `null` when the caller is unknown and every
+ *   member has to be counted
+ * @return `true` when a member setter of this type can be selected at [useSite]
  */
 context(_: KaSession)
-internal fun KaType.hasApplicableMemberIndexedSetter(arguments: List<KaType?>?): Boolean = runCatching {
+internal fun KaType.hasApplicableMemberIndexedSetter(
+    arguments: List<KaType?>?,
+    useSite: KtExpression? = null,
+): Boolean = runCatching {
     if (arguments == null) return@runCatching true
     val substitutor = classTypeSubstitutor()
     expandedSymbol?.memberScope?.declarations
@@ -1042,6 +1082,31 @@ internal fun KaType.hasApplicableMemberIndexedSetter(arguments: List<KaType?>?):
         .any { symbol ->
             (symbol as? KaNamedSymbol)?.name?.asString() == "set" &&
                 symbol.isOperatorEligible() &&
+                symbol.isVisibleAt(useSite) &&
                 symbol.acceptsIndexedSetterArguments(arguments, substitutor, indexedWrite = true)
         }
 }.getOrDefault(true)
+
+/**
+ * Tells whether this member can be called from [useSite].
+ *
+ * Only `private` is filtered. A `private` member is selectable solely inside its declaring class
+ * and the classes nested in it, so a caller elsewhere binds an indexed write to an extension even
+ * though the class's member scope still lists the member. Every other visibility admits at least
+ * the callers this operation considers, and a `null` use site — a caller the operation cannot see —
+ * keeps the member, matching the conservative answer given when the arguments are unknown.
+ *
+ * @param useSite expression performing the access, or `null` when the caller is unknown
+ * @return `true` when this member may serve the access
+ */
+private fun KaDeclarationSymbol.isVisibleAt(useSite: KtExpression?): Boolean {
+    if (visibility != KaSymbolVisibility.PRIVATE) return true
+    if (useSite == null) return true
+    val declaringClass = (psi as? KtDeclaration)?.containingClassOrObject ?: return false
+    var current = PsiTreeUtil.getParentOfType(useSite, KtClassOrObject::class.java)
+    while (current != null) {
+        if (current == declaringClass) return true
+        current = PsiTreeUtil.getParentOfType(current, KtClassOrObject::class.java)
+    }
+    return false
+}

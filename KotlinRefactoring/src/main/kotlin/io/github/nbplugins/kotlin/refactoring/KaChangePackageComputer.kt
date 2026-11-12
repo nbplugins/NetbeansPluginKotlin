@@ -497,7 +497,7 @@ class KaChangePackageComputer(
                 // misfitting overload (`set(String, Int)` for `box[0]++`) leaves the write to
                 // the applicable extension, which the caller then has to import.
                 val arguments = expression.setterArgumentTypes()
-                if (!receiverType.hasApplicableMemberIndexedSetter(arguments)) {
+                if (!receiverType.hasApplicableMemberIndexedSetter(arguments, expression)) {
                     record(movedOperator(receiverType, "set", arguments))
                 }
             }

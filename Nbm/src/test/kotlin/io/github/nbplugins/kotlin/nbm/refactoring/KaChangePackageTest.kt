@@ -6830,6 +6830,132 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
+     * Verifies a private member setter does not hide a public extension at the caller.
+     *
+     * `Box` declares its operator `set(Int, Int)` as `private`, so only `Box` itself can select
+     * it and a caller in `old` binds `box[0]++` to the public `Box.set` extension. Counting the
+     * class's own members without their visibility suppresses the extension lookup, so moving the
+     * extension records no import and the write would silently fall back to `Any.set`.
+     */
+    fun testApply_realSession_ignoresInvisibleMemberSetter() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-private-setter")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("lib"))
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            val sourcePath = temporaryRoot.resolve("lib/Set.kt")
+            val usagePath = temporaryRoot.resolve("old/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("lib/Box.kt"),
+                "package lib\n\n" +
+                    "class Box {\n" +
+                    "    operator fun get(i: Int): Int = 0\n" +
+                    "    private operator fun set(i: Int, value: Int) {}\n" +
+                    "}\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package lib\n\noperator fun Box.set(i: Int, value: Int) {}\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package old\n\nimport lib.*\n\nfun use(box: Box) {\n    box[0]++\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-private-setter-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the extension the private member does not hide: $text",
+                text.contains("import dest.set"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies member provider overloads are ranked with the class's type arguments.
+     *
+     * `Delegate<T>` declares `provideDelegate(T, KProperty<*>): Picked` and
+     * `provideDelegate(Host, KProperty<*>): Decoy`. For `Delegate<Local>` Kotlin instantiates the
+     * first parameter as `Local`, which beats `Host`, so `Picked` is the provider. Ranking the raw
+     * declarations compares `T`'s upper bound `Any?` with `Host`, selects `Decoy`, and the moving
+     * `Picked.getValue` is never imported.
+     */
+    fun testApply_realSession_ranksProviderOverloadsWithClassArguments() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-provider-substitution")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("lib"))
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            val sourcePath = temporaryRoot.resolve("old/Accessor.kt")
+            val usagePath = temporaryRoot.resolve("old/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("lib/Delegate.kt"),
+                "package lib\n\n" +
+                    "open class Host\n\n" +
+                    "class Picked\n\n" +
+                    "class Decoy\n\n" +
+                    "class Delegate<T> {\n" +
+                    "    operator fun provideDelegate(" +
+                    "thisRef: Host, property: kotlin.reflect.KProperty<*>): Decoy = Decoy()\n" +
+                    "    operator fun provideDelegate(" +
+                    "thisRef: T, property: kotlin.reflect.KProperty<*>): Picked = Picked()\n" +
+                    "}\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\nimport lib.Picked\n\noperator fun Picked.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): String = \"\"\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package old\n\nimport lib.*\n\nclass Local : Host() {\n" +
+                    "    val value: String by Delegate<Local>()\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-provider-substitution-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the accessor of the instantiated provider: $text",
+                text.contains("import dest.getValue"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies a wildcard-imported type alias survives a move into a shadowing package.
      *
      * `fun make() = Alias()` in `old` resolves through `import lib.*` to `lib.Alias`, which expands
