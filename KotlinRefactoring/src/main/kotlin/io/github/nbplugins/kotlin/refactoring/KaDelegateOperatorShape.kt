@@ -23,21 +23,26 @@ import org.jetbrains.kotlin.analysis.api.components.isSubtypeOf
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaFunctionSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.findClass
+import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.psi.KtModifierListOwner
 
 /**
  * Tells whether this callable has the call shape Kotlin requires of a delegate operator.
  *
- * Delegated properties select their operators by name, but a same-named member is only an
- * accessor when its signature fits the delegation protocol: `provideDelegate` and `getValue` take
- * the delegating receiver and the property, while `setValue` adds the assigned value. A
- * parameterless `fun getValue()` is therefore an ordinary member and must not hide the extension
- * the property actually uses.
+ * Delegated properties select their operators by name, but a same-named method takes part only
+ * when it is declared `operator` *and* its signature fits the delegation protocol:
+ * `provideDelegate` and `getValue` take the delegating receiver and the property, while `setValue`
+ * adds the assigned value. An ordinary `fun getValue()` is therefore ignored, and so is a
+ * non-operator `fun provideDelegate(...)` that only happens to match the parameter shape — Kotlin
+ * never calls such a method, so treating it as a provider would switch the accessor lookup to its
+ * result type.
  *
  * Kotlin passes a `KProperty` instance to the property parameter, which may be declared with any
  * supertype of it (`Any?`, for example), so the parameter is matched by assignability rather than
- * by its classifier.
+ * by its classifier. Library declarations expose no PSI, so only a declaration that visibly lacks
+ * the modifier is rejected.
  *
  * @param operatorName `provideDelegate`, `getValue`, or `setValue`
  * @return `true` when this callable can be selected as that delegate operator
@@ -46,6 +51,8 @@ import org.jetbrains.kotlin.name.FqName
 context(_: KaSession)
 internal fun KaCallableSymbol.isDelegateOperatorShape(operatorName: String): Boolean {
     val function = this as? KaFunctionSymbol ?: return false
+    val modifierList = function.psi as? KtModifierListOwner
+    if (modifierList != null && !modifierList.hasModifier(KtTokens.OPERATOR_KEYWORD)) return false
     val expectedParameters = if (operatorName == "setValue") 3 else 2
     if (function.valueParameters.size != expectedParameters) return false
     return runCatching {

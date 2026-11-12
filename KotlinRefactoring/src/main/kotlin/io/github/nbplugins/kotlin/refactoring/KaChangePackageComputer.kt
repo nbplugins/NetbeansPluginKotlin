@@ -485,7 +485,7 @@ class KaChangePackageComputer(
             // Both `Box.set` and the more specific `SubBox.set` can be visible at once; only the
             // one overload resolution selects may be recorded, or the caller would import a
             // setter it does not call.
-            return selectExtension(candidates, type, arguments)
+            return selectExtension(candidates, type, arguments, indexedWrite = true)
         }
         accept(object : KtTreeVisitorVoid() {
             override fun visitArrayAccessExpression(expression: KtArrayAccessExpression) {
@@ -1447,7 +1447,7 @@ class KaChangePackageComputer(
             .toList()
         // The receiver alone cannot tell `Box.set` from the more specific `SubBox.set`; only the
         // overload resolution result may be imported.
-        val selected = selectExtension(candidates, receiverType, expression.setterArgumentTypes())
+        val selected = selectExtension(candidates, receiverType, expression.setterArgumentTypes(), indexedWrite = true)
             ?: return null
         return samePackageTopLevelName(selected, originalPackage, movedPaths)
     }

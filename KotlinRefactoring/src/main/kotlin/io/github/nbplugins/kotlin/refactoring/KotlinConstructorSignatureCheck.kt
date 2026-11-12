@@ -45,9 +45,9 @@ import org.jetbrains.kotlin.psi.KtTypeParameter
  * Renaming a class writes its new name verbatim, so a same-package function whose call signature
  * matches a constructor becomes a conflicting overload that Kotlin rejects. Parameter types are
  * compared as resolved types, because `Int` and a fully qualified `kotlin.Int` are the same Kotlin
- * type even though their source spellings differ. Type parameters are compared by position after
- * substituting the function's parameters with the class's, and the bounds of those the value
- * parameters actually use are compared as well.
+ * type even though their source spellings differ. Type parameters are matched by the role they play
+ * in the compared signature and then substituted by their counterparts, and the bounds of those the
+ * value parameters actually use are compared as well.
  */
 object KotlinConstructorSignatureCheck {
 
@@ -73,7 +73,6 @@ object KotlinConstructorSignatureCheck {
             .filter { parameters -> parameters.size == function.valueParameters.size }
         if (matching.isEmpty()) return false
         return analyze(function) {
-            val substitutor = typeParameterSubstitutor(primaryClass, function)
             matching.any { parameters ->
                 // A vararg and a fixed parameter of the same type are distinct overloads in
                 // Kotlin, so a constructor cannot collide with a function whose vararg status
@@ -83,6 +82,9 @@ object KotlinConstructorSignatureCheck {
                         function.valueParameters[index].hasModifier(KtTokens.VARARG_KEYWORD)
                 }
                 if (!varargsMatch) return@any false
+                val correspondence = typeParameterCorrespondence(primaryClass, function, parameters)
+                    ?: return@any false
+                val substitutor = typeParameterSubstitutor(correspondence)
                 val typesMatch = parameters.indices.all { index ->
                     val constructorType = runCatching { parameters[index].typeReference?.type }.getOrNull()
                     val functionType = runCatching { function.valueParameters[index].typeReference?.type }.getOrNull()
@@ -93,35 +95,148 @@ object KotlinConstructorSignatureCheck {
                 // Bounds are part of the signature only for the type parameters the matched value
                 // parameters actually use; an unused parameter cannot tell two calls apart even
                 // when its bounds differ, so it must not hide a real conflict.
-                typesMatch && typeParametersMatch(primaryClass, function, substitutor, parameters)
+                typesMatch &&
+                    typeParametersMatch(primaryClass, function, substitutor, parameters, correspondence)
             }
         }
     }
 
     /**
-     * Maps the function's type parameters to the class's parameters at the same position.
+     * Builds the substitutor replacing the function's type parameters with their class counterparts.
      *
-     * After the rename the function spells the class's parameters, so a parameter type using the
-     * function's first type parameter corresponds to one using the class's first type parameter.
-     * Their resolved type symbols differ, which would make semantically equivalent signatures
-     * compare as different. Function parameters without a counterpart stay unmapped and therefore
-     * keep a parameter type that uses them different.
-     *
-     * @param classOrObject class whose type parameters the function would spell
-     * @param function function whose type parameters are substituted
+     * @param correspondence function type parameters mapped to the class parameters they stand for
      * @return substitutor replacing the function's type parameters with the class's
      */
     context(_: KaSession)
     private fun typeParameterSubstitutor(
+        correspondence: Map<KaTypeParameterSymbol, KaTypeParameterSymbol>,
+    ): KaSubstitutor = createSubstitutor(
+        correspondence.mapValues { (_, classSymbol) -> buildTypeParameterType(classSymbol) },
+    )
+
+    /**
+     * Derives which function type parameter stands for which class parameter.
+     *
+     * Type parameters are identified by their declaration, but the function being compared may
+     * declare them in another order: `class Before<A, B>(val x: B, val y: A)` exposes the
+     * constructor `After(B, A)` after the rename, and `fun <A, B> After(x: A, y: B)` accepts
+     * exactly the same calls once its own parameters are read as `B, A`. The correspondence is
+     * therefore read off the compared value parameter types instead of their positions: each pair
+     * is unified structurally, recording which function parameter stands for which class
+     * parameter. The relation must stay a bijection, so a pair that would map two function
+     * parameters to one class parameter — or the other way round — means the signatures differ.
+     *
+     * A type parameter no value parameter spells keeps its positional counterpart, because an
+     * unused parameter cannot distinguish calls while a bound that mentions another parameter still
+     * takes part in the comparison, and position is the only relation left for it. A value
+     * parameter whose type cannot be resolved supplies no correspondence and keeps that positional
+     * pairing as well.
+     *
+     * @param classOrObject class whose type parameters the function would spell
+     * @param function function whose type parameters are mapped
+     * @param parameters value parameters of the compared constructor
+     * @return function parameter symbol to class parameter symbol, or `null` when a resolved
+     *   parameter pair cannot be unified
+     */
+    context(_: KaSession)
+    private fun typeParameterCorrespondence(
         classOrObject: KtClass,
         function: KtNamedFunction,
-    ): KaSubstitutor {
-        val classParameters = classOrObject.typeParameters
-        val mapping = function.typeParameters.mapIndexedNotNull { index, parameter ->
-            val classParameter = classParameters.getOrNull(index) ?: return@mapIndexedNotNull null
-            parameter.symbol to buildTypeParameterType(classParameter.symbol)
-        }.toMap()
-        return createSubstitutor(mapping)
+        parameters: List<KtParameter>,
+    ): Map<KaTypeParameterSymbol, KaTypeParameterSymbol>? = runCatching {
+        val classSymbols = classOrObject.typeParameters.mapNotNull { parameter ->
+            runCatching { parameter.symbol }.getOrNull()
+        }.toSet()
+        val functionSymbols = function.typeParameters.mapNotNull { parameter ->
+            runCatching { parameter.symbol }.getOrNull()
+        }.toSet()
+        if (classSymbols.isEmpty() && functionSymbols.isEmpty()) return@runCatching emptyMap()
+        val mappings = linkedMapOf<KaTypeParameterSymbol, KaTypeParameterSymbol>()
+        parameters.indices.forEach { index ->
+            val constructorType = runCatching { parameters[index].typeReference?.type }.getOrNull()
+                ?: return@forEach
+            val functionType = runCatching { function.valueParameters[index].typeReference?.type }.getOrNull()
+                ?: return@forEach
+            val unified = unifyTypeParameters(
+                constructorType,
+                functionType,
+                classSymbols,
+                functionSymbols,
+                mappings,
+            )
+            if (!unified) return@runCatching null
+        }
+        classOrObject.typeParameters.forEachIndexed { index, classParameter ->
+            val classSymbol = runCatching { classParameter.symbol }.getOrNull() ?: return@forEachIndexed
+            if (classSymbol in mappings.values) return@forEachIndexed
+            val functionSymbol = runCatching { function.typeParameters.getOrNull(index)?.symbol }.getOrNull()
+                ?: return@forEachIndexed
+            if (functionSymbol !in functionSymbols || functionSymbol in mappings) return@forEachIndexed
+            mappings[functionSymbol] = classSymbol
+        }
+        mappings.toMap()
+    }.getOrNull()
+
+    /**
+     * Unifies a constructor parameter type with the function's, recording the type parameters.
+     *
+     * Two type parameters correspond to each other and are recorded; two class types correspond
+     * when they denote the same class and their type arguments unify pairwise; anything else
+     * corresponds only when the types are semantically equal. A class type parameter facing a
+     * concrete type, or a correspondence that would have to be many-to-one, means the signatures
+     * differ.
+     *
+     * @param classType parameter type of the constructor being renamed
+     * @param functionType parameter type of the function
+     * @param classSymbols type parameters of the class
+     * @param functionSymbols type parameters of the function
+     * @param mappings correspondence recorded so far, extended in place
+     * @return `true` when the types can be the same after renaming the type parameters
+     */
+    context(_: KaSession)
+    private fun unifyTypeParameters(
+        classType: KaType,
+        functionType: KaType,
+        classSymbols: Set<KaTypeParameterSymbol>,
+        functionSymbols: Set<KaTypeParameterSymbol>,
+        mappings: MutableMap<KaTypeParameterSymbol, KaTypeParameterSymbol>,
+    ): Boolean {
+        val functionParameter = (functionType as? KaTypeParameterType)
+            ?.takeIf { type -> type.symbol in functionSymbols }
+        if (functionParameter != null) {
+            val classParameter = (classType as? KaTypeParameterType)
+                ?.takeIf { type -> type.symbol in classSymbols }
+                ?: return false
+            if (classParameter.nullability != functionParameter.nullability) return false
+            val recorded = mappings[functionParameter.symbol]
+            if (recorded != null) return recorded == classParameter.symbol
+            if (classParameter.symbol in mappings.values) return false
+            mappings[functionParameter.symbol] = classParameter.symbol
+            return true
+        }
+        val classParameterSymbol = (classType as? KaTypeParameterType)?.symbol
+        if (classParameterSymbol != null && classParameterSymbol in classSymbols) return false
+        if (classType is KaClassType && functionType is KaClassType) {
+            if (classType.classId != functionType.classId) return false
+            if (classType.nullability != functionType.nullability) return false
+            if (classType.typeArguments.size != functionType.typeArguments.size) return false
+            return classType.typeArguments.indices.all { index ->
+                val classArgument = classType.typeArguments[index].type
+                val functionArgument = functionType.typeArguments[index].type
+                when {
+                    classArgument == null || functionArgument == null ->
+                        classArgument == null && functionArgument == null
+                    else -> unifyTypeParameters(
+                        classArgument,
+                        functionArgument,
+                        classSymbols,
+                        functionSymbols,
+                        mappings,
+                    )
+                }
+            }
+        }
+        return runCatching { classType.semanticallyEquals(functionType) }.getOrDefault(false)
     }
 
     /**
@@ -139,6 +254,7 @@ object KotlinConstructorSignatureCheck {
      * @param function function whose type parameter bounds are compared
      * @param substitutor maps the function's type parameters to the class's
      * @param parameters matched value parameters of the compared signature
+     * @param correspondence function type parameters mapped to the class parameters they stand for
      * @return `true` when every relevant corresponding bound is equivalent
      */
     context(_: KaSession)
@@ -147,14 +263,26 @@ object KotlinConstructorSignatureCheck {
         function: KtNamedFunction,
         substitutor: KaSubstitutor,
         parameters: List<KtParameter>,
+        correspondence: Map<KaTypeParameterSymbol, KaTypeParameterSymbol>,
     ): Boolean {
         val classParameters = classOrObject.typeParameters
         val indexBySymbol = classParameters.mapIndexedNotNull { index, parameter ->
             runCatching { parameter.symbol }.getOrNull()?.let { symbol -> symbol to index }
         }.toMap()
+        val functionParameterBySymbol = function.typeParameters.mapNotNull { parameter ->
+            runCatching { parameter.symbol }.getOrNull()?.let { symbol -> symbol to parameter }
+        }.toMap()
+        val functionSymbolByClassSymbol = correspondence.entries.associate { (functionSymbol, classSymbol) ->
+            classSymbol to functionSymbol
+        }
+        fun functionCounterpart(classParameter: KtTypeParameter): KtTypeParameter? {
+            val classSymbol = runCatching { classParameter.symbol }.getOrNull() ?: return null
+            val functionSymbol = functionSymbolByClassSymbol[classSymbol] ?: return null
+            return functionParameterBySymbol[functionSymbol]
+        }
         val usedIndices = usedTypeParameterIndices(parameters, indexBySymbol)
             ?: return classParameters.indices.all { index ->
-                boundsMatch(classParameters[index], function.typeParameters.getOrNull(index), substitutor)
+                boundsMatch(classParameters[index], functionCounterpart(classParameters[index]), substitutor)
             }
         val pending = ArrayDeque(usedIndices)
         while (pending.isNotEmpty()) {
@@ -165,7 +293,7 @@ object KotlinConstructorSignatureCheck {
                 .forEach(pending::addLast)
         }
         return usedIndices.all { index ->
-            boundsMatch(classParameters[index], function.typeParameters.getOrNull(index), substitutor)
+            boundsMatch(classParameters[index], functionCounterpart(classParameters[index]), substitutor)
         }
     }
 

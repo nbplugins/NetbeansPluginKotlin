@@ -6273,6 +6273,183 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies an ordinary method named `provideDelegate` does not decide the accessor.
+     *
+     * Kotlin selects a provider only when it is an operator: the non-operator
+     * `Box.provideDelegate(...): Decoy` declared by the moving file is ignored, so
+     * `val value: Int by Box()` keeps using the staying `Box.getValue`. Recognizing the method by
+     * its signature shape alone redirects the accessor lookup to `Decoy.getValue`, records that
+     * moving accessor and imports it even though the property never calls it.
+     */
+    fun testApply_realSession_ignoresNonOperatorProvider() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-non-operator-provider")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Box.kt"),
+                "package old\n\nclass Box\n\n" +
+                    "operator fun Box.getValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 1\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\nclass Decoy\n\n" +
+                    "fun Box.provideDelegate(thisRef: Any?, property: kotlin.reflect.KProperty<*>): Decoy = Decoy()\n\n" +
+                    "operator fun Decoy.getValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>): String = \"decoy\"\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nval value: Int by Box()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-non-operator-provider-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()].orEmpty()
+            assertFalse(
+                "The property keeps the staying accessor, so the caller must gain no operator import: $text",
+                text.contains("import dest."),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a setter with a defaulted index parameter stays applicable to an indexed write.
+     *
+     * `operator fun Box.set(i: Int, j: Int = 0, value: Int)` accepts `box[0]++`: the index fills
+     * `i`, the assigned value fills the final parameter and the defaulted `j` is omitted. The
+     * moving setter therefore shadows the staying `Any.set(i, value)`. Comparing the argument
+     * count with the declared parameter count rejects it and plans no import, so the write
+     * silently falls back to the staying setter after the change.
+     */
+    fun testApply_realSession_importsSetterWithDefaultedIndexParameter() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-defaulted-index")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Box.kt"),
+                "package old\n\n" +
+                    "open class Box {\n    operator fun get(index: Int): Int = 0\n}\n\n" +
+                    "operator fun Any.set(i: Int, value: Int) {}\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\noperator fun Box.set(i: Int, j: Int = 0, value: Int) {}\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nfun use(box: Box) {\n    box[0]++\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-defaulted-index-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the moving setter with a defaulted index parameter: $text",
+                text.contains("import dest.set"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a concrete receiver overload outranks a generic one.
+     *
+     * For an invariant `Box<T>`, both `<T> Box<T>.getValue(...)` and `Box<String>.getValue(...)`
+     * accept `val value by Box<String>()`, and Kotlin selects the concrete overload. Comparing raw
+     * declared receivers finds neither more specific, so the generic accessor that stays behind is
+     * selected and no `dest.getValue` import is planned, silently changing the property's type
+     * after the move.
+     */
+    fun testApply_realSession_prefersConcreteReceiverAccessor() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-concrete-receiver")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Box.kt"),
+                "package old\n\nclass Box<T>\n\n" +
+                    "operator fun <T> Box<T>.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 1\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\n" +
+                    "operator fun Box<String>.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): String = \"moved\"\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nval value by Box<String>()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-concrete-receiver-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the accessor with the concrete receiver: $text",
+                text.contains("import dest.getValue"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

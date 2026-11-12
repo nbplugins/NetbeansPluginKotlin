@@ -37,6 +37,7 @@ import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaFunctionSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaTypeParameterSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaValueParameterSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaVariableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.symbol
@@ -417,14 +418,25 @@ private fun KtProperty.propertyValueType(): KaType? =
  * parameters — the declaring class's for a member, the receiver's for an extension — with the
  * actual type arguments is applied to every parameter type first.
  *
+ * An indexed write may also omit index parameters:
+ * `operator fun set(i: Int, j: Int = 0, value: Int)` serves `box[0] = 1` by binding the index to
+ * `i`, the assigned value to the last parameter and leaving the defaulted `j` out. Such a call
+ * passes fewer arguments than the declaration has parameters, so [indexedWrite] binds the assigned
+ * value to the final parameter and requires every parameter between the supplied indices and it to
+ * have a default. A delegate call always passes one argument per parameter and keeps the positional
+ * rule.
+ *
  * @param arguments argument types in call order; `null` entries are unresolved expressions
  * @param substitutor instantiates the type parameters the parameter types are spelled with
+ * @param indexedWrite `true` for the arguments of an indexed write, which always bind the assigned
+ *   value to the final parameter and may omit defaulted index parameters
  * @return `true` when the callable can be selected for those arguments
  */
 context(_: KaSession)
 internal fun KaCallableSymbol.acceptsIndexedSetterArguments(
     arguments: List<KaType?>,
     substitutor: KaSubstitutor? = null,
+    indexedWrite: Boolean = false,
 ): Boolean = runCatching {
     val function = this as? KaFunctionSymbol ?: return@runCatching false
     val parameters = function.valueParameters
@@ -436,6 +448,9 @@ internal fun KaCallableSymbol.acceptsIndexedSetterArguments(
         } ?: declaredType
     }
     val varargIndex = parameters.indexOfFirst { it.isVararg }
+    if (indexedWrite && varargIndex < 0) {
+        return@runCatching acceptsIndexedWrite(arguments, parameters, parameterTypes)
+    }
     if (varargIndex < 0) {
         if (arguments.size != parameters.size) return@runCatching false
         return@runCatching arguments.withIndex().all { (index, argument) ->
@@ -456,6 +471,41 @@ internal fun KaCallableSymbol.acceptsIndexedSetterArguments(
         argument == null || acceptsArgument(parameterTypes[parameterIndex], argument)
     }
 }.getOrDefault(false)
+
+/**
+ * Tells whether these parameters accept the indices and the assigned value of an indexed write.
+ *
+ * The assigned value always takes the final parameter and the indices fill the leading parameters
+ * in order, so the parameters in between are the ones the call omits and each of them must have a
+ * default. `set(i: Int, j: Int, value: Int)` therefore rejects `box[0] = 1`, while
+ * `set(i: Int, j: Int = 0, value: Int)` accepts it; a setter without any index parameter rejects
+ * every write.
+ *
+ * @param arguments index types followed by the assigned value's type; `null` entries are unresolved
+ * @param parameters declared value parameters of the setter
+ * @param parameterTypes instantiated types of [parameters]
+ * @return `true` when the write can be selected
+ */
+context(_: KaSession)
+private fun acceptsIndexedWrite(
+    arguments: List<KaType?>,
+    parameters: List<KaValueParameterSymbol>,
+    parameterTypes: List<KaType>,
+): Boolean {
+    if (arguments.isEmpty()) return false
+    val indexCount = arguments.size - 1
+    if (indexCount > parameters.size - 1) return false
+    if (parameters.subList(indexCount, parameters.size - 1).any { parameter -> !parameter.hasDefaultValue }) {
+        return false
+    }
+    val indicesMatch = (0 until indexCount).all { index ->
+        val argument = arguments[index] ?: return@all true
+        acceptsArgument(parameterTypes[index], argument)
+    }
+    if (!indicesMatch) return false
+    val value = arguments.last() ?: return true
+    return acceptsArgument(parameterTypes.last(), value)
+}
 
 /**
  * Returns the substitutor mapping this type's class parameters to its actual type arguments.
@@ -580,6 +630,8 @@ private fun KaType.mentionsTypeParameter(): Boolean = when (this) {
  * @param candidates member callables visible under the same simple name
  * @param arguments argument types of the implicit call
  * @param substitutor maps the declaring class's type parameters to the receiver's arguments
+ * @param indexedWrite `true` when [arguments] belong to an indexed write, whose assigned value
+ *   binds to the final parameter and whose defaulted index parameters may be omitted
  * @return the selected member, or `null` when none applies
  */
 @OptIn(KaExperimentalApi::class)
@@ -588,9 +640,10 @@ internal fun selectMember(
     candidates: List<KaCallableSymbol>,
     arguments: List<KaType?>,
     substitutor: KaSubstitutor? = null,
+    indexedWrite: Boolean = false,
 ): KaCallableSymbol? {
     val applicable = candidates.filter { candidate ->
-        candidate.acceptsIndexedSetterArguments(arguments, substitutor)
+        candidate.acceptsIndexedSetterArguments(arguments, substitutor, indexedWrite)
     }
     return applicable.firstOrNull { candidate ->
         applicable.none { other -> other !== candidate && other.parametersAreMoreSpecificThan(candidate) }
@@ -609,6 +662,8 @@ internal fun selectMember(
  * @param candidates extensions visible under the same simple name
  * @param receiverType type of the value the operator is invoked on
  * @param arguments argument types of the call, or `null` when they cannot be resolved
+ * @param indexedWrite `true` when [arguments] belong to an indexed write, whose assigned value
+ *   binds to the final parameter and whose defaulted index parameters may be omitted
  * @return the selected extension, or `null` when none applies
  */
 @OptIn(KaExperimentalApi::class)
@@ -617,6 +672,7 @@ internal fun selectExtension(
     candidates: List<KaCallableSymbol>,
     receiverType: KaType,
     arguments: List<KaType?>? = null,
+    indexedWrite: Boolean = false,
 ): KaCallableSymbol? {
     val applicable = candidates.filter { candidate ->
         runCatching { candidate.canBeCalledAsExtensionOn(receiverType) }.getOrDefault(false) &&
@@ -624,10 +680,11 @@ internal fun selectExtension(
                 candidate.acceptsIndexedSetterArguments(
                     arguments,
                     candidate.receiverTypeSubstitutor(receiverType),
+                    indexedWrite,
                 ))
     }
     return applicable.firstOrNull { candidate ->
-        applicable.none { other -> other !== candidate && other.isMoreSpecificThan(candidate) }
+        applicable.none { other -> other !== candidate && other.isMoreSpecificThan(candidate, receiverType) }
     } ?: applicable.firstOrNull()
 }
 
@@ -654,34 +711,55 @@ internal fun KaCallableSymbol.receiverTypeSubstitutor(receiverType: KaType): KaS
 }.getOrNull()
 
 /**
- * Tells whether this callable's overload is preferred over [other] by the compiler.
+ * Tells whether this callable's overload is preferred over [other] for [receiverType].
  *
- * A more specific receiver wins first. When both are declared on the same receiver type, the
- * preference falls back to the value parameters: `Box.set(Int, Int)` is more specific than
- * `Box.set(Int, Number)` for a write whose value is an `Int`.
+ * The receivers are compared as they are instantiated for the actual receiver, because a generic
+ * declared receiver (`Box<T>`) has no subtype relation with a concrete one (`Box<String>`) until
+ * the receiver supplies `T`. Two overloads whose instantiated receivers agree are ranked by their
+ * type parameters: the concrete receiver needs fewer of them, and Kotlin prefers it over the
+ * generic one. When both need as many, the preference falls back to the value parameters:
+ * `Box.set(Int, Int)` is more specific than `Box.set(Int, Number)` for a write whose value is an
+ * `Int`.
  *
  * @param other competing callable
+ * @param receiverType type of the value the operator is invoked on
  * @return `true` when this callable is a strictly better overload
  */
 @OptIn(KaExperimentalApi::class)
 context(_: KaSession)
-private fun KaCallableSymbol.isMoreSpecificThan(other: KaCallableSymbol): Boolean =
-    receiverIsMoreSpecificThan(other) ||
-        (hasSameReceiverAs(other) && parametersAreMoreSpecificThan(other))
+private fun KaCallableSymbol.isMoreSpecificThan(
+    other: KaCallableSymbol,
+    receiverType: KaType,
+): Boolean = runCatching {
+    val receiver = instantiatedReceiverType(receiverType) ?: return@runCatching false
+    val otherReceiver = other.instantiatedReceiverType(receiverType) ?: return@runCatching false
+    if (!receiver.semanticallyEquals(otherReceiver)) {
+        return@runCatching receiver.isSubtypeOf(otherReceiver) && !otherReceiver.isSubtypeOf(receiver)
+    }
+    val ownParameters = (this as? KaFunctionSymbol)?.typeParameters?.size ?: 0
+    val otherParameters = (other as? KaFunctionSymbol)?.typeParameters?.size ?: 0
+    if (ownParameters != otherParameters) return@runCatching ownParameters < otherParameters
+    parametersAreMoreSpecificThan(other)
+}.getOrDefault(false)
 
 /**
- * Tells whether both callables declare the same receiver type.
+ * Returns this extension's declared receiver as instantiated for [receiverType].
  *
- * @param other competing callable
- * @return `true` when the declared receivers are equivalent
+ * `operator fun <T> Box<T>.getValue(...)` declares the receiver `Box<T>`, and only the actual
+ * `Box<String>` receiver turns it into the `Box<String>` the compiler compares. A declaration that
+ * instantiates no type parameter keeps its declared receiver.
+ *
+ * @param receiverType type of the value the extension is invoked on
+ * @return the instantiated receiver, or `null` when there is none
  */
 @OptIn(KaExperimentalApi::class)
 context(_: KaSession)
-private fun KaCallableSymbol.hasSameReceiverAs(other: KaCallableSymbol): Boolean = runCatching {
-    val receiver = receiverParameter?.returnType ?: return@runCatching false
-    val otherReceiver = other.receiverParameter?.returnType ?: return@runCatching false
-    receiver.semanticallyEquals(otherReceiver)
-}.getOrDefault(false)
+private fun KaCallableSymbol.instantiatedReceiverType(receiverType: KaType): KaType? = runCatching {
+    val declaredReceiver = receiverParameter?.returnType ?: return@runCatching null
+    receiverTypeSubstitutor(receiverType)?.let { substitutor ->
+        runCatching { substitutor.substitute(declaredReceiver) }.getOrDefault(declaredReceiver)
+    } ?: declaredReceiver
+}.getOrNull()
 
 /**
  * Tells whether this callable's value parameters are strictly more specific than [other]'s.
@@ -709,23 +787,6 @@ private fun KaCallableSymbol.parametersAreMoreSpecificThan(other: KaCallableSymb
         true
     }
     fits && strict
-}.getOrDefault(false)
-
-/**
- * Tells whether this callable's receiver is a proper subtype of [other]'s.
- *
- * The declared receiver types decide which extension overload wins when both are visible through
- * the same scope. Equal types are not "more specific", so a tie keeps the declaration order.
- *
- * @param other competing callable
- * @return `true` when this receiver fits [other]'s receiver but not the other way round
- */
-@OptIn(KaExperimentalApi::class)
-context(_: KaSession)
-private fun KaCallableSymbol.receiverIsMoreSpecificThan(other: KaCallableSymbol): Boolean = runCatching {
-    val receiver = receiverParameter?.returnType ?: return@runCatching false
-    val otherReceiver = other.receiverParameter?.returnType ?: return@runCatching false
-    receiver.isSubtypeOf(otherReceiver) && !otherReceiver.isSubtypeOf(receiver)
 }.getOrDefault(false)
 
 /**
@@ -772,7 +833,7 @@ internal fun KtArrayAccessExpression.selectedIndexedSetter(): KaCallableSymbol? 
         val candidates = scopeWithKind.scope.callables(identifier)
             .filter { symbol -> symbol.isExtension }
             .toList()
-        selectExtension(candidates, receiverType, arguments)?.let { return it }
+        selectExtension(candidates, receiverType, arguments, indexedWrite = true)?.let { return it }
     }
     return null
 }
@@ -796,6 +857,6 @@ internal fun KaType.hasApplicableMemberIndexedSetter(arguments: List<KaType?>?):
         .filterIsInstance<KaFunctionSymbol>()
         .any { symbol ->
             (symbol as? KaNamedSymbol)?.name?.asString() == "set" &&
-                symbol.acceptsIndexedSetterArguments(arguments, substitutor)
+                symbol.acceptsIndexedSetterArguments(arguments, substitutor, indexedWrite = true)
         }
 }.getOrDefault(true)

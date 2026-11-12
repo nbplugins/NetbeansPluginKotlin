@@ -427,6 +427,43 @@ class KotlinConstructorSignatureCheckTest : KotlinTestCase("KotlinConstructorSig
         }
     }
 
+    /**
+     * Verifies the type-parameter correspondence is read from the signatures, not their positions.
+     *
+     * `class Before<A, B>(val x: B, val y: A)` exposes the constructor `After(B, A)` once renamed,
+     * while `fun <A, B> After(x: A, y: B)` accepts the same calls as soon as its own parameters are
+     * read as `B, A`. Both declarations are therefore the same signature and Kotlin reports
+     * conflicting overloads. Pairing type parameters by declaration index compares the
+     * constructor's `B` against the function's `A` and lets the invalid rename through.
+     */
+    fun testConflictsWithRenamedConstructor_matchesReorderedTypeParameters() {
+        withSession(
+            name = "reordered-type-parameters",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.writeString(
+                    root.resolve("source/Types.kt"),
+                    "package p\n\nclass Before<A, B>(val x: B, val y: A)\n",
+                )
+                Files.writeString(
+                    root.resolve("source/Functions.kt"),
+                    "package p\n\nfun <A, B> After(x: A, y: B) = x\n",
+                )
+            },
+        ) { session, root ->
+            val types = session.ktFile(root.resolve("source/Types.kt"))
+            val functions = session.ktFile(root.resolve("source/Functions.kt"))
+
+            assertTrue(
+                "renaming the function's type parameters makes both signatures identical",
+                KotlinConstructorSignatureCheck.conflictsWithRenamedConstructor(
+                    primaryClass(types),
+                    functions.declarations.filterIsInstance<KtNamedFunction>().single(),
+                ),
+            )
+        }
+    }
+
     /** @return the single top-level class of [file]. */
     private fun primaryClass(file: KtFile): KtClass = file.declarations.filterIsInstance<KtClass>().single()
 
