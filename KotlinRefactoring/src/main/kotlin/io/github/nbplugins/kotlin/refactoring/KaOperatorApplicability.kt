@@ -38,13 +38,16 @@ import org.jetbrains.kotlin.analysis.api.symbols.KaTypeParameterSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaVariableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.symbol
+import org.jetbrains.kotlin.analysis.api.symbols.typeParameters
 import org.jetbrains.kotlin.analysis.api.types.KaCapturedType
 import org.jetbrains.kotlin.analysis.api.types.KaClassType
 import org.jetbrains.kotlin.analysis.api.types.KaDefinitelyNotNullType
 import org.jetbrains.kotlin.analysis.api.types.KaFlexibleType
 import org.jetbrains.kotlin.analysis.api.types.KaFunctionType
 import org.jetbrains.kotlin.analysis.api.types.KaIntersectionType
+import org.jetbrains.kotlin.analysis.api.types.KaSubstitutor
 import org.jetbrains.kotlin.analysis.api.types.KaType
+import org.jetbrains.kotlin.analysis.api.types.KaTypeNullability
 import org.jetbrains.kotlin.analysis.api.types.KaTypeParameterType
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.lexer.KtTokens
@@ -335,21 +338,32 @@ private fun KtProperty.propertyValueType(): KaType? =
  * arguments after it match the trailing fixed parameters, and the rest match the vararg element
  * type. A parameter whose type is a type parameter or cannot be compared is accepted, because the
  * alternative — treating it as inapplicable — would import an extension the member already
- * shadows.
+ * shadows. A member scope is declared, not instantiated, so a [substitutor] replacing the class's
+ * type parameters with the receiver's type arguments is applied to every parameter type first.
  *
  * @param arguments argument types in call order; `null` entries are unresolved expressions
+ * @param substitutor maps the declaring class's type parameters to the receiver's arguments
  * @return `true` when the callable can be selected for those arguments
  */
 context(_: KaSession)
-internal fun KaCallableSymbol.acceptsIndexedSetterArguments(arguments: List<KaType?>): Boolean = runCatching {
+internal fun KaCallableSymbol.acceptsIndexedSetterArguments(
+    arguments: List<KaType?>,
+    substitutor: KaSubstitutor? = null,
+): Boolean = runCatching {
     val function = this as? KaFunctionSymbol ?: return@runCatching false
     val parameters = function.valueParameters
     if (parameters.isEmpty()) return@runCatching false
+    val parameterTypes = parameters.map { parameter ->
+        val declaredType = parameter.returnType
+        substitutor?.let { typeSubstitutor ->
+            runCatching { typeSubstitutor.substitute(declaredType) }.getOrDefault(declaredType)
+        } ?: declaredType
+    }
     val varargIndex = parameters.indexOfFirst { it.isVararg }
     if (varargIndex < 0) {
         if (arguments.size != parameters.size) return@runCatching false
         return@runCatching arguments.withIndex().all { (index, argument) ->
-            argument == null || acceptsArgument(parameters[index].returnType, argument)
+            argument == null || acceptsArgument(parameterTypes[index], argument)
         }
     }
     // The vararg may take any number of arguments, including none, so only the fixed parameters
@@ -358,14 +372,42 @@ internal fun KaCallableSymbol.acceptsIndexedSetterArguments(arguments: List<KaTy
     val trailingCount = parameters.size - varargIndex - 1
     val varargEnd = arguments.size - trailingCount
     arguments.withIndex().all { (index, argument) ->
-        val parameter = when {
-            index < varargIndex -> parameters[index]
-            index >= varargEnd -> parameters[index - varargEnd + varargIndex + 1]
-            else -> parameters[varargIndex]
+        val parameterIndex = when {
+            index < varargIndex -> index
+            index >= varargEnd -> index - varargEnd + varargIndex + 1
+            else -> varargIndex
         }
-        argument == null || acceptsArgument(parameter.returnType, argument)
+        argument == null || acceptsArgument(parameterTypes[parameterIndex], argument)
     }
 }.getOrDefault(false)
+
+/**
+ * Returns the substitutor mapping this type's class parameters to its actual type arguments.
+ *
+ * The member scope of a class symbol is declared, not instantiated: the setter of `Grid<T>` is
+ * reported with the parameter type `T`, whose bound `Any?` would accept every argument. Only
+ * substituting `T` with the receiver's `String` tells that `set(String, Int)` cannot take
+ * `grid[0]++`. Types that are not a class type keep their declared view.
+ *
+ * @return the substitutor, or `null` when the type arguments cannot be read
+ */
+@OptIn(KaExperimentalApi::class)
+context(_: KaSession)
+internal fun KaType.classTypeSubstitutor(): KaSubstitutor? = runCatching {
+    val classSymbol = expandedSymbol as? KaClassSymbol ?: return@runCatching null
+    val typeArguments = (this as? KaClassType)
+        ?.takeIf { classType -> classType.classId == classSymbol.classId }
+        ?.typeArguments
+        ?: return@runCatching null
+    val parameters = classSymbol.typeParameters
+    if (parameters.size != typeArguments.size) return@runCatching null
+    val mapping = parameters.mapIndexedNotNull { index, parameter ->
+        val argument = typeArguments[index].type ?: return@mapIndexedNotNull null
+        parameter to argument
+    }
+    if (mapping.size != parameters.size) return@runCatching null
+    createSubstitutor(mapping.toMap())
+}.getOrNull()
 
 /**
  * Tells whether a value parameter of [parameterType] takes [argument].
@@ -374,7 +416,8 @@ internal fun KaCallableSymbol.acceptsIndexedSetterArguments(arguments: List<KaTy
  * its bounds decide applicability. Treating every type parameter as applicable selects an
  * overload the compiler skips and hides the one that is actually bound. A bound that itself
  * mentions a type parameter (`T : Comparable<R>`) cannot be compared without instantiating it, so
- * that bound stays inconclusive instead of rejecting a possibly valid argument.
+ * that bound stays inconclusive instead of rejecting a possibly valid argument. The nullability of
+ * the occurrence matters as well: `T?` accepts null even when the bound of `T` is non-null.
  *
  * @param parameterType declared parameter type
  * @param argument actual argument type
@@ -383,7 +426,10 @@ internal fun KaCallableSymbol.acceptsIndexedSetterArguments(arguments: List<KaTy
 context(_: KaSession)
 private fun acceptsArgument(parameterType: KaType, argument: KaType): Boolean = runCatching {
     if (parameterType is KaTypeParameterType) {
-        parameterType.symbol.upperBounds.all { bound ->
+        val nullableOccurrenceTakesNull =
+            parameterType.nullability == KaTypeNullability.NULLABLE &&
+                argument.semanticallyEquals(builtinTypes.nullableNothing)
+        nullableOccurrenceTakesNull || parameterType.symbol.upperBounds.all { bound ->
             bound.mentionsTypeParameter() || acceptsArgument(bound, argument)
         }
     } else {
@@ -424,6 +470,7 @@ private fun KaType.mentionsTypeParameter(): Boolean = when (this) {
  *
  * @param candidates member callables visible under the same simple name
  * @param arguments argument types of the implicit call
+ * @param substitutor maps the declaring class's type parameters to the receiver's arguments
  * @return the selected member, or `null` when none applies
  */
 @OptIn(KaExperimentalApi::class)
@@ -431,9 +478,10 @@ context(_: KaSession)
 internal fun selectMember(
     candidates: List<KaCallableSymbol>,
     arguments: List<KaType?>,
+    substitutor: KaSubstitutor? = null,
 ): KaCallableSymbol? {
     val applicable = candidates.filter { candidate ->
-        candidate.acceptsIndexedSetterArguments(arguments)
+        candidate.acceptsIndexedSetterArguments(arguments, substitutor)
     }
     return applicable.firstOrNull { candidate ->
         applicable.none { other -> other !== candidate && other.parametersAreMoreSpecificThan(candidate) }
@@ -607,11 +655,12 @@ internal fun KtArrayAccessExpression.selectedIndexedSetter(): KaCallableSymbol? 
 context(_: KaSession)
 internal fun KaType.hasApplicableMemberIndexedSetter(arguments: List<KaType?>?): Boolean = runCatching {
     if (arguments == null) return@runCatching true
+    val substitutor = classTypeSubstitutor()
     expandedSymbol?.memberScope?.declarations
         .orEmpty()
         .filterIsInstance<KaFunctionSymbol>()
         .any { symbol ->
             (symbol as? KaNamedSymbol)?.name?.asString() == "set" &&
-                symbol.acceptsIndexedSetterArguments(arguments)
+                symbol.acceptsIndexedSetterArguments(arguments, substitutor)
         }
 }.getOrDefault(true)

@@ -1232,7 +1232,7 @@ object KotlinImportBindingCheck {
             }
             ?.toList()
             .orEmpty()
-        selectMember(candidates, arguments)
+        selectMember(candidates, arguments, classTypeSubstitutor())
     }.getOrNull()
 
     /**

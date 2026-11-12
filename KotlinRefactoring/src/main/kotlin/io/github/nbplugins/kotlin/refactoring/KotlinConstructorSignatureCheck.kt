@@ -230,6 +230,12 @@ object KotlinConstructorSignatureCheck {
     /**
      * Tells whether a class type parameter and its function counterpart allow the same arguments.
      *
+     * The bound lists are compared as an unordered set: `where T : Left, T : Right` and
+     * `where T : Right, T : Left` impose the same intersection, but declaration order differs and a
+     * positional zip would compare `Right` with `Left`. Each substituted function bound therefore
+     * consumes a matching class bound, which also keeps duplicated bounds from hiding a real
+     * difference.
+     *
      * A missing function counterpart or unreadable bounds leave the comparison inconclusive, which
      * keeps the conflict decision conservative instead of hiding a real collision.
      *
@@ -247,12 +253,17 @@ object KotlinConstructorSignatureCheck {
         functionParameter ?: return true
         val functionBounds = runCatching { functionParameter.symbol.upperBounds }.getOrNull() ?: return true
         val classBounds = runCatching { classParameter.symbol.upperBounds }.getOrNull() ?: return true
-        return functionBounds.size == classBounds.size &&
-            functionBounds.zip(classBounds).all { (functionBound, classBound) ->
-                runCatching {
-                    substitutor.substitute(functionBound).semanticallyEquals(classBound)
-                }.getOrDefault(false)
-            }
+        if (functionBounds.size != classBounds.size) return false
+        val remaining = classBounds.toMutableList()
+        return functionBounds.all { functionBound ->
+            val substituted = runCatching { substitutor.substitute(functionBound) }.getOrNull()
+                ?: return@all false
+            val match = remaining.firstOrNull { classBound ->
+                runCatching { substituted.semanticallyEquals(classBound) }.getOrDefault(false)
+            } ?: return@all false
+            remaining.remove(match)
+            true
+        }
     }
 
     /**

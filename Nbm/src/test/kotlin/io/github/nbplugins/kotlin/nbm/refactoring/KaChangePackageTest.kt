@@ -5509,6 +5509,124 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
+     * Verifies a nullable type-parameter occurrence accepts a null argument.
+     *
+     * For `val value by Box<Host>()` the top-level property passes a null `thisRef`, which
+     * `operator fun <T : Host> Box<T>.getValue(thisRef: T?, ...)` accepts because `T?` is
+     * nullable. Checking null against the non-null `Host` bound of the symbol instead rejects the
+     * moving accessor, selects the staying `Any.getValue(Any?, ...)` fallback and plans no import.
+     */
+    fun testApply_realSession_acceptsNullThisRefForNullableTypeParameter() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-nullable-type-parameter")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Stays.kt"),
+                "package old\n\nclass Host\n\n" +
+                    "operator fun Any.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 3\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\nclass Box<T>\n\n" +
+                    "operator fun <T : Host> Box<T>.getValue(" +
+                    "thisRef: T?, property: kotlin.reflect.KProperty<*>): Int = 1\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nval value by Box<Host>()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-nullable-type-parameter-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the moved accessor accepting a null thisRef through T?: $text",
+                text.contains("import dest.getValue"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies member setters are checked on the receiver's instantiated type.
+     *
+     * `Grid<T>` declares `set(value: T, index: Int)`, so the member takes `String` for a
+     * `Grid<String>` receiver and cannot serve `grid[0]++`, which passes two `Int`s. Reading the
+     * member scope from the class symbol leaves `T` with its `Any?` bound, treats the member as
+     * applicable and skips the moving `Grid<String>.set(Int, Int)` extension, so the write falls
+     * back to the staying `Any.set(Int, Int)` after the change.
+     */
+    fun testApply_realSession_substitutesReceiverArgumentsForMemberSetters() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-member-setter-substitution")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Stays.kt"),
+                "package old\n\nclass Grid<T> {\n" +
+                    "    operator fun get(index: Int): Int = 0\n" +
+                    "    operator fun set(value: T, index: Int) {}\n}\n\n" +
+                    "operator fun Any.set(index: Int, value: Int) {}\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\noperator fun Grid<String>.set(index: Int, value: Int) {}\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nfun use(grid: Grid<String>) {\n    grid[0]++\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-member-setter-substitution-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the instantiated extension the member cannot serve: $text",
+                text.contains("import dest.set"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies `provideDelegate` is filtered by a null `thisRef` for extension properties.
      *
      * For a top-level `val String.value by Delegate()`, Kotlin passes `null` to `provideDelegate`

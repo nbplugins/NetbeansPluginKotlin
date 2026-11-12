@@ -390,6 +390,43 @@ class KotlinConstructorSignatureCheckTest : KotlinTestCase("KotlinConstructorSig
         }
     }
 
+    /**
+     * Verifies bounds are compared as an unordered set, not by declaration order.
+     *
+     * `class Before<T> where T : Left, T : Right` and
+     * `fun <T> After(x: T) where T : Right, T : Left` impose the same intersection of bounds, so
+     * Kotlin reports conflicting overloads and the rename must be rejected. Zipping the bound
+     * lists positionally compares `Right` with `Left` and lets the invalid rename through.
+     */
+    fun testConflictsWithRenamedConstructor_matchesBoundsRegardlessOfOrder() {
+        withSession(
+            name = "bound-order",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("source"))
+                Files.writeString(root.resolve("source/Interfaces.kt"), "package p\n\ninterface Left\n\ninterface Right\n")
+                Files.writeString(
+                    root.resolve("source/Types.kt"),
+                    "package p\n\nclass Before<T>(val x: T) where T : Left, T : Right\n",
+                )
+                Files.writeString(
+                    root.resolve("source/Functions.kt"),
+                    "package p\n\nfun <T> After(x: T) where T : Right, T : Left = x\n",
+                )
+            },
+        ) { session, root ->
+            val types = session.ktFile(root.resolve("source/Types.kt"))
+            val functions = session.ktFile(root.resolve("source/Functions.kt"))
+
+            assertTrue(
+                "the same intersection of bounds collides regardless of its declaration order",
+                KotlinConstructorSignatureCheck.conflictsWithRenamedConstructor(
+                    primaryClass(types),
+                    functions.declarations.filterIsInstance<KtNamedFunction>().single(),
+                ),
+            )
+        }
+    }
+
     /** @return the single top-level class of [file]. */
     private fun primaryClass(file: KtFile): KtClass = file.declarations.filterIsInstance<KtClass>().single()
 
