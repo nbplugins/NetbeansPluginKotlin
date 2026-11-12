@@ -684,7 +684,9 @@ internal fun selectExtension(
                 ))
     }
     return applicable.firstOrNull { candidate ->
-        applicable.none { other -> other !== candidate && other.isMoreSpecificThan(candidate, receiverType) }
+        applicable.none { other ->
+            other !== candidate && other.isMoreSpecificThan(candidate, receiverType, arguments, indexedWrite)
+        }
     } ?: applicable.firstOrNull()
 }
 
@@ -717,12 +719,17 @@ internal fun KaCallableSymbol.receiverTypeSubstitutor(receiverType: KaType): KaS
  * declared receiver (`Box<T>`) has no subtype relation with a concrete one (`Box<String>`) until
  * the receiver supplies `T`. Two overloads whose instantiated receivers agree are ranked by their
  * type parameters: the concrete receiver needs fewer of them, and Kotlin prefers it over the
- * generic one. When both need as many, the preference falls back to the value parameters:
- * `Box.set(Int, Int)` is more specific than `Box.set(Int, Number)` for a write whose value is an
- * `Int`.
+ * generic one. When both need as many, a callable that leaves out fewer default arguments wins:
+ * for `box[0] = 1` both `Box.set(i, j = 0, value)` and `Box.set(i, value)` apply, and the compiler
+ * binds the one without a default. The preference falls back to the value parameters only when
+ * neither of those separates the candidates: `Box.set(Int, Int)` is more specific than
+ * `Box.set(Int, Number)` for a write whose value is an `Int`.
  *
  * @param other competing callable
  * @param receiverType type of the value the operator is invoked on
+ * @param arguments argument types of the call, or `null` when they cannot be resolved
+ * @param indexedWrite `true` when [arguments] belong to an indexed write, whose defaulted index
+ *   parameters may be omitted
  * @return `true` when this callable is a strictly better overload
  */
 @OptIn(KaExperimentalApi::class)
@@ -730,6 +737,8 @@ context(_: KaSession)
 private fun KaCallableSymbol.isMoreSpecificThan(
     other: KaCallableSymbol,
     receiverType: KaType,
+    arguments: List<KaType?>?,
+    indexedWrite: Boolean,
 ): Boolean = runCatching {
     val receiver = instantiatedReceiverType(receiverType) ?: return@runCatching false
     val otherReceiver = other.instantiatedReceiverType(receiverType) ?: return@runCatching false
@@ -739,8 +748,33 @@ private fun KaCallableSymbol.isMoreSpecificThan(
     val ownParameters = (this as? KaFunctionSymbol)?.typeParameters?.size ?: 0
     val otherParameters = (other as? KaFunctionSymbol)?.typeParameters?.size ?: 0
     if (ownParameters != otherParameters) return@runCatching ownParameters < otherParameters
+    val ownOmittedDefaults = omittedDefaultCount(arguments, indexedWrite)
+    val otherOmittedDefaults = other.omittedDefaultCount(arguments, indexedWrite)
+    if (ownOmittedDefaults != otherOmittedDefaults) return@runCatching ownOmittedDefaults < otherOmittedDefaults
     parametersAreMoreSpecificThan(other)
 }.getOrDefault(false)
+
+/**
+ * Counts the defaulted parameters this callable's declaration leaves out for [arguments].
+ *
+ * An indexed write binds its indices to the leading parameters and the assigned value to the final
+ * one, so every parameter in between is omitted and must have a default. Kotlin prefers the
+ * applicable callable that omits fewer of them: `set(i, value)` beats `set(i, j = 0, value)` for
+ * `box[0] = 1`. A delegate call always passes one argument per parameter and therefore omits none,
+ * which leaves every candidate with the same count and the comparison undecided.
+ *
+ * @param arguments argument types of the call, or `null` when they cannot be resolved
+ * @param indexedWrite `true` when [arguments] belong to an indexed write
+ * @return the number of omitted defaulted parameters, or `0` when the call omits none
+ */
+context(_: KaSession)
+private fun KaCallableSymbol.omittedDefaultCount(arguments: List<KaType?>?, indexedWrite: Boolean): Int {
+    if (!indexedWrite || arguments.isNullOrEmpty()) return 0
+    val parameters = (this as? KaFunctionSymbol)?.valueParameters ?: return 0
+    val indexCount = arguments.size - 1
+    if (indexCount > parameters.size - 1) return 0
+    return parameters.subList(indexCount, parameters.size - 1).count { parameter -> parameter.hasDefaultValue }
+}
 
 /**
  * Returns this extension's declared receiver as instantiated for [receiverType].
@@ -841,7 +875,9 @@ internal fun KtArrayAccessExpression.selectedIndexedSetter(): KaCallableSymbol? 
 /**
  * Tells whether this type declares a member `set` that accepts the indexed-write arguments.
  *
- * A member setter always wins over an extension, but only when its signature actually fits: a
+ * A member setter always wins over an extension, but only when Kotlin can select it: it must be
+ * [operator-eligible][isOperatorEligible] — a plain `fun set(i: Int, value: Int)` never serves
+ * `box[0] = 1`, so it cannot hide an extension — and its signature must actually fit, because a
  * `set(String, Int)` member does not shadow `box[0]++`, which needs `set(Int, Int)`. An unknown
  * argument list keeps the member as applicable, preserving the previous conservative behavior.
  *
@@ -857,6 +893,7 @@ internal fun KaType.hasApplicableMemberIndexedSetter(arguments: List<KaType?>?):
         .filterIsInstance<KaFunctionSymbol>()
         .any { symbol ->
             (symbol as? KaNamedSymbol)?.name?.asString() == "set" &&
+                symbol.isOperatorEligible() &&
                 symbol.acceptsIndexedSetterArguments(arguments, substitutor, indexedWrite = true)
         }
 }.getOrDefault(true)

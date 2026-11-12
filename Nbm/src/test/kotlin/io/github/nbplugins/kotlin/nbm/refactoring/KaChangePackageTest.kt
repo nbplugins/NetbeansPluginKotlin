@@ -6450,6 +6450,192 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies a provider override inherits the `operator` modifier from its base declaration.
+     *
+     * `Delegate` overrides `Base.provideDelegate` without repeating `operator`, which Kotlin
+     * allows: the override is still the delegate provider and its result type decides the accessor.
+     * The override is the only member the delegate type reports, so requiring the modifier in its
+     * own PSI finds no provider, falls back to the staying `Any.getValue` and plans no import even
+     * though the property calls the moving `Provided.getValue`.
+     */
+    fun testApply_realSession_importsInheritedOperatorAccessor() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-inherited-operator")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Base.kt"),
+                "package old\n\n" +
+                    "open class Base {\n" +
+                    "    open operator fun provideDelegate(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Provided = Provided()\n" +
+                    "}\n\n" +
+                    "class Provided\n\n" +
+                    "operator fun Any.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): String = \"fallback\"\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\n" +
+                    "class Delegate : Base() {\n" +
+                    "    override fun provideDelegate(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Provided = Provided()\n" +
+                    "}\n\n" +
+                    "operator fun Provided.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 1\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nval value: Int by Delegate()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-inherited-operator-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the accessor selected through the overriding provider: $text",
+                text.contains("import dest.getValue"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies an ordinary member named `set` does not hide an operator extension.
+     *
+     * `Box.set(i, value)` is not declared `operator`, so Kotlin never uses it for `box[0]++` and
+     * binds the extension setter instead. Treating the member as applicable suppresses the
+     * extension lookup, plans no import and silently leaves the write calling the staying
+     * `Any.set` after the move.
+     */
+    fun testApply_realSession_ignoresNonOperatorMemberSetter() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-non-operator-member")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Box.kt"),
+                "package old\n\n" +
+                    "open class Box {\n" +
+                    "    operator fun get(i: Int): Int = 0\n" +
+                    "    fun set(i: Int, value: Int) {}\n" +
+                    "}\n\n" +
+                    "operator fun Any.set(i: Int, value: Int) {}\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\noperator fun Box.set(i: Int, value: Int) {}\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nfun use(box: Box) {\n    box[0]++\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-non-operator-member-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the extension setter the non-operator member cannot hide: $text",
+                text.contains("import dest.set"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies overload resolution prefers the setter that omits no default parameters.
+     *
+     * For `box[0] = 1` both `Box.set(i: Int, j: Int = 0, value: Int)` and `Box.set(i, value)`
+     * accept the write, and Kotlin binds the one without a default argument. Ranking only by the
+     * receiver and value parameters finds neither more specific, so the first enumerated setter —
+     * here the staying one — wins unaided and no import of the moving overload is planned.
+     */
+    fun testApply_realSession_prefersSetterWithoutOmittedDefaults() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-omitted-defaults")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Box.kt"),
+                "package old\n\n" +
+                    "open class Box {\n    operator fun get(i: Int): Int = 0\n}\n\n" +
+                    "operator fun Box.set(i: Int, j: Int = 0, value: Int) {}\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\noperator fun Box.set(i: Int, value: Int) {}\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nfun use(box: Box) {\n    box[0]++\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-omitted-defaults-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the setter that omits no default parameters: $text",
+                text.contains("import dest.set"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))
