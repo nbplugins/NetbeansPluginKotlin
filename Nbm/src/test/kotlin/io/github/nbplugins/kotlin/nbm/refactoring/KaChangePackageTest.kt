@@ -6636,6 +6636,260 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /**
+     * Verifies a bounded generic accessor outranks an `Any?` one.
+     *
+     * For a member property of `Local : Host()`, both `Box.getValue(Any?, KProperty<*>)` and
+     * `<T : Host> Box.getValue(T, KProperty<*>)` accept the call, and Kotlin selects the bounded
+     * generic overload because `Host` is more specific than `Any?`. Comparing the type-parameter
+     * count first prefers the non-generic overload, which stays behind, so the caller silently
+     * switches getters after the move and no `dest.getValue` import is planned.
+     */
+    fun testApply_realSession_prefersBoundedGenericAccessor() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-bounded-generic")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Box.kt"),
+                "package old\n\n" +
+                    "open class Host\n\n" +
+                    "class Box\n\n" +
+                    "operator fun Box.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 1\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\n" +
+                    "operator fun <T : Host> Box.getValue(" +
+                    "thisRef: T, property: kotlin.reflect.KProperty<*>): String = \"moved\"\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\n" +
+                    "class Local : Host() {\n    val value: String by Box()\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-bounded-generic-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the bounded accessor Kotlin selects: $text",
+                text.contains("import dest.getValue"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a more specific parameter tuple outranks the omitted-default preference.
+     *
+     * For `box[0]++` both `Box.set(i: Number, j: Number)` and
+     * `Box.set(i: Int, j: Int = 0, value: Int)` accept the write, and Kotlin selects the latter:
+     * its bound parameters are `Int`, which is more specific than `Number`. Comparing the omitted
+     * defaults first prefers the `Number` setter, which stays behind, so no `dest.set` import is
+     * planned and the write silently falls back to it after the move.
+     */
+    fun testApply_realSession_prefersParameterSpecificSetterOverDefaults() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-specific-over-defaults")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Box.kt"),
+                "package old\n\n" +
+                    "open class Box {\n    operator fun get(i: Int): Int = 0\n}\n\n" +
+                    "operator fun Box.set(i: Number, j: Number) {}\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\noperator fun Box.set(i: Int, j: Int = 0, value: Int) {}\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nfun use(box: Box) {\n    box[0]++\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-specific-over-defaults-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the setter with the more specific bound parameters: $text",
+                text.contains("import dest.set"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies overriding an ordinary `provideDelegate` does not inherit operator eligibility.
+     *
+     * `Base` declares both an operator `provideDelegate(Host, KProperty<*>)` and an ordinary open
+     * `provideDelegate(Any?, KProperty<*>)`; `Delegate` overrides only the ordinary one, so Kotlin
+     * keeps using `Delegate` itself as the delegate. Matching the supertype declaration by name and
+     * arity finds the unrelated operator overload, invents a provider returning `Decoy` and searches
+     * accessors there, so the moving `Delegate.getValue` is never imported.
+     */
+    fun testApply_realSession_ignoresOverrideOfOrdinaryProvider() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-override-ordinary-provider")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Base.kt"),
+                "package old\n\n" +
+                    "open class Host\n\n" +
+                    "class Decoy\n\n" +
+                    "open class Base {\n" +
+                    "    open operator fun provideDelegate(" +
+                    "thisRef: Host, property: kotlin.reflect.KProperty<*>): Decoy = Decoy()\n" +
+                    "    open fun provideDelegate(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Decoy = Decoy()\n" +
+                    "}\n\n" +
+                    "operator fun Any.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): String = \"fallback\"\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\n" +
+                    "class Delegate : Base() {\n" +
+                    "    override fun provideDelegate(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Decoy = Decoy()\n" +
+                    "}\n\n" +
+                    "operator fun Delegate.getValue(" +
+                    "thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 1\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nval value: Int by Delegate()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-override-ordinary-provider-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the accessor of the delegate itself: $text",
+                text.contains("import dest.getValue"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a wildcard-imported type alias survives a move into a shadowing package.
+     *
+     * `fun make() = Alias()` in `old` resolves through `import lib.*` to `lib.Alias`, which expands
+     * to `other.Impl`. Moving the file into `dest`, which declares its own `Alias`, makes the
+     * same-package declaration outrank the star import, so the star import has to be spelled out.
+     * K2 reports the alias's own classifier (`lib.Alias`, with the `KtTypeAlias` as its PSI) rather
+     * than the expanded target, which is what lets the refactoring keep the spelled name and add
+     * the explicit import instead of silently retargeting the call to `dest.Alias`.
+     */
+    fun testApply_realSession_importsShadowedWildcardTypeAlias() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-shadowed-alias")
+        try {
+            for (directory in listOf("lib", "other", "dest", "old")) {
+                Files.createDirectories(temporaryRoot.resolve(directory))
+            }
+            val sourcePath = temporaryRoot.resolve("old/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("other/Impl.kt"),
+                "package other\n\nclass Impl\n",
+            )
+            Files.writeString(
+                temporaryRoot.resolve("lib/Aliases.kt"),
+                "package lib\n\ntypealias Alias = other.Impl\n",
+            )
+            Files.writeString(
+                temporaryRoot.resolve("dest/Aliases.kt"),
+                "package dest\n\nclass Alias\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\nimport lib.*\n\nfun make() = Alias()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-shadowed-alias-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[sourcePath.toString()] ?: error("The moved file must change")
+            assertTrue(
+                "The moved file must import the type alias it still spells: $text",
+                text.contains("import lib.Alias"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

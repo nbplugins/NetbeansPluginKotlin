@@ -601,11 +601,12 @@ private fun KaType.asNonNullable(): KaType? = runCatching {
  *
  * A bound such as `Comparable<T>` cannot be checked against a concrete argument without
  * instantiating `T`; a raw subtype test would reject a valid argument, so such a bound is treated
- * as inconclusive.
+ * as inconclusive. Override matching uses the same rule: a signature spelled with a type parameter
+ * only fits after instantiation.
  *
  * @return `true` when this type mentions a type parameter
  */
-private fun KaType.mentionsTypeParameter(): Boolean = when (this) {
+internal fun KaType.mentionsTypeParameter(): Boolean = when (this) {
     is KaTypeParameterType -> true
     is KaClassType -> typeArguments.any { projection -> projection.type?.mentionsTypeParameter() == true }
     is KaFunctionType -> receiverType?.mentionsTypeParameter() == true ||
@@ -646,7 +647,9 @@ internal fun selectMember(
         candidate.acceptsIndexedSetterArguments(arguments, substitutor, indexedWrite)
     }
     return applicable.firstOrNull { candidate ->
-        applicable.none { other -> other !== candidate && other.parametersAreMoreSpecificThan(candidate) }
+        applicable.none { other ->
+            other !== candidate && other.compareParameterPreference(candidate, arguments, indexedWrite) < 0
+        }
     } ?: applicable.firstOrNull()
 }
 
@@ -715,16 +718,6 @@ internal fun KaCallableSymbol.receiverTypeSubstitutor(receiverType: KaType): KaS
 /**
  * Tells whether this callable's overload is preferred over [other] for [receiverType].
  *
- * The receivers are compared as they are instantiated for the actual receiver, because a generic
- * declared receiver (`Box<T>`) has no subtype relation with a concrete one (`Box<String>`) until
- * the receiver supplies `T`. Two overloads whose instantiated receivers agree are ranked by their
- * type parameters: the concrete receiver needs fewer of them, and Kotlin prefers it over the
- * generic one. When both need as many, a callable that leaves out fewer default arguments wins:
- * for `box[0] = 1` both `Box.set(i, j = 0, value)` and `Box.set(i, value)` apply, and the compiler
- * binds the one without a default. The preference falls back to the value parameters only when
- * neither of those separates the candidates: `Box.set(Int, Int)` is more specific than
- * `Box.set(Int, Number)` for a write whose value is an `Int`.
- *
  * @param other competing callable
  * @param receiverType type of the value the operator is invoked on
  * @param arguments argument types of the call, or `null` when they cannot be resolved
@@ -739,20 +732,203 @@ private fun KaCallableSymbol.isMoreSpecificThan(
     receiverType: KaType,
     arguments: List<KaType?>?,
     indexedWrite: Boolean,
-): Boolean = runCatching {
-    val receiver = instantiatedReceiverType(receiverType) ?: return@runCatching false
-    val otherReceiver = other.instantiatedReceiverType(receiverType) ?: return@runCatching false
-    if (!receiver.semanticallyEquals(otherReceiver)) {
-        return@runCatching receiver.isSubtypeOf(otherReceiver) && !otherReceiver.isSubtypeOf(receiver)
+): Boolean = compareOverloadPreference(other, receiverType, arguments, indexedWrite) < 0
+
+/**
+ * Orders this callable against [other] the way Kotlin ranks applicable overloads.
+ *
+ * The criteria follow the compiler's order: the more specific receiver first, then the more
+ * specific parameter tuple, then the callable that needs fewer type parameters, and finally the one
+ * that omits fewer default arguments. A criterion that prefers neither side — equal or incomparable
+ * types — leaves the decision to the next one, and every criterion is symmetric, so the comparison
+ * of `a` with `b` negates the comparison of `b` with `a`.
+ *
+ * Parameter specificity comes before the tie-breakers because a narrower parameter type is what
+ * the compiler compares first: `<T : Host> Box.getValue(T, ...)` beats
+ * `Box.getValue(Any?, ...)` even though it is generic, and `Box.set(i: Int, j: Int = 0, value)`
+ * beats `Box.set(i: Number, j: Number)` even though it omits a default argument.
+ *
+ * The receivers are compared as they are instantiated for the actual receiver, because a generic
+ * declared receiver (`Box<T>`) has no subtype relation with a concrete one (`Box<String>`) until
+ * the receiver supplies `T`. Parameters are compared the same way: only the ones the call binds
+ * take part, and a type parameter is replaced by its upper bound, which is exactly what it accepts.
+ *
+ * @param other competing callable
+ * @param receiverType type of the value the operator is invoked on
+ * @param arguments argument types of the call, or `null` when they cannot be resolved
+ * @param indexedWrite `true` when [arguments] belong to an indexed write, whose defaulted index
+ *   parameters may be omitted
+ * @return a negative value when this callable is preferred, a positive one when [other] is, and
+ *   `0` when neither is strictly preferred
+ */
+@OptIn(KaExperimentalApi::class)
+context(_: KaSession)
+private fun KaCallableSymbol.compareOverloadPreference(
+    other: KaCallableSymbol,
+    receiverType: KaType,
+    arguments: List<KaType?>?,
+    indexedWrite: Boolean,
+): Int = runCatching {
+    val receiver = instantiatedReceiverType(receiverType)
+    val otherReceiver = other.instantiatedReceiverType(receiverType)
+    if (receiver != null && otherReceiver != null) {
+        compareTypeSpecificity(receiver, otherReceiver).let { preference ->
+            if (preference != 0) return@runCatching preference
+        }
     }
-    val ownParameters = (this as? KaFunctionSymbol)?.typeParameters?.size ?: 0
-    val otherParameters = (other as? KaFunctionSymbol)?.typeParameters?.size ?: 0
-    if (ownParameters != otherParameters) return@runCatching ownParameters < otherParameters
+    compareParameterPreference(other, arguments, indexedWrite)
+}.getOrDefault(0)
+
+/**
+ * Orders this callable against [other] by the parameters [arguments] bind to.
+ *
+ * Used on its own for member overloads, which all have the same receiver and are separated by
+ * their value parameters alone.
+ *
+ * @param other competing callable
+ * @param arguments argument types of the call, or `null` when they cannot be resolved
+ * @param indexedWrite `true` when [arguments] belong to an indexed write, whose defaulted index
+ *   parameters may be omitted
+ * @return a negative value when this callable is preferred, a positive one when [other] is, and
+ *   `0` when neither is strictly preferred
+ */
+@OptIn(KaExperimentalApi::class)
+context(_: KaSession)
+private fun KaCallableSymbol.compareParameterPreference(
+    other: KaCallableSymbol,
+    arguments: List<KaType?>?,
+    indexedWrite: Boolean,
+): Int = runCatching {
+    val ownBoundTypes = boundParameterTypes(arguments, indexedWrite)
+    val otherBoundTypes = other.boundParameterTypes(arguments, indexedWrite)
+    if (ownBoundTypes != null && otherBoundTypes != null) {
+        compareParameterTuples(ownBoundTypes, otherBoundTypes).let { preference ->
+            if (preference != 0) return@runCatching preference
+        }
+    }
+    val ownTypeParameters = (this as? KaFunctionSymbol)?.typeParameters?.size ?: 0
+    val otherTypeParameters = (other as? KaFunctionSymbol)?.typeParameters?.size ?: 0
+    if (ownTypeParameters != otherTypeParameters) {
+        return@runCatching ownTypeParameters.compareTo(otherTypeParameters)
+    }
     val ownOmittedDefaults = omittedDefaultCount(arguments, indexedWrite)
     val otherOmittedDefaults = other.omittedDefaultCount(arguments, indexedWrite)
-    if (ownOmittedDefaults != otherOmittedDefaults) return@runCatching ownOmittedDefaults < otherOmittedDefaults
-    parametersAreMoreSpecificThan(other)
-}.getOrDefault(false)
+    if (ownOmittedDefaults != otherOmittedDefaults) {
+        return@runCatching ownOmittedDefaults.compareTo(otherOmittedDefaults)
+    }
+    // Without resolved arguments nothing binds, so the declared tuples are all that remains.
+    if (ownBoundTypes == null || otherBoundTypes == null) {
+        compareParameterTuples(declaredParameterTypes(), other.declaredParameterTypes())
+    } else {
+        0
+    }
+}.getOrDefault(0)
+
+/**
+ * Compares two types as overload-resolution candidates.
+ *
+ * @param mine type of the preferred candidate
+ * @param theirs type of the competing candidate
+ * @return a negative value when [mine] is strictly more specific, a positive one when [theirs] is,
+ *   and `0` when they are equal or incomparable
+ */
+context(_: KaSession)
+private fun compareTypeSpecificity(mine: KaType, theirs: KaType): Int {
+    if (runCatching { mine.semanticallyEquals(theirs) }.getOrDefault(false)) return 0
+    val mineFits = runCatching { mine.isSubtypeOf(theirs) }.getOrDefault(false)
+    val theirsFits = runCatching { theirs.isSubtypeOf(mine) }.getOrDefault(false)
+    return when {
+        mineFits == theirsFits -> 0
+        mineFits -> -1
+        else -> 1
+    }
+}
+
+/**
+ * Compares two bound parameter tuples as overload-resolution candidates.
+ *
+ * A tuple is more specific only when every one of its types is a subtype of the competing tuple's
+ * type; one incomparable or equal pair leaves the comparison undecided. Type parameters are
+ * compared by their upper bound, so `<T : Host>` prefers the same parameter types as `Host`.
+ *
+ * @param mine parameter types the arguments bind to in the preferred candidate
+ * @param theirs parameter types the same arguments bind to in the competing candidate
+ * @return a negative value when [mine] is strictly more specific, a positive one when [theirs] is,
+ *   and `0` when neither is
+ */
+@OptIn(KaExperimentalApi::class)
+context(_: KaSession)
+private fun compareParameterTuples(mine: List<KaType>, theirs: List<KaType>): Int {
+    if (mine.size != theirs.size || mine.isEmpty()) return 0
+    val mineTypes = mine.map { type -> type.effectiveParameterType() }
+    val theirTypes = theirs.map { type -> type.effectiveParameterType() }
+    val mineFits = mineTypes.indices.all { index ->
+        runCatching { mineTypes[index].isSubtypeOf(theirTypes[index]) }.getOrDefault(false)
+    }
+    val theirsFits = mineTypes.indices.all { index ->
+        runCatching { theirTypes[index].isSubtypeOf(mineTypes[index]) }.getOrDefault(false)
+    }
+    return when {
+        mineFits == theirsFits -> 0
+        mineFits -> -1
+        else -> 1
+    }
+}
+
+/**
+ * Returns the type this parameter contributes to the specificity comparison.
+ *
+ * A parameter typed with a type parameter accepts exactly what the parameter's upper bound
+ * accepts — `T : Host` takes a `Host` — so the bound is what the compiler compares with the other
+ * overload's concrete type. A type parameter bounded only by `Any?` compares equal to `Any?`,
+ * which leaves the choice between it and a non-generic overload to the type-parameter tie-breaker.
+ *
+ * @return the upper bound of a type-parameter type, or the type itself
+ */
+@OptIn(KaExperimentalApi::class)
+context(_: KaSession)
+private fun KaType.effectiveParameterType(): KaType =
+    if (this is KaTypeParameterType) symbol.upperBounds.firstOrNull() ?: this else this
+
+/**
+ * Returns this callable's value parameter types as declared.
+ *
+ * @return the declared tuple, or an empty list for a callable without value parameters
+ */
+context(_: KaSession)
+private fun KaCallableSymbol.declaredParameterTypes(): List<KaType> =
+    (this as? KaFunctionSymbol)?.valueParameters?.map { parameter -> parameter.returnType }.orEmpty()
+
+/**
+ * Returns this callable's value parameter types as the arguments of a call bind them.
+ *
+ * A regular call passes one argument per parameter, so every parameter takes part. An indexed write
+ * binds its indices to the leading parameters, the assigned value to the final one and leaves the
+ * defaulted parameters in between unsupplied, so only the bound ones can be compared — the omitted
+ * ones are subject of the default-argument tie-breaker instead. A `vararg` declaration maps its
+ * arguments to parameters by count only, which this comparison cannot reproduce.
+ *
+ * @param arguments argument types of the call, or `null` when they cannot be resolved
+ * @param indexedWrite `true` when [arguments] belong to an indexed write
+ * @return the parameter types the arguments bind to, or `null` when they cannot be mapped
+ */
+context(_: KaSession)
+private fun KaCallableSymbol.boundParameterTypes(
+    arguments: List<KaType?>?,
+    indexedWrite: Boolean,
+): List<KaType>? {
+    if (arguments == null) return null
+    val parameters = (this as? KaFunctionSymbol)?.valueParameters ?: return null
+    if (parameters.any { parameter -> parameter.isVararg }) return null
+    if (!indexedWrite) {
+        if (parameters.size != arguments.size) return null
+        return parameters.map { parameter -> parameter.returnType }
+    }
+    val indexCount = arguments.size - 1
+    if (indexCount < 0 || indexCount > parameters.size - 1) return null
+    return parameters.take(indexCount).map { parameter -> parameter.returnType } +
+        parameters.last().returnType
+}
 
 /**
  * Counts the defaulted parameters this callable's declaration leaves out for [arguments].
@@ -794,34 +970,6 @@ private fun KaCallableSymbol.instantiatedReceiverType(receiverType: KaType): KaT
         runCatching { substitutor.substitute(declaredReceiver) }.getOrDefault(declaredReceiver)
     } ?: declaredReceiver
 }.getOrNull()
-
-/**
- * Tells whether this callable's value parameters are strictly more specific than [other]'s.
- *
- * Every parameter must accept the other's type, and at least one must be a proper subtype:
- * `(Int, Int)` is more specific than `(Int, Number)`. A type parameter or a differing arity
- * leaves the comparison undecided, because the instantiation is what would decide it.
- *
- * @param other competing callable
- * @return `true` when this callable takes a strictly narrower parameter tuple
- */
-@OptIn(KaExperimentalApi::class)
-context(_: KaSession)
-private fun KaCallableSymbol.parametersAreMoreSpecificThan(other: KaCallableSymbol): Boolean = runCatching {
-    val mine = (this as? KaFunctionSymbol)?.valueParameters ?: return@runCatching false
-    val theirs = (other as? KaFunctionSymbol)?.valueParameters ?: return@runCatching false
-    if (mine.size != theirs.size || mine.isEmpty()) return@runCatching false
-    var strict = false
-    val fits = mine.indices.all { index ->
-        val mineType = mine[index].returnType
-        val theirType = theirs[index].returnType
-        if (mineType is KaTypeParameterType || theirType is KaTypeParameterType) return@all false
-        if (!mineType.isSubtypeOf(theirType)) return@all false
-        if (!theirType.isSubtypeOf(mineType)) strict = true
-        true
-    }
-    fits && strict
-}.getOrDefault(false)
 
 /**
  * Tells whether this indexed access is updated implicitly, not merely assigned or read.

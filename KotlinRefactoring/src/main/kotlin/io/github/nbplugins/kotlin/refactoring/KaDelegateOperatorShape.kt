@@ -24,10 +24,12 @@ import org.jetbrains.kotlin.analysis.api.components.defaultTypeWithStarProjectio
 import org.jetbrains.kotlin.analysis.api.components.expandedSymbol
 import org.jetbrains.kotlin.analysis.api.components.isSubtypeOf
 import org.jetbrains.kotlin.analysis.api.components.memberScope
+import org.jetbrains.kotlin.analysis.api.components.semanticallyEquals
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaFunctionSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.findClass
 import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
+import org.jetbrains.kotlin.analysis.api.types.KaSubstitutor
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.FqName
@@ -93,9 +95,14 @@ internal fun KaCallableSymbol.isOperatorEligible(): Boolean {
  * A class reports only its own declaration under a member name — the inherited one is hidden by
  * the override — so the operator modifier of the base declaration has to be looked up in the
  * supertypes. All of them are searched, which covers a modifier inherited transitively: an override
- * of an override that also omits the keyword still finds the original operator declaration. The
- * override cannot change the parameter count, so a same-named declaration with the same number of
- * value parameters is the one it overrides.
+ * of an override that also omits the keyword still finds the original operator declaration.
+ *
+ * The overridden declaration is the one whose signature matches, not merely any same-named and
+ * same-arity one: a base class may declare both an `operator provideDelegate(Host, KProperty<*>)`
+ * and an ordinary `provideDelegate(Any?, KProperty<*>)`, and an override of the ordinary one is
+ * not an operator even though the operator overload exists in the same superclass. The base
+ * declaration is compared as instantiated through the supertype entry, so `Base<T>` becomes the
+ * argument the class actually passes.
  *
  * @return `true` when a supertype declares this callable's signature as an operator
  */
@@ -105,13 +112,43 @@ private fun KaFunctionSymbol.overridesOperator(): Boolean {
     val classId = callableId?.classId ?: return true
     val classSymbol = findClass(classId) ?: return true
     val name = (this as? KaNamedSymbol)?.name ?: return true
-    val parameterCount = valueParameters.size
     return classSymbol.defaultType.allSupertypes.any { supertype ->
+        val substitutor = supertype.classTypeSubstitutor()
         supertype.expandedSymbol?.memberScope?.callables(name)
             ?.filterIsInstance<KaFunctionSymbol>()
             ?.any { candidate ->
-                candidate.valueParameters.size == parameterCount && candidate.declaresOperatorModifier()
+                candidate.declaresOperatorModifier() && overridesSignatureOf(candidate, substitutor)
             } == true
+    }
+}
+
+/**
+ * Tells whether this callable's value parameter list matches [candidate]'s.
+ *
+ * The types are compared as the supertype entry instantiates them, because that is the signature
+ * the override is checked against. A spelling that still mentions a type parameter cannot be
+ * compared without inferring it, so such a pair is treated as matching — the alternative would
+ * reject overrides of library generic operators the plugin cannot inspect further.
+ *
+ * @param candidate declaration found in a supertype
+ * @param substitutor instantiation of [candidate]'s declaring class through the supertype entry
+ * @return `true` when the signatures match or cannot be distinguished
+ */
+@OptIn(KaExperimentalApi::class)
+context(_: KaSession)
+private fun KaFunctionSymbol.overridesSignatureOf(
+    candidate: KaFunctionSymbol,
+    substitutor: KaSubstitutor?,
+): Boolean {
+    if (candidate.valueParameters.size != valueParameters.size) return false
+    return valueParameters.indices.all { index ->
+        val declaredType = candidate.valueParameters[index].returnType
+        val theirType = substitutor?.let { current ->
+            runCatching { current.substitute(declaredType) }.getOrDefault(declaredType)
+        } ?: declaredType
+        val myType = valueParameters[index].returnType
+        if (myType.mentionsTypeParameter() || theirType.mentionsTypeParameter()) return@all true
+        runCatching { myType.semanticallyEquals(theirType) }.getOrDefault(true)
     }
 }
 
