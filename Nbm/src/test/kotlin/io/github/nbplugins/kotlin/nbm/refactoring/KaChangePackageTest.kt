@@ -5747,6 +5747,128 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
+     * Verifies a receiver-derived instantiation survives a subtype call argument.
+     *
+     * `operator fun <T> Delegate<T>.provideDelegate(thisRef: T, ...): Provided<T>` instantiates
+     * `T = Base` from the receiver `Delegate<Base>`, while the enclosing `Host : Base` passes a
+     * subtype as `thisRef`. Requiring the argument to equal the inferred instantiation contradicts
+     * the receiver and falls back to the declared `Provided<T>`, which selects no accessor at all;
+     * the argument only has to be assignable to the instantiated parameter.
+     */
+    fun testApply_realSession_keepsReceiverInferenceForSubtypeArguments() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-provider-subtype-argument")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val stayingPath = temporaryRoot.resolve("old/Stays.kt")
+            Files.writeString(
+                stayingPath,
+                "package old\n\nopen class Base\n\nclass Delegate<T>\n\n" +
+                    "class Host : Base() {\n    val value by Delegate<Base>()\n}\n\n" +
+                    "operator fun Any.getValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 1\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\nclass Provided<T>\n\n" +
+                    "operator fun <T> Delegate<T>.provideDelegate(" +
+                    "thisRef: T, property: kotlin.reflect.KProperty<*>): Provided<T> = Provided()\n\n" +
+                    "operator fun Provided<Base>.getValue(" +
+                    "thisRef: Host, property: kotlin.reflect.KProperty<*>): Int = 0\n",
+            )
+            Files.writeString(
+                temporaryRoot.resolve("usage/Usage.kt"),
+                "package usage\n\nimport old.Host\n\nfun use(host: Host) = host.value\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-provider-subtype-argument-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[stayingPath.toString()] ?: error("The staying file must change")
+            assertTrue(
+                "The staying file must import the accessor of the receiver-instantiated provider result: $text",
+                text.contains("import dest.getValue"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a nullable value argument fits a nullable type-parameter setter.
+     *
+     * `operator fun <T : Host> Box.setValue(..., value: T?)` takes `Host?` for `T = Host`, but the
+     * nullable occurrence only accepts `null` explicitly: the bound of `T` is non-null, so the
+     * `Host?` value fails a raw subtype test and the moving setter is dropped in favour of the
+     * staying `Any.setValue`. The occurrence's nullability is what the argument has to satisfy, so
+     * only the argument's non-nullable part faces the bounds.
+     */
+    fun testApply_realSession_keepsNullableValueForNullableSetter() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-nullable-setter")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Box.kt"),
+                "package old\n\nclass Box\n\nopen class Host\n\n" +
+                    "operator fun Any.getValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>): Any? = null\n\n" +
+                    "operator fun Any.setValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>, " +
+                    "value: Any?) {}\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\noperator fun <T : Host> Box.setValue(thisRef: Any?, " +
+                    "property: kotlin.reflect.KProperty<*>, value: T?) {}\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nvar value: Host? by Box()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-nullable-setter-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the setter the nullable property value fits: $text",
+                text.contains("import dest.setValue"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies `provideDelegate` is filtered by a null `thisRef` for extension properties.
      *
      * For a top-level `val String.value by Delegate()`, Kotlin passes `null` to `provideDelegate`

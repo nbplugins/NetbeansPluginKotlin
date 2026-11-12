@@ -671,6 +671,9 @@ object KotlinImportBindingCheck {
      * re-spelling [name] through them is not a capture
      * @param ignoredDeclarations declarations that are the intended target themselves; a package
      * change leaves their names in place, so they must not be reported as captures
+     * @param rewrittenImport `true` when the refactoring rewrites an explicit import to bind
+     *        [name], which outranks the file's own declarations, wildcard imports, and Kotlin's
+     *        default imports
      * @return `true` when another declaration would win over the intended target
      */
     fun isNameBoundInScope(
@@ -678,17 +681,24 @@ object KotlinImportBindingCheck {
         name: String,
         ignoredImports: Set<FqName> = emptySet(),
         ignoredDeclarations: Set<PsiElement> = emptySet(),
+        rewrittenImport: Boolean = false,
     ): Boolean {
         val file = element.containingKtFile
         if (file.importDirectives.any { directive -> directive.bindsName(name, ignoredImports) }) return true
-        if (file.declarations.any { declaration ->
-                declaration !in ignoredDeclarations && declaration.declaresName(name)
-            }) return true
-        // A wildcard or default import binds names without spelling any directive of this file, so
-        // a classifier or callable it provides hides a same-named package segment or declaration
-        // exactly like an explicit import does. The composite scope also contains the explicit
-        // import this check deliberately ignores, so the ignore sets have to follow along.
-        if (isNameBoundByWildcardImport(element, name, ignoredImports, ignoredDeclarations)) return true
+        if (!rewrittenImport) {
+            // The rewritten directive outranks the file-level scopes, so neither a declaration of
+            // the file nor a wildcard or default import can capture the rewritten name. Those
+            // bindings are not free either: the rewrite replaces them with the target's import.
+            if (file.declarations.any { declaration ->
+                    declaration !in ignoredDeclarations && declaration.declaresName(name)
+                }) return true
+            // A wildcard or default import binds names without spelling any directive of this file,
+            // so a classifier or callable it provides hides a same-named package segment or
+            // declaration exactly like an explicit import does. The composite scope also contains
+            // the explicit import this check deliberately ignores, so the ignore sets have to
+            // follow along.
+            if (isNameBoundByWildcardImport(element, name, ignoredImports, ignoredDeclarations)) return true
+        }
         var child: PsiElement = element
         var current: PsiElement? = element.parent
         while (current != null) {

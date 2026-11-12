@@ -644,6 +644,95 @@ class KaRenameTest : KotlinTestCase("KaRenameTest", "rename") {
     }
 
     /**
+     * Verifies a default-import name does not capture a constructor call the rewrite imports.
+     *
+     * Renaming `p.Before` to `String` rewrites the caller's `import p.Before` to `import p.String`,
+     * which outranks the default `kotlin.String` in a value position exactly as it does in a type
+     * position. The pre-rename composite scope still offers `kotlin.String`, so consulting it
+     * would reject the constructor call `Before(1)` that resolves fine after the rewrite.
+     */
+    fun testFindCaptureConflicts_ignoresValueOutrankedByRewrittenImport() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-rewritten-import-value")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            Files.createDirectories(root.resolve("q"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("q/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before(val value: Int = 0)\n")
+            Files.writeString(
+                callerPath,
+                "package q\n\nimport p.Before\n\nfun make() = Before(1).toString()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-rewritten-import-value-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "String",
+            ).findCaptureConflicts()
+
+            assertNull(
+                "The rewritten explicit import outranks the default kotlin.String value binding",
+                conflict,
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a default-import name captures a constructor call without a rewritten import.
+     *
+     * The caller reaches `p.Before` through a wildcard import, so the rename adds no explicit
+     * directive and the rewritten `String(1)` keeps resolving through the default import.
+     */
+    fun testFindCaptureConflicts_reportsValueWithoutRewrittenImport() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-default-import-value")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            Files.createDirectories(root.resolve("q"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("q/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before(val value: Int = 0)\n")
+            Files.writeString(
+                callerPath,
+                "package q\n\nimport p.*\n\nfun make() = Before(1).toString()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-default-import-value-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "String",
+            ).findCaptureConflicts()
+
+            assertEquals(
+                "The default import keeps binding the rewritten constructor call",
+                caller,
+                conflict,
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies a default-import classifier captures a reference without a rewritten import.
      *
      * The caller reaches `p.Before` through a wildcard import, so the rename adds no explicit

@@ -19,6 +19,8 @@ package io.github.nbplugins.kotlin.refactoring
 import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.components.allSupertypes
+import org.jetbrains.kotlin.analysis.api.components.buildClassType
+import org.jetbrains.kotlin.analysis.api.components.buildTypeParameterType
 import org.jetbrains.kotlin.analysis.api.components.builtinTypes
 import org.jetbrains.kotlin.analysis.api.components.canBeCalledAsExtensionOn
 import org.jetbrains.kotlin.analysis.api.components.createSubstitutor
@@ -146,6 +148,12 @@ private fun collectClassTypeMappings(
  * passes a different number of arguments than the declaration has parameters, which positional
  * unification cannot express, so such a call leaves the inference untouched.
  *
+ * The receiver may already have instantiated some type parameters (`Delegate<Base>` fixes
+ * `T = Base`). Those instantiations are substituted into the parameter types first, so an argument
+ * only has to be assignable to the parameter the receiver instantiated instead of contradicting
+ * the receiver: `Host : Base` still passes `T = Base` to
+ * `provideDelegate(thisRef: T)`.
+ *
  * @param callable callable whose value parameters are unified
  * @param arguments argument types of the implicit call
  * @param classSubstitutor instantiation of the declaring class, or `null` for an extension
@@ -162,16 +170,27 @@ private fun collectArgumentTypeMappings(
 ): Boolean {
     val parameters = (callable as? KaFunctionSymbol)?.valueParameters ?: return true
     if (parameters.size != arguments.size) return true
+    val knownSubstitutor = if (mappings.isEmpty()) {
+        null
+    } else {
+        runCatching { createSubstitutor(mappings.toMap()) }.getOrNull()
+    }
     val parameterTypes = parameters.map { parameter ->
         val declaredType = parameter.returnType
-        classSubstitutor?.let { substitutor ->
-            runCatching { substitutor.substitute(declaredType) }.getOrDefault(declaredType)
-        } ?: declaredType
+        listOfNotNull(classSubstitutor, knownSubstitutor).fold(declaredType) { type, substitutor ->
+            runCatching { substitutor.substitute(type) }.getOrDefault(type)
+        }
     }
     return arguments.withIndex().all { (index, argument) ->
-        argument == null ||
-            argument.semanticallyEquals(builtinTypes.nullableNothing) ||
-            collectTypeMappings(parameterTypes[index], argument, mappings)
+        if (argument == null || argument.semanticallyEquals(builtinTypes.nullableNothing)) return@all true
+        val parameterType = parameterTypes[index]
+        // A parameter type whose type parameters are all instantiated is concrete: the argument
+        // only has to be assignable, and requiring an exact match would reject a subtype.
+        if (parameterType.mentionsTypeParameter()) {
+            collectTypeMappings(parameterType, argument, mappings)
+        } else {
+            acceptsArgument(parameterType, argument)
+        }
     }
 }
 
@@ -474,7 +493,9 @@ internal fun KaType.classTypeSubstitutor(): KaSubstitutor? = runCatching {
  * overload the compiler skips and hides the one that is actually bound. A bound that itself
  * mentions a type parameter (`T : Comparable<R>`) cannot be compared without instantiating it, so
  * that bound stays inconclusive instead of rejecting a possibly valid argument. The nullability of
- * the occurrence matters as well: `T?` accepts null even when the bound of `T` is non-null.
+ * the occurrence matters as well: `T?` accepts null even when the bound of `T` is non-null, and it
+ * accepts a nullable argument (`T?` with `T : Host` takes `Host?`), so only the argument's
+ * non-nullable part faces the bounds.
  *
  * @param parameterType declared parameter type
  * @param argument actual argument type
@@ -483,16 +504,47 @@ internal fun KaType.classTypeSubstitutor(): KaSubstitutor? = runCatching {
 context(_: KaSession)
 private fun acceptsArgument(parameterType: KaType, argument: KaType): Boolean = runCatching {
     if (parameterType is KaTypeParameterType) {
-        val nullableOccurrenceTakesNull =
-            parameterType.nullability == KaTypeNullability.NULLABLE &&
-                argument.semanticallyEquals(builtinTypes.nullableNothing)
-        nullableOccurrenceTakesNull || parameterType.symbol.upperBounds.all { bound ->
-            bound.mentionsTypeParameter() || acceptsArgument(bound, argument)
+        val nullableOccurrence = parameterType.nullability == KaTypeNullability.NULLABLE
+        if (nullableOccurrence && argument.semanticallyEquals(builtinTypes.nullableNothing)) {
+            return@runCatching true
+        }
+        val checkedArgument =
+            if (nullableOccurrence && argument.nullability == KaTypeNullability.NULLABLE) {
+                argument.asNonNullable() ?: argument
+            } else {
+                argument
+            }
+        parameterType.symbol.upperBounds.all { bound ->
+            bound.mentionsTypeParameter() || acceptsArgument(bound, checkedArgument)
         }
     } else {
         argument.isSubtypeOf(parameterType)
     }
 }.getOrDefault(true)
+
+/**
+ * Rebuilds this type without its nullability marker.
+ *
+ * A nullable occurrence `T?` accepts a nullable argument as long as the argument's non-nullable
+ * part satisfies the bounds of `T`. The analysis API exposes no nullability setter on an existing
+ * type, so the type is rebuilt from its class or type-parameter symbol.
+ *
+ * @return the non-nullable counterpart of this type, or `null` when it cannot be rebuilt
+ */
+@OptIn(KaExperimentalApi::class)
+context(_: KaSession)
+private fun KaType.asNonNullable(): KaType? = runCatching {
+    when (this) {
+        is KaClassType -> buildClassType(classId) {
+            typeArguments.forEach { projection -> argument(projection) }
+            nullability = KaTypeNullability.NON_NULLABLE
+        }
+        is KaTypeParameterType -> buildTypeParameterType(symbol) {
+            nullability = KaTypeNullability.NON_NULLABLE
+        }
+        else -> null
+    }
+}.getOrNull()
 
 /**
  * Tells whether a type parameter appears anywhere in this type's structure.

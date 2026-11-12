@@ -22,10 +22,12 @@ import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtClass
+import org.jetbrains.kotlin.psi.KtExpression
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNameReferenceExpression
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtProperty
+import org.jetbrains.kotlin.psi.KtReturnExpression
 import utils.KotlinTestCase
 import java.nio.file.Files
 import java.nio.file.Path
@@ -1069,6 +1071,109 @@ class KotlinImportBindingCheckTest : KotlinTestCase("KotlinImportBindingCheckTes
             )
         }
     }
+
+    /**
+     * Verifies a value position outranked by a rewritten import is not reported.
+     *
+     * The caller spells `import p.Before`, which the rename rewrites to `import p.String`; that
+     * explicit directive outranks the default `kotlin.String`, so the constructor call it binds is
+     * safe to rename even though the pre-rename scope offers a `String` of its own.
+     */
+    fun testIsNameBoundInScope_ignoresScopesOutrankedByRewrittenImport() {
+        withSession(
+            name = "value-rewritten-import-outranks",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("p"))
+                Files.createDirectories(root.resolve("q"))
+                Files.writeString(root.resolve("p/Before.kt"), "package p\n\nclass Before(val value: Int = 0)\n")
+                Files.writeString(
+                    root.resolve("q/Caller.kt"),
+                    "package q\n\nimport p.Before\n\nfun make() = Before(1).toString()\n",
+                )
+            },
+        ) { session, root ->
+            val caller = session.ktFile(root.resolve("q/Caller.kt"))
+            val callee = caller.constructorCallee("Before")
+
+            assertFalse(
+                "the rewritten explicit import outranks the default kotlin.String value binding",
+                KotlinImportBindingCheck.isNameBoundInScope(callee, "String", rewrittenImport = true),
+            )
+        }
+    }
+
+    /**
+     * Verifies a lexical value binding still captures a reference bound by a rewritten import.
+     *
+     * A local declaration is resolved before any import, so the rewritten `String` keeps binding
+     * the local instead of the import the rename introduces.
+     */
+    fun testIsNameBoundInScope_reportsLocalDespiteRewrittenImport() {
+        withSession(
+            name = "value-rewritten-import-local",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("p"))
+                Files.createDirectories(root.resolve("q"))
+                Files.writeString(root.resolve("p/Before.kt"), "package p\n\nclass Before(val value: Int = 0)\n")
+                Files.writeString(
+                    root.resolve("q/Caller.kt"),
+                    "package q\n\nimport p.Before\n\n" +
+                        "fun make(): Any {\n    val String = 1\n    return Before(String)\n}\n",
+                )
+            },
+        ) { session, root ->
+            val caller = session.ktFile(root.resolve("q/Caller.kt"))
+            val callee = caller.declarations.filterIsInstance<KtNamedFunction>().single()
+                .bodyBlockExpression?.statements?.lastOrNull()?.let { statement ->
+                    (((statement as? KtReturnExpression)?.returnedExpression) as? KtCallExpression)
+                        ?.calleeExpression
+                }
+                ?: error("No constructor call")
+
+            assertTrue(
+                "a local declaration outranks the import, so the rewritten call would bind it",
+                KotlinImportBindingCheck.isNameBoundInScope(callee, "String", rewrittenImport = true),
+            )
+        }
+    }
+
+    /**
+     * Verifies another explicit import of the same name stays a conflict in a value position.
+     *
+     * Two explicit directives binding one name cannot both win, so a rewritten import cannot make
+     * the constructor call safe while the file also imports a different `String`.
+     */
+    fun testIsNameBoundInScope_reportsOtherExplicitImportDespiteRewrittenImport() {
+        withSession(
+            name = "value-rewritten-import-other-directive",
+            prepare = { root ->
+                for (directory in listOf("p", "q", "lib")) {
+                    Files.createDirectories(root.resolve(directory))
+                }
+                Files.writeString(root.resolve("p/Before.kt"), "package p\n\nclass Before(val value: Int = 0)\n")
+                Files.writeString(root.resolve("lib/String.kt"), "package lib\n\nclass String(val value: Int = 0)\n")
+                Files.writeString(
+                    root.resolve("q/Caller.kt"),
+                    "package q\n\nimport lib.String\nimport p.Before\n\nfun make() = Before(1).toString()\n",
+                )
+            },
+        ) { session, root ->
+            val caller = session.ktFile(root.resolve("q/Caller.kt"))
+            val callee = caller.constructorCallee("Before")
+
+            assertTrue(
+                "another explicit directive already binds the name",
+                KotlinImportBindingCheck.isNameBoundInScope(callee, "String", rewrittenImport = true),
+            )
+        }
+    }
+
+    /** @return the callee of the constructor call spelling [name], failing when it is absent. */
+    private fun KtFile.constructorCallee(name: String): KtExpression =
+        PsiTreeUtil.findChildrenOfType(this, KtCallExpression::class.java)
+            .firstOrNull { call -> call.calleeExpression?.text == name }
+            ?.calleeExpression
+            ?: error("No constructor call of $name")
 
     /** @return the session source for [path], failing the test when it is absent. */
     private fun KotlinAnalysisAPISession.ktFile(path: Path): KtFile =

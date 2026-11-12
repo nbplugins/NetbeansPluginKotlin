@@ -414,8 +414,13 @@ class KaRenameComputer(
                     } else if (typePosition) {
                         KotlinImportBindingCheck.isClassifierBoundInScope(element, newName, rewrittenImport)
                     } else {
-                        KotlinImportBindingCheck.isNameBoundInScope(element, newName) ||
-                            isDeclaredInPackageScope(kaFile, targetPackage)
+                        // A constructor call is a value reference, but the rewritten import
+                        // outranks the file-level scopes for it exactly as for a type reference.
+                        KotlinImportBindingCheck.isNameBoundInScope(
+                            element,
+                            newName,
+                            rewrittenImport = rewrittenImport,
+                        ) || isDeclaredInPackageScope(kaFile, targetPackage)
                     }
                     if (captured) return kaFile
                 }
