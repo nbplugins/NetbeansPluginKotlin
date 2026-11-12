@@ -976,6 +976,100 @@ class KotlinImportBindingCheckTest : KotlinTestCase("KotlinImportBindingCheckTes
         }
     }
 
+    /**
+     * Verifies the file-level scopes are skipped when a rewritten explicit import binds the name.
+     *
+     * The caller writes `import p.Before`, which the rename rewrites to `import p.String`, and an
+     * explicit import outranks the default `kotlin.String` as well as wildcard and same-package
+     * declarations. Consulting those scopes would report a capture the rewritten import prevents.
+     */
+    fun testIsClassifierBoundInScope_ignoresScopesOutrankedByRewrittenImport() {
+        withSession(
+            name = "classifier-rewritten-import-outranks",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("p"))
+                Files.createDirectories(root.resolve("q"))
+                Files.writeString(root.resolve("p/Before.kt"), "package p\n\nclass Before\n")
+                Files.writeString(
+                    root.resolve("q/Caller.kt"),
+                    "package q\n\nimport p.Before\n\nfun consume(x: Before) = x.toString()\n",
+                )
+            },
+        ) { session, root ->
+            val caller = session.ktFile(root.resolve("q/Caller.kt"))
+            val typeElement = caller.declarations.filterIsInstance<KtNamedFunction>().single()
+                .valueParameters.single().typeReference?.typeElement ?: error("No type element")
+
+            assertFalse(
+                "the rewritten explicit import outranks the default kotlin.String",
+                KotlinImportBindingCheck.isClassifierBoundInScope(typeElement, "String", rewrittenImport = true),
+            )
+        }
+    }
+
+    /**
+     * Verifies a lexical classifier still captures a reference bound by a rewritten import.
+     *
+     * A type parameter is resolved before any import, so `fun <String> consume(x: Before)` keeps
+     * binding the rewritten `String` type reference to its own type parameter.
+     */
+    fun testIsClassifierBoundInScope_reportsTypeParameterDespiteRewrittenImport() {
+        withSession(
+            name = "classifier-rewritten-import-type-parameter",
+            prepare = { root ->
+                Files.createDirectories(root.resolve("p"))
+                Files.createDirectories(root.resolve("q"))
+                Files.writeString(root.resolve("p/Before.kt"), "package p\n\nclass Before\n")
+                Files.writeString(
+                    root.resolve("q/Caller.kt"),
+                    "package q\n\nimport p.Before\n\nfun <String> consume(x: Before) = x.toString()\n",
+                )
+            },
+        ) { session, root ->
+            val caller = session.ktFile(root.resolve("q/Caller.kt"))
+            val typeElement = caller.declarations.filterIsInstance<KtNamedFunction>().single()
+                .valueParameters.single().typeReference?.typeElement ?: error("No type element")
+
+            assertTrue(
+                "a type parameter outranks the import, so the rewritten type would bind it",
+                KotlinImportBindingCheck.isClassifierBoundInScope(typeElement, "String", rewrittenImport = true),
+            )
+        }
+    }
+
+    /**
+     * Verifies another explicit import of the same name stays a conflict.
+     *
+     * Two explicit directives binding one name cannot both win, so a rewritten import cannot make
+     * the rewrite safe while the file also imports a different `String`.
+     */
+    fun testIsClassifierBoundInScope_reportsOtherExplicitImportDespiteRewrittenImport() {
+        withSession(
+            name = "classifier-rewritten-import-other-directive",
+            prepare = { root ->
+                for (directory in listOf("p", "q", "lib")) {
+                    Files.createDirectories(root.resolve(directory))
+                }
+                Files.writeString(root.resolve("p/Before.kt"), "package p\n\nclass Before\n")
+                Files.writeString(root.resolve("lib/String.kt"), "package lib\n\nclass String\n")
+                Files.writeString(
+                    root.resolve("q/Caller.kt"),
+                    "package q\n\nimport lib.String\nimport p.Before\n\n" +
+                        "fun consume(x: Before) = x.toString()\n",
+                )
+            },
+        ) { session, root ->
+            val caller = session.ktFile(root.resolve("q/Caller.kt"))
+            val typeElement = caller.declarations.filterIsInstance<KtNamedFunction>().single()
+                .valueParameters.single().typeReference?.typeElement ?: error("No type element")
+
+            assertTrue(
+                "another explicit directive already binds the name",
+                KotlinImportBindingCheck.isClassifierBoundInScope(typeElement, "String", rewrittenImport = true),
+            )
+        }
+    }
+
     /** @return the session source for [path], failing the test when it is absent. */
     private fun KotlinAnalysisAPISession.ktFile(path: Path): KtFile =
         getKtFileForPath(path.toString()) ?: error("No Kotlin source PSI for $path")

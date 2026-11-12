@@ -600,6 +600,94 @@ class KaRenameTest : KotlinTestCase("KaRenameTest", "rename") {
     }
 
     /**
+     * Verifies a default-import classifier does not capture a reference the rewrite imports.
+     *
+     * Renaming `p.Before` to `String` rewrites the caller's `import p.Before` to `import p.String`,
+     * and an explicit import outranks the default `kotlin.String`. The pre-rename composite scope
+     * still offers `kotlin.String`, so consulting it would reject a rename that resolves fine.
+     */
+    fun testFindCaptureConflicts_ignoresClassifierOutrankedByRewrittenImport() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-rewritten-import")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            Files.createDirectories(root.resolve("q"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("q/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before\n")
+            Files.writeString(
+                callerPath,
+                "package q\n\nimport p.Before\n\nfun consume(x: Before) = x.toString()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-rewritten-import-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "String",
+            ).findCaptureConflicts()
+
+            assertNull(
+                "The rewritten explicit import outranks the default kotlin.String",
+                conflict,
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a default-import classifier captures a reference without a rewritten import.
+     *
+     * The caller reaches `p.Before` through a wildcard import, so the rename adds no explicit
+     * directive and the rewritten `String` keeps resolving to the default `kotlin.String`.
+     */
+    fun testFindCaptureConflicts_reportsDefaultClassifierWithoutRewrittenImport() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping capture-conflict test")
+            return
+        }
+        val root = Files.createTempDirectory("nbkotlin-rename-capture-default-import")
+        try {
+            Files.createDirectories(root.resolve("p"))
+            Files.createDirectories(root.resolve("q"))
+            val sourcePath = root.resolve("p/Before.kt")
+            val callerPath = root.resolve("q/Use.kt")
+            Files.writeString(sourcePath, "package p\n\nclass Before\n")
+            Files.writeString(
+                callerPath,
+                "package q\n\nimport p.*\n\nfun consume(x: Before) = x.toString()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-capture-default-import-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(root),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+            val caller = session.getKtFileForPath(callerPath.toString()) ?: error("Could not obtain caller PSI")
+
+            val conflict = KaRenameComputer(
+                source, source.text.indexOf("Before"), setOf(source, caller), "String",
+            ).findCaptureConflicts()
+
+            assertEquals(
+                "The rewritten type would bind the default kotlin.String",
+                caller,
+                conflict,
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies a type-position reference is not treated as a capture.
      *
      * `val value: Before?` becomes `val value: After?`; a member function named `After` does not

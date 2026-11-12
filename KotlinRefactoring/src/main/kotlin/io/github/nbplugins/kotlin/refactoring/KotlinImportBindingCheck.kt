@@ -586,18 +586,35 @@ object KotlinImportBindingCheck {
      * name — not by a function or property. Imports are treated conservatively because telling a
      * classifier import from a callable import needs resolution.
      *
+     * A rewritten explicit import outranks every file-level scope: the file's own declarations,
+     * its package's declarations, wildcard imports, and Kotlin's default imports all lose to it,
+     * so renaming a class to `String` in a file that imports it explicitly is safe even though
+     * `kotlin.String` is imported by default. Lexical bindings are not affected — a type parameter
+     * or a local class resolves before any import.
+     *
      * @param element position whose rewritten text denotes a type
      * @param name new simple name the position is about to spell
+     * @param rewrittenImport `true` when the refactoring rewrites an explicit import to bind
+     *        [name], which makes the file-level scopes irrelevant
      * @return `true` when another classifier would win over the intended target
      */
-    fun isClassifierBoundInScope(element: KtElement, name: String): Boolean {
+    fun isClassifierBoundInScope(
+        element: KtElement,
+        name: String,
+        rewrittenImport: Boolean = false,
+    ): Boolean {
         val file = element.containingKtFile
+        // Another directive binding the same name cannot be outranked by the rewritten import:
+        // two explicit imports of one name are a conflicting import.
         if (file.importDirectives.any { directive -> directive.bindsName(name, emptySet()) }) return true
-        if (file.declarations.any { declaration -> declaration.declaresClassifierName(name) }) return true
-        // A sibling file of the caller's package, a wildcard import, and Kotlin's default imports
-        // bind a classifier without any directive of this file, so the composite scope has to be
-        // consulted as well: the rewritten type reference would resolve to that classifier.
-        if (isClassifierBoundByScope(element, name)) return true
+        if (!rewrittenImport) {
+            if (file.declarations.any { declaration -> declaration.declaresClassifierName(name) }) return true
+            // A sibling file of the caller's package, a wildcard import, and Kotlin's default
+            // imports bind a classifier without any directive of this file, so the composite scope
+            // has to be consulted as well: the rewritten type reference would resolve to that
+            // classifier.
+            if (isClassifierBoundByScope(element, name)) return true
+        }
         var child: PsiElement = element
         var current: PsiElement? = element.parent
         while (current != null) {
@@ -1173,7 +1190,11 @@ object KotlinImportBindingCheck {
         if (name !in accessorNames) return emptyList()
         val provider = delegateOperator(delegateType, "provideDelegate")
         val accessorTypes = provider
-            ?.let { symbol -> runCatching { symbol.returnTypeInferredFrom(delegateType) }.getOrNull() }
+            ?.let { symbol ->
+                runCatching {
+                    symbol.returnTypeInferredFrom(delegateType, delegationArgumentTypes("provideDelegate"))
+                }.getOrNull()
+            }
             ?.let { providedType -> listOf(providedType) }
             ?: listOf(delegateType)
         val arguments = delegationArgumentTypes(name)

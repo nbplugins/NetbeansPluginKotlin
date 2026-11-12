@@ -5627,6 +5627,126 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
     }
 
     /**
+     * Verifies extension setters are checked on the receiver's instantiated type.
+     *
+     * `operator fun <T> Grid<T>.set(index: T, value: Int)` cannot serve `grid[0]++` for a
+     * `Grid<String>` receiver, which passes two `Int`s, so overload resolution selects the more
+     * specific moving `Base.set(Int, Int)` over the staying `Any.set(Int, Int)`. Comparing the
+     * index against the unsubstituted `T : Any?` keeps the generic extension applicable and
+     * prefers its narrower receiver, so the caller never imports the setter it actually calls.
+     */
+    fun testApply_realSession_substitutesReceiverArgumentsForExtensions() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-extension-setter-substitution")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val usagePath = temporaryRoot.resolve("usage/Usage.kt")
+            Files.writeString(
+                temporaryRoot.resolve("old/Grid.kt"),
+                "package old\n\nopen class Grid<T> : Base() {\n" +
+                    "    operator fun get(index: Int): Int = 0\n}\n\n" +
+                    "operator fun <T> Grid<T>.set(index: T, value: Int) {}\n\n" +
+                    "operator fun Any.set(index: Int, value: Int) {}\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\nopen class Base\n\noperator fun Base.set(index: Int, value: Int) {}\n",
+            )
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport old.*\n\nfun use(grid: Grid<String>) {\n    grid[0]++\n}\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-extension-setter-substitution-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[usagePath.toString()] ?: error("The caller must change")
+            assertTrue(
+                "The caller must import the extension overload resolution selects: $text",
+                text.contains("import dest.set"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Verifies a generic provider's result is instantiated from its call arguments.
+     *
+     * `operator fun <T> Delegate.provideDelegate(thisRef: T, ...): Provided<T>` declares no type
+     * argument on the receiver, so the delegate type alone instantiates nothing and the accessor
+     * lookup runs on the declared `Provided<T>`. The compiler infers `T = Host` from the member
+     * property's `thisRef` and selects the moving `Provided<Host>.getValue`, which the staying file
+     * then has to import; otherwise the write silently falls back to the staying `Any.getValue`.
+     */
+    fun testApply_realSession_infersProviderResultFromCallArguments() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-change-package-provider-argument-inference")
+        try {
+            Files.createDirectories(temporaryRoot.resolve("old"))
+            Files.createDirectories(temporaryRoot.resolve("usage"))
+            val sourcePath = temporaryRoot.resolve("old/Moved.kt")
+            val stayingPath = temporaryRoot.resolve("old/Stays.kt")
+            Files.writeString(
+                stayingPath,
+                "package old\n\nclass Delegate\n\nclass Host {\n    val value by Delegate()\n}\n\n" +
+                    "operator fun Any.getValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>): Int = 1\n",
+            )
+            Files.writeString(
+                sourcePath,
+                "package old\n\nclass Provided<T>\n\n" +
+                    "operator fun <T> Delegate.provideDelegate(" +
+                    "thisRef: T, property: kotlin.reflect.KProperty<*>): Provided<T> = Provided()\n\n" +
+                    "operator fun Provided<Host>.getValue(" +
+                    "thisRef: Host, property: kotlin.reflect.KProperty<*>): Int = 0\n",
+            )
+            Files.writeString(
+                temporaryRoot.resolve("usage/Usage.kt"),
+                "package usage\n\nimport old.Host\n\nfun use(host: Host) = host.value\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "change-package-provider-argument-inference-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val source = session.getKtFileForPath(sourcePath.toString()) ?: error("Could not obtain source PSI")
+
+            val outcome = KaChangePackageComputer(source).apply(
+                mapOf(source to FqName("dest")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val text = success.changedFiles[stayingPath.toString()] ?: error("The staying file must change")
+            assertTrue(
+                "The staying file must import the accessor the provider's instantiated result selects: $text",
+                text.contains("import dest.getValue"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    /**
      * Verifies `provideDelegate` is filtered by a null `thisRef` for extension properties.
      *
      * For a top-level `val String.value by Delegate()`, Kotlin passes `null` to `provideDelegate`

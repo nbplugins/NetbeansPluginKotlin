@@ -564,8 +564,12 @@ class KaChangePackageComputer(
         val provider = selectedOperator(delegateType, "provideDelegate")
         record(provider)
         // The provider's return type is declared in terms of its own type parameters; only the
-        // instantiation inferred from the delegate receiver selects the real accessor.
-        val accessorType = provider?.returnTypeInferredFrom(delegateType) ?: delegateType
+        // instantiation inferred from the delegate receiver and the implicit call's arguments
+        // selects the real accessor.
+        val accessorType = provider?.returnTypeInferredFrom(
+            delegateType,
+            delegationArgumentTypes("provideDelegate"),
+        ) ?: delegateType
         listOf("getValue", "setValue").forEach { name ->
             if (name == "setValue" && !isVar) return@forEach
             record(selectedOperator(accessorType, name))
@@ -1163,8 +1167,11 @@ class KaChangePackageComputer(
                             // `provideDelegate` runs before the accessors and its return type is the
                             // type the accessors are selected on, so it replaces the expression
                             // type. A generic provider returns `Provided<T>`, so the type has to
-                            // be instantiated from the delegate receiver first.
-                            val accessorType = provider?.returnTypeInferredFrom(delegateType) ?: delegateType
+                            // be instantiated from the delegate receiver and the implicit call's
+                            // arguments (`thisRef`) first.
+                            val accessorType =
+                                provider?.returnTypeInferredFrom(delegateType, providerArguments)
+                                    ?: delegateType
                             val operators = buildList {
                                 if (provider != null) add(provider)
                                 property.selectedDelegateAccessor(

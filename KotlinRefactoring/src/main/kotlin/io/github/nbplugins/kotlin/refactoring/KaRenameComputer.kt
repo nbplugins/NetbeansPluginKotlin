@@ -35,7 +35,9 @@ import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.kdoc.lexer.KDocTokens
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtCallExpression
+import org.jetbrains.kotlin.psi.KtClassBody
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtConstructorDelegationReferenceExpression
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
@@ -387,6 +389,13 @@ class KaRenameComputer(
         val targetPackage = (targetPsi as? KtNamedDeclaration)?.containingKtFile?.packageFqName
         for (kaFile in projectKtFiles) {
             for (target in targets) {
+                // The rename rewrites a non-aliased import of the target verbatim, and an explicit
+                // import outranks the caller's declarations, its package, wildcard imports, and
+                // Kotlin's default imports. Such a caller therefore cannot capture the new name
+                // through any of those scopes.
+                val rewrittenImport = kaFile.bindsExplicitImportOf(
+                    (target as? KtNamedDeclaration)?.importableFqName(),
+                )
                 for (element in collectReferenceElements(kaFile, target)) {
                     // A receiver label such as `this@After` names a labeled scope, not a
                     // declaration, so a local or member of that name cannot capture it.
@@ -403,7 +412,7 @@ class KaRenameComputer(
                         // overload resolution and can replace the renamed declaration.
                         KotlinImportBindingCheck.isDeclaredInQualifiedPackage(element, newName, typePosition)
                     } else if (typePosition) {
-                        KotlinImportBindingCheck.isClassifierBoundInScope(element, newName)
+                        KotlinImportBindingCheck.isClassifierBoundInScope(element, newName, rewrittenImport)
                     } else {
                         KotlinImportBindingCheck.isNameBoundInScope(element, newName) ||
                             isDeclaredInPackageScope(kaFile, targetPackage)
@@ -413,6 +422,41 @@ class KaRenameComputer(
             }
         }
         return null
+    }
+
+    /**
+     * Tells whether this file imports the declaration of [fqName] by its own name.
+     *
+     * Only such a directive is rewritten verbatim by a rename. A wildcard import keeps its
+     * spelled path, and an aliased directive binds a name that does not change, so neither
+     * introduces the new simple name into the file.
+     *
+     * @param fqName importable name of the renamed declaration, or `null` when it has none
+     * @return `true` when the file's explicit import binds the renamed simple name
+     */
+    private fun KtFile.bindsExplicitImportOf(fqName: FqName?): Boolean =
+        fqName != null && importDirectives.any { directive ->
+            !directive.isAllUnder && directive.aliasName == null && directive.importedFqName == fqName
+        }
+
+    /**
+     * Returns the name this declaration is imported by, or `null` when it cannot be imported.
+     *
+     * A top-level declaration is named by its package and its own name, while a nested classifier
+     * adds its containers: `import p.Outer.Inner` binds `Inner`, so renaming it rewrites that
+     * directive too. A declaration that cannot be imported at all — a local, a member, or a
+     * top-level declaration without a name — reports `null`.
+     *
+     * @return fully qualified name the import directives spell, or `null`
+     */
+    private fun KtNamedDeclaration.importableFqName(): FqName? {
+        val declarationName = name ?: return null
+        return when (val container = parent) {
+            is KtFile -> container.packageFqName.child(Name.identifier(declarationName))
+            is KtClassBody -> (container.parent as? KtNamedDeclaration)?.importableFqName()
+                ?.child(Name.identifier(declarationName))
+            else -> null
+        }
     }
 
     /**

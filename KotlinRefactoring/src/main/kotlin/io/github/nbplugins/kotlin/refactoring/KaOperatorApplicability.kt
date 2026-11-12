@@ -60,64 +60,120 @@ import org.jetbrains.kotlin.psi.KtUnaryExpression
 import org.jetbrains.kotlin.psi.psiUtil.containingClassOrObject
 
 /**
- * Returns this callable's return type with its type arguments inferred from [receiverType].
+ * Returns this callable's return type with its type arguments inferred from its call.
  *
  * A generic extension declares its return type in terms of its own type parameters
  * (`operator fun <T> Delegate<T>.provideDelegate(...): Provided<T>`), while the compiler
- * instantiates them from the receiver. The delegated property's accessors are selected on
- * `Provided<Int>` for a `Delegate<Int>` delegate expression, so the declared `Provided<T>` cannot
- * be used directly. Unifying the declared receiver with the actual one yields the mapping.
+ * instantiates them from the receiver and from the implicit call's arguments. The delegated
+ * property's accessors are selected on `Provided<Int>` for a `Delegate<Int>` delegate expression,
+ * and on `Provided<Host>` for a provider declared as
+ * `operator fun <T> Delegate.provideDelegate(thisRef: T, ...)`, whose `T` only the `thisRef`
+ * argument determines. Unifying the declared receiver and parameters with the actual ones yields
+ * the mapping.
  *
- * A callable without a receiver keeps its declared return type; unifyable structures also fall
- * back to it, because guessing an instantiation would select the wrong operator. A member
- * provider has no extension receiver, so its type arguments come from the instantiated scope of
- * the receiver type: `Delegate<T>.provideDelegate` selected on `Delegate<Int>` returns
- * `Provided<Int>`.
+ * A callable whose structures cannot be unified keeps its declared return type, because guessing
+ * an instantiation would select the wrong operator. A member provider has no extension receiver,
+ * so its class type arguments come from the instantiated scope of the receiver type:
+ * `Delegate<T>.provideDelegate` selected on `Delegate<Int>` returns `Provided<Int>`.
  *
  * @param receiverType actual type the callable is invoked on
+ * @param arguments argument types of the implicit call, or `null` when they cannot be resolved
  * @return the return type with the inferred type arguments substituted
  */
 @OptIn(KaExperimentalApi::class)
 context(_: KaSession)
-internal fun KaCallableSymbol.returnTypeInferredFrom(receiverType: KaType): KaType {
+internal fun KaCallableSymbol.returnTypeInferredFrom(
+    receiverType: KaType,
+    arguments: List<KaType?>? = null,
+): KaType = runCatching {
+    val declaredReturnType = returnType
+    val mappings = linkedMapOf<KaTypeParameterSymbol, KaType>()
     val declaredReceiverType = receiverParameter?.returnType
-        ?: return memberReturnTypeInferredFrom(receiverType)
-    return runCatching {
-        val mappings = linkedMapOf<KaTypeParameterSymbol, KaType>()
-        if (!collectTypeMappings(declaredReceiverType, receiverType, mappings)) return@runCatching returnType
-        if (mappings.isEmpty()) return@runCatching returnType
-        createSubstitutor(mappings).substitute(returnType)
-    }.getOrDefault(returnType)
-}
+    val classSubstitutor = if (declaredReceiverType != null) {
+        if (!collectTypeMappings(declaredReceiverType, receiverType, mappings)) return@runCatching declaredReturnType
+        null
+    } else {
+        // A member spells its class type parameters (`Provided<T>`) while the receiver is the
+        // instantiated class (`Delegate<Int>`), so the class's parameters provide the mapping and
+        // its instantiation is what the value parameters are spelled with.
+        collectClassTypeMappings(receiverType, mappings)
+        receiverType.classTypeSubstitutor()
+    }
+    if (arguments != null && !collectArgumentTypeMappings(this, arguments, classSubstitutor, mappings)) {
+        return@runCatching declaredReturnType
+    }
+    if (mappings.isEmpty()) return@runCatching declaredReturnType
+    createSubstitutor(mappings).substitute(declaredReturnType)
+}.getOrDefault(returnType)
 
 /**
- * Returns this member's return type with the receiver class's arguments substituted.
+ * Collects the type-parameter instantiations that the receiver class's arguments supply.
  *
- * A member symbol spells its class type parameters (`Provided<T>`), while the receiver type is
- * the instantiated class (`Delegate<Int>`). Mapping the class declaration's parameters to the
- * receiver's arguments gives the instantiation the accessors are selected on. A receiver that is
- * not the declaring class (an inherited member) keeps the declared return type.
+ * A receiver that is not a class type, or whose arity does not match the declaring class's type
+ * parameters, contributes nothing and leaves the other sources of inference untouched.
  *
- * @param receiverType instantiated type the member is invoked on
- * @return the return type with the class's type arguments substituted
+ * @param receiverType instantiated type the callable is invoked on
+ * @param mappings accumulator of type-parameter instantiations
  */
 @OptIn(KaExperimentalApi::class)
 context(_: KaSession)
-private fun KaCallableSymbol.memberReturnTypeInferredFrom(receiverType: KaType): KaType = runCatching {
-    val classType = receiverType as? KaClassType ?: return@runCatching returnType
-    val classParameters = (classType.expandedSymbol?.psi as? KtClassOrObject)?.typeParameters
-        ?: return@runCatching returnType
-    val typeParameters = classParameters.mapNotNull { parameter ->
-        runCatching { parameter.symbol }.getOrNull()
+private fun collectClassTypeMappings(
+    receiverType: KaType,
+    mappings: MutableMap<KaTypeParameterSymbol, KaType>,
+) {
+    runCatching {
+        val classType = receiverType as? KaClassType ?: return@runCatching
+        val classParameters = (classType.expandedSymbol?.psi as? KtClassOrObject)?.typeParameters
+            ?: return@runCatching
+        val typeParameters = classParameters.mapNotNull { parameter ->
+            runCatching { parameter.symbol }.getOrNull()
+        }
+        val arguments = classType.typeArguments
+        if (typeParameters.size != arguments.size) return@runCatching
+        typeParameters.forEachIndexed { index, parameter ->
+            arguments[index].type?.let { argument -> mappings[parameter] = argument }
+        }
     }
-    val arguments = classType.typeArguments
-    if (typeParameters.size != arguments.size) return@runCatching returnType
-    val mappings = typeParameters.mapIndexedNotNull { index, parameter ->
-        arguments[index].type?.let { argument -> parameter to argument }
-    }.toMap()
-    if (mappings.isEmpty()) return@runCatching returnType
-    createSubstitutor(mappings).substitute(returnType)
-}.getOrDefault(returnType)
+}
+
+/**
+ * Collects the type-parameter instantiations the implicit call's arguments imply.
+ *
+ * The provider `operator fun <T> Delegate.provideDelegate(thisRef: T, ...)` declares `T` only in a
+ * value parameter, so the delegate type instantiates nothing and only the property's `thisRef`
+ * tells that the provider returns `Provided<Host>`. A null literal constrains no type parameter —
+ * a top-level property passes `null` as `thisRef` — so it contributes no mapping. A vararg call
+ * passes a different number of arguments than the declaration has parameters, which positional
+ * unification cannot express, so such a call leaves the inference untouched.
+ *
+ * @param callable callable whose value parameters are unified
+ * @param arguments argument types of the implicit call
+ * @param classSubstitutor instantiation of the declaring class, or `null` for an extension
+ * @param mappings accumulator of type-parameter instantiations
+ * @return `false` when the same type parameter would need two different instantiations
+ */
+@OptIn(KaExperimentalApi::class)
+context(_: KaSession)
+private fun collectArgumentTypeMappings(
+    callable: KaCallableSymbol,
+    arguments: List<KaType?>,
+    classSubstitutor: KaSubstitutor?,
+    mappings: MutableMap<KaTypeParameterSymbol, KaType>,
+): Boolean {
+    val parameters = (callable as? KaFunctionSymbol)?.valueParameters ?: return true
+    if (parameters.size != arguments.size) return true
+    val parameterTypes = parameters.map { parameter ->
+        val declaredType = parameter.returnType
+        classSubstitutor?.let { substitutor ->
+            runCatching { substitutor.substitute(declaredType) }.getOrDefault(declaredType)
+        } ?: declaredType
+    }
+    return arguments.withIndex().all { (index, argument) ->
+        argument == null ||
+            argument.semanticallyEquals(builtinTypes.nullableNothing) ||
+            collectTypeMappings(parameterTypes[index], argument, mappings)
+    }
+}
 
 /**
  * Collects the type-parameter instantiations that make [actual] match [declared].
@@ -338,11 +394,12 @@ private fun KtProperty.propertyValueType(): KaType? =
  * arguments after it match the trailing fixed parameters, and the rest match the vararg element
  * type. A parameter whose type is a type parameter or cannot be compared is accepted, because the
  * alternative — treating it as inapplicable — would import an extension the member already
- * shadows. A member scope is declared, not instantiated, so a [substitutor] replacing the class's
- * type parameters with the receiver's type arguments is applied to every parameter type first.
+ * shadows. A declared scope is not instantiated, so a [substitutor] replacing the declared type
+ * parameters — the declaring class's for a member, the receiver's for an extension — with the
+ * actual type arguments is applied to every parameter type first.
  *
  * @param arguments argument types in call order; `null` entries are unresolved expressions
- * @param substitutor maps the declaring class's type parameters to the receiver's arguments
+ * @param substitutor instantiates the type parameters the parameter types are spelled with
  * @return `true` when the callable can be selected for those arguments
  */
 context(_: KaSession)
@@ -511,12 +568,38 @@ internal fun selectExtension(
 ): KaCallableSymbol? {
     val applicable = candidates.filter { candidate ->
         runCatching { candidate.canBeCalledAsExtensionOn(receiverType) }.getOrDefault(false) &&
-            (arguments == null || candidate.acceptsIndexedSetterArguments(arguments))
+            (arguments == null ||
+                candidate.acceptsIndexedSetterArguments(
+                    arguments,
+                    candidate.receiverTypeSubstitutor(receiverType),
+                ))
     }
     return applicable.firstOrNull { candidate ->
         applicable.none { other -> other !== candidate && other.isMoreSpecificThan(candidate) }
     } ?: applicable.firstOrNull()
 }
+
+/**
+ * Returns the substitutor instantiating this extension's type parameters from [receiverType].
+ *
+ * An extension spells its value parameters with the type parameters of its declaring receiver
+ * (`operator fun <T> Grid<T>.set(index: T, value: Int)`), so `T : Any?` accepts every argument
+ * until the receiver type supplies the instantiation. For a `Grid<String>` receiver the setter
+ * takes a `String` index and cannot serve `grid[0]++`, whose index is an `Int`. A declared
+ * receiver that is not a class type supplies no instantiation.
+ *
+ * @param receiverType actual type the extension is invoked on
+ * @return the substitutor, or `null` when the receiver instantiates no type parameter
+ */
+@OptIn(KaExperimentalApi::class)
+context(_: KaSession)
+internal fun KaCallableSymbol.receiverTypeSubstitutor(receiverType: KaType): KaSubstitutor? = runCatching {
+    val declaredReceiverType = receiverParameter?.returnType ?: return@runCatching null
+    val mappings = linkedMapOf<KaTypeParameterSymbol, KaType>()
+    if (!collectTypeMappings(declaredReceiverType, receiverType, mappings)) return@runCatching null
+    if (mappings.isEmpty()) return@runCatching null
+    createSubstitutor(mappings)
+}.getOrNull()
 
 /**
  * Tells whether this callable's overload is preferred over [other] by the compiler.
