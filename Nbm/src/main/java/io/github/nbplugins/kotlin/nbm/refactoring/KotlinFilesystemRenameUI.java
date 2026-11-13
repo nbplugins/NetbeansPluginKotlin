@@ -45,6 +45,8 @@ public final class KotlinFilesystemRenameUI implements RefactoringUI {
 
     private final AbstractRefactoring refactoring;
     private final boolean directory;
+    private final boolean updatePackage;
+    private final boolean updatePrimaryClass;
     private final String displayName;
     private RenamePanel panel;
 
@@ -59,18 +61,34 @@ public final class KotlinFilesystemRenameUI implements RefactoringUI {
         this.refactoring = refactoring;
         this.directory = directory;
         this.displayName = displayName;
+        this.updatePackage = directory
+                && refactoring instanceof KotlinRenameDirectoryRefactoring
+                && ((KotlinRenameDirectoryRefactoring) refactoring).getUpdatePackage();
+        this.updatePrimaryClass = !directory
+                && refactoring instanceof KotlinRenameFileRefactoring
+                && ((KotlinRenameFileRefactoring) refactoring).getUpdatePrimaryClass();
     }
 
     /** @return user-visible operation title. */
     @Override
     public String getName() {
-        return directory ? "Rename Kotlin Package Directory" : "Rename Kotlin File";
+        if (!directory) {
+            return updatePrimaryClass ? "Rename Kotlin File and Class" : "Rename Kotlin File";
+        }
+        return updatePackage ? "Rename Kotlin Package" : "Rename Kotlin Package Directory";
     }
 
     /** @return concise description of the physical source to rename. */
     @Override
     public String getDescription() {
-        return (directory ? "Rename Kotlin package directory '" : "Rename Kotlin file '") + displayName + "'";
+        if (!directory) {
+            return updatePrimaryClass
+                    ? "Rename Kotlin file '" + displayName + "' and a matching top-level class"
+                    : "Rename Kotlin file '" + displayName + "'";
+        }
+        return updatePackage
+                ? "Rename Kotlin package directory '" + displayName + "' and its package declarations"
+                : "Rename Kotlin package directory '" + displayName + "'";
     }
 
     /** @return false because the operation changes project files. */
@@ -91,7 +109,7 @@ public final class KotlinFilesystemRenameUI implements RefactoringUI {
             String currentName = directory
                     ? ((KotlinRenameDirectoryRefactoring) refactoring).getNewName()
                     : ((KotlinRenameFileRefactoring) refactoring).getNewName();
-            panel = new RenamePanel(directory, displayName, currentName, parent);
+            panel = new RenamePanel(directory, updatePackage, updatePrimaryClass, displayName, currentName, parent);
         }
         return panel;
     }
@@ -151,11 +169,20 @@ public final class KotlinFilesystemRenameUI implements RefactoringUI {
          * Builds the form.
          *
          * @param directory whether the form represents a package directory
+         * @param updatePackage whether packages and supported references follow the directory rename
+         * @param updatePrimaryClass whether a matching primary class and references follow the file rename
          * @param displayName source name shown to the user
          * @param currentName initial basename or folder name
          * @param listener recipient of state-change notifications
          */
-        RenamePanel(boolean directory, String displayName, String currentName, ChangeListener listener) {
+        RenamePanel(
+                boolean directory,
+                boolean updatePackage,
+                boolean updatePrimaryClass,
+                String displayName,
+                String currentName,
+                ChangeListener listener
+        ) {
             nameField = new JTextField(currentName, 30);
             JPanel form = new JPanel(new GridBagLayout());
             form.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
@@ -176,8 +203,13 @@ public final class KotlinFilesystemRenameUI implements RefactoringUI {
             form.add(new JLabel(""), label);
             form.add(
                     new JLabel(directory
-                            ? "The directory and its descendants are renamed; Kotlin packages and references are unchanged."
-                            : "The .kt basename changes; packages and Java file-facade references are unchanged."),
+                            ? (updatePackage
+                                    ? "The directory and its descendants are renamed; each Kotlin file receives the package "
+                                            + "derived from its new path and supported Kotlin references are updated."
+                                    : "The directory and its descendants are renamed; Kotlin packages and references are unchanged.")
+                            : (updatePrimaryClass
+                                    ? "The .kt basename changes; a matching top-level class and supported Kotlin references are renamed."
+                                    : "The .kt basename changes; packages and Java file-facade references are unchanged.")),
                     field
             );
             component = new JPanel(new BorderLayout());

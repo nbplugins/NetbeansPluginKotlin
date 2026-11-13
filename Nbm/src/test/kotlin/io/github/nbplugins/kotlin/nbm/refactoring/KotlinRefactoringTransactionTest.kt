@@ -724,6 +724,30 @@ class KotlinRefactoringTransactionTest : NbTestCase("KotlinRefactoringTransactio
         assertEquals("undo must retain the original package directive", originalText, fixture.textByPath(restored!!))
     }
 
+    /** Verifies semantic text written on the original path survives the pending folder rename and undo. */
+    fun testCommitAndUndo_writesStagedTextBeforeFolderRenameAndRestoresBoth() {
+        val fixture = fixture()
+        val folder = fixture.root.createFolder("before")
+        val originalText = "package before\n\nfun source() = 1\n"
+        val changedText = "package after\n\nfun source() = 1\n"
+        val source = fixture.existingIn(folder, "Source.kt", originalText)
+
+        fixture.transaction.renameFolder(folder, "after")
+        fixture.transaction.captureExisting(source)
+        fixture.transaction.stageText(source, changedText, ::applyHunks)
+        fixture.transaction.commit()
+
+        assertNotNull("commit must rename the selected folder", fixture.root.getFileObject("after/Source.kt"))
+        assertEquals("commit must write the semantic text before renaming", changedText, fixture.text(source))
+
+        fixture.transaction.undo()
+
+        assertNotNull("undo must restore the original folder path", fixture.root.getFileObject("before/Source.kt"))
+        assertNull("undo must remove the renamed folder", fixture.root.getFileObject("after"))
+        assertTrue("the original FileObject remains valid after undo", source.isValid)
+        assertEquals("undo must restore the original package directive", originalText, fixture.text(source))
+    }
+
     /** Verifies commit deletes a scheduled file and undo recreates it with its original text. */
     fun testCommitAndUndo_deletesFileAndRestoresItsText() {
         val fixture = fixture()

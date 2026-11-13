@@ -28,10 +28,8 @@ import org.netbeans.modules.refactoring.spi.ProgressProviderAdapter
 import org.netbeans.modules.refactoring.spi.RefactoringElementsBag
 import org.netbeans.modules.refactoring.spi.RefactoringPlugin
 import org.netbeans.modules.refactoring.spi.SimpleRefactoringElementImplementation
-import org.openide.cookies.EditorCookie
 import org.openide.filesystems.FileObject
 import org.openide.filesystems.FileUtil
-import org.openide.loaders.DataObject
 import org.openide.text.CloneableEditorSupport
 import org.openide.text.PositionBounds
 import org.openide.util.Lookup
@@ -186,19 +184,6 @@ class KotlinChangePackageApplyElement(
             .onFailure { error -> KotlinLogger.INSTANCE.logException("KotlinChangePackageApplyElement rollback failed", error) }
         KotlinAnalysisAPISession.invalidate(project)
     }
-
-    /**
-     * Returns the caret offset from an already-open editor for [file] without opening a new editor.
-     *
-     * Native undo must restore each modified open editor independently; unopened files do not have a
-     * user-visible caret and therefore deliberately receive no restoration edit.
-     */
-    private fun openCaretOffset(file: FileObject): Int? = runCatching {
-        val cookie = DataObject.find(file).lookup.lookup(EditorCookie::class.java) ?: return null
-        cookie.openedPanes?.firstOrNull()?.caretPosition
-    }.onFailure { error ->
-        CHANGE_PACKAGE_LOGGER.log(Level.FINE, "Could not read an open caret for ${file.path}", error)
-    }.getOrNull()
 
     /** Restores all original package directives, usage texts, and open-editor carets. */
     override fun undoChange() {

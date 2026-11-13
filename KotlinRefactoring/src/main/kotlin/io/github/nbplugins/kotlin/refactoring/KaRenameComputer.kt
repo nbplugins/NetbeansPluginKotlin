@@ -23,17 +23,34 @@ import com.intellij.psi.PsiField
 import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.util.PsiTreeUtil
+import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
+import org.jetbrains.kotlin.analysis.api.compat.getClassOrObjectSymbol
+import org.jetbrains.kotlin.analysis.api.components.packageScope
 import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaTypeAliasSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.findPackage
 import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.kdoc.lexer.KDocTokens
 import org.jetbrains.kotlin.lexer.KtTokens
+import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.psi.KtCallExpression
+import org.jetbrains.kotlin.psi.KtClassBody
+import org.jetbrains.kotlin.psi.KtClassOrObject
+import org.jetbrains.kotlin.psi.KtConstructorDelegationReferenceExpression
+import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtImportDirective
+import org.jetbrains.kotlin.psi.KtLabelReferenceExpression
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtReferenceExpression
+import org.jetbrains.kotlin.psi.KtSimpleNameExpression
 import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
+import org.jetbrains.kotlin.psi.KtUserType
 import java.util.logging.Logger
 
 /**
@@ -188,6 +205,49 @@ class KaRenameComputer(
     }
 
     /**
+     * Tells whether [this] uses an import alias rather than being part of a qualified access.
+     *
+     * `import p.Foo as Foo` makes the alias and the class name equal, so only the syntactic
+     * position distinguishes an alias usage from `p.Foo(1)` or a `p.Foo` type: an alias usage is
+     * an unqualified name, while a qualified access is the selector of a dot access or a qualified
+     * user type. References inside import directives always follow the imported declaration.
+     */
+    private fun KtSimpleNameExpression.isAliasUsage(): Boolean {
+        if (PsiTreeUtil.getParentOfType(this, KtImportDirective::class.java) != null) return false
+        val selector = (parent as? KtCallExpression)?.takeIf { it.calleeExpression == this } ?: this
+        val qualified = selector.parent as? KtDotQualifiedExpression
+        if (qualified?.selectorExpression == selector) return false
+        val userType = parent as? KtUserType
+        if (userType != null && userType.referenceExpression == this && userType.qualifier != null) return false
+        return true
+    }
+
+    /**
+     * Tells whether the spelled [name] denotes a type alias rather than the class it expands to.
+     *
+     * A constructor call through a same-spelled type alias resolves to the expanded class's
+     * constructor, so the class-id match alone cannot tell `Before()` from
+     * `typealias Before = p.Before`. The alias declaration keeps its own name when the class is
+     * renamed, so its call sites must stay untouched. Type aliases are top-level only, so the
+     * file's explicit imports and its own package scope are enough to find the declaration the
+     * name binds.
+     *
+     * @param name simple name spelled by this reference
+     * @return `true` when that name is bound to a type alias visible in this file
+     */
+    context(_: KaSession)
+    private fun KtSimpleNameExpression.spellsTypeAlias(name: String): Boolean {
+        val file = containingKtFile
+        val explicit = file.importDirectives.firstOrNull { directive ->
+            !directive.isAllUnder && directive.aliasName == null &&
+                directive.importedFqName?.shortName()?.asString() == name
+        }?.importedFqName
+        val packageName = explicit?.parent() ?: file.packageFqName
+        return findPackage(packageName)?.packageScope?.classifiers
+            ?.firstOrNull { classifier -> classifier.name?.asString() == name } is KaTypeAliasSymbol
+    }
+
+    /**
      * Adds a [TextChange] for the name identifier of [targetDecl] to [into].
      *
      * Supports both Kotlin ([KtNamedDeclaration]) and Java ([PsiMethod] / [PsiField] / [PsiClass])
@@ -303,25 +363,214 @@ class KaRenameComputer(
         return result
     }
 
-    /** Returns all reference expression ranges in [kaFile] that resolve to [targetPsi]. */
-    private fun searchFileForUsages(kaFile: KtFile, targetPsi: PsiElement): List<Pair<Int, Int>> {
-        val ranges = mutableListOf<Pair<Int, Int>>()
+    /**
+     * Finds a call site whose rewritten name would bind to a different declaration.
+     *
+     * Renaming `Before` to `After` rewrites every unqualified `Before` reference verbatim, so a
+     * file that also binds `After` lexically — a local, parameter, member, file-level declaration,
+     * or import — makes the rewritten text resolve to that binding instead. A constructor call
+     * then becomes a call of a member function and the code still compiles with a new meaning.
+     * Type positions are checked against classifiers only, because Kotlin resolves type names in a
+     * separate namespace; receiver labels are skipped because they name a labeled scope, qualified
+     * selectors because they keep resolving through their receiver, and import directives because
+     * they follow the rename rather than capture it.
+     *
+     * @return the first file whose rewritten reference would capture, or `null` when every
+     *         rewritten reference keeps its target
+     */
+    fun findCaptureConflicts(): KtFile? {
+        if (newName.isBlank()) return null
+        val targetPsi = resolveTargetPsi() ?: return null
+        val targets = mutableSetOf(targetPsi)
+        collectOverrideTargets(targetPsi, targets)
+        // Declarations of the caller's own package need no import, so a sibling declaration of the
+        // new name is in scope unqualified; only a file that shares the renamed declaration's
+        // package relies on that visibility.
+        val targetPackage = (targetPsi as? KtNamedDeclaration)?.containingKtFile?.packageFqName
+        for (kaFile in projectKtFiles) {
+            for (target in targets) {
+                // The rename rewrites a non-aliased import of the target verbatim, and an explicit
+                // import outranks the caller's declarations, its package, wildcard imports, and
+                // Kotlin's default imports. Such a caller therefore cannot capture the new name
+                // through any of those scopes.
+                val rewrittenImport = kaFile.bindsExplicitImportOf(
+                    (target as? KtNamedDeclaration)?.importableFqName(),
+                )
+                for (element in collectReferenceElements(kaFile, target)) {
+                    // A receiver label such as `this@After` names a labeled scope, not a
+                    // declaration, so a local or member of that name cannot capture it.
+                    if (element is KtLabelReferenceExpression) continue
+                    if (PsiTreeUtil.getParentOfType(element, KtImportDirective::class.java) != null) continue
+                    // Kotlin resolves types and values in separate namespaces: a type position is
+                    // only captured by another classifier, a value position only by another value.
+                    val typePosition = element.isTypeReference()
+                    val captured = if (KotlinImportBindingCheck.isQualifiedReference(element)) {
+                        // A qualified selector keeps resolving through its receiver: `p.Before()`
+                        // becomes `p.After()`, so no lexical binding can capture it. A package
+                        // receiver is different: the rewritten selector is resolved inside that
+                        // package, where a sibling declaration of the new name takes part in
+                        // overload resolution and can replace the renamed declaration.
+                        KotlinImportBindingCheck.isDeclaredInQualifiedPackage(element, newName, typePosition)
+                    } else if (typePosition) {
+                        KotlinImportBindingCheck.isClassifierBoundInScope(element, newName, rewrittenImport)
+                    } else {
+                        // A constructor call is a value reference, but the rewritten import
+                        // outranks the file-level scopes for it exactly as for a type reference.
+                        KotlinImportBindingCheck.isNameBoundInScope(
+                            element,
+                            newName,
+                            rewrittenImport = rewrittenImport,
+                        ) || isDeclaredInPackageScope(kaFile, targetPackage)
+                    }
+                    if (captured) return kaFile
+                }
+            }
+        }
+        return null
+    }
+
+    /**
+     * Tells whether this file imports the declaration of [fqName] by its own name.
+     *
+     * Only such a directive is rewritten verbatim by a rename. A wildcard import keeps its
+     * spelled path, and an aliased directive binds a name that does not change, so neither
+     * introduces the new simple name into the file.
+     *
+     * @param fqName importable name of the renamed declaration, or `null` when it has none
+     * @return `true` when the file's explicit import binds the renamed simple name
+     */
+    private fun KtFile.bindsExplicitImportOf(fqName: FqName?): Boolean =
+        fqName != null && importDirectives.any { directive ->
+            !directive.isAllUnder && directive.aliasName == null && directive.importedFqName == fqName
+        }
+
+    /**
+     * Returns the name this declaration is imported by, or `null` when it cannot be imported.
+     *
+     * A top-level declaration is named by its package and its own name, while a nested classifier
+     * adds its containers: `import p.Outer.Inner` binds `Inner`, so renaming it rewrites that
+     * directive too. A declaration that cannot be imported at all — a local, a member, or a
+     * top-level declaration without a name — reports `null`.
+     *
+     * @return fully qualified name the import directives spell, or `null`
+     */
+    private fun KtNamedDeclaration.importableFqName(): FqName? {
+        val declarationName = name ?: return null
+        return when (val container = parent) {
+            is KtFile -> container.packageFqName.child(Name.identifier(declarationName))
+            is KtClassBody -> (container.parent as? KtNamedDeclaration)?.importableFqName()
+                ?.child(Name.identifier(declarationName))
+            else -> null
+        }
+    }
+
+    /**
+     * Tells whether a declaration of the caller's own package binds the new name.
+     *
+     * A same-package function is visible unqualified and takes part in overload resolution, so the
+     * rewritten `After(1)` may select it instead of the renamed constructor even when the file
+     * never spells `After`. The check applies only when the file shares the package of the renamed
+     * declaration: elsewhere the rewritten reference is bound by an explicit import, which wins
+     * over same-package declarations.
+     *
+     * @param file caller being searched
+     * @param targetPackage package of the declaration being renamed, or `null` when unknown
+     * @return `true` when the file's package declares that name
+     */
+    private fun isDeclaredInPackageScope(file: KtFile, targetPackage: FqName?): Boolean =
+        targetPackage != null &&
+            file.packageFqName == targetPackage &&
+            KotlinImportBindingCheck.isDeclaredInPackage(file, newName)
+
+    /**
+     * Tells whether this name spells a type rather than a value.
+     *
+     * A type name lives in a [KtUserType]; a constructor call or a value reference does not.
+     * Kotlin resolves the two namespaces independently, so only value bindings can capture a
+     * rewritten value reference.
+     *
+     * @return `true` when this reference is part of a type usage
+     */
+    private fun KtSimpleNameExpression.isTypeReference(): Boolean = parent is KtUserType
+
+    /**
+     * Returns all reference expression ranges in [kaFile] that resolve to [targetPsi].
+     *
+     * References bound through an import alias are excluded: `import a.Foo as Alias` binds only
+     * `Alias`, so the class name changes in the import path while `Alias` references keep their
+     * name.
+     */
+    private fun searchFileForUsages(kaFile: KtFile, targetPsi: PsiElement): List<Pair<Int, Int>> =
+        collectReferenceElements(kaFile, targetPsi).map { expression ->
+            // A receiver label such as `this@Foo` spans the `@` as well; replacing the whole
+            // element would drop it and leave `thisBar`.
+            val range = if (expression is KtLabelReferenceExpression) {
+                expression.getReferencedNameElement()?.textRange ?: expression.textRange
+            } else {
+                expression.textRange
+            }
+            range.startOffset to range.endOffset
+        }
+
+    /**
+     * Collects the simple-name references in [kaFile] that resolve to [targetPsi].
+     *
+     * @param kaFile file to search
+     * @param targetPsi declaration being renamed
+     * @return reference expressions that spell and resolve to the renamed declaration
+     */
+    private fun collectReferenceElements(kaFile: KtFile, targetPsi: PsiElement): List<KtSimpleNameExpression> {
+        val elements = mutableListOf<KtSimpleNameExpression>()
         runCatching {
             analyze(kaFile) {
+                // A constructor call resolves to a constructor symbol, whose PSI is the
+                // KtPrimaryConstructor rather than the class declaration being renamed, so
+                // compare class ids as well as PSI identity.
+                val targetClassId = (targetPsi as? KtClassOrObject)?.getClassOrObjectSymbol()?.classId
+                // `import a.Foo as Alias` binds only the alias: the class name changes in the
+                // import path, while every `Alias` reference must keep its name.
+                val targetFqName = targetClassId?.asSingleFqName()
+                val aliasNames: Set<String> = if (targetFqName == null) {
+                    emptySet()
+                } else {
+                    kaFile.importDirectives.mapNotNullTo(mutableSetOf()) { directive ->
+                        directive.aliasName?.takeIf { directive.importedFqName == targetFqName }
+                    }
+                }
                 kaFile.accept(object : KtTreeVisitorVoid() {
                     override fun visitReferenceExpression(expression: KtReferenceExpression) {
                         super.visitReferenceExpression(expression)
+                        // `this(...)`/`super(...)` in a secondary constructor delegates to a
+                        // constructor of the renamed class, but the keyword itself is syntax and
+                        // must never be rewritten into the new class name.
+                        if (expression is KtConstructorDelegationReferenceExpression) return
+                        // Only a simple name spelling the class name can be rewritten. Instance
+                        // receivers (`this`, `super`) resolve to the class as well but are syntax,
+                        // and a type-alias call spells the alias rather than the class name.
+                        val simpleName = expression as? KtSimpleNameExpression ?: return
+                        val targetName = (targetPsi as? KtNamedDeclaration)?.name
+                        if (targetName != null && simpleName.getReferencedName() != targetName) return
                         val sym = runCatching {
                             expression.mainReference?.resolveToSymbol()
                         }.getOrNull() ?: return
-                        if (sym.psi == targetPsi) {
-                            val tr = expression.textRange
-                            ranges.add(tr.startOffset to tr.endOffset)
+                        val constructsTarget = targetClassId != null &&
+                            (sym as? KaConstructorSymbol)?.containingClassId == targetClassId
+                        val refersDirectlyToTarget = sym.psi == targetPsi
+                        if (!refersDirectlyToTarget && !constructsTarget) return
+                        // A constructor call through a same-spelled type alias resolves to the
+                        // expanded class's constructor, so the class match alone cannot tell
+                        // `Before()` from `typealias Before = p.Before`. Only such an alias
+                        // expansion is exempt: a reference resolving to the renamed declaration
+                        // itself (a function or the type alias) must still be rewritten.
+                        if (!refersDirectlyToTarget && simpleName.isAliasUsage()) {
+                            val referencedName = simpleName.getReferencedName()
+                            if (referencedName in aliasNames || simpleName.spellsTypeAlias(referencedName)) return
                         }
+                        elements.add(simpleName)
                     }
                 })
             }
         }.onFailure { e -> LOG.warning("KaRenameComputer: search failed in ${kaFile.name}: $e") }
-        return ranges
+        return elements
     }
 }
