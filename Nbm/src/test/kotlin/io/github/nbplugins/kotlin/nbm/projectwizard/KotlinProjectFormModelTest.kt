@@ -20,6 +20,7 @@ import org.jetbrains.kotlin.tools.projectWizard.plugins.buildSystem.BuildSystemT
 import org.netbeans.junit.NbTestCase
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermission
 
 /**
  * Tests for [KotlinProjectFormModel]: default values, artifact ID derivation and validation
@@ -262,6 +263,44 @@ class KotlinProjectFormModelTest : NbTestCase("KotlinProjectFormModelTest") {
         model.projectName = "demo"
 
         assertEquals(KotlinProjectValidation.OK, model.validation())
+    }
+
+    /** A location that cannot be written blocks generation even when it is readable. */
+    fun testNonWritableLocationIsAnError() {
+        val model = modelInWorkDir(ProjectVariant.LIBRARY)
+        val location = getWorkDir().toPath().resolve("readonly")
+        Files.createDirectories(location)
+        val originalPermissions = Files.getPosixFilePermissions(location)
+        try {
+            Files.setPosixFilePermissions(location, Files.getPosixFilePermissions(location) - PosixFilePermission.OWNER_WRITE)
+            // Root ignores permission bits; there is nothing to assert in that case.
+            if (Files.isWritable(location)) return
+            model.location = location.toString()
+            model.projectName = "demo"
+
+            assertEquals(listOf(KotlinProjectProblem.NOT_WRITABLE), model.validation().errors)
+            assertFalse(model.isValid())
+        } finally {
+            Files.setPosixFilePermissions(location, originalPermissions)
+        }
+    }
+
+    /** An existing target directory that cannot be written is an error as well. */
+    fun testNonWritableTargetDirectoryIsAnError() {
+        val model = modelInWorkDir(ProjectVariant.LIBRARY)
+        model.projectName = "readonlytarget"
+        val directory = model.projectDirectory
+        Files.createDirectories(directory)
+        val originalPermissions = Files.getPosixFilePermissions(directory)
+        try {
+            Files.setPosixFilePermissions(directory, Files.getPosixFilePermissions(directory) - PosixFilePermission.OWNER_WRITE)
+            if (Files.isWritable(directory)) return
+
+            assertEquals(listOf(KotlinProjectProblem.NOT_WRITABLE), model.validation().errors)
+            assertFalse(model.isValid())
+        } finally {
+            Files.setPosixFilePermissions(directory, originalPermissions)
+        }
     }
 
     /** An empty target directory produces neither errors nor warnings. */

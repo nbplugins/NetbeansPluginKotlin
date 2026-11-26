@@ -64,6 +64,9 @@ enum class KotlinProjectProblem {
     /** The project location contains a file, so the project directory cannot be created. */
     LOCATION_NOT_DIRECTORY,
 
+    /** The target directory or its nearest existing parent cannot be written. */
+    NOT_WRITABLE,
+
     /** The target directory exists but cannot be listed, so generation cannot proceed. */
     DIRECTORY_NOT_READABLE,
 }
@@ -143,6 +146,7 @@ data class KotlinProjectRequest(
                 KotlinProjectProblem.DIRECTORY_NOT_READABLE -> add(KotlinProjectProblem.DIRECTORY_NOT_READABLE)
                 KotlinProjectProblem.PATH_NOT_DIRECTORY -> add(KotlinProjectProblem.PATH_NOT_DIRECTORY)
                 KotlinProjectProblem.LOCATION_NOT_DIRECTORY -> add(KotlinProjectProblem.LOCATION_NOT_DIRECTORY)
+                KotlinProjectProblem.NOT_WRITABLE -> add(KotlinProjectProblem.NOT_WRITABLE)
                 else -> Unit
             }
         }
@@ -162,39 +166,55 @@ data class KotlinProjectRequest(
      * [KotlinProjectProblem.DIRECTORY_NOT_READABLE] when it cannot be listed,
      * [KotlinProjectProblem.PATH_NOT_DIRECTORY] when the path exists but is a file,
      * [KotlinProjectProblem.LOCATION_NOT_DIRECTORY] when a parent of the path is a file,
-     * `null` when the project can be generated there
+     * [KotlinProjectProblem.NOT_WRITABLE] when neither the directory nor the nearest existing
+     * parent can be written, `null` when the project can be generated there
      */
     private fun directoryProblem(): KotlinProjectProblem? = when {
-        Files.isDirectory(directory) -> try {
-            if (Files.list(directory).use { it.findAny().isPresent }) {
-                KotlinProjectProblem.DIRECTORY_NOT_EMPTY
-            } else {
-                null
-            }
-        } catch (_: IOException) {
-            KotlinProjectProblem.DIRECTORY_NOT_READABLE
-        }
-
+        Files.isDirectory(directory) -> existingDirectoryProblem()
         Files.exists(directory) -> KotlinProjectProblem.PATH_NOT_DIRECTORY
-        isBelowFile() -> KotlinProjectProblem.LOCATION_NOT_DIRECTORY
-        else -> null
+        else -> parentProblem()
     }
 
     /**
-     * Tells whether an existing ancestor of [directory] is a file.
+     * Inspects the target directory that already exists.
+     *
+     * Listing comes first: a directory that cannot be read reports that problem, otherwise an
+     * unreadable-and-unwritable directory would be reported as merely unwritable.
+     *
+     * @return the problem of the existing directory, or `null` when it can be used
+     */
+    private fun existingDirectoryProblem(): KotlinProjectProblem? = try {
+        val isNotEmpty = Files.list(directory).use { it.findAny().isPresent }
+        when {
+            !Files.isWritable(directory) -> KotlinProjectProblem.NOT_WRITABLE
+            isNotEmpty -> KotlinProjectProblem.DIRECTORY_NOT_EMPTY
+            else -> null
+        }
+    } catch (_: IOException) {
+        KotlinProjectProblem.DIRECTORY_NOT_READABLE
+    }
+
+    /**
+     * Inspects the nearest existing ancestor of a target that does not exist yet.
      *
      * A nonexistent target below a file (for instance, location `/tmp/location.txt` yields
      * `/tmp/location.txt/demo`) cannot be created, and a missing intermediate directory
      * elsewhere in the path is legal, so only the nearest existing ancestor decides.
      *
-     * @return `true` when the nearest existing ancestor is not a directory
+     * @return the problem of the nearest existing ancestor, or `null` when the missing path is
+     * below a writable directory
      */
-    private fun isBelowFile(): Boolean {
+    private fun parentProblem(): KotlinProjectProblem? {
         var ancestor = directory.parent
         while (ancestor != null && !Files.exists(ancestor)) {
             ancestor = ancestor.parent
         }
-        return ancestor != null && !Files.isDirectory(ancestor)
+        return when {
+            ancestor == null -> null
+            !Files.isDirectory(ancestor) -> KotlinProjectProblem.LOCATION_NOT_DIRECTORY
+            !Files.isWritable(ancestor) -> KotlinProjectProblem.NOT_WRITABLE
+            else -> null
+        }
     }
 
     companion object {
