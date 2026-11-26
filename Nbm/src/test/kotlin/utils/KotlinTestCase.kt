@@ -18,6 +18,7 @@ package utils
 
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.nbm.startup.FakeIntellijHome
+import io.github.nbplugins.kotlin.nbm.projectwizard.ProjectWizardEnvironment
 import javaproject.JavaProject
 import org.netbeans.api.project.Project
 import org.netbeans.junit.NbTestCase
@@ -37,6 +38,7 @@ abstract class KotlinTestCase(name: String, dirName: String) : NbTestCase(name) 
         super.setUp()
         FakeIntellijHome.startUp()
         KotlinAnalysisAPISession.initApplicationEnvironment()
+        ProjectWizardEnvironment.ensureRegistered()
     }
     
     fun testProjectCreation() {

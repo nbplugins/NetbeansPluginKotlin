@@ -26,4 +26,11 @@ class MimeTypeTest : KotlinTestCase("MIME type test", "mimetypes") {
         assertNotNull(file)
         assertEquals("text/x-kotlin", file!!.mimeType)
     }
+
+    /** Kotlin scripts resolve to the same MIME type so the Kotlin editor applies to them. */
+    fun testKotlinScriptMimeType() {
+        val file = dir.getFileObject("sample.kts")
+        assertNotNull(file)
+        assertEquals("text/x-kotlin", file!!.mimeType)
+    }
 }

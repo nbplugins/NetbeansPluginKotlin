@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Layer template for New Project -> Kotlin -> Kotlin Script.
+
+  The file content is not used: KotlinProjectWizardIterator generates the project skeleton
+  with the IDEA Kotlin New Project Wizard, adds `src/main/kotlin/main.kts`, and returns the
+  generated project directory. The layer entry only needs a real file to attach the template
+  attributes to.
+-->
+<kotlin-project-template variant="script"/>

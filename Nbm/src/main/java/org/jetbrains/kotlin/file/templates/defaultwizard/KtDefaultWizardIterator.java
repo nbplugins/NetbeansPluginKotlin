@@ -294,8 +294,13 @@ public abstract class KtDefaultWizardIterator implements WizardDescriptor.Instan
      *   <li>{@code ${package}} — replaced by {@code pkg};
      *   <li>{@code ${name}} — replaced by {@code name}.
      * </ul>
+     *
+     * @param body template text as read from the template file
+     * @param pkg package name selected in the wizard, may be empty
+     * @param name file base name selected in the wizard
+     * @return the rendered file content
      */
-    static String renderTemplate(String body, String pkg, String name) {
+    public static String renderTemplate(String body, String pkg, String name) {
         String src = body;
         int ifStart = src.indexOf("<#if package?? && package != \"\">");
         if (ifStart >= 0) {
