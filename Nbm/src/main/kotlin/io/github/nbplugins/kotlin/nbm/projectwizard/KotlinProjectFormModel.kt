@@ -112,16 +112,24 @@ class KotlinProjectFormModel(val variant: ProjectVariant) {
         }
 
         /**
-         * @return [projectName] with every character that a Maven artifact ID cannot contain
-         * removed (spaces, punctuation other than `-`, `_` and `.`).
+         * @return [projectName] restricted to the characters Maven allows in an artifact ID
+         * (ASCII letters, digits, `-`, `_` and `.`), so a derived ID always passes validation.
+         * A name without any such character yields an empty ID, which the validation reports.
          */
         fun artifactIdFor(projectName: String): String =
-            projectName.filter { it.isLetterOrDigit() || it in KotlinProjectRequest.COORDINATE_SPECIAL_CHARS }
+            projectName.filter { it.isAsciiLetterOrDigit() || it in KotlinProjectRequest.COORDINATE_SPECIAL_CHARS }
 
         /**
          * @return the directory new projects are created in: the user's home directory, which
          * is always writable and is where NetBeans' own project wizards start.
          */
         fun defaultProjectsLocation(): String = System.getProperty("user.home", "")
+
+        /**
+         * @return `true` for `A`–`Z`, `a`–`z` and `0`–`9` only, unlike [Char.isLetterOrDigit],
+         * which also accepts letters of other scripts.
+         */
+        private fun Char.isAsciiLetterOrDigit(): Boolean =
+            this in 'a'..'z' || this in 'A'..'Z' || this in '0'..'9'
     }
 }

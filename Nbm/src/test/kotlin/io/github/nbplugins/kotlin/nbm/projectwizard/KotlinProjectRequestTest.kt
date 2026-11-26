@@ -85,6 +85,30 @@ class KotlinProjectRequestTest : NbTestCase("KotlinProjectRequestTest") {
         assertFalse(KotlinProjectRequest.isCoordinateIdentifier(""))
     }
 
+    /** Maven rejects artifact IDs with spaces or non-latin letters. */
+    fun testArtifactIdFollowsMavenRules() {
+        assertTrue(KotlinProjectRequest.isArtifactId("my-app_1.0"))
+        assertFalse(KotlinProjectRequest.isArtifactId("my app"))
+        assertFalse(KotlinProjectRequest.isArtifactId("Проект"))
+        assertFalse(KotlinProjectRequest.isArtifactId("a/b"))
+        assertFalse(KotlinProjectRequest.isArtifactId(""))
+    }
+
+    /** An artifact ID Maven cannot use is an error even though it is a legal project name. */
+    fun testMavenIncompatibleArtifactIdIsAnError() {
+        val validation = request(name = "my app", artifactId = "my app").validate()
+
+        assertTrue(KotlinProjectProblem.INVALID_ARTIFACT_ID in validation.errors)
+        assertFalse(KotlinProjectProblem.INVALID_NAME in validation.errors)
+    }
+
+    /** A non-latin project name is still a legal project name; only its ID needs manual input. */
+    fun testNonLatinNameIsValid() {
+        val validation = request(name = "Проект").validate()
+
+        assertTrue(KotlinProjectProblem.INVALID_NAME !in validation.errors)
+    }
+
     /** An existing non-empty directory is a warning, not an error. */
     fun testNonEmptyDirectoryIsOnlyAWarning() {
         Files.createDirectories(directory)

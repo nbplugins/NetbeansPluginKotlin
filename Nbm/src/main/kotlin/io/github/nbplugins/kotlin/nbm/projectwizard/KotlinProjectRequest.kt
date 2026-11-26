@@ -97,9 +97,10 @@ data class KotlinProjectRequest(
 ) {
 
     /**
-     * Validates the request using the same character rules as the IDEA New Project Wizard:
-     * a name/artifact may contain letters, digits, space, `-`, `_` and `.`, a group ID and a
-     * version may contain letters, digits, `-`, `_` and `.`.
+     * Validates the request. The project name follows the IDEA New Project Wizard rules:
+     * letters, digits, space, `-`, `_` and `.`. Coordinates are stricter because Maven rejects
+     * anything else: the artifact ID may contain only ASCII letters, digits, `-`, `_` and `.`,
+     * while the group ID and the version may contain letters, digits, `-`, `_` and `.`.
      *
      * An existing non-empty directory is only a warning: IDEA itself allows generating into
      * a non-empty folder.
@@ -116,7 +117,7 @@ data class KotlinProjectRequest(
             }
             when {
                 artifactId.isBlank() -> add(KotlinProjectProblem.EMPTY_ARTIFACT_ID)
-                !isModuleIdentifier(artifactId) -> add(KotlinProjectProblem.INVALID_ARTIFACT_ID)
+                !isArtifactId(artifactId) -> add(KotlinProjectProblem.INVALID_ARTIFACT_ID)
             }
             when {
                 version.isBlank() -> add(KotlinProjectProblem.EMPTY_VERSION)
@@ -146,6 +147,16 @@ data class KotlinProjectRequest(
             hasOnlyAllowedChars(value, MODULE_NAME_SPECIAL_CHARS)
 
         /**
+         * Checks the Maven artifact ID pattern `[A-Za-z0-9_.-]+`: Maven rejects spaces and
+         * non-ASCII letters, so such an ID cannot produce a working project.
+         *
+         * @return `true` when [value] is non-blank and a legal Maven artifact ID.
+         */
+        @JvmStatic
+        fun isArtifactId(value: String): Boolean =
+            value.isNotEmpty() && value.all { it.isAsciiLetterOrDigit() || it in COORDINATE_SPECIAL_CHARS }
+
+        /**
          * @return `true` when [value] is non-blank and may serve as a group ID or a version.
          */
         @JvmStatic
@@ -161,5 +172,12 @@ data class KotlinProjectRequest(
 
         private fun hasOnlyAllowedChars(value: String, allowedExtraChars: Set<Char>): Boolean =
             value.isNotBlank() && value.all { it.isLetterOrDigit() || it in allowedExtraChars }
+
+        /**
+         * @return `true` for `A`–`Z`, `a`–`z` and `0`–`9` only, unlike [Char.isLetterOrDigit],
+         * which also accepts letters of other scripts.
+         */
+        private fun Char.isAsciiLetterOrDigit(): Boolean =
+            this in 'a'..'z' || this in 'A'..'Z' || this in '0'..'9'
     }
 }

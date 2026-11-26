@@ -64,11 +64,12 @@ class KotlinProjectFormModelTest : NbTestCase("KotlinProjectFormModelTest") {
         assertEquals("the custom artifact ID must survive a name change", "custom", model.artifactId)
     }
 
-    /** Spaces and punctuation are removed when deriving an artifact ID. */
+    /** Spaces, punctuation and non-latin letters are removed when deriving an artifact ID. */
     fun testArtifactIdForRemovesIllegalCharacters() {
         assertEquals("my-app_1.0", KotlinProjectFormModel.artifactIdFor("my-app_1.0"))
         assertEquals("MyApp", KotlinProjectFormModel.artifactIdFor("My App!"))
         assertEquals("", KotlinProjectFormModel.artifactIdFor("  "))
+        assertEquals("", KotlinProjectFormModel.artifactIdFor("Проект"))
     }
 
     /** The project directory is the location directory plus the project name. */
