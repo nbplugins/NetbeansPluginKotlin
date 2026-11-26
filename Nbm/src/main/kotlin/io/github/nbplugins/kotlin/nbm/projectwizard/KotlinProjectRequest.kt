@@ -61,6 +61,9 @@ enum class KotlinProjectProblem {
     /** The target path exists but is a file, so the project cannot be created there. */
     PATH_NOT_DIRECTORY,
 
+    /** The project location contains a file, so the project directory cannot be created. */
+    LOCATION_NOT_DIRECTORY,
+
     /** The target directory exists but cannot be listed, so generation cannot proceed. */
     DIRECTORY_NOT_READABLE,
 }
@@ -137,6 +140,7 @@ data class KotlinProjectRequest(
             when (directoryProblem) {
                 KotlinProjectProblem.DIRECTORY_NOT_READABLE -> add(KotlinProjectProblem.DIRECTORY_NOT_READABLE)
                 KotlinProjectProblem.PATH_NOT_DIRECTORY -> add(KotlinProjectProblem.PATH_NOT_DIRECTORY)
+                KotlinProjectProblem.LOCATION_NOT_DIRECTORY -> add(KotlinProjectProblem.LOCATION_NOT_DIRECTORY)
                 else -> Unit
             }
         }
@@ -155,6 +159,7 @@ data class KotlinProjectRequest(
      * @return [KotlinProjectProblem.DIRECTORY_NOT_EMPTY] when the directory has content,
      * [KotlinProjectProblem.DIRECTORY_NOT_READABLE] when it cannot be listed,
      * [KotlinProjectProblem.PATH_NOT_DIRECTORY] when the path exists but is a file,
+     * [KotlinProjectProblem.LOCATION_NOT_DIRECTORY] when a parent of the path is a file,
      * `null` when the project can be generated there
      */
     private fun directoryProblem(): KotlinProjectProblem? = when {
@@ -169,7 +174,25 @@ data class KotlinProjectRequest(
         }
 
         Files.exists(directory) -> KotlinProjectProblem.PATH_NOT_DIRECTORY
+        isBelowFile() -> KotlinProjectProblem.LOCATION_NOT_DIRECTORY
         else -> null
+    }
+
+    /**
+     * Tells whether an existing ancestor of [directory] is a file.
+     *
+     * A nonexistent target below a file (for instance, location `/tmp/location.txt` yields
+     * `/tmp/location.txt/demo`) cannot be created, and a missing intermediate directory
+     * elsewhere in the path is legal, so only the nearest existing ancestor decides.
+     *
+     * @return `true` when the nearest existing ancestor is not a directory
+     */
+    private fun isBelowFile(): Boolean {
+        var ancestor = directory.parent
+        while (ancestor != null && !Files.exists(ancestor)) {
+            ancestor = ancestor.parent
+        }
+        return ancestor != null && !Files.isDirectory(ancestor)
     }
 
     companion object {

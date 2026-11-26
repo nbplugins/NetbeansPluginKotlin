@@ -212,6 +212,41 @@ class KotlinProjectFormModelTest : NbTestCase("KotlinProjectFormModelTest") {
         assertFalse(model.isValid())
     }
 
+    /**
+     * A location that points to a file makes the target uncreatable: the nearest existing
+     * ancestor of `<location>/<name>` is a file, not a directory.
+     */
+    fun testLocationInsideAFileIsAnError() {
+        val model = modelInWorkDir(ProjectVariant.LIBRARY)
+        val file = getWorkDir().toPath().resolve("location.txt")
+        Files.createFile(file)
+        model.location = file.toString()
+        model.projectName = "demo"
+
+        assertEquals(listOf(KotlinProjectProblem.LOCATION_NOT_DIRECTORY), model.validation().errors)
+        assertFalse(model.isValid())
+    }
+
+    /** A missing location below a file is rejected the same way. */
+    fun testMissingLocationBelowAFileIsAnError() {
+        val model = modelInWorkDir(ProjectVariant.LIBRARY)
+        val file = getWorkDir().toPath().resolve("location.txt")
+        Files.createFile(file)
+        model.location = file.resolve("projects").resolve("kotlin").toString()
+        model.projectName = "demo"
+
+        assertEquals(listOf(KotlinProjectProblem.LOCATION_NOT_DIRECTORY), model.validation().errors)
+    }
+
+    /** Missing intermediate directories of a regular location remain valid. */
+    fun testMissingLocationDirectoriesAreValid() {
+        val model = modelInWorkDir(ProjectVariant.LIBRARY)
+        model.location = getWorkDir().toPath().resolve("projects").resolve("kotlin").toString()
+        model.projectName = "demo"
+
+        assertEquals(KotlinProjectValidation.OK, model.validation())
+    }
+
     /** An empty target directory produces neither errors nor warnings. */
     fun testEmptyDirectoryIsAccepted() {
         val model = modelInWorkDir(ProjectVariant.LIBRARY)
