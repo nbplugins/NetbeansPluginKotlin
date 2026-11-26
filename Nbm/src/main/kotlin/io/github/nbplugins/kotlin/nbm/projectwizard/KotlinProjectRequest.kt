@@ -58,6 +58,9 @@ enum class KotlinProjectProblem {
     /** The target directory already exists and is not empty. */
     DIRECTORY_NOT_EMPTY,
 
+    /** The target path exists but is a file, so the project cannot be created there. */
+    PATH_NOT_DIRECTORY,
+
     /** The target directory exists but cannot be listed, so generation cannot proceed. */
     DIRECTORY_NOT_READABLE,
 }
@@ -131,8 +134,10 @@ data class KotlinProjectRequest(
                 version.isBlank() -> add(KotlinProjectProblem.EMPTY_VERSION)
                 !isCoordinateIdentifier(version) -> add(KotlinProjectProblem.INVALID_VERSION)
             }
-            if (directoryProblem == KotlinProjectProblem.DIRECTORY_NOT_READABLE) {
-                add(KotlinProjectProblem.DIRECTORY_NOT_READABLE)
+            when (directoryProblem) {
+                KotlinProjectProblem.DIRECTORY_NOT_READABLE -> add(KotlinProjectProblem.DIRECTORY_NOT_READABLE)
+                KotlinProjectProblem.PATH_NOT_DIRECTORY -> add(KotlinProjectProblem.PATH_NOT_DIRECTORY)
+                else -> Unit
             }
         }
         val warnings = if (directoryProblem == KotlinProjectProblem.DIRECTORY_NOT_EMPTY) {
@@ -148,11 +153,12 @@ data class KotlinProjectRequest(
      * swing document listeners, where an exception would leave the panel state stale.
      *
      * @return [KotlinProjectProblem.DIRECTORY_NOT_EMPTY] when the directory has content,
-     * [KotlinProjectProblem.DIRECTORY_NOT_READABLE] when it cannot be listed, `null` otherwise
+     * [KotlinProjectProblem.DIRECTORY_NOT_READABLE] when it cannot be listed,
+     * [KotlinProjectProblem.PATH_NOT_DIRECTORY] when the path exists but is a file,
+     * `null` when the project can be generated there
      */
     private fun directoryProblem(): KotlinProjectProblem? = when {
-        !Files.isDirectory(directory) -> null
-        else -> try {
+        Files.isDirectory(directory) -> try {
             if (Files.list(directory).use { it.findAny().isPresent }) {
                 KotlinProjectProblem.DIRECTORY_NOT_EMPTY
             } else {
@@ -161,6 +167,9 @@ data class KotlinProjectRequest(
         } catch (_: IOException) {
             KotlinProjectProblem.DIRECTORY_NOT_READABLE
         }
+
+        Files.exists(directory) -> KotlinProjectProblem.PATH_NOT_DIRECTORY
+        else -> null
     }
 
     companion object {

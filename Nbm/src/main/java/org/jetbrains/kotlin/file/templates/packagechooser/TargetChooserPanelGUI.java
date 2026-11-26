@@ -245,18 +245,7 @@ private static final String DEFAULT_NEW_PACKAGE_NAME =
     }    
     
     public String getTargetName() {
-        String text;
-        final String rawName = documentNameTextField.getText().trim();
-        if (type == Type.PACKAGE) {
-            text = rawName;
-        } else {
-            final String[] pkgNamePair = TargetChooserPanel.getPackageAndSimpleName(rawName);
-            if (pkgNamePair[0].length() == 0) {
-                text = rawName;
-            } else {
-                text = pkgNamePair[1];
-            }
-        }
+        final String text = TargetChooserPanel.targetName(type, documentNameTextField.getText().trim());
         if ( text.length() == 0 ) {
             return null;
         } else {

@@ -17,6 +17,7 @@
 package org.jetbrains.kotlin.file.templates;
 
 import org.jetbrains.kotlin.file.templates.defaultwizard.KtDefaultWizardIterator;
+import org.jetbrains.kotlin.file.templates.packagechooser.Type;
 import org.netbeans.api.templates.TemplateRegistration;
 
 /**
@@ -26,6 +27,10 @@ import org.netbeans.api.templates.TemplateRegistration;
  * with the template's extension, so the generated file is {@code <name>.kts}; the layer resolver
  * maps that extension to {@code text/x-kotlin}, which makes the Kotlin CSL editor (highlighting,
  * folding, formatting) apply.
+ *
+ * <p>{@link Type#SCRIPT} makes the name a literal file name: {@code demo.main} creates
+ * {@code demo.main.kts} (as the Kotlin scripting convention requires) instead of being parsed as
+ * package {@code demo} and file {@code main}, and hyphens are allowed.
  */
 @TemplateRegistration(folder = "Kotlin",
         displayName = "Kotlin script",
@@ -37,6 +42,6 @@ public class KtScriptWizardIterator extends KtDefaultWizardIterator {
 
     /** Creates the wizard. */
     public KtScriptWizardIterator() {
-        super("Script");
+        super("Script", Type.SCRIPT);
     }
 }

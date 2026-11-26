@@ -202,6 +202,16 @@ class KotlinProjectFormModelTest : NbTestCase("KotlinProjectFormModelTest") {
         assertTrue(model.isValid())
     }
 
+    /** A target path that is a regular file is an error: the project cannot be created there. */
+    fun testFileTargetIsAnError() {
+        val model = modelInWorkDir(ProjectVariant.LIBRARY)
+        model.projectName = "occupied"
+        Files.createFile(model.projectDirectory)
+
+        assertEquals(listOf(KotlinProjectProblem.PATH_NOT_DIRECTORY), model.validation().errors)
+        assertFalse(model.isValid())
+    }
+
     /** An empty target directory produces neither errors nor warnings. */
     fun testEmptyDirectoryIsAccepted() {
         val model = modelInWorkDir(ProjectVariant.LIBRARY)
