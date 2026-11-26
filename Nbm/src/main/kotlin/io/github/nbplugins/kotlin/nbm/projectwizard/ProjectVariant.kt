@@ -16,7 +16,6 @@
  *******************************************************************************/
 package io.github.nbplugins.kotlin.nbm.projectwizard
 
-import org.jetbrains.kotlin.tools.projectWizard.projectTemplates.ConsoleApplicationProjectTemplateWithSample
 import org.jetbrains.kotlin.tools.projectWizard.projectTemplates.ProjectTemplate
 
 /**
@@ -36,13 +35,16 @@ enum class ProjectVariant {
     /**
      * The IDEA project template whose settings this variant applies.
      *
-     * Application uses the upstream console-application template (it adds the `Main.kt`
-     * sample). Library and script use [KotlinLibraryProjectTemplate], which reuses the same
-     * upstream machinery but names the single module `lib` and adds no sample code.
+     * Both templates are local (see [KotlinProjectTemplate]) because the upstream ones name
+     * their module `consoleApp`, which becomes the Maven `<name>` and therefore the project
+     * name NetBeans displays.
+     *
+     * @param moduleName name of the generated module, normally the artifact ID
+     * @return the template that configures the single project module
      */
-    fun template(): ProjectTemplate = when (this) {
-        APPLICATION -> ConsoleApplicationProjectTemplateWithSample
-        LIBRARY, SCRIPT -> KotlinLibraryProjectTemplate
+    fun template(moduleName: String): ProjectTemplate = when (this) {
+        APPLICATION -> KotlinApplicationProjectTemplate(moduleName)
+        LIBRARY, SCRIPT -> KotlinLibraryProjectTemplate(moduleName)
     }
 
     /**

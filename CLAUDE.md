@@ -17,6 +17,20 @@ To update the submodule to the latest commit:
 git submodule update --remote submodules/IntellijCommunity
 ```
 
+The submodule uses a **non-cone sparse checkout**, so source-copying reactor modules only see
+the paths listed in its `sparse-checkout` config. When a module starts copying from a new
+directory, add it there, otherwise `maven-resources-plugin` silently copies nothing. Currently
+required beyond `plugins/kotlin/`:
+```bash
+git -C submodules/IntellijCommunity sparse-checkout add \
+  plugins/gradle/src/org/jetbrains/plugins/gradle/jvmcompat/ \
+  /plugins/gradle/src/org/jetbrains/plugins/gradle/util/Ranges.kt \
+  java/idea-ui/src/com/intellij/ide/starters/local/ \
+  java/idea-ui/resources/assets/gradlew/ \
+  java/idea-ui/resources/assets/ignore/ \
+  platform/object-serializer/src/stateProperties/
+```
+
 ## Git Workflow
 
 The canonical upstream remote is `https://github.com/nbplugins/NetbeansPluginKotlin.git`.

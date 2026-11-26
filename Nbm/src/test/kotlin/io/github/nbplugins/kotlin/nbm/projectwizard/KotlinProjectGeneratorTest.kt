@@ -38,6 +38,9 @@ class KotlinProjectGeneratorTest : NbTestCase("KotlinProjectGeneratorTest") {
 
     override fun setUp() {
         super.setUp()
+        // The work directory is shared by all test methods of the class and generation never
+        // overwrites existing files, so leftover projects would hide real results.
+        clearWorkDir()
         FakeIntellijHome.startUp()
         KotlinAnalysisAPISession.initApplicationEnvironment()
         ProjectWizardEnvironment.ensureRegistered()
@@ -120,6 +123,16 @@ class KotlinProjectGeneratorTest : NbTestCase("KotlinProjectGeneratorTest") {
         assertTrue(pom.contains("<groupId>org.example</groupId>"))
         assertTrue(pom.contains("<artifactId>demo</artifactId>"))
         assertTrue(pom.contains("<version>1.0-SNAPSHOT</version>"))
+    }
+
+    /** The application template's internal `consoleApp` module must not become the Maven name. */
+    fun testApplicationMavenProjectUsesRequestedName() {
+        val request = request(ProjectVariant.APPLICATION, BuildSystemType.Maven)
+        generator.generate(request)
+
+        val pom = Files.readString(request.directory.resolve("pom.xml"))
+        assertTrue("the artifact ID must come from the wizard, was: $pom", pom.contains("<artifactId>demo</artifactId>"))
+        assertFalse("the internal module name must not leak into the project, was: $pom", pom.contains("consoleApp"))
     }
 
     /** A script project's `main.kts` is a valid Kotlin script. */

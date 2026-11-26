@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.12.66-SNAPSHOT</version>
+    <version>0.12.67-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-project-wizard</artifactId>
@@ -23,6 +23,20 @@
       Sources are assembled from several submodule directories and the local src/main/kotlin
       into target/generated-sources/projectwizard, so the patches can modify copies without
       dirtying the git submodule and kotlin-maven-plugin compiles from one sourceDirectory.
+
+      The submodule is used with a non-cone sparse checkout, so it must include every path
+      copied below in addition to plugins/kotlin/ (which already covers project-wizard/core):
+
+        git -C submodules/IntellijCommunity sparse-checkout add \
+          plugins/gradle/src/org/jetbrains/plugins/gradle/jvmcompat/ \
+          /plugins/gradle/src/org/jetbrains/plugins/gradle/util/Ranges.kt \
+          java/idea-ui/src/com/intellij/ide/starters/local/ \
+          java/idea-ui/resources/assets/gradlew/ \
+          java/idea-ui/resources/assets/ignore/ \
+          platform/object-serializer/src/stateProperties/
+
+      Without them maven-resources silently copies nothing and the patch step fails with
+      "patch target not found".
     -->
     <sourceDirectory>${project.build.directory}/generated-sources/projectwizard</sourceDirectory>
 

@@ -171,7 +171,7 @@ private class NetBeansKotlinProjectWizard(
         // The first pass initialises defaults and lets the template set its own values.
         super.apply(services, setOf(GenerationPhase.PREPARE), onTaskExecuting).ensure()
         context.writeSettings {
-            applyProjectTemplate(request.variant.template())
+            applyProjectTemplate(request.variant.template(request.artifactId))
             BuildSystemPlugin.type.reference.setValue(request.buildSystem)
             StructurePlugin.projectPath.reference.setValue(request.directory)
             StructurePlugin.name.reference.setValue(request.name)
