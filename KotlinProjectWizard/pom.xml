@@ -1,0 +1,491 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.github.nbplugins</groupId>
+    <artifactId>netbeans-plugin-kotlin</artifactId>
+    <version>0.12.77-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+  <artifactId>netbeans-plugin-kotlin-project-wizard</artifactId>
+  <packaging>jar</packaging>
+  <name>Netbeans Plugin Kotlin Project Wizard</name>
+  <description>
+    Headless IntelliJ IDEA Kotlin New Project Wizard (project-wizard/core) compiled from
+    submodules/IntellijCommunity, together with the small set of Gradle and idea-ui starter
+    assets it needs and standalone stubs for IDE-only subsystems. Contains no NetBeans APIs:
+    the Nbm module drives it through KotlinProjectGenerator.
+  </description>
+
+  <build>
+    <!--
+      Sources are assembled from several submodule directories and the local src/main/kotlin
+      into target/generated-sources/projectwizard, so the patches can modify copies without
+      dirtying the git submodule and kotlin-maven-plugin compiles from one sourceDirectory.
+
+      The submodule is used with a non-cone sparse checkout, so it must include every path
+      copied below in addition to plugins/kotlin/ (which already covers project-wizard/core):
+
+        git -C submodules/IntellijCommunity sparse-checkout add \
+          plugins/gradle/src/org/jetbrains/plugins/gradle/jvmcompat/ \
+          /plugins/gradle/src/org/jetbrains/plugins/gradle/util/Ranges.kt \
+          java/idea-ui/src/com/intellij/ide/starters/local/ \
+          java/idea-ui/resources/assets/gradlew/ \
+          java/idea-ui/resources/assets/ignore/ \
+          platform/object-serializer/src/stateProperties/
+
+      Without them maven-resources silently copies nothing and the patch step fails with
+      "patch target not found".
+    -->
+    <sourceDirectory>${project.build.directory}/generated-sources/projectwizard</sourceDirectory>
+
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <executions>
+
+          <!-- Kotlin New Project Wizard core (headless). -->
+          <execution>
+            <id>copy-projectwizard-core</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/projectwizard</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/project-wizard/core/src</directory>
+                  <filtering>false</filtering>
+                  <excludes>
+                    <!-- IDE wizard step DSL, browser and keymap: not used by any headless path. -->
+                    <exclude>org/jetbrains/kotlin/tools/projectWizard/KotlinWizardUtils.kt</exclude>
+                    <exclude>org/jetbrains/kotlin/tools/projectWizard/wizard/AssetsKotlin.kt</exclude>
+                    <!-- Onboarding tips are an IDE-only feature (observable properties). -->
+                    <exclude>org/jetbrains/kotlin/tools/projectWizard/KotlinOnboardingProjectWizardData.kt</exclude>
+                    <!-- The only users of KotlinLibrariesDefaultData / KotlinGradleCompatibilityDefaultData. -->
+                    <exclude>org/jetbrains/kotlin/tools/projectWizard/compatibility/DefaultKotlinLibraryVersionProvider.kt</exclude>
+                    <exclude>org/jetbrains/kotlin/tools/projectWizard/compatibility/KotlinGradleCompatibilityStore.kt</exclude>
+                    <exclude>org/jetbrains/kotlin/tools/projectWizard/compatibility/KotlinLibrariesCompatibilityStore.kt</exclude>
+                    <!-- IDE-only build tool that regenerates the very data files excluded above. -->
+                    <exclude>org/jetbrains/kotlin/tools/projectWizard/compatibility/KotlinWizardDefaultDataGenerator.kt</exclude>
+                    <!-- Replaced by the local ResourceBundle-based stub (no DynamicBundle). -->
+                    <exclude>org/jetbrains/kotlin/tools/projectWizard/KotlinNewProjectWizardBundle.kt</exclude>
+                  </excludes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- Generated default data actually referenced by the copied sources. -->
+          <execution>
+            <id>copy-projectwizard-generated</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/projectwizard</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/project-wizard/core/generated</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>DependencyDefaultData.kt</include>
+                    <include>GradlePluginsDefaultData.kt</include>
+                    <include>KotlinWizardVersionDefaultData.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- Versioned-data infrastructure used by the Kotlin wizard stores. -->
+          <execution>
+            <id>copy-projectwizard-gradle-support</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/projectwizard</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/gradle/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>org/jetbrains/plugins/gradle/jvmcompat/GsonUtil.kt</include>
+                    <include>org/jetbrains/plugins/gradle/jvmcompat/IdeVersionedDataParser.kt</include>
+                    <include>org/jetbrains/plugins/gradle/jvmcompat/IdeVersionedDataState.kt</include>
+                    <include>org/jetbrains/plugins/gradle/jvmcompat/IdeVersionedDataStorage.kt</include>
+                    <include>org/jetbrains/plugins/gradle/util/Ranges.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!--
+            State-property implementation of com.intellij.openapi.components.BaseState.
+            BaseState (from project-model) loads StatePropertyFactoryImpl reflectively from
+            com.intellij.serialization.stateProperties; the Maven artifacts of platform 253
+            ship the interface but not the implementation (it lives in platform/object-serializer),
+            so the wizard's @State-derived stores cannot initialize without these classes.
+          -->
+          <execution>
+            <id>copy-platform-state-properties</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/projectwizard</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/platform/object-serializer/src/stateProperties</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>*.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- Java starter assets: resource files and the assets processor. -->          <execution>
+            <id>copy-projectwizard-starters</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/projectwizard</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/java/idea-ui/src</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>com/intellij/ide/starters/local/GeneratorAssets.kt</include>
+                    <include>com/intellij/ide/starters/local/StandardAssetsProvider.kt</include>
+                    <include>com/intellij/ide/starters/local/generator/AssetsProcessor.kt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- Local standalone stubs and patched replacements. -->
+          <execution>
+            <id>copy-local-sources</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/projectwizard</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/src/main/kotlin</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- Message bundle, ignore files and Velocity templates. -->
+          <execution>
+            <id>copy-projectwizard-resources</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-resources/projectwizard</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/plugins/kotlin/project-wizard/core/resources</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>messages/**</include>
+                    <include>assets/**</include>
+                    <include>org/jetbrains/kotlin/tools/projectWizard/templates/**</include>
+                  </includes>
+                  <excludes>
+                    <exclude>org/jetbrains/kotlin/tools/projectWizard/templates/ios/singleplatformProject/**</exclude>
+                  </excludes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!--
+            Gradle wrapper binaries and the ignore files. The classpath root is
+            `resources/`, so the assets keep their `assets/` prefix: StandardAssetsProvider
+            looks them up as /assets/gradlew/gradle-wrapper.jar.bin and
+            /assets/ignore/gradle.gitignore.txt.
+          -->
+          <execution>
+            <id>copy-projectwizard-starter-assets</id>
+            <phase>initialize</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-resources/projectwizard</outputDirectory>
+              <overwrite>true</overwrite>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../submodules/IntellijCommunity/java/idea-ui/resources</directory>
+                  <filtering>false</filtering>
+                  <includes>
+                    <include>assets/gradlew/*</include>
+                    <include>assets/ignore/*.gitignore.txt</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>add-generated-sources</id>
+            <phase>generate-sources</phase>
+            <goals><goal>add-source</goal></goals>
+            <configuration>
+              <sources>
+                <source>${project.build.directory}/generated-sources/projectwizard</source>
+              </sources>
+            </configuration>
+          </execution>
+          <execution>
+            <id>add-generated-resources</id>
+            <phase>generate-sources</phase>
+            <goals><goal>add-resource</goal></goals>
+            <configuration>
+              <resources>
+                <resource>
+                  <directory>${project.build.directory}/generated-resources/projectwizard</directory>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
+        Patches in the copied submodule sources:
+        1. IdeVersionedDataStorage: ApplicationInfo is absent under the standalone MockApplication,
+           so the IDE version used for state compatibility is a fixed constant.
+        2. GeneratorAssets: drop GeneratorTemplateFile (FileTemplate is not in the runtime bundle).
+        3. AssetsProcessor: drop the GeneratorTemplateFile branch and its private generator.
+        4. ProjectTemplates: Registry and AdvancedSettings are IDE-only; WASM/JS templates are
+           never offered by the NetBeans wizard.
+      -->
+      <plugin>
+        <groupId>org.codehaus.gmavenplus</groupId>
+        <artifactId>gmavenplus-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>patch-projectwizard-sources</id>
+            <phase>generate-sources</phase>
+            <goals><goal>execute</goal></goals>
+            <configuration>
+              <scripts>
+                <script><![CDATA[
+import java.nio.file.*
+
+def srcDir = new File(project.build.directory, 'generated-sources/projectwizard')
+
+def patch = { String relativePath, Closure<String> body ->
+  def file = new File(srcDir, relativePath)
+  if (!file.exists()) {
+    throw new IllegalStateException("patch target not found: ${relativePath}")
+  }
+  def before = file.text
+  def after = body.call(before)
+  if (after == before) {
+    throw new IllegalStateException("patch made no change (submodule drift?): ${relativePath}")
+  }
+  file.text = after
+  log.info("Patched ${relativePath}")
+}
+
+// 1. IdeVersionedDataStorage: fixed IDE version instead of ApplicationInfo.
+patch('org/jetbrains/plugins/gradle/jvmcompat/IdeVersionedDataStorage.kt') { text ->
+  text = text.replace('import com.intellij.openapi.application.ApplicationInfo\n', '')
+  text = text.replace(
+      'abstract class IdeVersionedDataStorage<S: IdeVersionedDataState>(',
+      '''/**
+ * IDE version used for versioned-data compatibility checks in the standalone NetBeans
+ * environment, where the IDE application info is unavailable.
+ * Matches the bundled IntelliJ platform era (253.33514.17).
+ */
+const val WIZARD_DATA_IDE_VERSION = "253.33514.17"
+
+abstract class IdeVersionedDataStorage<S: IdeVersionedDataState>(''')
+  text = text.replaceAll(
+      java.util.regex.Pattern.quote('ApplicationInfo.getInstance().fullVersion'),
+      'WIZARD_DATA_IDE_VERSION')
+  if (text.contains('ApplicationInfo')) {
+    throw new IllegalStateException('patch 1: ApplicationInfo still referenced')
+  }
+  text
+}
+
+// 2. GeneratorAssets: drop the FileTemplate-based asset type.
+patch('com/intellij/ide/starters/local/GeneratorAssets.kt') { text ->
+  text = text.replace('import com.intellij.ide.fileTemplates.FileTemplate\n', '')
+  def start = text.indexOf('data class GeneratorTemplateFile(')
+  if (start < 0) {
+    throw new IllegalStateException('patch 2: GeneratorTemplateFile not found')
+  }
+  def end = text.indexOf('data class GeneratorResourceFile(', start)
+  if (end < 0) {
+    throw new IllegalStateException('patch 2: GeneratorResourceFile not found')
+  }
+  text.substring(0, start) + text.substring(end)
+}
+
+// 3. AssetsProcessor: drop the GeneratorTemplateFile branch and its private generator.
+patch('com/intellij/ide/starters/local/generator/AssetsProcessor.kt') { text ->
+  text = text.replace('import com.intellij.ide.fileTemplates.FileTemplateManager\n', '')
+  text = text.replace('import com.intellij.ide.starters.local.GeneratorTemplateFile\n', '')
+  text = text.replace('        is GeneratorTemplateFile -> generateSources(outputDirectory, asset, templateProperties)\n', '')
+  def start = text.indexOf('  private fun generateSources(outputDirectory: Path, asset: GeneratorTemplateFile')
+  if (start < 0) {
+    throw new IllegalStateException('patch 3: GeneratorTemplateFile generator not found')
+  }
+  def end = text.indexOf('  private fun generateSources(outputDirectory: Path, asset: GeneratorResourceFile', start)
+  if (end < 0) {
+    throw new IllegalStateException('patch 3: next generator not found')
+  }
+  text.substring(0, start) + text.substring(end)
+}
+
+// 4. ProjectTemplates: no IDE Registry / AdvancedSettings in the standalone environment.
+patch('org/jetbrains/kotlin/tools/projectWizard/projectTemplates/ProjectTemplates.kt') { text ->
+  text = text.replace('import com.intellij.openapi.options.advanced.AdvancedSettings\n', '')
+  text = text.replace('import com.intellij.openapi.util.registry.Registry\n', '')
+  text = text.replace('return Registry.`is`("kotlin.wasm.wizard")', 'return false')
+  text = text.replace('Registry.`is`("kotlin.js.wizard", false)', 'false')
+  if (text.contains('Registry')) {
+    throw new IllegalStateException('patch 4: Registry still referenced')
+  }
+  text
+}
+                ]]></script>
+              </scripts>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-maven-plugin</artifactId>
+        <configuration>
+          <languageVersion>${kotlin.runtime.languageVersion}</languageVersion>
+          <apiVersion>${kotlin.runtime.languageVersion}</apiVersion>
+          <jvmTarget>17</jvmTarget>
+          <args>
+            <arg>-Xskip-metadata-version-check</arg>
+            <arg>-opt-in=org.jetbrains.kotlin.utils.addToStdlib.UnsafeCastFunction</arg>
+            <arg>-opt-in=org.jetbrains.kotlin.analysis.api.KaIdeApi</arg>
+            <arg>-opt-in=com.intellij.openapi.util.IntellijInternalApi</arg>
+          </args>
+          <sourceDirs>
+            <sourceDir>${project.build.directory}/generated-sources/projectwizard</sourceDir>
+          </sourceDirs>
+        </configuration>
+        <executions>
+          <execution>
+            <id>compile</id>
+            <phase>process-sources</phase>
+            <goals><goal>compile</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <compilerArgument>-proc:none</compilerArgument>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <dependencies>
+    <!-- IntelliJ platform APIs used by the wizard core (PSI-free, but openapi/project-model based). -->
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core</artifactId>
+      <version>${intellij.platform.253.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>core-impl</artifactId>
+      <version>${intellij.platform.253.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>util</artifactId>
+      <version>${intellij.platform.253.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>util-rt</artifactId>
+      <version>${intellij.platform.253.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>extensions</artifactId>
+      <version>${intellij.platform.253.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.jetbrains.intellij.platform</groupId>
+      <artifactId>project-model</artifactId>
+      <version>${intellij.platform.253.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.jetbrains</groupId>
+      <artifactId>annotations</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.jetbrains.kotlinx</groupId>
+      <artifactId>kotlinx-collections-immutable-jvm</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>com.google.code.gson</groupId>
+      <artifactId>gson</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-stdlib</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Template engine used by the wizard file templates. Packaged into the .nbm. -->
+    <dependency>
+      <groupId>org.apache.velocity</groupId>
+      <artifactId>velocity-engine-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+  </dependencies>
+</project>

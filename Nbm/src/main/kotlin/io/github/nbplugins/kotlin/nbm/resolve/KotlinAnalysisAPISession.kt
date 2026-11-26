@@ -513,6 +513,16 @@ class KotlinAnalysisAPISession private constructor(
             registerEpIfAbsent(area, "com.intellij.referencesSearch",
                 "com.intellij.util.QueryExecutor",
                 com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE)
+            // The Kotlin New Project Wizard asks these points while initializing its settings
+            // (`AndroidPlugin`'s SDK default value and `ProjectTemplates.extensionTemplates`).
+            // Empty points make the lookups return empty lists: no Android SDK provider and no
+            // extra project templates, which is exactly what the NetBeans wizard needs.
+            registerEpIfAbsent(area, "org.jetbrains.kotlin.idea.androidSdkProvider",
+                "org.jetbrains.kotlin.tools.projectWizard.plugins.AndroidSdkProvider",
+                com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE)
+            registerEpIfAbsent(area, "org.jetbrains.kotlin.idea.projectTemplatesProvider",
+                "org.jetbrains.kotlin.tools.projectWizard.plugins.projectTemplates.ProjectTemplatesProvider",
+                com.intellij.openapi.extensions.ExtensionPoint.Kind.INTERFACE)
         }
 
         /**

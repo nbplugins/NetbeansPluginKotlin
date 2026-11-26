@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.12.65-SNAPSHOT</version>
+    <version>0.12.77-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-compiler-cli-base</artifactId>
@@ -197,10 +197,15 @@ new ZipFile(kcompJar).withCloseable { zf ->
     //   kotlin-compiler has an older StaxFactory missing createXmlStreamReader(Reader).
     // Strip com/fasterxml/aalto: provided by aalto-xml:1.3.3 (compile dep of Nbm);
     //   kotlin-compiler has an older Aalto missing CharSourceBootstrapper.construct(Reader).
+    // Strip kotlinx/collections/immutable: provided by the standalone
+    //   kotlinx-collections-immutable-jvm:0.3.7 that Nbm bundles; the kotlin-compiler copy is an
+    //   older build whose ExtensionsKt lacks plus(PersistentList, Object[]), which breaks
+    //   code compiled against 0.3.7 (e.g. the Kotlin New Project Wizard).
     boolean keep = !name.startsWith('it/unimi/dsi/fastutil/') &&
                    !name.startsWith('org/jdom/') &&
                    !name.startsWith('com/intellij/util/xml/dom/') &&
                    !name.startsWith('com/fasterxml/aalto/') &&
+                   !name.startsWith('kotlinx/collections/immutable/') &&
                    (forceInclude.contains(name) ||
                    (!forIdeEntries.contains(name) && !platformEntries.contains(name)))
     if (!keep) return

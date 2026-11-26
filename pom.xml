@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin</artifactId>
-  <version>0.12.65-SNAPSHOT</version>
+  <version>0.12.77-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin</name>
   <properties>
@@ -26,6 +26,10 @@
     <nbm.maven.plugin.version>14.4</nbm.maven.plugin.version>
     <surefire.version>3.5.5</surefire.version>
     <maven.compiler.release>21</maven.compiler.release>
+    <!-- Template engine used by the Kotlin New Project Wizard file templates. -->
+    <velocity.version>2.4.1</velocity.version>
+    <slf4j.version>1.7.36</slf4j.version>
+    <gson.version>2.13.1</gson.version>
   </properties>
   <modules>
     <module>CoreImpl</module>
@@ -38,6 +42,7 @@
     <module>KotlinRefactoring</module>
     <module>KotlinCodeInsightImpl</module>
     <module>KotlinJ2K</module>
+    <module>KotlinProjectWizard</module>
     <module>Nbm</module>
   </modules>
   <repositories>
@@ -232,6 +237,33 @@
         <groupId>io.github.nbplugins</groupId>
         <artifactId>netbeans-plugin-kotlin-j2k</artifactId>
         <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.nbplugins</groupId>
+        <artifactId>netbeans-plugin-kotlin-project-wizard</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+
+      <!-- Velocity powers the Kotlin New Project Wizard's .vm file templates. -->
+      <dependency>
+        <groupId>org.apache.velocity</groupId>
+        <artifactId>velocity-engine-core</artifactId>
+        <version>${velocity.version}</version>
+        <exclusions>
+          <!-- slf4j-api is declared explicitly below; the commons-lang3 version is already
+               resolved elsewhere in the reactor and must stay unified. -->
+          <exclusion><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId></exclusion>
+        </exclusions>
+      </dependency>
+      <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>${slf4j.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.google.code.gson</groupId>
+        <artifactId>gson</artifactId>
+        <version>${gson.version}</version>
       </dependency>
 
       <!-- D3+D4+D5: kotlin-compiler-common-for-ide + ir-for-ide replace the kotlin-compiler fat JAR.

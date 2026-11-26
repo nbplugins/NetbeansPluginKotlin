@@ -19,6 +19,8 @@ package org.jetbrains.kotlin.file.templates.packagechooser;
 import java.awt.Component;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -47,6 +49,9 @@ import org.openide.util.Utilities;
 public class TargetChooserPanel implements WizardDescriptor.Panel<WizardDescriptor>, ChangeListener {
 
 private static final String FOLDER_TO_DELETE = "folderToDelete";    //NOI18N
+
+    /** Characters rejected in script names because Windows does not allow them in file names. */
+    private static final String ILLEGAL_FILE_NAME_CHARS = "/\\:*?\"<>|"; //NOI18N
 
     private final SpecificationVersion JDK_14 = new SpecificationVersion ("1.4");   //NOI18N
     private final List<ChangeListener> listeners = new ArrayList<ChangeListener>();
@@ -126,8 +131,10 @@ private static final String FOLDER_TO_DELETE = "folderToDelete";    //NOI18N
             if (gui.getTargetName() == null) {
                 setErrorMessage("INFO_JavaTargetChooser_ProvideClassName");
                 return false;
-            } 
-            else if ( !isValidTypeIdentifier( gui.getTargetName() ) ) {
+            }
+            else if ( type.isLiteralFileName()
+                    ? !isValidScriptFileName( gui.getTargetName() )
+                    : !isValidTypeIdentifier( gui.getTargetName() ) ) {
                 setErrorMessage( "ERR_JavaTargetChooser_InvalidClass" );
                 return false;
             }
@@ -151,13 +158,14 @@ private static final String FOLDER_TO_DELETE = "folderToDelete";    //NOI18N
             String sl = SourceLevelQuery.getSourceLevel(rootFolder);
             specVersion = sl != null? new SpecificationVersion(sl): null;
         }
-        String errorMessage = canUseFileName (rootFolder, gui.getPackageFileName(), gui.getTargetName(), template.getExt ());        
+        String errorMessage = canUseFileName (rootFolder, gui.getPackageFileName(), gui.getTargetName(), template.getExt (), type.isLiteralFileName());        
         if (gui != null) {
             wizard.getNotificationLineSupport ().setErrorMessage (errorMessage);
         }
         if (errorMessage!=null) returnValue=false;                
         
-        if (type != Type.PACKAGE && returnValue && gui.getPackageName().length() == 0 && specVersion != null && JDK_14.compareTo(specVersion) <= 0) {
+        // A script in the default package is normal: scripts declare no package at all.
+        if (type != Type.PACKAGE && !type.isLiteralFileName() && returnValue && gui.getPackageName().length() == 0 && specVersion != null && JDK_14.compareTo(specVersion) <= 0) {
             if(isValidPackageRequired){
                 setInfoMessage( "ERR_JavaTargetChooser_CantUseDefaultPackage" );
                 return false;
@@ -361,6 +369,26 @@ private static final String FOLDER_TO_DELETE = "folderToDelete";    //NOI18N
         return true;
     }
 
+    /**
+     * Interprets the name entered in the target chooser for the given object type.
+     *
+     * <p>Package and class names may be typed fully qualified ({@code com.example.Foo}) and are
+     * split into a package and a simple name. Script names are literal file names, so
+     * {@code demo.main} stays {@code demo.main} instead of becoming package {@code demo} and
+     * file {@code main}.
+     *
+     * @param type object type created by the wizard
+     * @param rawName name as typed by the user, already trimmed
+     * @return the file or package name to create
+     */
+    static String targetName(final Type type, final String rawName) {
+        if (type == Type.PACKAGE || type.isLiteralFileName()) {
+            return rawName;
+        }
+        final String[] pkgNamePair = getPackageAndSimpleName(rawName);
+        return pkgNamePair[0].length() == 0 ? rawName : pkgNamePair[1];
+    }
+
     static String[] getPackageAndSimpleName(final String name) {
         final int lastDot = name.lastIndexOf('.');  //NOI18N
         if (lastDot > 0) {
@@ -381,6 +409,29 @@ private static final String FOLDER_TO_DELETE = "folderToDelete";    //NOI18N
     private static boolean isValidTypeIdentifier(String ident) {
         return ident != null && !"".equals(ident) && Utilities.isJavaIdentifier( ident );  //NOI18N
     }
+
+    /**
+     * Validates a name typed for a script file. Unlike a class name, a script name only has to
+     * be a legal file name: dots and hyphens are allowed ({@code demo.main}, {@code my-script}).
+     *
+     * @param name name of the script file without the extension
+     * @return {@code true} when the name can be used as a file name on every platform
+     */
+    static boolean isValidScriptFileName(String name) {
+        if (name == null || name.isEmpty() || ".".equals(name) || "..".equals(name)) {
+            return false;
+        }
+        for (char c : ILLEGAL_FILE_NAME_CHARS.toCharArray()) {
+            if (name.indexOf(c) >= 0) {
+                return false;
+            }
+        }
+        try {
+            return Paths.get(name).getNameCount() == 1;
+        } catch (InvalidPathException exception) {
+            return false;
+        }
+    }
     
     // helper methods copied from project/ui/ProjectUtilities
     /** Checks if the given file name can be created in the target folder.
@@ -392,8 +443,23 @@ private static final String FOLDER_TO_DELETE = "folderToDelete";    //NOI18N
      * @return localized error message or null if all right
      */    
     public static String canUseFileName (FileObject targetFolder, String folderName, String newObjectName, String extension) {
+        return canUseFileName(targetFolder, folderName, newObjectName, extension, false);
+    }
+
+    /**
+     * Checks whether the given file name can be created in the target folder.
+     *
+     * @param targetFolder target folder (e.g. source group)
+     * @param folderName name of the folder relative to target folder
+     * @param newObjectName name of created file
+     * @param extension extension of created file
+     * @param literalFileName whether {@code newObjectName} is a file name, so dots must not be
+     * treated as package separators (which is what script names need)
+     * @return localized error message or null if all right
+     */
+    static String canUseFileName (FileObject targetFolder, String folderName, String newObjectName, String extension, boolean literalFileName) {
         String newObjectNameToDisplay = newObjectName;
-        if (newObjectName != null) {
+        if (newObjectName != null && !literalFileName) {
             newObjectName = newObjectName.replace ('.', '/'); // NOI18N
         }
         if (extension != null && extension.length () > 0) {

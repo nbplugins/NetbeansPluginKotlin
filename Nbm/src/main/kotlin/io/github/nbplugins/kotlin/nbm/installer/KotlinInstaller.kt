@@ -33,6 +33,7 @@ import org.openide.windows.TopComponent
 import org.openide.windows.WindowManager
 import org.jetbrains.kotlin.utils.ProjectUtils
 import io.github.nbplugins.kotlin.nbm.projectsextensions.KotlinProjectHelper.isMavenProject
+import io.github.nbplugins.kotlin.nbm.projectwizard.ProjectWizardEnvironment
 import io.github.nbplugins.kotlin.nbm.projectsextensions.maven.MavenHelper
 import io.github.nbplugins.kotlin.nbm.resolve.KotlinAnalysisAPISession
 import io.github.nbplugins.kotlin.nbm.startup.FakeIntellijHome
@@ -46,6 +47,9 @@ class KotlinInstaller : ModuleInstall() {
     override fun restored() {
         FakeIntellijHome.StartingUp().run()
         KotlinAnalysisAPISession.initApplicationEnvironment()
+        // Register the IDEA Kotlin New Project Wizard services on the standalone application so
+        // the New Project → Kotlin templates can generate projects (and pin Kotlin 2.3.21).
+        ProjectWizardEnvironment.ensureRegistered()
         // KotlinCodeStylePreferences is otherwise loaded into the global formatter singleton
         // only when the user clicks OK in Tools → Options → Kotlin. Load it here so the first
         // format after restart uses persisted values rather than the in-memory defaults.
