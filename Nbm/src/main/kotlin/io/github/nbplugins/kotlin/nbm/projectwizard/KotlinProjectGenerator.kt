@@ -178,7 +178,7 @@ private class NetBeansKotlinProjectWizard(
             StructurePlugin.groupId.reference.setValue(request.groupId)
             StructurePlugin.artifactId.reference.setValue(request.artifactId)
             StructurePlugin.version.reference.setValue(request.version)
-            GradlePlugin.gradleVersion.reference.setValue(Version.fromString(GRADLE_WRAPPER_VERSION))
+            GradlePlugin.gradleVersion.reference.setValue(Version.fromString(GENERATED_GRADLE_VERSION))
         }
         super.apply(services, phases, onTaskExecuting)
     }
@@ -189,11 +189,3 @@ private class NetBeansKotlinProjectWizard(
         }
     }
 }
-
-/**
- * Gradle version used for the generated wrapper.
- *
- * Newer than the wizard's default 8.1.1 because NetBeans runs on JDK 21+, which Gradle 8.1.1
- * does not support.
- */
-private const val GRADLE_WRAPPER_VERSION = "8.14.3"

@@ -110,7 +110,10 @@ class KotlinProjectGeneratorTest : NbTestCase("KotlinProjectGeneratorTest") {
         )
         if (hasGradleWrapper) {
             val properties = Files.readString(root.resolve("gradle/wrapper/gradle-wrapper.properties"))
-            assertTrue("wrapper must use Gradle 8.14.3, was: $properties", properties.contains("gradle-8.14.3-bin.zip"))
+            assertTrue(
+                "wrapper must use Gradle $GENERATED_GRADLE_VERSION, was: $properties",
+                properties.contains("gradle-$GENERATED_GRADLE_VERSION-bin.zip")
+            )
         }
     }
 

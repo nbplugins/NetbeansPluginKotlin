@@ -37,6 +37,17 @@ import org.jetbrains.plugins.gradle.jvmcompat.WIZARD_DATA_IDE_VERSION
 const val GENERATED_KOTLIN_VERSION: String = "2.3.21"
 
 /**
+ * Gradle version used for the wrapper of generated Gradle projects.
+ *
+ * Gradle 8.14.x, the wizard's original default, cannot run on JDK 25: its embedded Kotlin DSL
+ * fails with `IllegalArgumentException: 25.0.2` from `JavaVersion.parse`. Gradle supports
+ * running on JDK 25 since 9.1.0, and 9.3.0 is the newest version fully supported by Kotlin
+ * Gradle Plugin [GENERATED_KOTLIN_VERSION] (7.6.3–9.3.0). Gradle 9 still runs on JDK 17+,
+ * which is what NetBeans requires.
+ */
+const val GENERATED_GRADLE_VERSION: String = "9.3.0"
+
+/**
  * Bootstraps the IDEA Kotlin New Project Wizard core in the standalone NetBeans environment.
  *
  * The wizard reads its configuration from IDEA application services
