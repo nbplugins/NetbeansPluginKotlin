@@ -19,7 +19,10 @@ package io.github.nbplugins.kotlin.nbm.projectwizard
 import org.jetbrains.kotlin.tools.projectWizard.plugins.buildSystem.BuildSystemType
 import org.netbeans.junit.NbTestCase
 import org.openide.WizardDescriptor
+import java.awt.Container
+import java.nio.file.Files
 import java.nio.file.Path
+import javax.swing.JTextField
 import javax.swing.SwingUtilities
 import javax.swing.event.ChangeListener
 
@@ -148,6 +151,119 @@ class KotlinProjectWizardPanelTest : NbTestCase("KotlinProjectWizardPanelTest") 
         panel.removeChangeListener(listener)
     }
 
+    /** Editing the project name keeps the still-derived artifact ID in sync. */
+    fun testEditingNameUpdatesDerivedArtifactId() {
+        val panel = panel(ProjectVariant.APPLICATION)
+        val wizard = wizard(panel)
+        panel.readSettings(wizard)
+        val fields = textFields(panel)
+
+        editOnEdt { fields[NAME].text = "demo" }
+
+        assertEquals("demo", fields[ARTIFACT].text)
+        panel.storeSettings(wizard)
+        assertEquals("demo", request(wizard).artifactId)
+    }
+
+    /** An artifact ID the user has customized is not overwritten by a project name change. */
+    fun testCustomArtifactIdSurvivesNameEdit() {
+        val panel = panel(ProjectVariant.APPLICATION)
+        val wizard = wizard(panel)
+        panel.readSettings(wizard)
+        val fields = textFields(panel)
+
+        editOnEdt { fields[ARTIFACT].text = "my-lib" }
+        editOnEdt { fields[NAME].text = "demo" }
+
+        assertEquals("my-lib", fields[ARTIFACT].text)
+        panel.storeSettings(wizard)
+        assertEquals("my-lib", request(wizard).artifactId)
+    }
+
+    /** Padding in the artifact ID is trimmed in the model without mutating the notifying document. */
+    fun testEditingArtifactIdWithPaddingIsSafe() {
+        val panel = panel(ProjectVariant.APPLICATION)
+        val wizard = wizard(panel)
+        panel.readSettings(wizard)
+        val fields = textFields(panel)
+
+        editOnEdt { fields[ARTIFACT].text = "demo " }
+
+        panel.storeSettings(wizard)
+        assertEquals("demo", request(wizard).artifactId)
+    }
+
+    /** The non-empty directory warning appears as soon as the location points at it. */
+    fun testEditingLocationPublishesWarningBeforeFinish() {
+        val taken = getWorkDir().toPath().resolve("taken")
+        Files.createDirectories(taken)
+        Files.createFile(taken.resolve("keep.txt"))
+        val panel = panel(ProjectVariant.LIBRARY)
+        val wizard = wizard(panel)
+        panel.readSettings(wizard)
+        val fields = textFields(panel)
+
+        editOnEdt {
+            fields[LOCATION].text = taken.parent.toString()
+            fields[NAME].text = "taken"
+        }
+
+        assertTrue(panel.isValid())
+        assertNotNull(
+            "the overwrite warning must be published before Finish",
+            wizard.getProperty(WizardDescriptor.PROP_WARNING_MESSAGE),
+        )
+    }
+
+    /** An invalid project name publishes the error as soon as it is typed. */
+    fun testEditingInvalidNamePublishesErrorBeforeFinish() {
+        val panel = panel(ProjectVariant.APPLICATION)
+        val wizard = wizard(panel)
+        panel.readSettings(wizard)
+        val fields = textFields(panel)
+
+        editOnEdt { fields[NAME].text = "bad|name" }
+
+        assertFalse(panel.isValid())
+        assertNotNull(
+            "the error must be published before Finish",
+            wizard.getProperty(WizardDescriptor.PROP_ERROR_MESSAGE),
+        )
+    }
+
+    /**
+     * Runs [block] on the event dispatch thread, where swing documents are meant to be edited.
+     */
+    private fun editOnEdt(block: () -> Unit) = SwingUtilities.invokeAndWait(block)
+
+    /**
+     * @param wizard descriptor holding the stored request
+     * @return the request stored by the last [KotlinProjectWizardPanel.storeSettings]
+     */
+    private fun request(wizard: WizardDescriptor): KotlinProjectRequest =
+        wizard.getProperty(KotlinProjectWizardPanel.KEY_REQUEST) as KotlinProjectRequest
+
+    /**
+     * Collects the text fields of [panel] in layout order.
+     *
+     * @return name, location, group ID, artifact ID and version editors, in that order
+     */
+    private fun textFields(panel: KotlinProjectWizardPanel): List<JTextField> {
+        val fields = mutableListOf<JTextField>()
+
+        fun collect(container: Container) {
+            for (child in container.components) {
+                when (child) {
+                    is JTextField -> fields += child
+                    is Container -> collect(child)
+                }
+            }
+        }
+
+        collect(panel.component)
+        return fields
+    }
+
     /**
      * Creates a panel and materializes its swing component on the event dispatch thread.
      */
@@ -162,4 +278,15 @@ class KotlinProjectWizardPanelTest : NbTestCase("KotlinProjectWizardPanelTest") 
      */
     private fun wizard(panel: KotlinProjectWizardPanel): WizardDescriptor =
         WizardDescriptor(arrayOf<WizardDescriptor.Panel<WizardDescriptor>>(panel))
+
+    private companion object {
+        /** Index of the project name editor in [textFields]. */
+        const val NAME = 0
+
+        /** Index of the project location editor in [textFields]. */
+        const val LOCATION = 1
+
+        /** Index of the artifact ID editor in [textFields]. */
+        const val ARTIFACT = 3
+    }
 }

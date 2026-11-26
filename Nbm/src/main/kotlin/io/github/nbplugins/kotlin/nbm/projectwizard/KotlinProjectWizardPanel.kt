@@ -40,9 +40,10 @@ import javax.swing.event.DocumentListener
  * The single panel of the New Project → Kotlin wizard.
  *
  * Pure view over [KotlinProjectFormModel]: edits are pushed into the model on every
- * keystroke, and the panel only reports validity and stores the resulting
- * [KotlinProjectRequest] into the wizard descriptor, where [KotlinProjectWizardIterator] reads
- * it when the user finishes the wizard.
+ * keystroke, validation messages are published to the wizard on every edit (so the overwrite
+ * warning is visible before the user presses Finish), and the resulting
+ * [KotlinProjectRequest] is stored into the wizard descriptor, where
+ * [KotlinProjectWizardIterator] reads it when the user finishes the wizard.
  *
  * @param variant Kotlin project kind this wizard creates.
  */
@@ -52,6 +53,12 @@ class KotlinProjectWizardPanel(private val variant: ProjectVariant) : WizardDesc
     private val changeSupport = ChangeSupport(this)
     private var component: JPanel? = null
     private var updatingFields = false
+
+    /**
+     * Descriptor passed to [readSettings]; retained so that edits can publish validation
+     * messages before the user leaves the panel.
+     */
+    private var wizardDescriptor: WizardDescriptor? = null
 
     private var nameField: JTextField? = null
     private var locationField: JTextField? = null
@@ -71,7 +78,7 @@ class KotlinProjectWizardPanel(private val variant: ProjectVariant) : WizardDesc
             result = createComponent()
             component = result
             loadFromModel()
-            updateMessages(null)
+            updateMessages(wizardDescriptor)
         }
         return result
     }
@@ -108,6 +115,7 @@ class KotlinProjectWizardPanel(private val variant: ProjectVariant) : WizardDesc
      * after the first visit
      */
     override fun readSettings(wizard: WizardDescriptor) {
+        wizardDescriptor = wizard
         val request = wizard.getProperty(KEY_REQUEST) as? KotlinProjectRequest
         if (request != null && request.variant == variant) {
             model.projectName = request.directory.fileName?.toString() ?: request.name
@@ -128,6 +136,7 @@ class KotlinProjectWizardPanel(private val variant: ProjectVariant) : WizardDesc
      * @param wizard wizard descriptor the request is stored in
      */
     override fun storeSettings(wizard: WizardDescriptor) {
+        wizardDescriptor = wizard
         wizard.putProperty(KEY_REQUEST, model.toRequest())
         updateMessages(wizard)
     }
@@ -192,14 +201,8 @@ class KotlinProjectWizardPanel(private val variant: ProjectVariant) : WizardDesc
         val field = JTextField(24)
         label.labelFor = field
         field.accessibleContext.accessibleName = displayName(bundleKey)
-        field.document.addDocumentListener(object : DocumentListener {
-            override fun insertUpdate(event: DocumentEvent) = onFieldEdited()
-
-            override fun removeUpdate(event: DocumentEvent) = onFieldEdited()
-
-            override fun changedUpdate(event: DocumentEvent) = onFieldEdited()
-        })
         fieldSink(field)
+        watch(field)
         panel.add(label, constraints(0, row).apply { anchor = GridBagConstraints.EAST })
         panel.add(field, constraints(1, row).apply {
             fill = GridBagConstraints.HORIZONTAL
@@ -220,14 +223,8 @@ class KotlinProjectWizardPanel(private val variant: ProjectVariant) : WizardDesc
         val field = JTextField(24)
         label.labelFor = field
         field.accessibleContext.accessibleName = displayName("KotlinProjectWizardPanel.projectLocation")
-        field.document.addDocumentListener(object : DocumentListener {
-            override fun insertUpdate(event: DocumentEvent) = onFieldEdited()
-
-            override fun removeUpdate(event: DocumentEvent) = onFieldEdited()
-
-            override fun changedUpdate(event: DocumentEvent) = onFieldEdited()
-        })
         locationField = field
+        watch(field)
 
         val browse = JButton(displayName("KotlinProjectWizardPanel.browse"))
         browse.accessibleContext.accessibleName = displayName("KotlinProjectWizardPanel.browse")
@@ -346,25 +343,62 @@ class KotlinProjectWizardPanel(private val variant: ProjectVariant) : WizardDesc
     }
 
     /**
-     * Copies the current field values into the model and notifies listeners.
+     * Registers [onFieldEdited] for every change of [field]'s document.
+     *
+     * @param field field to watch
      */
-    private fun onFieldEdited() {
+    private fun watch(field: JTextField) {
+        field.document.addDocumentListener(object : DocumentListener {
+            override fun insertUpdate(event: DocumentEvent) = onFieldEdited(field)
+
+            override fun removeUpdate(event: DocumentEvent) = onFieldEdited(field)
+
+            override fun changedUpdate(event: DocumentEvent) = onFieldEdited(field)
+        })
+    }
+
+    /**
+     * Copies the edited field's value into the model, refreshes the wizard messages and
+     * notifies listeners.
+     *
+     * Only the edited field is read: the project name setter may re-derive the artifact ID, and
+     * writing every field back would immediately undo the derivation with the stale artifact
+     * text.
+     *
+     * @param field field whose document changed
+     */
+    private fun onFieldEdited(field: JTextField) {
         if (updatingFields) return
-        nameField?.let { model.projectName = it.text.trim() }
-        locationField?.let { model.location = it.text.trim() }
-        groupIdField?.let { model.groupId = it.text.trim() }
-        artifactIdField?.let { model.artifactId = it.text.trim() }
-        versionField?.let { model.version = it.text.trim() }
-        // The model may have re-derived the artifact ID from the project name.
+        when (field) {
+            nameField -> model.projectName = field.text.trim()
+            locationField -> model.location = field.text.trim()
+            groupIdField -> model.groupId = field.text.trim()
+            artifactIdField -> model.artifactId = field.text.trim()
+            versionField -> model.version = field.text.trim()
+        }
+        // Writing to the edited field's own document while it notifies listeners throws
+        // "Attempt to mutate in notification", so the artifact editor is synchronized only
+        // after edits of the other fields.
+        if (field !== artifactIdField) {
+            syncArtifactIdField()
+        }
+        updateMessages(wizardDescriptor)
+        changeSupport.fireChange()
+    }
+
+    /**
+     * Shows the artifact ID the model derived after a project name edit.
+     */
+    private fun syncArtifactIdField() {
+        val artifactField = artifactIdField ?: return
         updatingFields = true
         try {
-            artifactIdField?.let {
-                if (it.text != model.artifactId) it.text = model.artifactId
+            if (artifactField.text != model.artifactId) {
+                artifactField.text = model.artifactId
             }
         } finally {
             updatingFields = false
         }
-        changeSupport.fireChange()
     }
 
     /**
@@ -372,6 +406,7 @@ class KotlinProjectWizardPanel(private val variant: ProjectVariant) : WizardDesc
      */
     private fun onBuildSystemSelected() {
         buildSystemButtons.entries.firstOrNull { it.value.isSelected }?.let { model.buildSystem = it.key }
+        updateMessages(wizardDescriptor)
         changeSupport.fireChange()
     }
 
