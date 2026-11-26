@@ -17,6 +17,7 @@
 package io.github.nbplugins.kotlin.nbm.projectwizard
 
 import org.jetbrains.kotlin.tools.projectWizard.plugins.buildSystem.BuildSystemType
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -83,13 +84,37 @@ class KotlinProjectFormModel(val variant: ProjectVariant) {
     /**
      * @return the validation of the current field values: which errors block generation and
      * which warnings merely inform the user.
+     *
+     * Names and locations that cannot appear in a file path on this platform (for instance
+     * `bad|name` on Windows) are reported as errors instead of letting [InvalidPathException]
+     * escape from the swing document listeners that call this method on every keystroke.
      */
-    fun validation(): KotlinProjectValidation = toRequest().validate()
+    fun validation(): KotlinProjectValidation = try {
+        toRequest().validate()
+    } catch (_: InvalidPathException) {
+        KotlinProjectValidation(pathProblems(), emptyList())
+    }
 
     /**
      * @return `true` when the current field values allow generation.
      */
     fun isValid(): Boolean = validation().isValid
+
+    /**
+     * @return the problem to report when the project path cannot be parsed: the location is at
+     * fault when it alone is unparsable, otherwise the project name is.
+     */
+    private fun pathProblems(): List<KotlinProjectProblem> {
+        val locationIsParsable = try {
+            Paths.get(location)
+            true
+        } catch (_: InvalidPathException) {
+            false
+        }
+        return listOf(
+            if (locationIsParsable) KotlinProjectProblem.INVALID_NAME else KotlinProjectProblem.INVALID_LOCATION
+        )
+    }
 
     companion object {
         /** Group ID of a freshly opened wizard panel. */

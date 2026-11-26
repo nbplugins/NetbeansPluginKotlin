@@ -33,6 +33,9 @@ enum class KotlinProjectProblem {
     /** Project name contains characters not allowed in a project name. */
     INVALID_NAME,
 
+    /** Project location cannot be used as a directory path on this platform. */
+    INVALID_LOCATION,
+
     /** Group ID is blank. */
     EMPTY_GROUP_ID,
 
@@ -99,8 +102,8 @@ data class KotlinProjectRequest(
     /**
      * Validates the request. The project name follows the IDEA New Project Wizard rules:
      * letters, digits, space, `-`, `_` and `.`. Coordinates are stricter because Maven rejects
-     * anything else: the artifact ID may contain only ASCII letters, digits, `-`, `_` and `.`,
-     * while the group ID and the version may contain letters, digits, `-`, `_` and `.`.
+     * anything else: the group ID and the artifact ID may contain only ASCII letters, digits,
+     * `-`, `_` and `.`, while the version may contain letters, digits, `-`, `_` and `.`.
      *
      * An existing non-empty directory is only a warning: IDEA itself allows generating into
      * a non-empty folder.
@@ -113,7 +116,7 @@ data class KotlinProjectRequest(
             }
             when {
                 groupId.isBlank() -> add(KotlinProjectProblem.EMPTY_GROUP_ID)
-                !isCoordinateIdentifier(groupId) -> add(KotlinProjectProblem.INVALID_GROUP_ID)
+                !isGroupId(groupId) -> add(KotlinProjectProblem.INVALID_GROUP_ID)
             }
             when {
                 artifactId.isBlank() -> add(KotlinProjectProblem.EMPTY_ARTIFACT_ID)
@@ -147,14 +150,27 @@ data class KotlinProjectRequest(
             hasOnlyAllowedChars(value, MODULE_NAME_SPECIAL_CHARS)
 
         /**
+         * @return `true` when [value] is a legal Maven identifier, i.e. matches
+         * `[A-Za-z0-9_.-]+`; Maven rejects spaces and non-ASCII letters.
+         */
+        @JvmStatic
+        fun isMavenIdentifier(value: String): Boolean =
+            value.isNotEmpty() && value.all { it.isAsciiLetterOrDigit() || it in COORDINATE_SPECIAL_CHARS }
+
+        /**
+         * @return `true` when [value] is non-blank and a legal Maven group ID.
+         */
+        @JvmStatic
+        fun isGroupId(value: String): Boolean = isMavenIdentifier(value)
+
+        /**
          * Checks the Maven artifact ID pattern `[A-Za-z0-9_.-]+`: Maven rejects spaces and
          * non-ASCII letters, so such an ID cannot produce a working project.
          *
          * @return `true` when [value] is non-blank and a legal Maven artifact ID.
          */
         @JvmStatic
-        fun isArtifactId(value: String): Boolean =
-            value.isNotEmpty() && value.all { it.isAsciiLetterOrDigit() || it in COORDINATE_SPECIAL_CHARS }
+        fun isArtifactId(value: String): Boolean = isMavenIdentifier(value)
 
         /**
          * @return `true` when [value] is non-blank and may serve as a group ID or a version.

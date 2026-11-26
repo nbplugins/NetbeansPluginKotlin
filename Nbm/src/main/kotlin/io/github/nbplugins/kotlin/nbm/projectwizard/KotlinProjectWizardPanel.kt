@@ -137,7 +137,11 @@ class KotlinProjectWizardPanel(private val variant: ProjectVariant) : WizardDesc
      */
     override fun storeSettings(wizard: WizardDescriptor) {
         wizardDescriptor = wizard
-        wizard.putProperty(KEY_REQUEST, model.toRequest())
+        // The path may be unparsable (see KotlinProjectFormModel.validation); storing a request
+        // would then throw while the wizard is closing the panel.
+        if (model.isValid()) {
+            wizard.putProperty(KEY_REQUEST, model.toRequest())
+        }
         updateMessages(wizard)
     }
 

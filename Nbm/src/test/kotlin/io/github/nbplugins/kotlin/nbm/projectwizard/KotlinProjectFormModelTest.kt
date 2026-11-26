@@ -151,6 +151,31 @@ class KotlinProjectFormModelTest : NbTestCase("KotlinProjectFormModelTest") {
         )
     }
 
+    /**
+     * A name that cannot be part of a path on this platform is reported as an invalid name
+     * instead of throwing from the document listener that calls validation.
+     */
+    fun testUnparsableNameIsReportedAsInvalidName() {
+        val model = modelInWorkDir(ProjectVariant.APPLICATION)
+        model.projectName = UNPARSABLE
+
+        val validation = model.validation()
+
+        assertEquals(listOf(KotlinProjectProblem.INVALID_NAME), validation.errors)
+        assertFalse(model.isValid())
+    }
+
+    /** An unparsable location is reported as an invalid location. */
+    fun testUnparsableLocationIsReportedAsInvalidLocation() {
+        val model = modelInWorkDir(ProjectVariant.APPLICATION)
+        model.location = UNPARSABLE
+
+        val validation = model.validation()
+
+        assertEquals(listOf(KotlinProjectProblem.INVALID_LOCATION), validation.errors)
+        assertFalse(model.isValid())
+    }
+
     /** A non-empty target directory is only a warning: generation remains possible. */
     fun testNonEmptyDirectoryIsWarningOnly() {
         val model = modelInWorkDir(ProjectVariant.LIBRARY)
@@ -177,4 +202,9 @@ class KotlinProjectFormModelTest : NbTestCase("KotlinProjectFormModelTest") {
     /** Creates a model whose location is the test work directory. */
     private fun modelInWorkDir(variant: ProjectVariant): KotlinProjectFormModel =
         KotlinProjectFormModel(variant).apply { location = getWorkDir().absolutePath }
+
+    private companion object {
+        /** A value no platform accepts as part of a file name: it contains a NUL character. */
+        const val UNPARSABLE = "bad\u0000name"
+    }
 }

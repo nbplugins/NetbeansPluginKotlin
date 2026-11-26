@@ -78,7 +78,7 @@ class KotlinProjectRequestTest : NbTestCase("KotlinProjectRequestTest") {
         assertFalse(KotlinProjectRequest.isModuleIdentifier("   "))
     }
 
-    /** Group IDs and versions may not contain spaces. */
+    /** Versions may contain letters, digits, `-`, `_` and `.`, but no spaces. */
     fun testCoordinateIdentifierAcceptsIdEaRules() {
         assertTrue(KotlinProjectRequest.isCoordinateIdentifier("org.example-1.0_A"))
         assertFalse(KotlinProjectRequest.isCoordinateIdentifier("org example"))
@@ -92,6 +92,17 @@ class KotlinProjectRequestTest : NbTestCase("KotlinProjectRequestTest") {
         assertFalse(KotlinProjectRequest.isArtifactId("Проект"))
         assertFalse(KotlinProjectRequest.isArtifactId("a/b"))
         assertFalse(KotlinProjectRequest.isArtifactId(""))
+    }
+
+    /** Maven applies the same identifier rules to a group ID. */
+    fun testGroupIdFollowsMavenRules() {
+        assertTrue(KotlinProjectRequest.isGroupId("org.example-1.0_A"))
+        assertFalse(KotlinProjectRequest.isGroupId("org.проект"))
+        assertFalse(KotlinProjectRequest.isGroupId("org example"))
+        assertFalse(KotlinProjectRequest.isGroupId(""))
+
+        val validation = request(groupId = "org.проект").validate()
+        assertTrue(KotlinProjectProblem.INVALID_GROUP_ID in validation.errors)
     }
 
     /** An artifact ID Maven cannot use is an error even though it is a legal project name. */
