@@ -17,6 +17,7 @@
 package io.github.nbplugins.kotlin.nbm.projectwizard
 
 import org.jetbrains.kotlin.tools.projectWizard.plugins.buildSystem.BuildSystemType
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -56,6 +57,9 @@ enum class KotlinProjectProblem {
 
     /** The target directory already exists and is not empty. */
     DIRECTORY_NOT_EMPTY,
+
+    /** The target directory exists but cannot be listed, so generation cannot proceed. */
+    DIRECTORY_NOT_READABLE,
 }
 
 /**
@@ -109,6 +113,7 @@ data class KotlinProjectRequest(
      * a non-empty folder.
      */
     fun validate(): KotlinProjectValidation {
+        val directoryProblem = directoryProblem()
         val errors = buildList {
             when {
                 name.isBlank() -> add(KotlinProjectProblem.EMPTY_NAME)
@@ -126,13 +131,36 @@ data class KotlinProjectRequest(
                 version.isBlank() -> add(KotlinProjectProblem.EMPTY_VERSION)
                 !isCoordinateIdentifier(version) -> add(KotlinProjectProblem.INVALID_VERSION)
             }
+            if (directoryProblem == KotlinProjectProblem.DIRECTORY_NOT_READABLE) {
+                add(KotlinProjectProblem.DIRECTORY_NOT_READABLE)
+            }
         }
-        val warnings = if (isDirectoryNotEmpty(directory)) {
+        val warnings = if (directoryProblem == KotlinProjectProblem.DIRECTORY_NOT_EMPTY) {
             listOf(KotlinProjectProblem.DIRECTORY_NOT_EMPTY)
         } else {
             emptyList()
         }
         return KotlinProjectValidation(errors, warnings)
+    }
+
+    /**
+     * Inspects the target directory without throwing: validation runs on every keystroke from
+     * swing document listeners, where an exception would leave the panel state stale.
+     *
+     * @return [KotlinProjectProblem.DIRECTORY_NOT_EMPTY] when the directory has content,
+     * [KotlinProjectProblem.DIRECTORY_NOT_READABLE] when it cannot be listed, `null` otherwise
+     */
+    private fun directoryProblem(): KotlinProjectProblem? = when {
+        !Files.isDirectory(directory) -> null
+        else -> try {
+            if (Files.list(directory).use { it.findAny().isPresent }) {
+                KotlinProjectProblem.DIRECTORY_NOT_EMPTY
+            } else {
+                null
+            }
+        } catch (_: IOException) {
+            KotlinProjectProblem.DIRECTORY_NOT_READABLE
+        }
     }
 
     companion object {
@@ -178,13 +206,6 @@ data class KotlinProjectRequest(
         @JvmStatic
         fun isCoordinateIdentifier(value: String): Boolean =
             hasOnlyAllowedChars(value, COORDINATE_SPECIAL_CHARS)
-
-        /**
-         * @return `true` when [directory] exists and contains at least one entry.
-         */
-        @JvmStatic
-        fun isDirectoryNotEmpty(directory: Path): Boolean =
-            Files.isDirectory(directory) && Files.list(directory).use { it.findAny().isPresent }
 
         private fun hasOnlyAllowedChars(value: String, allowedExtraChars: Set<Char>): Boolean =
             value.isNotBlank() && value.all { it.isLetterOrDigit() || it in allowedExtraChars }

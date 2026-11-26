@@ -211,6 +211,29 @@ class KotlinProjectFormModelTest : NbTestCase("KotlinProjectFormModelTest") {
         assertEquals(KotlinProjectValidation.OK, model.validation())
     }
 
+    /**
+     * A directory that cannot be listed is an error rather than an exception: validation runs
+     * from swing document listeners, where an escaped `AccessDeniedException` would leave the
+     * panel state stale.
+     */
+    fun testUnreadableDirectoryIsAnError() {
+        val model = modelInWorkDir(ProjectVariant.LIBRARY)
+        model.projectName = "unreadable"
+        val directory = model.projectDirectory
+        Files.createDirectories(directory)
+        val originalPermissions = Files.getPosixFilePermissions(directory)
+        try {
+            Files.setPosixFilePermissions(directory, emptySet())
+            // Root ignores permission bits; there is nothing to assert in that case.
+            if (Files.isReadable(directory)) return
+
+            assertEquals(listOf(KotlinProjectProblem.DIRECTORY_NOT_READABLE), model.validation().errors)
+            assertFalse(model.isValid())
+        } finally {
+            Files.setPosixFilePermissions(directory, originalPermissions)
+        }
+    }
+
     /** Creates a model whose location is the test work directory. */
     private fun modelInWorkDir(variant: ProjectVariant): KotlinProjectFormModel =
         KotlinProjectFormModel(variant).apply { location = getWorkDir().absolutePath }
