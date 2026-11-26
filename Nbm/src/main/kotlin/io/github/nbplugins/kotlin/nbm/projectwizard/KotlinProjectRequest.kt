@@ -111,9 +111,11 @@ data class KotlinProjectRequest(
 
     /**
      * Validates the request. The project name follows the IDEA New Project Wizard rules:
-     * letters, digits, space, `-`, `_` and `.`. Coordinates are stricter because Maven rejects
-     * anything else: the group ID and the artifact ID may contain only ASCII letters, digits,
-     * `-`, `_` and `.`, while the version may contain letters, digits, `-`, `_` and `.`.
+     * letters, digits, space, `-`, `_` and `.`, except the path segments `.` and `..`, which
+     * would move the project directory out of the selected location. Coordinates are stricter
+     * because Maven rejects anything else: the group ID and the artifact ID may contain only
+     * ASCII letters, digits, `-`, `_` and `.` (and must not be `.` or `..`), while the version
+     * may contain letters, digits, `-`, `_` and `.`.
      *
      * An existing non-empty directory is only a warning: IDEA itself allows generating into
      * a non-empty folder.
@@ -123,7 +125,7 @@ data class KotlinProjectRequest(
         val errors = buildList {
             when {
                 name.isBlank() -> add(KotlinProjectProblem.EMPTY_NAME)
-                !isModuleIdentifier(name) -> add(KotlinProjectProblem.INVALID_NAME)
+                !isModuleIdentifier(name) || name == "." || name == ".." -> add(KotlinProjectProblem.INVALID_NAME)
             }
             when {
                 groupId.isBlank() -> add(KotlinProjectProblem.EMPTY_GROUP_ID)
@@ -211,11 +213,14 @@ data class KotlinProjectRequest(
 
         /**
          * @return `true` when [value] is a legal Maven identifier, i.e. matches
-         * `[A-Za-z0-9_.-]+`; Maven rejects spaces and non-ASCII letters.
+         * `[A-Za-z0-9_.-]+`; Maven rejects spaces and non-ASCII letters. The path segments `.`
+         * and `..` are also rejected: they would turn into directory navigation in the
+         * generated project path.
          */
         @JvmStatic
         fun isMavenIdentifier(value: String): Boolean =
-            value.isNotEmpty() && value.all { it.isAsciiLetterOrDigit() || it in COORDINATE_SPECIAL_CHARS }
+            value.isNotEmpty() && value != "." && value != ".." &&
+                value.all { it.isAsciiLetterOrDigit() || it in COORDINATE_SPECIAL_CHARS }
 
         /**
          * @return `true` when [value] is non-blank and a legal Maven group ID.

@@ -112,7 +112,7 @@ class KotlinProjectWizardPanelTest : NbTestCase("KotlinProjectWizardPanelTest") 
 
         assertFalse(panel.isValid())
         assertEquals(
-            "The project name may contain only letters, digits, spaces, \"-\", \"_\" and \".\".",
+            "The project name may contain only letters, digits, spaces, \"-\", \"_\" and \".\" and cannot be \".\" or \"..\".",
             wizard.getProperty(WizardDescriptor.PROP_ERROR_MESSAGE),
         )
     }

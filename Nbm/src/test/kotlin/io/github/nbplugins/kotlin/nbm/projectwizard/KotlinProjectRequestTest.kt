@@ -105,6 +105,17 @@ class KotlinProjectRequestTest : NbTestCase("KotlinProjectRequestTest") {
         assertTrue(KotlinProjectProblem.INVALID_GROUP_ID in validation.errors)
     }
 
+    /** The path segments `.` and `..` are not identifiers: they would move the project path. */
+    fun testDotSegmentsAreRejected() {
+        assertFalse(KotlinProjectRequest.isArtifactId("."))
+        assertFalse(KotlinProjectRequest.isArtifactId(".."))
+        assertFalse(KotlinProjectRequest.isGroupId(".."))
+
+        val validation = request(name = "..").validate()
+        assertTrue(KotlinProjectProblem.INVALID_NAME in validation.errors)
+        assertFalse(validation.isValid)
+    }
+
     /** An artifact ID Maven cannot use is an error even though it is a legal project name. */
     fun testMavenIncompatibleArtifactIdIsAnError() {
         val validation = request(name = "my app", artifactId = "my app").validate()

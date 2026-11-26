@@ -188,6 +188,23 @@ class KotlinProjectFormModelTest : NbTestCase("KotlinProjectFormModelTest") {
         assertFalse(model.isValid())
     }
 
+    /**
+     * `.` and `..` are legal characters but not legal project names: the project directory
+     * would normalize to the location itself or to its parent.
+     */
+    fun testDotSegmentProjectNamesAreErrors() {
+        for (name in listOf(".", "..")) {
+            val model = modelInWorkDir(ProjectVariant.LIBRARY)
+            model.projectName = name
+
+            assertTrue(
+                "project name '$name' must be rejected, was ${model.validation().errors}",
+                KotlinProjectProblem.INVALID_NAME in model.validation().errors,
+            )
+            assertFalse(model.isValid())
+        }
+    }
+
     /** A non-empty target directory is only a warning: generation remains possible. */
     fun testNonEmptyDirectoryIsWarningOnly() {
         val model = modelInWorkDir(ProjectVariant.LIBRARY)
