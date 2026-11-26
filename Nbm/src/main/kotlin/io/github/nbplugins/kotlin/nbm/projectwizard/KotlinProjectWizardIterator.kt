@@ -128,8 +128,11 @@ open class KotlinProjectWizardIterator protected constructor(
             progress.finish()
         }
 
-        val projectDirectory = FileUtil.toFileObject(request.directory.toFile())
-            ?: throw IOException("Cannot find the generated project directory ${request.directory}")
+        // FileUtil.toFileObject requires a normalized absolute file: the typed location may
+        // contain "." or ".." components (for instance "/tmp/.").
+        val directory = FileUtil.normalizeFile(request.directory.toFile())
+        val projectDirectory = FileUtil.toFileObject(directory)
+            ?: throw IOException("Cannot find the generated project directory $directory")
         projectDirectory.refresh()
         return setOf(DataObject.find(projectDirectory))
     }

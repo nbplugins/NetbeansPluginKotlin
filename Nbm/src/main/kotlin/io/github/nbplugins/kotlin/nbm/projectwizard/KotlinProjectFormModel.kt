@@ -63,9 +63,14 @@ class KotlinProjectFormModel(val variant: ProjectVariant) {
     /** Build system of the generated project. */
     var buildSystem: BuildSystemType = DEFAULT_BUILD_SYSTEM
 
-    /** Absolute path of the project directory that will be generated. */
+    /**
+     * Absolute path of the project directory that will be generated.
+     *
+     * Normalized, because NetBeans' `FileUtil.toFileObject` rejects paths that contain `.` or
+     * `..` components.
+     */
     val projectDirectory: Path
-        get() = Paths.get(location.ifBlank { defaultProjectsLocation() }).resolve(projectName)
+        get() = Paths.get(location.ifBlank { defaultProjectsLocation() }).resolve(projectName).normalize()
 
     /**
      * @return the current request, including the [validation][KotlinProjectRequest.validate]

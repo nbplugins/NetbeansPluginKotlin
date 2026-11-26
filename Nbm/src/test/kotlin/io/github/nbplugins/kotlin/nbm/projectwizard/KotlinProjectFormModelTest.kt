@@ -81,6 +81,18 @@ class KotlinProjectFormModelTest : NbTestCase("KotlinProjectFormModelTest") {
         assertEquals(Path.of("/tmp/projects/demo"), model.projectDirectory)
     }
 
+    /**
+     * A location with redundant `.` components is normalized, because
+     * `FileUtil.toFileObject` rejects such a path when the project is opened.
+     */
+    fun testProjectDirectoryIsNormalized() {
+        val model = modelInWorkDir(ProjectVariant.LIBRARY)
+        model.location = "/tmp/."
+        model.projectName = "demo"
+
+        assertEquals(Path.of("/tmp/demo"), model.projectDirectory)
+    }
+
     /** A blank location falls back to the default projects location instead of throwing. */
     fun testBlankLocationFallsBackToDefault() {
         val model = modelInWorkDir(ProjectVariant.LIBRARY)
